@@ -16,7 +16,7 @@ import { getOccupancyColor } from '../utils/parkingUtils';
 import { ParkingLotUI } from '../types/ui';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { TYPOGRAPHY, SPACING, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -213,8 +213,8 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   mapImage: {
-    width: screenWidth * 2.25, // Slightly larger for better zoom range
-    height: screenWidth * 2.25,
+    width: screenWidth * MAP.SCALE_MULTIPLIER,
+    height: screenWidth * MAP.SCALE_MULTIPLIER,
   },
   lotCircle: {
     position: 'absolute',
