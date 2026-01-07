@@ -22,7 +22,7 @@ import type { MapStackParamList } from '../types/navigation';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const campusMapImage = require('../assets/images/CSULB_map_transparent_unlabeled.webp') as ImageSourcePropType;
@@ -82,13 +82,28 @@ const MapScreen: React.FC = () => {
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
   const savedScale = useSharedValue(1);
+  // Pinch focal point
+  const focalX = useSharedValue(0);
+  const focalY = useSharedValue(0);
+  const containerWidth = useSharedValue(0);
+  const containerHeight = useSharedValue(0);
 
   const panGesture = Gesture.Pan()
-    .minPointers(1)
-    .maxPointers(1)
     .onUpdate((e) => {
-      translateX.value = savedTranslateX.value + e.translationX;
-      translateY.value = savedTranslateY.value + e.translationY;
+      // Calculate scaled map dimensions
+      const scaledMapWidth = (screenWidth * MAP.SCALE_MULTIPLIER) * scale.value;
+      const scaledMapHeight = (screenWidth * MAP.SCALE_MULTIPLIER) * scale.value;
+
+      // Calculate maximum translation bounds 
+      const maxTranslateX = Math.max(0, (scaledMapWidth - containerWidth.value) / 2);
+      const maxTranslateY = Math.max(0, (scaledMapHeight - containerHeight.value) / 2);
+
+      // Apply translation w/ clamping
+      const newTranslateX = savedTranslateX.value + e.translationX;
+      const newTranslateY = savedTranslateY.value + e.translationY;
+
+      translateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, newTranslateX));
+      translateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, newTranslateY));
     })
     .onEnd(() => {
       savedTranslateX.value = translateX.value;
@@ -96,12 +111,38 @@ const MapScreen: React.FC = () => {
     });
 
   const pinchGesture = Gesture.Pinch()
+    .onStart((e) => {
+      // Focal point relative to the container's center
+      focalX.value = e.focalX - containerWidth.value / 2;
+      focalY.value = e.focalY - containerHeight.value / 2;
+    })
     .onUpdate((e) => {
       const newScale = savedScale.value * e.scale;
-      scale.value = Math.max(0.5, Math.min(newScale, 3));
+      const clampedScale = Math.max(0.5, Math.min(newScale, 3));
+      // Adjust translation based on focal point
+      const scaleDiff = clampedScale / savedScale.value - 1;
+
+      // Adjust translation to keep focal point stationary
+      const newTranslateX = savedTranslateX.value - focalX.value * scaleDiff;
+      const newTranslateY = savedTranslateY.value - focalY.value * scaleDiff;
+
+      // Calculate scaled map dimensions with new scale
+      const scaledMapWidth = (screenWidth * MAP.SCALE_MULTIPLIER) * clampedScale;
+      const scaledMapHeight = (screenWidth * MAP.SCALE_MULTIPLIER) * clampedScale;
+
+      // Calculate maximum translation bounds
+      const maxTranslateX = Math.max(0, (scaledMapWidth - containerWidth.value) / 2);
+      const maxTranslateY = Math.max(0, (scaledMapHeight - containerHeight.value) / 2);
+
+      // Apply translation w/ clamping
+      translateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, newTranslateX));
+      translateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, newTranslateY));
+      scale.value = clampedScale;
     })
     .onEnd(() => {
       savedScale.value = scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
     });
 
   const composedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
@@ -156,7 +197,13 @@ const MapScreen: React.FC = () => {
       <View style={{ flex: 1, overflow: 'hidden' }}>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <GestureDetector gesture={composedGesture}>
-            <Animated.View style={[styles.mapContainer, animatedStyle]}>
+            <Animated.View
+              style={[styles.mapContainer, animatedStyle]}
+              onLayout={(e) => {
+                containerWidth.value = e.nativeEvent.layout.width;
+                containerHeight.value = e.nativeEvent.layout.height;
+              }}
+            >
               {/* Campus map background */}
               <View style={styles.mapImageContainer}>
                 <Image
@@ -203,14 +250,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   mapContainer: {
-    position: 'absolute',
-    width: screenWidth * 3,
-    height: screenHeight * 3,
-    left: -(screenWidth * 0.75),
-    top: -(screenHeight * 0.25),
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   mapImageContainer: {
-    position: 'relative',
+    position: 'relative',    
   },
   mapImage: {
     width: screenWidth * MAP.SCALE_MULTIPLIER,
