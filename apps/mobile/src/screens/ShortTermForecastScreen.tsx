@@ -1,15 +1,15 @@
 import React from 'react';
-import {View, Text, StyleSheet, ScrollView, TouchableOpacity} from 'react-native';
+import {View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator} from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
 import { Header } from '../components';
 import { useTheme } from '../context/ThemeContext';
+import { useLotData } from '../hooks/useLotData';
 
 import {getOccupancyColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
 import { ReportModal } from '../components/Modals/ReportModal';
-import { parkingLots } from '../data/mockParkingLots';
 import type { MapStackScreenProps } from '../types/navigation';
 
 // Navigation-aware component
@@ -19,50 +19,57 @@ export function ShortTermForecastScreen() {
   const { lotId } = route.params || { lotId: 'G1' };
   const { colors } = useTheme();
   
-  // Find the lot from our data
-  const lot = parkingLots.find(l => l.id === lotId) || parkingLots[0];
+  // Use the API hook instead of mock data
+  const { lot, forecast, loading, error, refreshLot } = useLotData(lotId);
   
   const onBack = () => navigation.goBack();
   const [isReportModalOpen, setIsReportModalOpen] = React.useState(false);
 
-  const generateForecast = () => {
-    const hours = [];
-    
-    const mockOccupancies = [
-      15, 12, 18, 45, 68, 82, 75, 70, 72, 65, 
-      58, 62, 55, 48, 42, 38, 32, 28, 22, 18,
-    ];
-    
-    const hoursToShow = [];
-    for (let h = 5; h <= 23; h++) {
-      hoursToShow.push(h);
-    }
-    hoursToShow.push(0);
-    
-    for (let i = 0; i < hoursToShow.length; i++) {
-      const hour = hoursToShow[i];
-      const timeLabel = hour.toString();
-      const occupancy = mockOccupancies[i];
-      
-      const accuracy = 92;
-      const confidenceMargin = 3;
+  // Show loading spinner while data is being fetched
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: colors.lightGray }]}>
+        <Header title="Short Term Forecast" onBack={onBack} />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textPrimary }]}>
+          Loading lot data...
+        </Text>
+      </View>
+    );
+  }
 
-      const lowerBound = Math.max(0, occupancy - confidenceMargin);
-      const upperBound = Math.min(100, occupancy + confidenceMargin);
-      
-      hours.push({
-        time: timeLabel,
-        occupancy: occupancy,
-        accuracy,
-        lowerBound: lowerBound,
-        upperBound: upperBound,
-      });
-    }
-    
-    return hours;
-  };
+  // Show error state
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: colors.lightGray }]}>
+        <Header title="Short Term Forecast" onBack={onBack} />
+        <Icon name="alert-circle-outline" size={48} color={colors.error} />
+        <Text style={[styles.errorText, { color: colors.error }]}>
+          {error}
+        </Text>
+        <TouchableOpacity 
+          style={[styles.retryButton, { backgroundColor: colors.primary }]}
+          onPress={refreshLot}
+        >
+          <Text style={[styles.retryButtonText, { color: colors.white }]}>
+            Retry
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
-  const forecast = generateForecast();
+  // Show message if no lot data
+  if (!lot) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: colors.lightGray }]}>
+        <Header title="Short Term Forecast" onBack={onBack} />
+        <Text style={[styles.errorText, { color: colors.textPrimary }]}>
+          Lot not found
+        </Text>
+      </View>
+    );
+  }
 
   const getTodayEvents = () => {
     const events = [];
@@ -105,9 +112,9 @@ export function ShortTermForecastScreen() {
 
         {/* Title Card w/ Lot Name and Occupancy */}
         <View style={[styles.lotHeaderCard, { backgroundColor: colors.white }]}>
-          <Text style={[styles.lotName, { color: colors.textPrimary }]}>{lot.name}</Text>
-          <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(lot.occupancy)}]}>
-            <Text style={styles.statusBadgeText}>{lot.occupancy}%</Text>
+          <Text style={[styles.lotName, { color: colors.textPrimary }]}>{lot.lot_name}</Text>
+          <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
+            <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
           </View>
         </View>
 
@@ -135,7 +142,7 @@ export function ShortTermForecastScreen() {
 
       {/* Incident Report Modal */}
       <ReportModal
-        lotId={lot.id}
+        lotId={lot.lot_id}
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         onSubmit={() => {}} // currently do nothing on submit
@@ -151,6 +158,39 @@ const styles = StyleSheet.create({
 
   scrollView: {
     flex: 1,
+  },
+
+  // Center content styles for loading/error states
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    flex: 1,
+    padding: SPACING.xl,
+  },
+
+  loadingText: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    marginTop: SPACING.lg,
+    textAlign: 'center',
+  },
+
+  errorText: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    textAlign: 'center',
+    marginTop: SPACING.lg,
+  },
+
+  retryButton: {
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.lg,
+    borderRadius: SPACING.sm,
+    marginTop: SPACING.lg,
+  },
+
+  retryButtonText: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    textAlign: 'center',
   },
 
   // Event Card

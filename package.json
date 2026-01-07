@@ -15,7 +15,8 @@
     "postinstall": "node -e \"if (process.env.SKIP_LOCAL_INFRA !== '1') require('child_process').execSync('./scripts/start-local.sh', {stdio: 'inherit'})\" || true",
     "test": "echo \"no tests yet\"",
     "db:setup": "tsx scripts/setup-dynamodb-schema.ts",
-    "db:seed": "tsx scripts/seed-database.ts"
+    "db:seed": "tsx scripts/seed-database.ts",
+    "network-ip": "node scripts/get-network-ip.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
