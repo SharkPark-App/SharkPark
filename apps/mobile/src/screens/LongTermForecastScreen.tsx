@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Header } from '../components';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { upcomingEvents } from '../data/mockEvents';
 import { getOccupancyColor } from '../utils/parkingUtils';
@@ -54,6 +54,14 @@ const LongTermForecastScreen: React.FC = () => {
       year === today.getFullYear()
     );
   };
+
+  const isPastDate = (day: number) => {
+    const today = new Date();
+    const dateToCheck = new Date(year, month, day);
+    today.setHours(0, 0, 0, 0);
+    dateToCheck.setHours(0, 0, 0, 0);
+    return dateToCheck < today;
+  };
   
   const hasEvent = (day: number) => {
     return upcomingEvents.some(event => {
@@ -65,7 +73,22 @@ const LongTermForecastScreen: React.FC = () => {
       );
     });
   };
+
+  const getEventsForDate = (date: Date | null) => {
+    if (!date) return [];
+    return upcomingEvents
+      .filter(event => {
+        const eventDate = event.date;
+        return (
+          eventDate.getDate() === date.getDate() &&
+          eventDate.getMonth() === date.getMonth() &&
+          eventDate.getFullYear() === date.getFullYear()
+        );
+      })
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  };
   
+  // Mock function to generate general long-term forecast data
   const generateForecastForDate = (date: Date) => {
     const map = [25, 85, 88, 90, 87, 75, 30];
     return map[date.getDay()];
@@ -79,34 +102,11 @@ const LongTermForecastScreen: React.FC = () => {
       
       <SafeAreaView style={styles.content}>
         <ScrollView>
-          {/* Upcoming Events */}
-          <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
-            <Text style={[styles.cardTitle, { color: colors.textFull }]}>Upcoming Events</Text>
-
-            {upcomingEvents.map(event => (
-              <View key={event.id} style={[styles.eventCard, { borderBottomColor: colors.borderLight }]}>
-                <Text style={[styles.eventName, { color: colors.textPrimary }]}>{event.name}</Text>
-
-                <Text style={[styles.eventDate, { color: colors.gray }]}>
-                  {event.date.toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
-                </Text>
-
-                <Text style={[styles.eventDescription, { color: colors.darkGray }]}>
-                  {event.description}
-                </Text>
-              </View>
-            ))}
-          </View>
-
           {/* Calendar */}
           <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
             {/* Calendar Header */}
             <View style={styles.calendarHeader}>
-              <TouchableOpacity onPress={previousMonth}>
+              <TouchableOpacity onPress={previousMonth} style={styles.navButton}>
                 <Text style={[styles.navIcon, { color: colors.mediumGray }]}>‹</Text>
               </TouchableOpacity>
 
@@ -114,7 +114,7 @@ const LongTermForecastScreen: React.FC = () => {
                 {monthNames[month]} {year}
               </Text>
 
-              <TouchableOpacity onPress={nextMonth}>
+              <TouchableOpacity onPress={nextMonth} style={styles.navButton}>
                 <Text style={[styles.navIcon, { color: colors.mediumGray }]}>›</Text>
               </TouchableOpacity>
             </View>
@@ -143,6 +143,8 @@ const LongTermForecastScreen: React.FC = () => {
                   selectedDate?.getMonth() === month &&
                   selectedDate?.getFullYear() === year;
 
+                const isPast = isPastDate(day);
+
                 return (
                    <TouchableOpacity key={day}
                     onPress={() => setSelectedDate(new Date(year, month, day))}
@@ -152,19 +154,108 @@ const LongTermForecastScreen: React.FC = () => {
                       isSelected && { borderWidth: 2, borderColor: colors.primary, borderRadius: SPACING.md },
                     ]}
                   >
-                    <Text style={[styles.dayText, { color: colors.textPrimary }]}>{day}</Text>
+                    <Text style={[
+                      styles.dayText,
+                      { color: colors.textPrimary },
+                      isPast && { opacity: 0.3 }
+                    ]}>{day}</Text>
 
-                    <View style={[ styles.occupancyBar,
-                        {backgroundColor: getOccupancyColor(forecast)},
-                    ]}/>
+                    {!isPast && (
+                      <View style={[
+                        styles.occupancyBar,
+                        { backgroundColor: getOccupancyColor(forecast) }
+                      ]}/>
+                    )}
 
                     {/* Event indicator */}
-                    {hasEvent(day) && <View style={[styles.eventDot, { backgroundColor: colors.error }]} />}
+                    {hasEvent(day) && <View style={[
+                      styles.eventDot,
+                      { backgroundColor: colors.error },
+                      isPast && { opacity: 0.3 }
+                    ]} />}
                   </TouchableOpacity>
                 );
               })}
             </View>
           </View>
+
+          {/* Selected Date Event Information */}
+          {selectedDate && getEventsForDate(selectedDate).length > 0 && (
+            <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark, marginTop: SPACING.lg }]}>
+              <Text style={[styles.cardTitle, { color: colors.textFull }]}>
+                {selectedDate.toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </Text>
+
+              {getEventsForDate(selectedDate).map((event, index) => (
+                <View key={event.id}>
+                  <View style={[styles.selectedEventCard, { borderLeftColor: colors.error }]}>
+                    <View style={styles.titleImpactRow}>
+                      <Text style={[styles.selectedEventName, { color: colors.textPrimary }]}>
+                        {event.name}
+                      </Text>
+
+                      <View style={[
+                        styles.impactBadge,
+                        { backgroundColor: event.impact === 'high' ? colors.error : colors.warningBorder }
+                      ]}>
+                        <Text style={[styles.impactBadgeText, { color: colors.white }]}>
+                          {event.impact.toUpperCase()} IMPACT
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.timeLocationRow}>
+                      <Text style={[styles.selectedEventTime, { color: colors.gray }]}>
+                        {event.date.toLocaleTimeString('en-US', {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true,
+                        })}
+                      </Text>
+
+                      <Text style={[styles.dividerText, { color: colors.gray }]}>•</Text>
+
+                      <Text style={[styles.selectedEventLocation, { color: colors.gray }]}>
+                        {event.location}
+                      </Text>
+                    </View>
+
+                    <Text style={[styles.selectedEventDescription, { color: colors.darkGray }]}>
+                      {event.description}
+                    </Text>
+
+                    {event.affectedLots && event.affectedLots.length > 0 && (
+                      <View style={styles.affectedLotsContainer}>
+                        <Text style={[styles.affectedLotsLabel, { color: colors.gray }]}>
+                          Affected Lots:
+                        </Text>
+                        <Text style={[styles.affectedLotsText, { color: colors.textPrimary }]}>
+                          {event.affectedLots.join(', ')}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {index < getEventsForDate(selectedDate).length - 1 && (
+                    <View style={[styles.eventDivider, { backgroundColor: colors.borderGray }]} />
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* No Events Message */}
+          {selectedDate && getEventsForDate(selectedDate).length === 0 && (
+            <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark, marginTop: SPACING.lg }]}>
+              <Text style={[styles.noEventsText, { color: colors.gray }]}>
+                No events scheduled for this day.
+              </Text>
+            </View>
+          )}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -178,6 +269,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  // Card styles
   card: {
     borderRadius: SPACING.lg,
     padding: SPACING.xl,
@@ -192,21 +284,34 @@ const styles = StyleSheet.create({
     fontWeight: TYPOGRAPHY.fontWeight.semibold,
     marginBottom: SPACING.lg,
   },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.gray,
+    marginHorizontal: SPACING.xxxl,
+    marginVertical: SPACING.md,
+  },
+  // Event styles
   eventCard: {
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
   },
   eventName: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.lg,
     fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    marginBottom: SPACING.xs,
+  },
+  eventMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   eventDate: {
     fontSize: TYPOGRAPHY.fontSize.sm,
-    marginVertical: SPACING.xs,
+    marginLeft: SPACING.md,
   },
   eventDescription: {
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
+  // Calendar Styles
   calendarHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -217,8 +322,13 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.lg,
     fontWeight: TYPOGRAPHY.fontWeight.semibold,
   },
+  navButton: {
+    padding: SPACING.xl,
+    margin: -SPACING.xl,
+  },
   navIcon: {
     fontSize: TYPOGRAPHY.fontSize.xxl,
+    paddingHorizontal: SPACING.md,
   },
   dayNamesRow: {
     flexDirection: 'row',
@@ -233,10 +343,11 @@ const styles = StyleSheet.create({
   calendarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignContent: 'flex-start',
   },
   dayCell: {
     width: `${100 / 7}%`,
-    aspectRatio: 1,
+    height: 40,    
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: SPACING.xs,
@@ -257,6 +368,81 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     marginTop: SPACING.xs,
+  },
+  // Selected event styles
+  selectedEventCard: {
+    borderLeftWidth: 4,
+    paddingLeft: SPACING.md,
+    paddingVertical: SPACING.md,
+  },
+  titleImpactRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.xs,
+    gap: SPACING.md,
+  },
+  selectedEventName: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  timeLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  selectedEventTime: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  dividerText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginHorizontal: SPACING.md,
+  },
+  selectedEventLocation: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  eventDivider: {
+    height: 1,
+    marginVertical: SPACING.md,
+    marginLeft: SPACING.md,
+  },
+  timeImpactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  selectedEventDescription: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    lineHeight: 20,
+    marginBottom: SPACING.md,
+  },
+  affectedLotsContainer: {
+    marginBottom: SPACING.md,
+  },
+  affectedLotsLabel: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    marginBottom: SPACING.xs,
+  },
+  affectedLotsText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  impactBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: SPACING.sm,
+  },
+  impactBadgeText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontWeight: TYPOGRAPHY.fontWeight.bold,
+  },
+  noEventsText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: SPACING.md,
   },
 });
 

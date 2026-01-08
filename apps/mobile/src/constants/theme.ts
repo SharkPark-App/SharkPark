@@ -8,10 +8,10 @@ export const COLORS = {
   // Neutral colors
   white: '#ffffff',
   black: '#1f2937',
-  gray: '#6b7280',
   lightGray: '#f3f4f6',
-  darkGray: '#374151',
+  gray: '#6b7280',    
   mediumGray: '#4b5563',
+  darkGray: '#374151',
   borderGray: '#e5e7eb',
   toggleGray: '#d1d5db',
   
