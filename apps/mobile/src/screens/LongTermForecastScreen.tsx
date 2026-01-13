@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Header } from '../components';
-import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
+import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { upcomingEvents } from '../data/mockEvents';
 import { getOccupancyColor } from '../utils/parkingUtils';
@@ -284,33 +284,6 @@ const styles = StyleSheet.create({
     fontWeight: TYPOGRAPHY.fontWeight.semibold,
     marginBottom: SPACING.lg,
   },
-  divider: {
-    height: 1,
-    backgroundColor: COLORS.gray,
-    marginHorizontal: SPACING.xxxl,
-    marginVertical: SPACING.md,
-  },
-  // Event styles
-  eventCard: {
-    paddingVertical: SPACING.sm,
-    borderBottomWidth: 1,
-  },
-  eventName: {
-    fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
-    marginBottom: SPACING.xs,
-  },
-  eventMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  eventDate: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    marginLeft: SPACING.md,
-  },
-  eventDescription: {
-    fontSize: TYPOGRAPHY.fontSize.xs,
-  },
   // Calendar Styles
   calendarHeader: {
     flexDirection: 'row',
@@ -406,11 +379,6 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: SPACING.md,
     marginLeft: SPACING.md,
-  },
-  timeImpactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
   },
   selectedEventDescription: {
     fontSize: TYPOGRAPHY.fontSize.sm,
