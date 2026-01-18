@@ -62,7 +62,7 @@ export function createPolygonFromAPIData() {
       { latitude: 26.3760, longitude: -80.1008 },
     ],
     // ... other API fields
-  } as any;
+  };
 
   return createPolygonGeofenceFromLot(apiLotData);
 }
