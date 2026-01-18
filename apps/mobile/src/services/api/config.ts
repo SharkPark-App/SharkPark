@@ -26,7 +26,7 @@ const getApiBaseUrl = () => {
     // 3. Replace 'localhost' below with your actual IP (e.g., '192.168.1.45')
     //
     // NOTE: This IP may change when switching networks (WiFi, etc.)
-    return 'http://localhost:3000/api/v1'; // Change to your IP for physical iOS devices
+    return 'http://192.168.1.45:3000/api/v1'; // Updated for physical iOS devices
   }
 };
 
@@ -43,6 +43,7 @@ export const API_CONFIG = {
     LOTS_SUMMARY: '/lots/summary',
     LOT_DETAILS: (id: string) => `/lots/${id}`,
     LOT_HISTORY: (id: string) => `/lots/${id}/history`,
+    RECORD_OCCUPANCY: '/lots/occupancy/events',
     USERS: '/users',
     WEATHER: '/weather',
     EVENTS: '/events',

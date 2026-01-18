@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { MainTabNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { SimpleGeofencingProvider } from './src/context/SimpleGeofencingProvider';
 import { LoginFlow } from './src/screens';
 
 function AppContent() {
@@ -60,9 +61,12 @@ function AppContent() {
 }
 
 function App() {
+  console.warn('🔥 APP.TSX: About to render SimpleGeofencingProvider');
   return (
     <ThemeProvider>
-      <AppContent />
+      <SimpleGeofencingProvider>
+        <AppContent />
+      </SimpleGeofencingProvider>
     </ThemeProvider>
   );
 }

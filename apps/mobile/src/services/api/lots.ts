@@ -204,6 +204,27 @@ class LotsApiService {
     return forecast;
   }
 
+  /**
+   * Record anonymous occupancy event (ENTER/EXIT)
+   * Privacy-first: No user coordinates or identifiers stored
+   */
+  async recordOccupancyEvent(event: {
+    lotId: string;
+    eventType: 'ENTER' | 'EXIT';
+    source: 'GEOFENCE' | 'MANUAL';
+    timestamp?: string;
+  }): Promise<void> {
+    const payload = {
+      lot_id: event.lotId,
+      event_type: event.eventType,
+      source: event.source,
+      timestamp: event.timestamp || new Date().toISOString(),
+      // NO user coordinates or identifiers included for privacy
+    };
+
+    await apiService.post(API_CONFIG.ENDPOINTS.RECORD_OCCUPANCY, payload);
+  }
+
   private buildQueryString(params: GetLotsParams | GetHistoryParams): string {
     const query = new URLSearchParams();
     

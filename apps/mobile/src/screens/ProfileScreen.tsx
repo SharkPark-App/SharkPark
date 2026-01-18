@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SectionCard } from '../components/SectionCard';
 import { Header } from '../components';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { GeofencingTestButton } from '../components/GeofencingTestButton';
+import useLocationService from '../hooks/useLocationService';
+import { useSimpleGeofencing } from '../context/SimpleGeofencingProvider';
+import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
 const ProfileScreen: React.FC = () => {
@@ -13,6 +16,51 @@ const ProfileScreen: React.FC = () => {
     highOccupancy: true, favoriteLots: true, incidents: false,
   });
 
+  // Location service hook for permission checking
+  const {
+    permissionStatus,
+    requestPermissions,
+  } = useLocationService();
+
+  // Geofencing status from background provider
+  const { isGeofencingActive, currentLotId } = useSimpleGeofencing();
+
+  // Initialize permissions check
+  useEffect(() => {
+    // Background geofencing will automatically start when permissions are granted
+    if (permissionStatus?.granted) {
+      console.log('[ProfileScreen] Location permissions granted, background geofencing available');
+    }
+  }, [permissionStatus]);
+
+  // Show geofencing status to user
+  const getGeofencingStatusText = () => {
+    if (!permissionStatus?.granted) {
+      return 'Location access needed';
+    }
+    if (isGeofencingActive) {
+      return currentLotId ? 'Active - In parking lot' : 'Active - Monitoring';
+    }
+    return 'Initializing...';
+  };
+
+  // Open device settings for location permissions
+  const openLocationSettings = () => {
+    Alert.alert(
+      'Location Permission Required',
+      'SharkPark needs location access to automatically detect when you enter and leave campus parking lots. This helps provide real-time parking data to help other students.\n\nYour specific location is never stored or shared - only anonymous parking lot events are recorded.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => {
+          // In a real app, you'd open device settings
+          console.log('Open device settings for location permissions');
+          // Could use: Linking.openSettings();
+        }},
+      ]
+    );
+  };
+
+  // Simple toggle component for notifications
   const ToggleSwitch = ({ value }: { value: boolean }) => (
     <View style={[
       styles.toggleContainer, 
@@ -104,6 +152,49 @@ const ProfileScreen: React.FC = () => {
           </View>
         </SectionCard>
 
+        {/* Location & Privacy Settings */}
+        <SectionCard title="Smart Parking Detection">
+          <View style={styles.settingsList}>
+            <View style={styles.settingItem}>
+              <View style={styles.settingText}>
+                <Text style={[styles.settingLabel, { color: colors.black }]}>
+                  <Icon name="location-outline" size={16} color={colors.primary} /> Background Geofencing
+                </Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>
+                  Automatically detects when you enter or leave parking lots
+                </Text>
+              </View>
+              <View style={styles.statusBadge}>
+                <Text style={[styles.statusBadgeText, { 
+                  color: isGeofencingActive ? '#10b981' : colors.gray,
+                  backgroundColor: isGeofencingActive ? '#ecfdf5' : colors.lightGray,
+                }]}>
+                  {getGeofencingStatusText()}
+                </Text>
+              </View>
+            </View>
+
+            {!permissionStatus?.granted && (
+              <TouchableOpacity 
+                style={[styles.settingsButton, { backgroundColor: colors.primary }]}
+                onPress={openLocationSettings}
+              >
+                <Text style={styles.settingsButtonText}>
+                  Grant Location Access
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {currentLotId && (
+              <View style={[styles.statusInfo, { backgroundColor: '#ecfdf5', borderColor: '#10b981' }]}>
+                <Text style={[styles.statusText, { color: '#059669' }]}>
+                  📍 Currently in parking lot
+                </Text>
+              </View>
+            )}
+          </View>
+        </SectionCard>
+
         {/* Appearance Settings */}
         <SectionCard title="Appearance">
           <View style={styles.themeList}>
@@ -162,6 +253,10 @@ const ProfileScreen: React.FC = () => {
           <Icon name="log-out-outline" size={20} color={colors.errorText} />
           <Text style={[styles.logoutButtonText, { color: colors.errorText }]}>Logout</Text>
         </TouchableOpacity>
+
+        {/* Development Test Button */}
+        <GeofencingTestButton />
+        
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -201,6 +296,16 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
+  },
+  statusInfo: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: COLORS.black,
+    borderRadius: SPACING.sm,
+  },
+  statusText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginBottom: SPACING.xs,
   },
   toggleContainer: {
     width: 48,
@@ -253,6 +358,29 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.md,
     fontWeight: TYPOGRAPHY.fontWeight.semibold,
     marginLeft: SPACING.md,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  settingsButton: {
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  settingsButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
 

@@ -1,6 +1,8 @@
 import { 
   Controller, 
   Get, 
+  Post,
+  Body,
   Param, 
   Query, 
   HttpCode, 
@@ -103,5 +105,26 @@ export class LotsController {
       count: history.length,
       data: history,
     };
+  }
+
+  @Post('occupancy/events')
+  @HttpCode(HttpStatus.CREATED)
+  async recordOccupancyEvent(@Body() eventData: {
+    lot_id: number;
+    event_type: 'enter' | 'exit';
+    source: string;
+    timestamp: string;
+  }) {
+    try {
+      const result = await this.lotsService.recordOccupancyEvent(eventData);
+      return {
+        success: true,
+        message: 'Occupancy event recorded successfully',
+        event_id: result.id,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new BadRequestException(`Failed to record occupancy event: ${errorMessage}`);
+    }
   }
 }
