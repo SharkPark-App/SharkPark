@@ -26,7 +26,7 @@ const getApiBaseUrl = () => {
     // 3. Replace 'localhost' below with your actual IP (e.g., '192.168.1.45')
     //
     // NOTE: This IP may change when switching networks (WiFi, etc.)
-    return 'http://192.168.1.45:3000/api/v1'; // Updated for physical iOS devices
+    return 'http://localhost:3000/api/v1'; // Update with your machine's IP for physical devices
   }
 };
 
