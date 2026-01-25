@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -12,96 +11,61 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { loginWithAzure } from '../services/AzureAuth.tsx';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const sharkParkLogo = require('../assets/images/SharkParkV4.webp') as ImageSourcePropType;
 
 interface LoginScreenProps {
-  onEmailSubmit: (email: string) => void;
+  onAuthenticationSuccess: () => void;
 }
 
-export function LoginScreen({ onEmailSubmit }: LoginScreenProps) {
+export function LoginScreen({ onAuthenticationSuccess }: LoginScreenProps) {
   const { colors } = useTheme();
-  const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+//   const [userInfo, setUserInfo] = useState<any>(null);
 
-  const validateEmail = (email: string) => {
-    const csulbEmailRegex = /^[a-zA-Z0-9._%+-]+@(csulb\.edu|student\.csulb\.edu)$/;
-    return csulbEmailRegex.test(email.toLowerCase());
-  };
+    const handleLogin = async () => {
+        // clear any current error messages
+        setErrorMessage('');
+        setIsLoading(true);
 
-  const handleSendVerification = async () => {
-    // Clear any previous error
-    setErrorMessage('');
+        try {
+          const result = await loginWithAzure();
+          // result.accessToken will likely be required for API calls
+          // result.idToken should contain user email in a JWT (need to double-check CSULB config)
+          // TODO: decode idToken via jwt-decode and store it as user identifier in DB
 
-    if (!email.trim()) {
-      setErrorMessage('Please enter your CSULB email address');
-      return;
-    }
-
-    if (!validateEmail(email)) {
-      setErrorMessage('Please use a valid CSULB email address (@csulb.edu or @student.csulb.edu)');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // TODO: Implement email verification API call
-      console.log('Sending verification to:', email);
-      
-      // Simulate API call
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
-      
-      // Navigate to verification screen
-      onEmailSubmit(email);
-    } catch {
-      setErrorMessage('Failed to send verification email. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+//           setUserInfo(result);
+            // TODO: remove; currently acts as a check & satisfies eslint
+            console.log(result);
+          onAuthenticationSuccess();
+        } catch {
+          setErrorMessage('Failed to login. Please ensure you are using a CSULB account.');
+        } finally {
+          setIsLoading(false);
+        }
+      };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.lightGray }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
         {/* SharkPark Logo */}
         <View style={styles.logoContainer}>
-          <Image 
+          <Image
             source={sharkParkLogo}
             style={styles.logoImage}
             resizeMode="contain"
           />
         </View>
 
-        {/* Email Input Section */}
+        {/* Microsoft SSO Section */}
+        {/* TODO: Add Microsoft icon to 'Login with CSULB SSO' button*/}
         <View style={styles.inputSection}>
-          <TextInput
-            style={[
-              styles.emailInput,
-              {
-                backgroundColor: colors.white,
-                borderColor: errorMessage ? colors.error : colors.borderGray,
-                color: colors.textPrimary,
-              }
-            ]}
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              // Clear error when user starts typing
-              if (errorMessage) setErrorMessage('');
-            }}
-            placeholder="your.email@csulb.edu"
-            placeholderTextColor={colors.mediumGray}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="email"
-            editable={!isLoading}
-          />
 
           {/* Error Message */}
           {errorMessage ? (
@@ -111,20 +75,20 @@ export function LoginScreen({ onEmailSubmit }: LoginScreenProps) {
           ) : null}
 
           <TouchableOpacity
-            style={[
-              styles.sendButton,
-              { 
-                backgroundColor: colors.primary,
-                opacity: isLoading ? 0.6 : 1,
-              }
-            ]}
-            onPress={handleSendVerification}
-            disabled={isLoading}
-          >
-            <Text style={[styles.sendButtonText, { color: colors.white }]}>
-              {isLoading ? 'Sending...' : 'Send Verification'}
-            </Text>
-          </TouchableOpacity>
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: isLoading ? 0.6 : 1,
+                }
+              ]}
+              onPress={handleLogin}
+              disabled={isLoading}
+            >
+              <Text style={[styles.sendButtonText, { color: colors.white }]}>
+                {isLoading ? 'Authenticating...' : 'Login with CSULB SSO'}
+              </Text>
+            </TouchableOpacity>
         </View>
 
         {/* Helper Text */}
@@ -147,7 +111,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: SPACING.xxxl,
   },
-  
+
   // Logo Section
   logoContainer: {
     alignItems: 'center',

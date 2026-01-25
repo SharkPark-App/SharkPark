@@ -4,4 +4,3 @@ export { default as MapScreen } from './MapScreen';
 export { ShortTermForecastScreen } from './ShortTermForecastScreen';
 export { LoginFlow } from './LoginFlow';
 export { LoginScreen } from './LoginScreen';
-export { VerificationScreen } from './VerificationScreen';
