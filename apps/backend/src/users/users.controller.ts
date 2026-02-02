@@ -8,9 +8,11 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  UseGuards
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserResponse } from './interfaces/user.interface';
+import { AuthGuard } from '@nestjs/passport';
 
 /**
  * Handles user profile and favorites management.
@@ -20,6 +22,8 @@ import { UserResponse } from './interfaces/user.interface';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  // affirms that a valid user can have an entry created for themself if one doesn't already exist
+  @UseGuards(AuthGuard('azure-ad'))
   @Get(':userId')
   @HttpCode(HttpStatus.OK)
   async getUser(@Param('userId') userId: string) {

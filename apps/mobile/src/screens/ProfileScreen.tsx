@@ -6,12 +6,14 @@ import { SectionCard } from '../components/SectionCard';
 import { Header } from '../components';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 const ProfileScreen: React.FC = () => {
   const { themeMode, setThemeMode, colors } = useTheme();
   const [notifications, setNotifications] = useState({
     highOccupancy: true, favoriteLots: true, incidents: false,
   });
+  const { logout } = useAuth();
 
   const ToggleSwitch = ({ value }: { value: boolean }) => (
     <View style={[
@@ -41,9 +43,7 @@ const ProfileScreen: React.FC = () => {
         {
           text: 'Logout',
           style: 'destructive',
-          onPress: () => {
-            // TODO: Implement actual logout logic
-          },
+          onPress: () => {logout()},
         },
       ]
     );

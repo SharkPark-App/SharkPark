@@ -11,42 +11,32 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
-import { loginWithAzure } from '../services/AzureAuth.tsx';
+import { loginWithAzure } from '../auth/AzureAuth.tsx';
+import { useAuth } from '../context/AuthContext';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const sharkParkLogo = require('../assets/images/SharkParkV4.webp') as ImageSourcePropType;
 
-interface LoginScreenProps {
-  onAuthenticationSuccess: () => void;
-}
-
-export function LoginScreen({ onAuthenticationSuccess }: LoginScreenProps) {
+export const LoginScreen = () => {
   const { colors } = useTheme();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-//   const [userInfo, setUserInfo] = useState<any>(null);
+  const { login } = useAuth();
 
     const handleLogin = async () => {
-        // clear any current error messages
-        setErrorMessage('');
-        setIsLoading(true);
+      // clear any current error messages
+      setErrorMessage('');
+      setIsLoading(true);
 
-        try {
-          const result = await loginWithAzure();
-          // result.accessToken will likely be required for API calls
-          // result.idToken should contain user email in a JWT (need to double-check CSULB config)
-          // TODO: decode idToken via jwt-decode and store it as user identifier in DB
-
-//           setUserInfo(result);
-            // TODO: remove; currently acts as a check & satisfies eslint
-            console.log(result);
-          onAuthenticationSuccess();
-        } catch {
-          setErrorMessage('Failed to login. Please ensure you are using a CSULB account.');
-        } finally {
-          setIsLoading(false);
-        }
-      };
+      try {
+        const result = await loginWithAzure();
+        await login(result);
+      } catch {
+        setErrorMessage('Failed to login. Please ensure you are using a CSULB account.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
   return (
     <KeyboardAvoidingView
