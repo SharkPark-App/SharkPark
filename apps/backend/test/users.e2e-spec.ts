@@ -1,9 +1,27 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ValidationPipe, CanActivate, ExecutionContext } from '@nestjs/common';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
+import { AuthGuard } from '@nestjs/passport';
+
+// Azure AD Guard blocks requests w/o login tokens
+class MockAuthGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+
+    // simulated user
+    req.user = {
+      email: 'charles.milton@csulb.edu',
+      first_name: 'Charles',
+      last_name: 'Milton',
+      user_type: 'STUDENT'
+    };
+
+    return true; // always allow access
+  }
+}
 
 describe('UsersController (e2e)', () => {
   let app: INestApplication;
@@ -11,7 +29,10 @@ describe('UsersController (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+    .overrideGuard(AuthGuard('azure-ad'))
+    .useClass(MockAuthGuard)
+    .compile();
 
     app = moduleFixture.createNestApplication();
     

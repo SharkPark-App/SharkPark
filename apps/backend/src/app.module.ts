@@ -6,6 +6,7 @@ import { LotsModule } from './lots/lots.module';
 import { UsersModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
 import { WeatherModule } from './weather/weather.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { WeatherModule } from './weather/weather.module';
     UsersModule,
     EventsModule,
     WeatherModule,
+    AuthModule // new module for authentication
   ],
   controllers: [AppController],
   providers: [AppService],
