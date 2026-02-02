@@ -9,17 +9,22 @@ import {
 import * as Keychain from 'react-native-keychain';
 import API_CONFIG from '../services/api/config';
 import { jwtDecode } from 'jwt-decode';
+import { Platform } from 'react-native';
 
 const CLIENT_ID = '9aea0ab1-4502-4868-a31b-0a8f333cec9c';
 const TENANT_ID = 'd175679b-acd3-4644-be82-af041982977a'; // specific to CSULB
 const PACKAGE_NAME = 'com.sharkpark.mobile';
 const SIGNATURE_HASH = 'pCBsiXaNNNC6c0uvCpHWkdYi2Mk='; // generated as ID for Azure registration
+const BUNDLE_ID = 'com.sharkpark.mobile'; // for iOS
 
 // configuration
 const azureConfig: AuthConfiguration = {
   issuer: `https://login.microsoftonline.com/${TENANT_ID}/v2.0`,
   clientId: CLIENT_ID,
-  redirectUrl: `msauth://${PACKAGE_NAME}/${SIGNATURE_HASH}`,
+  redirectUrl: Platform.select({
+    ios: `msauth.${BUNDLE_ID}://auth`,
+    android: `msauth://${PACKAGE_NAME}/${SIGNATURE_HASH}`,
+  })!,
   scopes: [
     'openid',
     'profile',
