@@ -3,7 +3,6 @@ import * as Keychain from 'react-native-keychain';
 import { logoutFromAzure, loadAuth, saveAuth } from '../auth/AzureAuth';
 import { AuthorizeResult, RefreshResult } from 'react-native-app-auth';
 
-// for eslint as 'any' was used before
 type AuthState = AuthorizeResult | RefreshResult;
 
 interface AuthContextType {

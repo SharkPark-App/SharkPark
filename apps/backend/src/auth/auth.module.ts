@@ -5,10 +5,10 @@ import { AzureADStrategy } from './azure.strategy';
 
 @Module({
   imports: [
-    UsersModule,  // makes usersService.findOrCreateUser() invokable
+    UsersModule,
     PassportModule.register({ defaultStrategy: 'azure-ad' }),
   ],
   providers: [AzureADStrategy],
-  exports: [PassportModule], // export @UseGuards(), e.g. for userId endpoint in users.controller.ts
+  exports: [PassportModule], // export AuthGuards
 })
 export class AuthModule {}

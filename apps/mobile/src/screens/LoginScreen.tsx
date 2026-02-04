@@ -54,7 +54,6 @@ export const LoginScreen = () => {
         </View>
 
         {/* Microsoft SSO Section */}
-        {/* TODO: Add Microsoft icon to 'Login with CSULB SSO' button*/}
         <View style={styles.inputSection}>
 
           {/* Error Message */}

@@ -4,7 +4,6 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import { UsersService } from '../users/users.service';
 
-//defining payload shape for eslint
 export interface AzureJwtPayload {
   preferred_username?: string;
   email?: string;

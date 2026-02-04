@@ -15,7 +15,7 @@ import { AuthModule } from './auth/auth.module';
     UsersModule,
     EventsModule,
     WeatherModule,
-    AuthModule // new module for authentication
+    AuthModule
   ],
   controllers: [AppController],
   providers: [AppService],
