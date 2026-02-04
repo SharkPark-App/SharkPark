@@ -22,7 +22,10 @@ import { AuthGuard } from '@nestjs/passport';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // affirms that a valid user can have an entry created for themself if one doesn't already exist
+  /**
+   * AuthGuards affirm that a valid Azure AD user is calling these endpoints.
+   * These will need to be removed if user data is to be made accessible by anyone.
+   */
   @UseGuards(AuthGuard('azure-ad'))
   @Get(':userId')
   @HttpCode(HttpStatus.OK)
@@ -34,6 +37,7 @@ export class UsersController {
     };
   }
 
+  @UseGuards(AuthGuard('azure-ad'))
   @Get(':userId/favorites')
   @HttpCode(HttpStatus.OK)
   async getFavorites(@Param('userId') userId: string) {
@@ -46,6 +50,7 @@ export class UsersController {
     };
   }
 
+  @UseGuards(AuthGuard('azure-ad'))
   @Post(':userId/favorites/:lotId')
   @HttpCode(HttpStatus.CREATED)
   async addFavorite(
@@ -59,6 +64,7 @@ export class UsersController {
     };
   }
 
+  @UseGuards(AuthGuard('azure-ad'))
   @Delete(':userId/favorites/:lotId')
   @HttpCode(HttpStatus.OK)
   async removeFavorite(
@@ -72,6 +78,7 @@ export class UsersController {
     };
   }
 
+  @UseGuards(AuthGuard('azure-ad'))
   @Patch(':userId/notifications')
   @HttpCode(HttpStatus.OK)
   async updateNotifications(

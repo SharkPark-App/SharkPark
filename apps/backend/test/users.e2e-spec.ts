@@ -6,16 +6,19 @@ import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { AuthGuard } from '@nestjs/passport';
 
-// Azure AD Guard blocks requests w/o login tokens
+/**
+ * Azure AD AuthGuard blocks requests w/o valid credentials.
+ * This mock profile is only necessary if the user.controller AuthGuards are in place.
+ */
 class MockAuthGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
 
-    // simulated user
+    // request from valid user
     req.user = {
-      email: 'charles.milton@csulb.edu',
-      first_name: 'Charles',
-      last_name: 'Milton',
+      email: 'zachary.padilla@csulb.edu',
+      first_name: 'Zachary',
+      last_name: 'Padilla',
       user_type: 'STUDENT'
     };
 

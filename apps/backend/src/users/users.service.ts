@@ -154,6 +154,7 @@ export class UsersService {
     }
   }
 
+  /** Updates a user profile, or creates one if nonexistent. */
   async findOrCreateUser(email: string, firstName: string, lastName: string): Promise<UserResponse> {
     const userId = email;
     const now = new Date().toISOString();
@@ -216,8 +217,8 @@ export class UsersService {
         this.logger.log(`Created new user: ${userId}`);
         return { ...newUser, favorites: [] }; // return matched UserResponse interface
       }
-
-      // if the database throws an error
+      // if error is for a different reason
+      this.logger.error(`Failed to find or create profile for user ${userId}`, error);
       throw error;
     }
   }
