@@ -6,7 +6,6 @@ import {
   Dimensions,
   TouchableOpacity,
   Text,
-  ScrollView,
   ImageSourcePropType,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -17,11 +16,13 @@ import { getOccupancyColor } from '../utils/parkingUtils';
 import { ParkingLotUI } from '../types/ui';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { TYPOGRAPHY, SPACING, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
+import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const campusMapImage = require('../assets/images/CSULB_map_transparent_unlabeled.webp') as ImageSourcePropType;
@@ -73,6 +74,88 @@ const MapScreen: React.FC = () => {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
+  
+  // Shared values for map transformations (pan and zoom)
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+  const savedScale = useSharedValue(1);
+  // Pinch focal point
+  const focalX = useSharedValue(0);
+  const focalY = useSharedValue(0);
+  const containerWidth = useSharedValue(0);
+  const containerHeight = useSharedValue(0);
+
+  const panGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      // Calculate scaled map dimensions
+      const scaledMapWidth = (screenWidth * MAP.SCALE_MULTIPLIER) * scale.value;
+      const scaledMapHeight = (screenWidth * MAP.SCALE_MULTIPLIER) * scale.value;
+
+      // Calculate maximum translation bounds 
+      const maxTranslateX = Math.max(0, (scaledMapWidth - containerWidth.value) / 2);
+      const maxTranslateY = Math.max(0, (scaledMapHeight - containerHeight.value) / 2);
+
+      // Apply translation w/ clamping
+      const newTranslateX = savedTranslateX.value + e.translationX;
+      const newTranslateY = savedTranslateY.value + e.translationY;
+
+      translateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, newTranslateX));
+      translateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, newTranslateY));
+    })
+    .onEnd(() => {
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  const pinchGesture = Gesture.Pinch()
+    .onStart((e) => {
+      // Focal point relative to the container's center
+      focalX.value = e.focalX - containerWidth.value / 2;
+      focalY.value = e.focalY - containerHeight.value / 2;
+    })
+    .onUpdate((e) => {
+      const newScale = savedScale.value * e.scale;
+      const clampedScale = Math.max(0.5, Math.min(newScale, 3));
+      // Adjust translation based on focal point
+      const scaleDiff = clampedScale / savedScale.value - 1;
+
+      // Adjust translation to keep focal point stationary
+      const newTranslateX = savedTranslateX.value - focalX.value * scaleDiff;
+      const newTranslateY = savedTranslateY.value - focalY.value * scaleDiff;
+
+      // Calculate scaled map dimensions with new scale
+      const scaledMapWidth = (screenWidth * MAP.SCALE_MULTIPLIER) * clampedScale;
+      const scaledMapHeight = (screenWidth * MAP.SCALE_MULTIPLIER) * clampedScale;
+
+      // Calculate maximum translation bounds
+      const maxTranslateX = Math.max(0, (scaledMapWidth - containerWidth.value) / 2);
+      const maxTranslateY = Math.max(0, (scaledMapHeight - containerHeight.value) / 2);
+
+      // Apply translation w/ clamping
+      translateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, newTranslateX));
+      translateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, newTranslateY));
+      scale.value = clampedScale;
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  const composedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
+  
+  // Apply animated transformations to the map
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
 
   const handleLotPress = (lot: ParkingLotUI) => {
     // Navigate to ShortTermForecastScreen with lot data
@@ -111,40 +194,39 @@ const MapScreen: React.FC = () => {
         title="Map View"
       />
 
-      {/* Scrollable map with zoom and pan */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.mapContainer}
-        minimumZoomScale={0.5}
-        maximumZoomScale={3.0}
-        bouncesZoom={true}
-        scrollEnabled={true}
-        showsVerticalScrollIndicator={false}
-        showsHorizontalScrollIndicator={false}
-        contentOffset={{ 
-          x: screenWidth, // Center horizontally
-          y: screenHeight   // Move down to center on the map image
-        }}
-      >
-        {/* Campus map background */}
-        <View style={styles.mapImageContainer}>
-          <Image
-            source={campusMapImage}
-            style={styles.mapImage}
-            resizeMode="contain"
-          />
-          
-          {/* Interactive parking lot circles */}
-          {filteredParkingLots.map((lot) => (
-            <InteractiveLot
-              key={lot.id}
-              lot={lot}
-              onPress={handleLotPress}
-              colors={colors}
-            />
-          ))}
-        </View>
-      </ScrollView>
+      <View style={{ flex: 1, overflow: 'hidden' }}>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <GestureDetector gesture={composedGesture}>
+            <Animated.View
+              style={[styles.mapContainer, animatedStyle]}
+              onLayout={(e) => {
+                containerWidth.value = e.nativeEvent.layout.width;
+                containerHeight.value = e.nativeEvent.layout.height;
+              }}
+            >
+              {/* Campus map background */}
+              <View style={styles.mapImageContainer}>
+                <Image
+                  source={campusMapImage}
+                  style={styles.mapImage}
+                  resizeMode="contain"
+                />
+
+                {/* Interactive parking lot circles */}
+                {filteredParkingLots.map((lot) => (
+                  <InteractiveLot
+                    key={lot.id}
+                    lot={lot}
+                    onPress={handleLotPress}
+                    colors={colors}
+                  />
+                ))}
+              </View>
+            </Animated.View>
+          </GestureDetector>
+        </GestureHandlerRootView>
+      </View>
+
 
       {/* Filter button - bottom left */}
       <FilterButton onPress={handleFilterPress} colors={colors} />
@@ -167,23 +249,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollView: {
-    flex: 1,
-  },
   mapContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: screenHeight * 3, // Increase content area
-    minWidth: screenWidth * 3,   // Increase content area
-    paddingHorizontal: screenWidth * 0.75, // Reduced horizontal padding
-    paddingVertical: screenHeight * 0.25,  // Reduced vertical padding
   },
   mapImageContainer: {
-    position: 'relative',
+    position: 'relative',    
   },
   mapImage: {
-    width: screenWidth * 2.5, // Slightly larger for better zoom range
-    height: screenHeight * 2.5,
+    width: screenWidth * MAP.SCALE_MULTIPLIER,
+    height: screenWidth * MAP.SCALE_MULTIPLIER,
   },
   lotCircle: {
     position: 'absolute',

@@ -36,6 +36,27 @@ jest.mock('react-native-gesture-handler', () => {
     gestureHandlerRootHOC: jest.fn(),
     Directions: {},
     GestureHandlerRootView: View,
+    GestureDetector: View,
+    Gesture: {
+      Pan: () => ({
+        onStart: jest.fn().mockReturnThis(),
+        onUpdate: jest.fn().mockReturnThis(),
+        onEnd: jest.fn().mockReturnThis(),
+        onFinalize: jest.fn().mockReturnThis(),
+      }),
+      Pinch: () => ({
+        onStart: jest.fn().mockReturnThis(),
+        onUpdate: jest.fn().mockReturnThis(),
+        onEnd: jest.fn().mockReturnThis(),
+        onFinalize: jest.fn().mockReturnThis(),
+      }),
+      Simultaneous: jest.fn(() => ({
+        onStart: jest.fn().mockReturnThis(),
+        onUpdate: jest.fn().mockReturnThis(),
+        onEnd: jest.fn().mockReturnThis(),
+        onFinalize: jest.fn().mockReturnThis(),
+      })),
+    },
   };
 });
 
@@ -95,6 +116,37 @@ jest.mock('@react-navigation/native', () => {
     }),
     useIsFocused: () => true,
     NavigationContainer: ({ children }) => children,
+  };
+});
+
+// Mock react-native-reanimated
+jest.mock('react-native-reanimated', () => {
+  const View = require('react-native').View;
+  
+  return {
+    default: {
+      View: View,
+      Text: require('react-native').Text,
+      Image: require('react-native').Image,
+      ScrollView: require('react-native').ScrollView,
+      createAnimatedComponent: (component) => component,
+    },
+    useSharedValue: (value) => ({ value }),
+    useAnimatedStyle: (callback) => callback(),
+    withTiming: (value) => value,
+    withSpring: (value) => value,
+    withDecay: (value) => value,
+    withRepeat: (value) => value,
+    withSequence: (...values) => values[0],
+    Easing: {
+      linear: (t) => t,
+      ease: (t) => t,
+      quad: (t) => t,
+      cubic: (t) => t,
+      bezier: () => (t) => t,
+    },
+    runOnJS: (fn) => fn,
+    runOnUI: (fn) => fn,
   };
 });
 

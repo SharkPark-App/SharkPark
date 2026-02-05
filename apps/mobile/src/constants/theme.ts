@@ -8,10 +8,10 @@ export const COLORS = {
   // Neutral colors
   white: '#ffffff',
   black: '#1f2937',
-  gray: '#6b7280',
   lightGray: '#f3f4f6',
-  darkGray: '#374151',
+  gray: '#6b7280',    
   mediumGray: '#4b5563',
+  darkGray: '#374151',
   borderGray: '#e5e7eb',
   toggleGray: '#d1d5db',
   
@@ -68,4 +68,11 @@ export const TYPOGRAPHY = {
     semibold: '600' as const,
     bold: '700' as const,
   },
+} as const;
+
+export const MAP = {
+  // The original map image size in pixels (square dimensions)
+  IMAGE_SIZE: 1098,
+  // Scale multiplier for map display size relative to screen width
+  SCALE_MULTIPLIER: 2.5,
 } as const;
