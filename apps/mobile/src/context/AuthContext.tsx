@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import * as Keychain from 'react-native-keychain';
-import { logoutFromAzure, loadAuth, saveAuth } from '../auth/AzureAuth';
+import { loginWithAzure, logoutFromAzure, loadAuth, saveAuth } from '../auth/AzureAuth';
 import { AuthorizeResult, RefreshResult } from 'react-native-app-auth';
 
 type AuthState = AuthorizeResult | RefreshResult;
@@ -8,7 +8,7 @@ type AuthState = AuthorizeResult | RefreshResult;
 interface AuthContextType {
   isAuthenticated: boolean;
   user: AuthState | null;
-  login: (authResult: AuthState) => Promise<void>;
+  login: () => Promise<void>;
   logout: () => Promise<void>;
   isLoading: boolean;
 }
@@ -34,10 +34,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // handle Login
-  const login = async (authResult: AuthState) => {
-    await saveAuth(authResult); // save to keychain
-    setUser(authResult);
-    setIsAuthenticated(true);
+  const login = async () => {
+    setIsLoading(true);
+    try {
+      // ID & access tokens
+      const tokens = await loginWithAzure();
+
+      await saveAuth(tokens);
+      setUser(tokens);
+      setIsAuthenticated(true);
+
+    } catch (error) {
+      console.error('Login canceled or failed:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // handle Logout

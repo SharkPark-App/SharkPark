@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
-import { loginWithAzure } from '../auth/AzureAuth.tsx';
 import { useAuth } from '../context/AuthContext';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -19,22 +18,17 @@ const sharkParkLogo = require('../assets/images/SharkParkV4.webp') as ImageSourc
 
 export const LoginScreen = () => {
   const { colors } = useTheme();
-  const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const { login } = useAuth();
+  const { login, isLoading } = useAuth();
 
     const handleLogin = async () => {
       // clear any current error messages
       setErrorMessage('');
-      setIsLoading(true);
 
       try {
-        const result = await loginWithAzure();
-        await login(result);
+        await login();
       } catch {
         setErrorMessage('Failed to login. Please ensure you are using a CSULB account.');
-      } finally {
-        setIsLoading(false);
       }
     };
 

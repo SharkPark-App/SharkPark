@@ -69,8 +69,9 @@ export const loginWithAzure = async () => {
     if (!response.ok) {
       throw new Error('Error sending credentials to backend');
     }
-
+    // ID & access tokens
     return tokens;
+
   } catch (error) {
     console.error('Azure Login Failed:', error);
     throw error;
