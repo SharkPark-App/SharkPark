@@ -29,7 +29,7 @@ const ProfileScreen: React.FC = () => {
   useEffect(() => {
     // Background geofencing will automatically start when permissions are granted
     if (permissionStatus?.granted) {
-      console.log('[ProfileScreen] Location permissions granted, background geofencing available');
+      // Location permissions granted, background geofencing available
     }
   }, [permissionStatus]);
 
@@ -53,7 +53,7 @@ const ProfileScreen: React.FC = () => {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Open Settings', onPress: () => {
           // In a real app, you'd open device settings
-          console.log('Open device settings for location permissions');
+          // Open device settings for location permissions
           // Could use: Linking.openSettings();
         }},
       ]

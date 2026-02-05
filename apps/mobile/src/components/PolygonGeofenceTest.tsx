@@ -16,29 +16,7 @@ import { ACCESSIBILITY_CONSTANTS, TEST_CONSTANTS, UI_CONSTANTS } from '../consta
 import locationService from '../services/locationService';
 import { GeofenceRegion } from '../types/location';
 import { createTestPolygonGeofences, isPointInPolygon, calculatePolygonCenter, calculatePolygonArea } from '../utils/geofenceUtils';
-
-// Theme constants (simplified)
-const SPACING = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-};
-
-const TYPOGRAPHY = {
-  fontSize: {
-    sm: 12,
-    md: 16,
-    lg: 18,
-    xl: 24,
-  },
-  fontWeight: {
-    medium: '500' as const,
-    semiBold: '600' as const,
-    bold: '700' as const,
-  },
-};
+import { SPACING, TYPOGRAPHY } from '../constants/theme';
 
 export const PolygonGeofenceTest: React.FC = () => {
   const [isTestingPolygons, setIsTestingPolygons] = useState(false);
@@ -142,11 +120,11 @@ export const PolygonGeofenceTest: React.FC = () => {
     Alert.alert(
       'Polygon vs Circular Geofences',
       'Advantages of Polygon Geofences:\n\n' +
-      '✅ Exact parking lot boundaries\n' +
-      '✅ No overlap between adjacent lots\n' +
-      '✅ Handles irregular shapes (L-shaped, etc.)\n' +
-      '✅ Better accuracy for user experience\n' +
-      '✅ Matches real parking lot layouts\n\n' +
+      'Exact parking lot boundaries\n' +
+      'No overlap between adjacent lots\n' +
+      'Handles irregular shapes (L-shaped, etc.)\n' +
+      'Better accuracy for user experience\n' +
+      'Matches real parking lot layouts\n\n' +
       'Circular geofences often overlap and don\'t match the actual lot boundaries, leading to false triggers.',
       [{ text: 'Understood' }]
     );
@@ -282,7 +260,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semiBold,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
     marginBottom: SPACING.md,
   },
   button: {
@@ -328,7 +306,7 @@ const styles = StyleSheet.create({
   },
   geofenceName: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semiBold,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
     marginBottom: SPACING.xs,
   },
   geofenceDetails: {
@@ -376,7 +354,7 @@ const styles = StyleSheet.create({
   },
   explanationTitle: {
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.semiBold,
+    fontWeight: TYPOGRAPHY.fontWeight.semibold,
     marginBottom: SPACING.xs,
   },
   explanationText: {

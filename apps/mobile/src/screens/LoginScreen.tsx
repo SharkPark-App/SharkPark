@@ -48,7 +48,7 @@ export function LoginScreen({ onEmailSubmit }: LoginScreenProps) {
     setIsLoading(true);
     try {
       // TODO: Implement email verification API call
-      console.log('Sending verification to:', email);
+      // Sending verification email
       
       // Simulate API call
       await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));

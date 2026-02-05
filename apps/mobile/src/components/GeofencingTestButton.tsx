@@ -18,38 +18,26 @@ export const GeofencingTestButton: React.FC<GeofencingTestButtonProps> = ({
   if (!visible) return null;
 
   const simulateEntry = () => {
-    console.log('[GeofencingTestButton] Simulating ENTER event for lot_1');
-    console.warn('GEOFENCE TEST: Simulating ENTER for Lot 1');
     locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
   };
 
   const simulateExit = () => {
-    console.log('[GeofencingTestButton] Simulating EXIT event for lot_1'); 
-    console.warn('GEOFENCE TEST: Simulating EXIT for Lot 1');
     locationService.triggerTestGeofenceEvent('lot_1', 'EXIT');
   };
 
   const getCurrentLocation = () => {
-    console.log('[GeofencingTestButton] Getting current GPS coordinates...');
-    console.warn('GPS: Getting your current coordinates...');
-    
     // Use the locationService to get current position
     locationService.getCurrentPosition()
       .then((position: any) => {
         const { latitude, longitude } = position.coords;
-        console.warn(`YOUR COORDINATES: ${latitude}, ${longitude}`);
-        console.log(`[GeofencingTestButton] Current position: lat=${latitude}, lon=${longitude}, accuracy=${position.coords.accuracy}m`);
+        console.log(`Current coordinates: ${latitude}, ${longitude} (accuracy: ${position.coords.accuracy}m)`);
       })
       .catch((error: any) => {
         console.error('[GeofencingTestButton] Failed to get current position:', error);
-        console.warn('GPS: Failed to get coordinates - check location permissions');
       });
   };
 
   const testOfflineMode = () => {
-    console.log('[GeofencingTestButton] Testing offline geofence behavior...');
-    console.warn('OFFLINE TEST: Simulating network failure during geofence event');
-    
     // Temporarily break the API to simulate offline
     const originalRecordOccupancyEvent = require('../services/api').lotsApi.recordOccupancyEvent;
     require('../services/api').lotsApi.recordOccupancyEvent = () => {
@@ -62,7 +50,7 @@ export const GeofencingTestButton: React.FC<GeofencingTestButtonProps> = ({
     // Restore the API after 3 seconds
     setTimeout(() => {
       require('../services/api').lotsApi.recordOccupancyEvent = originalRecordOccupancyEvent;
-      console.warn('ONLINE: Network connection restored');
+      console.log('Network connection restored');
     }, 3000);
   };
 

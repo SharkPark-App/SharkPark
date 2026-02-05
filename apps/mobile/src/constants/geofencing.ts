@@ -51,12 +51,6 @@ export const TEST_CONSTANTS = {
     longitude: -118.1089,
   },
   
-  // Test house coordinates (for development)
-  TEST_HOME: {
-    latitude: 34.13443216920438,
-    longitude: -118.24689089657126,
-  },
-  
   // Test geofence settings
   TEST_RADIUS: GEOFENCE_CONSTANTS.RADIUS_TEST,
   TEST_LOT_ID: 'home_parking_lot',

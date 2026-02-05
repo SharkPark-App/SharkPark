@@ -92,8 +92,10 @@ export interface GetLotsParams {
 }
 
 export interface GetHistoryParams {
-  date?: string; // YYYY-MM-DD format
-  limit?: number; // Max 200
+  // YYYY-MM-DD format
+  date?: string; 
+  // Max 200
+  limit?: number; 
 }
 
 class LotsApiService {

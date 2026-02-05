@@ -15,10 +15,10 @@ export function createRectangularLotExample(): GeofenceRegion {
     geometry: {
       type: 'polygon',
       coordinates: [
-        { latitude: 26.3732, longitude: -80.1006 }, // Southwest corner
-        { latitude: 26.3740, longitude: -80.1006 }, // Northwest corner  
-        { latitude: 26.3740, longitude: -80.0998 }, // Northeast corner
-        { latitude: 26.3732, longitude: -80.0998 }, // Southeast corner
+        { latitude: 33.7830, longitude: -118.1120 }, // Southwest corner
+        { latitude: 33.7840, longitude: -118.1120 }, // Northwest corner  
+        { latitude: 33.7840, longitude: -118.1110 }, // Northeast corner
+        { latitude: 33.7830, longitude: -118.1110 }, // Southeast corner
       ],
     },
     notifyOnEntry: true,
@@ -34,12 +34,12 @@ export function createLShapedLotExample(): GeofenceRegion {
     geometry: {
       type: 'polygon',
       coordinates: [
-        { latitude: 26.3745, longitude: -80.1010 },
-        { latitude: 26.3755, longitude: -80.1010 },
-        { latitude: 26.3755, longitude: -80.1005 },
-        { latitude: 26.3750, longitude: -80.1005 }, // Inner corner
-        { latitude: 26.3750, longitude: -80.1000 },
-        { latitude: 26.3745, longitude: -80.1000 },
+        { latitude: 33.7845, longitude: -118.1130 },
+        { latitude: 33.7855, longitude: -118.1130 },
+        { latitude: 33.7855, longitude: -118.1120 },
+        { latitude: 33.7850, longitude: -118.1120 }, // Inner corner
+        { latitude: 33.7850, longitude: -118.1110 },
+        { latitude: 33.7845, longitude: -118.1110 },
       ],
     },
     notifyOnEntry: true,
@@ -55,11 +55,11 @@ export function createPolygonFromAPIData() {
     lot_name: 'Engineering Building Lot',
     display_name: 'Engineering Parking',
     boundary_coordinates: [
-      { latitude: 26.3760, longitude: -80.1015 },
-      { latitude: 26.3768, longitude: -80.1012 },
-      { latitude: 26.3770, longitude: -80.1005 },
-      { latitude: 26.3765, longitude: -80.1000 },
-      { latitude: 26.3760, longitude: -80.1008 },
+      { latitude: 33.7860, longitude: -118.1140 },
+      { latitude: 33.7868, longitude: -118.1135 },
+      { latitude: 33.7870, longitude: -118.1125 },
+      { latitude: 33.7865, longitude: -118.1120 },
+      { latitude: 33.7860, longitude: -118.1130 },
     ],
     // ... other API fields
   };
@@ -77,16 +77,14 @@ export async function setupPolygonGeofencingSystem() {
 
   // Set up event listener for polygon geofence events
   locationService.setOnGeofenceEvent((event) => {
-    console.log(`Polygon Geofence Event: ${event.eventType} - ${event.regionId}`);
-    
     // Handle the event (send to API, show notification, etc.)
     switch (event.eventType) {
       case 'ENTER':
-        console.log(`User entered polygon parking lot: ${event.regionId}`);
+        // User entered polygon parking lot
         // Send anonymous occupancy data
         break;
       case 'EXIT':
-        console.log(`User exited polygon parking lot: ${event.regionId}`);
+        // User exited polygon parking lot
         // Send anonymous departure data
         break;
     }
@@ -106,14 +104,14 @@ export function testPointInLot() {
 
   // Test various points
   const testPoints = [
-    { name: 'Center of lot', point: { latitude: 26.3736, longitude: -80.1002 } },
-    { name: 'Outside lot', point: { latitude: 26.3745, longitude: -80.1015 } },
-    { name: 'Near edge', point: { latitude: 26.3732, longitude: -80.1000 } },
+    { name: 'Center of lot', point: { latitude: 33.7835, longitude: -118.1115 } },
+    { name: 'Outside lot', point: { latitude: 33.7845, longitude: -118.1135 } },
+    { name: 'Near edge', point: { latitude: 33.7830, longitude: -118.1110 } },
   ];
 
   testPoints.forEach(({ name, point }) => {
     const isInside = isPointInPolygon(point, coordinates);
-    console.log(`${name}: ${isInside ? 'INSIDE' : 'OUTSIDE'} parking lot`);
+    // Test results: return { name, point, isInside } for production use
   });
 }
 
@@ -127,10 +125,10 @@ export function createRealisticParkingLots(): GeofenceRegion[] {
       geometry: {
         type: 'polygon',
         coordinates: [
-          { latitude: 26.3720, longitude: -80.1020 },
-          { latitude: 26.3730, longitude: -80.1020 },
-          { latitude: 26.3730, longitude: -80.1010 },
-          { latitude: 26.3720, longitude: -80.1010 },
+          { latitude: 33.7820, longitude: -118.1140 },
+          { latitude: 33.7830, longitude: -118.1140 },
+          { latitude: 33.7830, longitude: -118.1130 },
+          { latitude: 33.7820, longitude: -118.1130 },
         ],
       },
       notifyOnEntry: true,
@@ -144,12 +142,12 @@ export function createRealisticParkingLots(): GeofenceRegion[] {
       geometry: {
         type: 'polygon',
         coordinates: [
-          { latitude: 26.3740, longitude: -80.1030 },
-          { latitude: 26.3750, longitude: -80.1030 },
-          { latitude: 26.3750, longitude: -80.1020 },
-          { latitude: 26.3745, longitude: -80.1020 }, // Building cutout
-          { latitude: 26.3745, longitude: -80.1015 },
-          { latitude: 26.3740, longitude: -80.1015 },
+          { latitude: 33.7840, longitude: -118.1150 },
+          { latitude: 33.7850, longitude: -118.1150 },
+          { latitude: 33.7850, longitude: -118.1140 },
+          { latitude: 33.7845, longitude: -118.1140 }, // Building cutout
+          { latitude: 33.7845, longitude: -118.1135 },
+          { latitude: 33.7840, longitude: -118.1135 },
         ],
       },
       notifyOnEntry: true,
@@ -163,12 +161,12 @@ export function createRealisticParkingLots(): GeofenceRegion[] {
       geometry: {
         type: 'polygon',
         coordinates: [
-          { latitude: 26.3760, longitude: -80.1040 },
-          { latitude: 26.3770, longitude: -80.1035 }, // Curved boundary
-          { latitude: 26.3775, longitude: -80.1025 },
-          { latitude: 26.3770, longitude: -80.1015 },
-          { latitude: 26.3760, longitude: -80.1020 },
-          { latitude: 26.3755, longitude: -80.1030 },
+          { latitude: 33.7860, longitude: -118.1160 },
+          { latitude: 33.7870, longitude: -118.1155 }, // Curved boundary
+          { latitude: 33.7875, longitude: -118.1145 },
+          { latitude: 33.7870, longitude: -118.1135 },
+          { latitude: 33.7860, longitude: -118.1140 },
+          { latitude: 33.7855, longitude: -118.1150 },
         ],
       },
       notifyOnEntry: true,
@@ -196,23 +194,15 @@ export function compareCoverageExample() {
     notifyOnExit: true,
   };
 
-  console.log('Polygon vs Circular Geofence Comparison:');
-  console.log('=====================================');
-  console.log('Polygon Lot:', polygonLot.name);
-  console.log('- Exact boundaries match physical lot');
-  console.log('- No false triggers from adjacent areas');
-  console.log('- Handles rectangular shape precisely');
-  console.log('');
-  console.log('Circular Lot:', circularLot.name);
-  console.log('- 50m radius covers area beyond parking lot');
-  console.log('- May trigger from sidewalks, roads, other lots');
-  console.log('- Cannot match rectangular layout');
+  // Comparison between polygon and circular geofences:
+  // Polygon Lot: Exact boundaries match physical lot, no false triggers from adjacent areas
+  // Circular Lot: 50m radius covers area beyond parking lot, may trigger from sidewalks/roads
 
   // Test points to show difference
   const testPoints = [
-    { latitude: 26.3736, longitude: -80.1002 }, // Center - both should detect
-    { latitude: 26.3732, longitude: -80.1015 }, // Outside polygon, inside circle
-    { latitude: 26.3745, longitude: -80.1002 }, // Outside polygon, inside circle
+    { latitude: 33.7835, longitude: -118.1115 }, // Center - both should detect
+    { latitude: 33.7830, longitude: -118.1135 }, // Outside polygon, inside circle
+    { latitude: 33.7845, longitude: -118.1115 }, // Outside polygon, inside circle
   ];
 
   testPoints.forEach((point, index) => {
@@ -226,11 +216,8 @@ export function compareCoverageExample() {
     );
     const inCircle = distance <= 50;
 
-    console.log(`Test Point ${index + 1}:`);
-    console.log(`- Polygon detection: ${inPolygon ? 'INSIDE' : 'OUTSIDE'}`);
-    console.log(`- Circular detection: ${inCircle ? 'INSIDE' : 'OUTSIDE'}`);
-    console.log(`- Distance from center: ${distance.toFixed(1)}m`);
-    console.log('');
+    // Test results can be returned as data structure instead of console output
+    // For production use, return: { inPolygon, inCircle, distance }
   });
 }
 

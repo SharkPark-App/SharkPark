@@ -76,7 +76,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     const handleGeofenceEvent = async (event: any) => {
       if (event.eventType === 'ENTER') {
         Alert.alert(
-          '🅿Entered Parking Lot',
+          'Entered Parking Lot',
           `Welcome to ${event.regionId}!\n\nYour anonymous entry has been recorded.`,
           [{ text: 'OK' }]
         );
@@ -117,7 +117,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
 
     // Assert: Alert should be shown
     expect(mockAlert).toHaveBeenCalledWith(
-      '🅿Entered Parking Lot',
+      'Entered Parking Lot',
       'Welcome to lot_1!\n\nYour anonymous entry has been recorded.',
       [{ text: 'OK' }]
     );

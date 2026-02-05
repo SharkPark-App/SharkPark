@@ -42,17 +42,17 @@ export const useLocationService = (): UseLocationServiceReturn => {
   // Set up event listeners
   useEffect(() => {
     locationService.setOnGeofenceEvent((event: GeofenceEvent) => {
-      console.log('[useLocationService] Geofence event:', event);
+      // Geofence event received
       setLastGeofenceEvent(event);
     });
 
     locationService.setOnLocationError((error: LocationError) => {
-      console.log('[useLocationService] Location error:', error);
+      // Location error
       setLastError(error);
     });
 
     locationService.setOnPermissionChange((status: LocationPermissionStatus) => {
-      console.log('[useLocationService] Permission changed:', status);
+      // Permission status changed
       setPermissionStatus(status);
     });
 

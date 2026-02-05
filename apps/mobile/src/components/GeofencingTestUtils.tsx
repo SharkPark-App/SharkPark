@@ -26,7 +26,7 @@ export const GeofencingTestUtils: React.FC = () => {
     };
 
     // Use the proper locationService method to trigger events
-    console.log('[GeofencingTestUtils] Triggering test geofence event:', event);
+    // Triggering test geofence event
     locationService.triggerTestGeofenceEvent(testLotId, testEventType);
     
     Alert.alert(

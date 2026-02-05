@@ -56,28 +56,27 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
 
   const initializeGeofencing = async () => {
     try {
-      console.log('[GeofencingIntegration] Setting up geofencing for', lots.length, 'lots');
 
       // Convert parking lot data to geofence regions
       const allRegions = createGeofenceRegionsFromLots(lots);
-      console.log('[GeofencingIntegration] Created', allRegions.length, 'geofence regions');
+      // Created geofence regions
 
       // Prioritize regions (limit to platform constraints)
       const prioritizedRegions = prioritizeGeofenceRegions(allRegions, GEOFENCE_CONSTANTS.MAX_REGIONS_IOS);
-      console.log('[GeofencingIntegration] Using', prioritizedRegions.length, 'prioritized regions');
+      // Using prioritized regions
 
       // Add regions to location service
       addGeofenceRegions(prioritizedRegions);
 
       setIsInitialized(true);
-      console.log('[GeofencingIntegration] Geofencing initialized successfully');
+      // Geofencing initialized successfully
     } catch (error) {
       console.error('[GeofencingIntegration] Failed to initialize geofencing:', error);
     }
   };
 
   const handleGeofenceEvent = (event: GeofenceEvent) => {
-    console.log('[GeofencingIntegration] Geofence event:', event);
+    // Geofence event received
 
     // Find the lot info
     const lot: ParkingLotResponse | undefined = lots.find((l: ParkingLotResponse) => l.lot_id === event.regionId);
@@ -114,14 +113,6 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
 
   const sendOccupancyEvent = async (lotId: string, eventType: 'ENTER' | 'EXIT') => {
     try {
-      console.log('[GeofencingIntegration] Sending occupancy event:', {
-        lotId,
-        eventType,
-        timestamp: new Date().toISOString(),
-        source: 'GEOFENCE',
-        // NO user coordinates or identifiers!
-      });
-
       // Send anonymous occupancy event to backend
       await lotsApi.recordOccupancyEvent({ 
         lotId, 
@@ -129,7 +120,7 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
         source: 'GEOFENCE' 
       });
       
-      console.log('[GeofencingIntegration] Successfully sent occupancy event');
+      // Successfully sent occupancy event
     } catch (error) {
       console.error('[GeofencingIntegration] Failed to send occupancy event:', error);
     }

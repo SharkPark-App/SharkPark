@@ -152,7 +152,7 @@ class LocationService {
       this.geofenceRegions.set(region.id, region);
     });
 
-    console.log(`[LocationService] Added ${regionsToAdd.length} geofence regions`);
+    // Added geofence regions
     
     // Start monitoring if not already tracking
     if (!this.isTracking) {
@@ -164,13 +164,13 @@ class LocationService {
    * Start privacy-focused location tracking
    */
   async startLocationTracking(): Promise<boolean> {
-    console.log('[LocationService] 🚀 Starting location tracking...');
+    // Starting location tracking
     
     const permission = await this.requestLocationPermission();
-    console.log('[LocationService] 📍 Permission result:', permission);
+    // Check permission result
     
     if (!permission.granted) {
-      console.error('[LocationService] ❌ Permission denied');
+      console.error('[LocationService] Permission denied');
       this.onLocationError?.({
         code: 'PERMISSION_DENIED',
         message: MESSAGE_CONSTANTS.ERRORS.PERMISSION_DENIED
@@ -178,7 +178,7 @@ class LocationService {
       return false;
     }
 
-    console.log('[LocationService] ✅ Permission granted, starting watch...');
+    // Permission granted, starting watch
     this.isTracking = true;
     this.watchId = Geolocation.watchPosition(
       this.handleLocationUpdate.bind(this),
@@ -192,8 +192,7 @@ class LocationService {
       }
     );
 
-    console.log('[LocationService] ⏰ Watch ID created:', this.watchId);
-    console.log('[LocationService] Started location tracking');
+    // Started location tracking
     return true;
   }
 
@@ -207,18 +206,14 @@ class LocationService {
     }
     
     this.isTracking = false;
-    console.log('[LocationService] Stopped location tracking');
+    // Stopped location tracking
   }
 
   /**
    * Handle location updates and check geofences (PRIVACY FIRST)
    */
   private handleLocationUpdate = (position: any) => {
-    console.log('[LocationService] 📍 Location update received:', {
-      lat: position.coords.latitude.toFixed(6), 
-      lon: position.coords.longitude.toFixed(6),
-      accuracy: position.coords.accuracy
-    });
+    // Location update received
     
     const currentTime = Date.now();
     const newPosition = {
@@ -256,14 +251,14 @@ class LocationService {
           isInside = distance <= region.geometry.radius;
           
           // Debug logging for circular geofences
-          console.log(`[LocationService] Region ${regionId} (circle): distance=${distance.toFixed(1)}m, radius=${region.geometry.radius}m, isInside=${isInside}`);
+          // Circle geofence detection
           
         } else if (region.geometry.type === 'polygon' && region.geometry.coordinates) {
           // Use polygon point-in-polygon detection
           isInside = this.isPointInPolygon(position, region.geometry.coordinates);
           
           // Debug logging for polygon geofences
-          console.log(`[LocationService] Region ${regionId} (polygon): ${region.geometry.coordinates.length} vertices, isInside=${isInside}`);
+          // Polygon geofence detection
           
         } else {
           console.warn(`[LocationService] Unsupported geofence geometry type for region ${regionId}`);
@@ -282,7 +277,7 @@ class LocationService {
           isInside = distance <= legacyRegion.radius;
           
           // Debug logging for legacy geofences
-          console.log(`[LocationService] Region ${regionId} (legacy): distance=${distance.toFixed(1)}m, radius=${legacyRegion.radius}m, isInside=${isInside}`);
+          // Legacy geofence detection
         } else {
           console.warn(`[LocationService] Invalid geofence format for region ${regionId}`);
           return;
@@ -300,7 +295,7 @@ class LocationService {
         };
         this.currentRegions.add(regionId); // Track that user is now inside
         this.notifyGeofenceListeners(event);
-        console.log(`[LocationService] ENTER ${region.name} (anonymous)`);
+        // ENTER event (anonymous)
       } else if (!isInside && wasInside && region.notifyOnExit) {
         // EXIT event - NO coordinates transmitted!
         const event: GeofenceEvent = {
@@ -310,7 +305,7 @@ class LocationService {
         };
         this.currentRegions.delete(regionId); // Track that user is no longer inside
         this.notifyGeofenceListeners(event);
-        console.log(`[LocationService] EXIT ${region.name} (anonymous)`);
+        // EXIT event (anonymous)
       }
     });
   }
@@ -368,7 +363,7 @@ class LocationService {
         locationProvider: 'auto'
       });
     }
-    console.log('[LocationService] Background tracking enabled');
+    // Background tracking enabled
   }
 
   private disableBackgroundTracking() {
@@ -380,7 +375,7 @@ class LocationService {
         locationProvider: 'auto'
       });
     }
-    console.log('[LocationService] Background tracking disabled');
+    // Background tracking disabled
   }
 
   private updateLocationConfiguration() {
@@ -422,12 +417,12 @@ class LocationService {
    * Event listeners for privacy-compliant events
    */
   setOnGeofenceEvent(callback: (event: GeofenceEvent) => void) {
-    console.log('[LocationService] Adding geofence event listener');
+    // Adding geofence event listener
     this.onGeofenceEventListeners.push(callback);
   }
 
   removeOnGeofenceEvent(callback: (event: GeofenceEvent) => void) {
-    console.log('[LocationService] Removing geofence event listener');
+    // Removing geofence event listener
     const index = this.onGeofenceEventListeners.indexOf(callback);
     if (index > -1) {
       this.onGeofenceEventListeners.splice(index, 1);
@@ -435,7 +430,7 @@ class LocationService {
   }
 
   private notifyGeofenceListeners(event: GeofenceEvent) {
-    console.log(`[LocationService] Notifying ${this.onGeofenceEventListeners.length} geofence listeners:`, event);
+    // Notifying geofence listeners
     this.onGeofenceEventListeners.forEach(listener => {
       try {
         listener(event);
@@ -495,7 +490,7 @@ class LocationService {
     return new Promise((resolve, reject) => {
       Geolocation.getCurrentPosition(
         (position) => {
-          console.log('[LocationService] Got current position:', position);
+          // Got current position
           resolve(position);
         },
         (error) => {
@@ -526,7 +521,7 @@ class LocationService {
       timestamp: new Date().toISOString(),
     };
 
-    console.log('[LocationService] Triggering test geofence event:', event);
+    // Triggering test geofence event
     this.notifyGeofenceListeners(event);
   }
 
