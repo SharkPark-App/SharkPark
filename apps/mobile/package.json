@@ -13,12 +13,14 @@
     "postinstall": "test -n \"$CI\" || (cd ios && pod install && cd ..)"
   },
   "dependencies": {
+    "@react-native-community/geolocation": "^3.4.0",
     "@react-native/new-app-screen": "0.82.1",
     "@react-navigation/bottom-tabs": "^7.8.12",
     "@react-navigation/native": "^7.1.25",
     "@react-navigation/stack": "^7.6.12",
     "react": "19.1.1",
     "react-native": "0.82.1",
+    "react-native-background-timer": "^2.4.1",
     "react-native-gesture-handler": "^2.29.1",
     "react-native-reanimated": "^4.2.1",
     "react-native-safe-area-context": "^5.6.2",

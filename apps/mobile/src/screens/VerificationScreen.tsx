@@ -58,7 +58,6 @@ export function VerificationScreen({ email, onBack, onVerificationSuccess }: Ver
     setIsLoading(true);
     try {
       // TODO: Implement verification API call
-      console.log('Verifying code:', codeToVerify, 'for email:', email);
       
       // Simulate API call
       await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
@@ -80,7 +79,6 @@ export function VerificationScreen({ email, onBack, onVerificationSuccess }: Ver
 
     try {
       // TODO: Implement resend API call
-      console.log('Resending code to:', email);
       
       // Simulate API call
       await new Promise<void>(resolve => setTimeout(() => resolve(), 500));

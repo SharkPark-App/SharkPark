@@ -13,13 +13,13 @@ export function NetworkTest() {
     setResult(null);
     
     try {
-      console.log('Testing API connection to:', API_CONFIG.BASE_URL);
+      // Testing API connection
       
       // Simple fetch test first
       const response = await fetch(`${API_CONFIG.BASE_URL.replace('/api/v1', '')}/api/v1/health`);
       const healthData = await response.text();
       
-      console.log('Health check response:', healthData);
+      // Health check successful
       setResult(`Connection successful!\nHealth: ${healthData}`);
       
     } catch (error) {
@@ -37,9 +37,9 @@ export function NetworkTest() {
     setResult(null);
     
     try {
-      console.log('Testing lots API...');
+      // Testing lots API
       const response = await apiService.get('/lots');
-      console.log('Lots API response:', response);
+      // Lots API successful
       
       setResult(`Lots API successful!\nFound ${response.count || 0} parking lots`);
       
