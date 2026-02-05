@@ -2,6 +2,7 @@
  * Polygon Geofence Test Component
  * Demonstrates polygon vs circular geofence comparison for parking lots
  */
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 
 import React, { useState, useEffect } from 'react';
 import {

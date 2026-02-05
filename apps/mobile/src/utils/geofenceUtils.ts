@@ -2,6 +2,7 @@
  * Geofence Setup Utilities
  * Convert parking lot data to privacy-focused geofence regions
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { GeofenceRegion } from '../types/location';
 import { ParkingLotResponse } from '../services/api/lots';

@@ -2,6 +2,7 @@
  * Geofencing Test Utilities
  * Tools for testing geofencing without physical movement
  */
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Button, Alert, TextInput } from 'react-native';

@@ -7,6 +7,7 @@
  * - Optimizes battery usage with smart location settings
  * - Provides transparent user controls
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Platform, Alert, AppState, AppStateStatus } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';

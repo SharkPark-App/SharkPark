@@ -4,7 +4,7 @@
  */
 
 export default {
-  getCurrentPosition: jest.fn((success, error, options) => {
+  getCurrentPosition: jest.fn((success) => {
     // Mock successful location response
     const mockPosition = {
       coords: {
@@ -24,7 +24,7 @@ export default {
     }
   }),
   
-  watchPosition: jest.fn((success, error, options) => {
+  watchPosition: jest.fn((success) => {
     // Mock successful location response
     const mockPosition = {
       coords: {

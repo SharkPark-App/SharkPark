@@ -2,6 +2,7 @@
  * Polygon Geofence Test Suite
  * Validates polygon-based geofence detection and point-in-polygon algorithms
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 // Mock React Native modules first
 jest.mock('@react-native-community/geolocation', () => ({

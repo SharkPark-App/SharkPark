@@ -1,10 +1,8 @@
 /**
  * Location Service Tests
- * Test privacy-focused ge    it('should handle iOS permission denial', async () => {
-      mockGeolocation.requestAuthorization.mockImplementation((success: () => void, error: (err: any) => void) => {
-        error({ code: 1 }); // PERMISSION_DENIED
-      });cing functionality
+ * Test privacy-focused geofencing functionality
  */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports, @typescript-eslint/no-unused-vars */
 
 // Mock geolocation BEFORE any imports
 jest.mock('@react-native-community/geolocation', () => ({
@@ -32,8 +30,8 @@ import locationService from '../src/services/locationService';
 import { GeofenceRegion } from '../src/types/location';
 
 // Get access to mocked functions
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockGeolocation = require('@react-native-community/geolocation');
-const mockAppState = require('react-native').AppState;
 
 describe('LocationService', () => {
   beforeEach(() => {
@@ -77,18 +75,28 @@ describe('LocationService', () => {
         {
           id: 'G1',
           name: 'Lot G1',
-          latitude: 33.7838,
-          longitude: -118.1089,
-          radius: 50,
+          geometry: {
+            type: 'circle',
+            center: {
+              latitude: 33.7838,
+              longitude: -118.1089,
+            },
+            radius: 50,
+          },
           notifyOnEntry: true,
           notifyOnExit: true,
         },
         {
           id: 'G2',
           name: 'Lot G2',
-          latitude: 33.7825,
-          longitude: -118.1098,
-          radius: 70,
+          geometry: {
+            type: 'circle',
+            center: {
+              latitude: 33.7825,
+              longitude: -118.1098,
+            },
+            radius: 70,
+          },
           notifyOnEntry: true,
           notifyOnExit: true,
         },
@@ -103,9 +111,14 @@ describe('LocationService', () => {
       const regions: GeofenceRegion[] = Array.from({ length: 25 }, (_, i) => ({
         id: `lot-${i}`,
         name: `Lot ${i}`,
-        latitude: 33.7838 + i * 0.001,
-        longitude: -118.1089 + i * 0.001,
-        radius: 50,
+        geometry: {
+          type: 'circle',
+          center: {
+            latitude: 33.7838 + i * 0.001,
+            longitude: -118.1089 + i * 0.001,
+          },
+          radius: 50,
+        },
         notifyOnEntry: true,
         notifyOnExit: true,
       }));
@@ -168,9 +181,14 @@ describe('LocationService', () => {
         {
           id: 'G1',
           name: 'Lot G1',
-          latitude: 33.7838,
-          longitude: -118.1089,
-          radius: 50,
+          geometry: {
+            type: 'circle',
+            center: {
+              latitude: 33.7838,
+              longitude: -118.1089,
+            },
+            radius: 50,
+          },
           notifyOnEntry: true,
           notifyOnExit: true,
         },

@@ -2,6 +2,7 @@
  * SimpleGeofencingProvider Integration Test
  * Tests the actual component that handles database updates
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 // Mock React Native modules first
 jest.mock('@react-native-community/geolocation', () => ({
@@ -30,7 +31,6 @@ jest.mock('react-native', () => {
   };
 });
 
-import React from 'react';
 import locationService from '../src/services/locationService';
 import { lotsApi } from '../src/services/api';
 import { Alert } from 'react-native';
@@ -52,9 +52,19 @@ jest.mock('../src/hooks/useLocationService', () => ({
 }));
 
 // Import after mocking
-import { SimpleGeofencingProvider } from '../src/context/SimpleGeofencingProvider';
+// SimpleGeofencingProvider is tested through integration tests
 
 describe('SimpleGeofencingProvider Database Integration', () => {
+  // Type definition for geofence events
+  interface GeofenceEvent {
+    eventType: 'ENTER' | 'EXIT';
+    regionId: string;
+    coordinates?: {
+      latitude: number;
+      longitude: number;
+    };
+  }
+
   const mockRecordOccupancyEvent = lotsApi.recordOccupancyEvent as jest.MockedFunction<
     typeof lotsApi.recordOccupancyEvent
   >;
@@ -73,7 +83,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     // This simulates what happens when SimpleGeofencingProvider is mounted
     
     // Arrange: Set up the same listener logic as SimpleGeofencingProvider
-    const handleGeofenceEvent = async (event: any) => {
+    const handleGeofenceEvent = async (event: GeofenceEvent) => {
       if (event.eventType === 'ENTER') {
         Alert.alert(
           'Entered Parking Lot',
@@ -103,7 +113,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
       }
     };
 
-    const geofenceListener = (event: any) => {
+    const geofenceListener = (event: GeofenceEvent) => {
       handleGeofenceEvent(event);
     };
 
@@ -133,7 +143,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
 
   it('should update database for EXIT events', async () => {
     // Arrange: Set up the same listener logic as SimpleGeofencingProvider
-    const handleGeofenceEvent = async (event: any) => {
+    const handleGeofenceEvent = async (event: GeofenceEvent) => {
       if (event.eventType === 'EXIT') {
         Alert.alert(
           'Left Parking Lot',
@@ -149,7 +159,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
       }
     };
 
-    locationService.setOnGeofenceEvent((event: any) => {
+    locationService.setOnGeofenceEvent((event: GeofenceEvent) => {
       handleGeofenceEvent(event);
     });
 
@@ -177,7 +187,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
 
   it('should handle multiple events and update database for each', async () => {
     // Arrange
-    const handleGeofenceEvent = async (event: any) => {
+    const handleGeofenceEvent = async (event: GeofenceEvent) => {
       await lotsApi.recordOccupancyEvent({ 
         lotId: event.regionId, 
         eventType: event.eventType, 
@@ -222,7 +232,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     mockRecordOccupancyEvent.mockRejectedValue(new Error('Database error'));
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const handleGeofenceEvent = async (event: any) => {
+    const handleGeofenceEvent = async (event: GeofenceEvent) => {
       try {
         await lotsApi.recordOccupancyEvent({ 
           lotId: event.regionId, 

@@ -2,6 +2,7 @@
  * Geofencing Test Button - Development Only
  * Simple test button to simulate geofencing events for testing
  */
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports */
 
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
