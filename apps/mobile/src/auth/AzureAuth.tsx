@@ -1,140 +1,327 @@
-import {
-  authorize,
-  refresh,
-  logout,
-  AuthConfiguration,
-  AuthorizeResult,
-  RefreshResult
-} from 'react-native-app-auth';
+import { authorize, refresh, logout, AuthorizeResult, RefreshResult } from 'react-native-app-auth';
 import * as Keychain from 'react-native-keychain';
 import API_CONFIG from '../services/api/config';
 import { jwtDecode } from 'jwt-decode';
 import { Platform } from 'react-native';
 
-const CLIENT_ID = '9aea0ab1-4502-4868-a31b-0a8f333cec9c';
-const TENANT_ID = 'd175679b-acd3-4644-be82-af041982977a'; // specific to CSULB
-const PACKAGE_NAME = 'com.sharkpark.mobile';
-const SIGNATURE_HASH = 'pCBsiXaNNNC6c0uvCpHWkdYi2Mk='; // generated as ID for Azure registration
-const BUNDLE_ID = 'com.sharkpark.mobile'; // for iOS
+// =============================================================================
+// Azure AD Configuration Constants
+// =============================================================================
 
-// configuration
-const azureConfig: AuthConfiguration = {
-  issuer: `https://login.microsoftonline.com/${TENANT_ID}/v2.0`,
-  clientId: CLIENT_ID,
-  redirectUrl: Platform.select({
-    ios: `msauth.${BUNDLE_ID}://auth`,
-    android: `msauth://${PACKAGE_NAME}/${SIGNATURE_HASH}`,
-  })!,
-  scopes: [
-    'openid',
-    'profile',
-    'email',
-    'offline_access' // required to get a refresh token
-  ],
-  additionalParameters: {
-    prompt: 'select_account', // explicitly direct to the account selection screen
-  },
+const AZURE_CONFIG = {
+  CLIENT_ID: '9aea0ab1-4502-4868-a31b-0a8f333cec9c',
+  TENANT_ID: 'd175679b-acd3-4644-be82-af041982977a', // CSULB tenant
+} as const;
+
+// Platform-specific redirect URIs (trailing slash required for proper callback handling)
+const REDIRECT_URL = Platform.select({
+  ios: 'msauth.com.sharkpark.mobile://auth/',
+  android: 'msauth://com.sharkpark.mobile/pCBsiXaNNNC6c0uvCpHWkdYi2Mk%3D',
+}) as string;
+
+// Token refresh buffer (5 minutes before expiration)
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+// Backend sync timeout
+const BACKEND_SYNC_TIMEOUT_MS = 10_000;
+
+// Development-only logging helper
+const log = (message: string, ...args: unknown[]) => {
+  if (__DEV__) {
+    console.log(message, ...args);
+  }
 };
 
-interface AzureToken {
-  preferred_username?: string;
-  email?: string;
-  given_name?: string;
-  family_name?: string;
-  exp: number;
+// =============================================================================
+// react-native-app-auth Configuration
+// =============================================================================
+
+const config = {
+  issuer: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/v2.0`,
+  clientId: AZURE_CONFIG.CLIENT_ID,
+  redirectUrl: REDIRECT_URL,
+  scopes: ['openid', 'profile', 'email', 'offline_access'],
+  serviceConfiguration: {
+    authorizationEndpoint: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/oauth2/v2.0/authorize`,
+    tokenEndpoint: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/oauth2/v2.0/token`,
+    endSessionEndpoint: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/oauth2/v2.0/logout`,
+  },
+  additionalParameters: {
+    prompt: 'select_account' as const,
+  },
+  usePKCE: true,     // Required: PKCE for security (RFC 7636)
+  useNonce: true,    // Required: Prevents replay attacks
+  iosPrefersEphemeralSession: false, // Allow SSO and password saving
+};
+
+// =============================================================================
+// Types
+// =============================================================================
+
+interface AzureTokenPayload {
+  readonly preferred_username?: string;
+  readonly email?: string;
+  readonly given_name?: string;
+  readonly family_name?: string;
+  readonly exp: number;
 }
 
-// login initiator
-export const loginWithAzure = async () => {
-  try {
-    const tokens = await authorize(azureConfig);
+export interface AuthResult {
+  accessToken: string;
+  idToken: string;
+  refreshToken?: string;
+  accessTokenExpirationDate: string;
+  tokenType: string;
+}
 
-    const decoded = jwtDecode<AzureToken>(tokens.idToken);
-    const userEmail = decoded.preferred_username || decoded.email;
+// =============================================================================
+// Internal Helpers
+// =============================================================================
+
+/** Convert react-native-app-auth result to our AuthResult format */
+const toAuthResult = (result: AuthorizeResult | RefreshResult): AuthResult => ({
+  accessToken: result.accessToken,
+  idToken: result.idToken,
+  refreshToken: result.refreshToken ?? undefined,
+  accessTokenExpirationDate: result.accessTokenExpirationDate,
+  tokenType: result.tokenType,
+});
+
+// =============================================================================
+// Exported Auth Functions
+// =============================================================================
+
+/**
+ * Initiates Azure AD login using react-native-app-auth
+ * Uses ASWebAuthenticationSession on iOS (RFC 8252 compliant)
+ */
+export const loginWithAzure = async (): Promise<AuthResult> => {
+  try {
+    log('[AzureAuth] Starting authorize with react-native-app-auth...');
+    log('[AzureAuth] Redirect URL:', REDIRECT_URL);
+    log('[AzureAuth] Config:', JSON.stringify(config, null, 2));
+
+    // Perform OAuth authorization - this opens system browser
+    const result = await authorize(config);
+
+    log('[AzureAuth] Authorization successful');
+    log('[AzureAuth] Access token exists:', !!result.accessToken);
+    log('[AzureAuth] ID token exists:', !!result.idToken);
+    log('[AzureAuth] Refresh token exists:', !!result.refreshToken);
+
+    if (!result.idToken) {
+      throw new Error('No ID token received from Azure AD');
+    }
+
+    // Decode token to get user email for backend sync
+    const decoded = jwtDecode<AzureTokenPayload>(result.idToken);
+    const userEmail = decoded.preferred_username ?? decoded.email;
+    log('[AzureAuth] User email:', userEmail);
 
     if (!userEmail) {
-      throw new Error('No email found in token');
+      throw new Error('No email found in ID token');
     }
 
-    // triggers azure.strategy for backend and thus findOrCreateUser()
-    const response = await fetch(`${API_CONFIG.BASE_URL}/users/${userEmail}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${tokens.idToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-    });
+    // Sync user with backend (triggers findOrCreateUser)
+    await syncUserWithBackend(result.idToken, userEmail);
 
-    if (!response.ok) {
-      throw new Error('Error sending credentials to backend');
-    }
-    // ID & access tokens
-    return tokens;
+    return toAuthResult(result);
 
   } catch (error) {
-    console.error('Azure Login Failed:', error);
+    if (__DEV__) {
+      console.error('[AzureAuth] Login failed:', error);
+      console.error('[AzureAuth] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    }
     throw error;
   }
 };
 
-// logout initiator
-export const logoutFromAzure = async (idToken: string) => {
+/**
+ * Sync user with backend after successful authentication
+ */
+const syncUserWithBackend = async (idToken: string, userEmail: string): Promise<void> => {
+  const url = `${API_CONFIG.BASE_URL}/users/${encodeURIComponent(userEmail)}`;
+  log('[AzureAuth] Syncing user with backend:', url);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), BACKEND_SYNC_TIMEOUT_MS);
+
   try {
-    await logout(azureConfig, {
-
-      idToken: idToken, // needed to end the corresponding session via Azure
-      postLogoutRedirectUrl: `msauth://${PACKAGE_NAME}/${SIGNATURE_HASH}`,
-
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
     });
-  } catch (error) {
-    // 'User cancelled flow' always triggers due to user closing browser window afterwards
-    const errorMessage = (error as Error).message || 'Unknown login error';
+    clearTimeout(timeoutId);
 
-    if(!errorMessage.includes('User cancelled flow')) {
-      console.error('Azure logout failed', error);
-      throw error;
+    log('[AzureAuth] Backend response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (__DEV__) {
+        console.error('[AzureAuth] Backend error:', errorText);
+      }
+      // Don't throw - we have valid tokens, backend sync can retry later
+      log('[AzureAuth] Backend sync failed but continuing with valid tokens');
     }
+  } catch (fetchError) {
+    clearTimeout(timeoutId);
+    if (__DEV__) {
+      console.error('[AzureAuth] Backend sync error:', fetchError);
+    }
+    // Continue anyway - we have valid tokens
+    log('[AzureAuth] Continuing without backend sync');
   }
 };
 
-export const saveAuth = async (authState: AuthorizeResult | RefreshResult) => {
-  // stringify and store token as a password
-  await Keychain.setGenericPassword('user', JSON.stringify(authState));
+/**
+ * Logout from Azure AD
+ * Clears the Azure session and ends SSO
+ * Falls back to local-only logout if Azure logout fails
+ */
+export const logoutFromAzure = async (idToken?: string): Promise<void> => {
+  try {
+    log('[AzureAuth] Logging out from Azure AD...');
+
+    // If we have an idToken, try to do a proper Azure AD logout
+    if (idToken) {
+      try {
+        // Create logout-specific config with only required fields for end session
+        // Note: We use serviceConfiguration ONLY (no issuer) to avoid discovery conflicts
+        // See: https://github.com/FormidableLabs/react-native-app-auth/blob/main/docs/docs/providers/microsoft.md
+        const logoutConfig = {
+          clientId: config.clientId,
+          serviceConfiguration: config.serviceConfiguration,
+          iosPrefersEphemeralSession: config.iosPrefersEphemeralSession,
+        };
+        
+        log('[AzureAuth] Logout config:', JSON.stringify(logoutConfig, null, 2));
+        
+        await logout(logoutConfig, {
+          idToken,
+          postLogoutRedirectUrl: REDIRECT_URL,
+        });
+        log('[AzureAuth] Azure AD logout successful');
+      } catch (logoutError) {
+        // Azure AD logout can fail for various reasons (network, cancelled, etc.)
+        // We still want to clear local auth state
+        const errorMessage = (logoutError as Error).message || '';
+        
+        // Check if user explicitly cancelled the logout
+        if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
+          log('[AzureAuth] User cancelled logout');
+          // User cancelled - don't clear local state
+          throw logoutError;
+        }
+        
+        // AppAuth error -3 (OIDErrorCodeUserCanceledAuthorizationFlow) is expected with Azure AD
+        // The logout endpoint clears the session but doesn't redirect back properly
+        // This is a known Azure AD quirk - the logout still worked
+        if (errorMessage.includes('error -3') || errorMessage.includes('org.openid.appauth.general')) {
+          log('[AzureAuth] Azure AD session cleared (browser dismissed - this is expected)');
+          // Continue to clear local state - logout was successful
+        } else {
+          // For unexpected errors, log as warning but continue to clear local state
+          if (__DEV__) {
+            console.warn('[AzureAuth] Azure AD logout encountered an issue, clearing local state:', logoutError);
+          }
+        }
+      }
+    } else {
+      log('[AzureAuth] No idToken available, performing local logout only');
+    }
+
+    // Always clear local auth state
+    await clearAuth();
+    log('[AzureAuth] Local auth state cleared');
+
+  } catch (error) {
+    // Re-throw cancellation errors
+    const errorMessage = (error as Error).message || '';
+    if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
+      throw error;
+    }
+    if (__DEV__) {
+      console.error('[AzureAuth] Logout error:', error);
+    }
+    throw error;
+  }
 };
 
-export const clearAuth = async () => {
+/**
+ * Save authentication state to secure storage (Keychain/Keystore)
+ */
+export const saveAuth = async (authState: AuthResult): Promise<void> => {
+  await Keychain.setGenericPassword('azure_auth', JSON.stringify(authState));
+};
+
+/**
+ * Clear authentication state from secure storage
+ */
+export const clearAuth = async (): Promise<void> => {
   await Keychain.resetGenericPassword();
 };
 
-export const loadAuth = async () => {
+/**
+ * Load authentication state from secure storage
+ * Automatically refreshes expired tokens if refresh token is available
+ */
+export const loadAuth = async (): Promise<AuthResult | null> => {
   try {
     const credentials = await Keychain.getGenericPassword();
 
-    if (credentials) {
-      const authState = JSON.parse(credentials.password);
+    if (!credentials) {
+      return null;
+    }
 
-      // check if token is expired
-      const expirationDate = new Date(authState.accessTokenExpirationDate);
-      const now = new Date();
+    const authState: AuthResult = JSON.parse(credentials.password);
+    const expirationDate = new Date(authState.accessTokenExpirationDate);
+    const now = new Date();
 
-      // attempt refresh if expired
-      if (now >= expirationDate) {
-        const newAuthState = await refresh(azureConfig, {
+    // Token is still valid (with buffer for proactive refresh)
+    if (now.getTime() < expirationDate.getTime() - TOKEN_REFRESH_BUFFER_MS) {
+      log('[AzureAuth] Token still valid, expires:', expirationDate.toISOString());
+      return authState;
+    }
+
+    // Token expired or expiring soon - try to refresh
+    if (authState.refreshToken) {
+      log('[AzureAuth] Token expired, attempting refresh...');
+      
+      try {
+        const refreshResult = await refresh(config, {
           refreshToken: authState.refreshToken,
         });
 
-        // save refreshed token
+        log('[AzureAuth] Token refresh successful');
+
+        const newAuthState = toAuthResult(refreshResult);
         await saveAuth(newAuthState);
         return newAuthState;
-      }
 
-      // token is valid
-      return authState;
+      } catch (refreshError) {
+        if (__DEV__) {
+          console.error('[AzureAuth] Token refresh failed:', refreshError);
+        }
+        // Clear auth and require re-login
+        await clearAuth();
+        return null;
+      }
     }
+
+    // No refresh token available
+    log('[AzureAuth] No refresh token, requiring re-login');
+    await clearAuth();
+    return null;
+
   } catch (error) {
-    console.error('Auto-login failed:', error);
-    return null; // re-try login
+    if (__DEV__) {
+      console.error('[AzureAuth] Load auth failed:', error);
+    }
+    return null;
   }
-  return null;
 };

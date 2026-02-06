@@ -18,4 +18,10 @@ if (__DEV__) {
   };
 }
 
+// Register the main app component
 AppRegistry.registerComponent(appName, () => App);
+
+// Ensure HMR client is properly registered for hot module replacement
+if (__DEV__ && module.hot) {
+  module.hot.accept();
+}

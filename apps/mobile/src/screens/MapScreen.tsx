@@ -19,7 +19,7 @@ import { LotFilterModal } from '../components/Modals/FilterModal';
 import { TYPOGRAPHY, SPACING, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
-import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -156,7 +156,6 @@ const MapScreen: React.FC = () => {
     ],
   }));
 
-
   const handleLotPress = (lot: ParkingLotUI) => {
     // Navigate to ShortTermForecastScreen with lot data
     navigation.navigate('Short Term Forecast', { 
@@ -195,36 +194,34 @@ const MapScreen: React.FC = () => {
       />
 
       <View style={{ flex: 1, overflow: 'hidden' }}>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <GestureDetector gesture={composedGesture}>
-            <Animated.View
-              style={[styles.mapContainer, animatedStyle]}
-              onLayout={(e) => {
-                containerWidth.value = e.nativeEvent.layout.width;
-                containerHeight.value = e.nativeEvent.layout.height;
-              }}
-            >
-              {/* Campus map background */}
-              <View style={styles.mapImageContainer}>
-                <Image
-                  source={campusMapImage}
-                  style={styles.mapImage}
-                  resizeMode="contain"
-                />
+        <GestureDetector gesture={composedGesture}>
+          <Animated.View
+            style={[styles.mapContainer, animatedStyle]}
+            onLayout={(e) => {
+              containerWidth.value = e.nativeEvent.layout.width;
+              containerHeight.value = e.nativeEvent.layout.height;
+            }}
+          >
+            {/* Campus map background */}
+            <View style={styles.mapImageContainer}>
+              <Image
+                source={campusMapImage}
+                style={styles.mapImage}
+                resizeMode="contain"
+              />
 
-                {/* Interactive parking lot circles */}
-                {filteredParkingLots.map((lot) => (
-                  <InteractiveLot
-                    key={lot.id}
-                    lot={lot}
-                    onPress={handleLotPress}
-                    colors={colors}
-                  />
-                ))}
-              </View>
-            </Animated.View>
-          </GestureDetector>
-        </GestureHandlerRootView>
+              {/* Interactive parking lot circles */}
+              {filteredParkingLots.map((lot) => (
+                <InteractiveLot
+                  key={lot.id}
+                  lot={lot}
+                  onPress={handleLotPress}
+                  colors={colors}
+                />
+              ))}
+            </View>
+          </Animated.View>
+        </GestureDetector>
       </View>
 
 

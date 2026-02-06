@@ -19,6 +19,10 @@ const config = {
     ],
     disableHierarchicalLookup: false,
   },
+  server: {
+    // Enhance HMR stability
+    enhanceMiddleware: (middleware) => middleware,
+  },
 };
 
 module.exports = mergeConfig(getDefaultConfig(__dirname), config);

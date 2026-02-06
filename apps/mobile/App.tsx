@@ -7,6 +7,7 @@ import React from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MainTabNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext'
@@ -15,6 +16,10 @@ import { SimpleGeofencingProvider } from './src/context/SimpleGeofencingProvider
 function AppContent() {
   const { isDark, colors } = useTheme();
   const { isAuthenticated, isLoading } = useAuth();
+
+  if (__DEV__) {
+    console.log('[AppContent] Render - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading);
+  }
 
   // Create custom navigation theme based on our theme colors
   const navigationTheme = {
@@ -63,13 +68,15 @@ function AppContent() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <SimpleGeofencingProvider>
-          <AppContent />
-        </SimpleGeofencingProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <AuthProvider>
+          <SimpleGeofencingProvider>
+            <AppContent />
+          </SimpleGeofencingProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
