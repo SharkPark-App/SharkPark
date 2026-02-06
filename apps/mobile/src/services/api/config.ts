@@ -11,7 +11,6 @@ const getApiBaseUrl = () => {
     return 'https://api.sharkpark.csulb.edu/api/v1'; // Production
   }
   
-  // Development - different IPs for different platforms
   if (Platform.OS === 'android') {
     // Android emulator needs special IP to reach host machine
     return 'http://10.0.2.2:3000/api/v1';
@@ -21,12 +20,12 @@ const getApiBaseUrl = () => {
     // - Physical Device: Update the IP below to your machine's local IP
     // 
     // To get your local IP: 
-    // 1. Run `ifconfig | grep "inet " | grep -v 127.0.0.1` in terminal
+    // 1. Run ./scripts/getLocalIp.sh in terminal
     // 2. Or check System Preferences > Network > WiFi > Advanced > TCP/IP
-    // 3. Replace 'localhost' below with your actual IP (e.g., '192.168.1.45')
+    // 3. Replace 'localhost' below with your actual IP
     //
-    // NOTE: This IP may change when switching networks (WiFi, etc.)
-    return 'http://localhost:3000/api/v1'; // Change to your IP for physical iOS devices
+
+    return 'http://localhost:3000/api/v1'; // Update with your machine's IP for physical devices
   }
 };
 
@@ -34,7 +33,6 @@ export const API_CONFIG = {
   // Base URL for the backend API
   BASE_URL: getApiBaseUrl(),
 
-  // Request timeout in milliseconds (increased for debugging)
   TIMEOUT: 30000,
 
   // API endpoints
@@ -43,6 +41,7 @@ export const API_CONFIG = {
     LOTS_SUMMARY: '/lots/summary',
     LOT_DETAILS: (id: string) => `/lots/${id}`,
     LOT_HISTORY: (id: string) => `/lots/${id}/history`,
+    RECORD_OCCUPANCY: '/lots/occupancy/events',
     USERS: '/users',
     WEATHER: '/weather',
     EVENTS: '/events',

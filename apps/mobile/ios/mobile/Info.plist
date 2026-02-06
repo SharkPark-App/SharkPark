@@ -43,7 +43,15 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>SharkPark uses your location to automatically detect when you enter or leave campus parking lots, helping improve parking availability data for all students. Your specific location is never stored or shared - only anonymous parking lot entry/exit events.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SharkPark uses background location to detect parking lot entry and exit events even when the app is closed. This helps provide real-time parking data to the campus community. Your location data is processed locally and only anonymous parking events are shared.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>SharkPark needs background location access to detect parking lot usage patterns and provide accurate occupancy data. Your location is never stored - only anonymous entry/exit events are recorded.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

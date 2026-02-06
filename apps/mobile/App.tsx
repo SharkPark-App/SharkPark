@@ -11,7 +11,7 @@ import { MainTabNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext'
 import { LoginScreen } from './src/screens';
-
+import { SimpleGeofencingProvider } from './src/context/SimpleGeofencingProvider';
 function AppContent() {
   const { isDark, colors } = useTheme();
   const { isAuthenticated, isLoading } = useAuth();
@@ -62,11 +62,16 @@ function AppContent() {
 }
 
 function App() {
+  console.warn('🔥 APP.TSX: About to render SimpleGeofencingProvider');
   return (
     <ThemeProvider>
       <AuthProvider>
          <AppContent />
       </AuthProvider>
+
+      <SimpleGeofencingProvider>
+        <AppContent />
+      </SimpleGeofencingProvider>
     </ThemeProvider>
   );
 }
