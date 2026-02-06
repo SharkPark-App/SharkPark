@@ -10,12 +10,14 @@ import useLocationService from '../hooks/useLocationService';
 import { useSimpleGeofencing } from '../context/SimpleGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 const ProfileScreen: React.FC = () => {
   const { themeMode, setThemeMode, colors } = useTheme();
   const [notifications, setNotifications] = useState({
     highOccupancy: true, favoriteLots: true, incidents: false,
   });
+  const { logout } = useAuth();
 
   // Location service hook for permission checking
   const {
@@ -90,9 +92,7 @@ const ProfileScreen: React.FC = () => {
         {
           text: 'Logout',
           style: 'destructive',
-          onPress: () => {
-            // TODO: Implement actual logout logic
-          },
+          onPress: () => {logout()},
         },
       ]
     );

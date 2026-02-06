@@ -12,6 +12,7 @@ describe('UsersController', () => {
     addFavorite: jest.fn(),
     removeFavorite: jest.fn(),
     updateNotificationPreferences: jest.fn(),
+    findOrCreateUser: jest.fn(),
   };
 
   beforeEach(async () => {

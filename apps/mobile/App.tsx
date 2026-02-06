@@ -3,18 +3,18 @@
  * @format
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { MainTabNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext'
+import { LoginScreen } from './src/screens';
 import { SimpleGeofencingProvider } from './src/context/SimpleGeofencingProvider';
-import { LoginFlow } from './src/screens';
-
 function AppContent() {
   const { isDark, colors } = useTheme();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { isAuthenticated, isLoading } = useAuth();
 
   // Create custom navigation theme based on our theme colors
   const navigationTheme = {
@@ -29,11 +29,12 @@ function AppContent() {
     },
   };
 
-  const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
-  };
+  if (isLoading) {
+    // prevent login screen from prematurely rendering if already logged in
+    return null;
+  }
 
-  // Show login flow if not authenticated
+  // login flow handled via auth context
   if (!isAuthenticated) {
     return (
       <SafeAreaProvider>
@@ -41,12 +42,12 @@ function AppContent() {
           barStyle={isDark ? 'light-content' : 'dark-content'} 
           backgroundColor={colors.primary}
         />
-        <LoginFlow onLoginSuccess={handleLoginSuccess} />
+        <LoginScreen />
       </SafeAreaProvider>
     );
   }
 
-  // Show main app if authenticated
+  // show main app once authenticated
   return (
     <SafeAreaProvider>
       <StatusBar 
@@ -61,12 +62,13 @@ function AppContent() {
 }
 
 function App() {
-  console.warn('🔥 APP.TSX: About to render SimpleGeofencingProvider');
   return (
     <ThemeProvider>
-      <SimpleGeofencingProvider>
-        <AppContent />
-      </SimpleGeofencingProvider>
+      <AuthProvider>
+        <SimpleGeofencingProvider>
+          <AppContent />
+        </SimpleGeofencingProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
