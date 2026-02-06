@@ -62,16 +62,13 @@ function AppContent() {
 }
 
 function App() {
-  console.warn('🔥 APP.TSX: About to render SimpleGeofencingProvider');
   return (
     <ThemeProvider>
       <AuthProvider>
-         <AppContent />
+        <SimpleGeofencingProvider>
+          <AppContent />
+        </SimpleGeofencingProvider>
       </AuthProvider>
-
-      <SimpleGeofencingProvider>
-        <AppContent />
-      </SimpleGeofencingProvider>
     </ThemeProvider>
   );
 }
