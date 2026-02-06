@@ -186,8 +186,8 @@ export class LotsService {
    * Stores geofencing events without any personally identifiable information.
    */
   async recordOccupancyEvent(eventData: {
-    lot_id: number;
-    event_type: 'enter' | 'exit';
+    lot_id: string;
+    event_type: 'ENTER' | 'EXIT';
     source: string;
     timestamp: string;
   }): Promise<{ id: string }> {
