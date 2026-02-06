@@ -16,4 +16,18 @@ module.exports = {
 
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/'],
-};
+  // Coverage configuration
+  coverageDirectory: './coverage',
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
+    '!src/types/**',
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 15,
+      functions: 20,
+      lines: 25,
+      statements: 25,
+    },
+  },};
