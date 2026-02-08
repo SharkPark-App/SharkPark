@@ -34,6 +34,14 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Cache Turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
       - name: Install dependencies
         run: pnpm install
 
@@ -52,11 +60,66 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Backend unit tests
-        run: pnpm -C apps/backend test
+      - name: Backend unit tests with coverage
+        run: pnpm -C apps/backend test --coverage
 
       - name: Backend E2E tests
         run: pnpm -C apps/backend test:e2e
 
-      - name: Mobile tests
-        run: pnpm -C apps/mobile test
+      - name: Mobile tests with coverage
+        run: pnpm -C apps/mobile test --coverage
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  ios-build:
+    runs-on: macos-latest
+    if: github.event_name == 'pull_request'
+    needs: ci
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cache Turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: apps/mobile/ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('apps/mobile/ios/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install CocoaPods
+        run: cd apps/mobile/ios && pod install
+
+      - name: Build iOS (Simulator)
+        run: |
+          cd apps/mobile/ios
+          xcodebuild build \
+            -workspace mobile.xcworkspace \
+            -scheme mobile \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -quiet \
+            CODE_SIGNING_ALLOWED=NO

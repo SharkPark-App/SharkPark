@@ -4,11 +4,14 @@ import React_RCTAppDelegate
 import ReactAppDependencyProvider
 
 @main
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlowManager {
   var window: UIWindow?
 
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
+  
+  // Required by RNAppAuthAuthorizationFlowManager protocol
+  public weak var authorizationFlowManagerDelegate: RNAppAuthAuthorizationFlowManagerDelegate?
 
   func application(
     _ application: UIApplication,
@@ -30,6 +33,34 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     )
 
     return true
+  }
+
+  // Handle OAuth redirect URLs for react-native-app-auth (URL Scheme)
+  func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    #if DEBUG
+    print("[AppDelegate] Received URL: \(url)")
+    #endif
+    return authorizationFlowManagerDelegate?.resumeExternalUserAgentFlow(with: url) ?? false
+  }
+
+  // Handle OAuth redirect via Universal Links
+  func application(
+    _ application: UIApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+  ) -> Bool {
+    if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+       let url = userActivity.webpageURL {
+      #if DEBUG
+      print("[AppDelegate] Received Universal Link: \(url)")
+      #endif
+      return authorizationFlowManagerDelegate?.resumeExternalUserAgentFlow(with: url) ?? false
+    }
+    return false
   }
 }
 

@@ -1,9 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import * as Keychain from 'react-native-keychain';
-import { loginWithAzure, logoutFromAzure, loadAuth, saveAuth } from '../auth/AzureAuth';
-import { AuthorizeResult, RefreshResult } from 'react-native-app-auth';
+import { loginWithAzure, logoutFromAzure, loadAuth, saveAuth, AuthResult } from '../auth/AzureAuth';
 
-type AuthState = AuthorizeResult | RefreshResult;
+type AuthState = AuthResult;
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -35,44 +33,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // handle Login
   const login = async () => {
+    if (__DEV__) console.log('[AuthContext] Login started');
     setIsLoading(true);
     try {
       // ID & access tokens
+      if (__DEV__) console.log('[AuthContext] Calling loginWithAzure...');
       const tokens = await loginWithAzure();
+      if (__DEV__) console.log('[AuthContext] Got tokens, saving...');
 
       await saveAuth(tokens);
+      if (__DEV__) console.log('[AuthContext] Tokens saved, setting authenticated');
       setUser(tokens);
       setIsAuthenticated(true);
+      if (__DEV__) console.log('[AuthContext] Login complete, isAuthenticated=true');
 
     } catch (error) {
-      console.error('Login canceled or failed:', error);
+      console.error('[AuthContext] Login canceled or failed:', error);
       throw error;
     } finally {
+      if (__DEV__) console.log('[AuthContext] Setting isLoading=false');
       setIsLoading(false);
     }
   };
 
-  // handle Logout
+  // Handle Logout
   const logout = async () => {
     try {
-      // invoke azure logout to clear browser cookie
-      if (user && 'idToken' in user) {
-        await logoutFromAzure(user.idToken);
-      }
+      // Invoke Azure logout to clear browser cookie/session
+      // logoutFromAzure handles clearing local auth state internally
+      await logoutFromAzure(user?.idToken);
     } catch (error) {
-      // 'User cancelled flow' always triggers due to user closing browser window afterwards
-      const errorMessage = (error as Error).message || 'Unknown login error';
-
-      if(!errorMessage.includes('User cancelled flow')) {
-        console.error('Azure logout failed', error);
-        throw error;
+      const errorMessage = (error as Error).message ?? '';
+      
+      // User cancellation is not an error - don't clear state
+      if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
+        if (__DEV__) console.log('[AuthContext] User cancelled logout');
+        return; // Exit without clearing state
       }
-    } finally {
-      // clear local storage & state
-      await Keychain.resetGenericPassword();
-      setUser(null);
-      setIsAuthenticated(false);
+      
+      // Log unexpected errors but still clear local state
+      if (__DEV__) console.error('[AuthContext] Azure logout error:', error);
     }
+    
+    // Clear React state (local storage already cleared in logoutFromAzure)
+    setUser(null);
+    setIsAuthenticated(false);
   };
 
   return (

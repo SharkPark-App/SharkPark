@@ -17,6 +17,9 @@ end
 target 'mobile' do
   config = use_native_modules!
 
+  # Required for react-native-app-auth with bridgeless mode
+  pod 'AppAuth', :modular_headers => true
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.

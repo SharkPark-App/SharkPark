@@ -110,8 +110,8 @@ export class LotsController {
   @Post('occupancy/events')
   @HttpCode(HttpStatus.CREATED)
   async recordOccupancyEvent(@Body() eventData: {
-    lot_id: number;
-    event_type: 'enter' | 'exit';
+    lot_id: string;
+    event_type: 'ENTER' | 'EXIT';
     source: string;
     timestamp: string;
   }) {
