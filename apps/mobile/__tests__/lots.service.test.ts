@@ -125,4 +125,92 @@ describe('LotsService', () => {
       expect(result).toEqual(mockSummary);
     });
   });
+
+  describe('recordOccupancyEvent', () => {
+    it('should record an ENTER event with device ID', async () => {
+      const mockResponse = { event_id: 'evt-123', deduplicated: false };
+      mockApiService.post.mockResolvedValueOnce({
+        success: true,
+        data: mockResponse
+      });
+
+      const result = await lotsApi.recordOccupancyEvent({
+        lotId: 'G1',
+        eventType: 'ENTER',
+        source: 'GEOFENCE',
+      });
+
+      expect(mockApiService.post).toHaveBeenCalledWith(
+        '/occupancy-events',
+        expect.objectContaining({
+          lot_id: 'G1',
+          event_type: 'ENTER',
+          device_id: expect.any(String),
+          timestamp: expect.any(String),
+        })
+      );
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should record an EXIT event', async () => {
+      const mockResponse = { event_id: 'evt-456', deduplicated: false };
+      mockApiService.post.mockResolvedValueOnce({
+        success: true,
+        data: mockResponse
+      });
+
+      const result = await lotsApi.recordOccupancyEvent({
+        lotId: 'E7',
+        eventType: 'EXIT',
+        source: 'GEOFENCE',
+      });
+
+      expect(mockApiService.post).toHaveBeenCalledWith(
+        '/occupancy-events',
+        expect.objectContaining({
+          lot_id: 'E7',
+          event_type: 'EXIT',
+        })
+      );
+      expect(result.event_id).toBe('evt-456');
+    });
+
+    it('should handle deduplicated events', async () => {
+      const mockResponse = { event_id: 'evt-789', deduplicated: true };
+      mockApiService.post.mockResolvedValueOnce({
+        success: true,
+        data: mockResponse
+      });
+
+      const result = await lotsApi.recordOccupancyEvent({
+        lotId: 'G1',
+        eventType: 'ENTER',
+        source: 'GEOFENCE',
+      });
+
+      expect(result.deduplicated).toBe(true);
+    });
+
+    it('should use custom timestamp when provided', async () => {
+      const customTimestamp = '2026-02-07T10:30:00.000Z';
+      mockApiService.post.mockResolvedValueOnce({
+        success: true,
+        data: { event_id: 'evt-000', deduplicated: false }
+      });
+
+      await lotsApi.recordOccupancyEvent({
+        lotId: 'G1',
+        eventType: 'ENTER',
+        source: 'GEOFENCE',
+        timestamp: customTimestamp,
+      });
+
+      expect(mockApiService.post).toHaveBeenCalledWith(
+        '/occupancy-events',
+        expect.objectContaining({
+          timestamp: customTimestamp,
+        })
+      );
+    });
+  });
 });

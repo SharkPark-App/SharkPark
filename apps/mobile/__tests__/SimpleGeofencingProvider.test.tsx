@@ -72,7 +72,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockRecordOccupancyEvent.mockResolvedValue(undefined);
+    mockRecordOccupancyEvent.mockResolvedValue({ event_id: 'mock-event-id', deduplicated: false });
     
     // Clean up listeners
     locationService['onGeofenceEventListeners'] = [];

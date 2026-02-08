@@ -4,6 +4,7 @@
  */
 import { apiService } from './base';
 import API_CONFIG from './config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Backend response interfaces (matching the backend)
 export interface ParkingLot {
@@ -208,24 +209,64 @@ class LotsApiService {
 
   /**
    * Record anonymous occupancy event (ENTER/EXIT)
-   * Privacy-first: No user coordinates or identifiers stored
+   * Device ID is hashed server-side for privacy
    */
   async recordOccupancyEvent(event: {
     lotId: string;
     eventType: 'ENTER' | 'EXIT';
     source: 'GEOFENCE' | 'MANUAL';
     timestamp?: string;
-  }): Promise<void> {
+  }): Promise<{ event_id: string; deduplicated: boolean }> {
+    const deviceId = await this.getAnonymousDeviceId();
+    
     const payload = {
       lot_id: event.lotId,
       event_type: event.eventType,
-      source: event.source,
+      device_id: deviceId,
       timestamp: event.timestamp || new Date().toISOString(),
-      // NO user coordinates or identifiers included for privacy
     };
 
-    await apiService.post(API_CONFIG.ENDPOINTS.RECORD_OCCUPANCY, payload);
+    const response = await apiService.post<{ event_id: string; deduplicated: boolean }>(
+      API_CONFIG.ENDPOINTS.OCCUPANCY_EVENTS, 
+      payload
+    );
+    return response.data;
   }
+
+  /** Get or create anonymous device ID for deduplication (hashed server-side) */
+  private async getAnonymousDeviceId(): Promise<string> {
+    try {
+      // Try to get existing ID from AsyncStorage
+      const existingId = await AsyncStorage.getItem('@sharkpark_anonymous_device_id');
+      
+      if (existingId) {
+        return existingId;
+      }
+      
+      // Generate a new random UUID
+      const newId = this.generateUUID();
+      await AsyncStorage.setItem('@sharkpark_anonymous_device_id', newId);
+      return newId;
+    } catch {
+      // Fallback: generate a session-only ID if AsyncStorage fails
+      console.warn('[LotsApi] Failed to access AsyncStorage, using session-only ID');
+      return this.sessionDeviceId || (this.sessionDeviceId = this.generateUUID());
+    }
+  }
+
+  /**
+   * Generate a random UUID v4
+   */
+  private generateUUID(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  // Fallback session-only device ID
+  private sessionDeviceId?: string;
 
   private buildQueryString(params: GetLotsParams | GetHistoryParams): string {
     const query = new URLSearchParams();

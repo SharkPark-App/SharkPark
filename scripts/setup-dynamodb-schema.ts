@@ -3,7 +3,12 @@
  * 
  * Creates the required tables for SharkPark:
  * - sharkpark-main: Stores lots, users, events, weather (single-table design)
- * - sharkpark-timeseries: Stores historical occupancy snapshots with TTL
+ * - sharkpark-timeseries: Stores occupancy events, snapshots, and historical data with TTL
+ * 
+ * Occupancy Events Storage (in sharkpark-timeseries):
+ * - PK: LOT#{lot_id}  |  SK: EVENT#{timestamp}#{event_id}  (individual events)
+ * - PK: LOT#{lot_id}  |  SK: SNAPSHOT#{timestamp}  (15-min aggregated snapshots)
+ * - PK: DEVICE#{device_hash}  |  SK: LAST_EVENT#{lot_id}  (deduplication tracking)
  * 
  * Usage: pnpm db:setup
  */
@@ -126,6 +131,8 @@ async function createTimeSeriesTable(existingTables: string[]) {
   }
 
   console.log(`\nCreating table: ${tableName}`);
+  console.log('  - Used for: occupancy events, snapshots, historical data');
+  console.log('  - TTL enabled: items auto-expire after 90 days');
 
   const createCommand = new CreateTableCommand({
     TableName: tableName,
@@ -136,12 +143,36 @@ async function createTimeSeriesTable(existingTables: string[]) {
     AttributeDefinitions: [
       { AttributeName: 'PK', AttributeType: 'S' },
       { AttributeName: 'SK', AttributeType: 'S' },
+      { AttributeName: 'lot_id', AttributeType: 'S' },
+      { AttributeName: 'timestamp', AttributeType: 'S' },
     ],
-    BillingMode: 'PAY_PER_REQUEST',
+    GlobalSecondaryIndexes: [
+      {
+        // GSI for querying events/snapshots by lot and time range
+        IndexName: 'GSI1-LotID-Timestamp',
+        KeySchema: [
+          { AttributeName: 'lot_id', KeyType: 'HASH' },
+          { AttributeName: 'timestamp', KeyType: 'RANGE' },
+        ],
+        Projection: { ProjectionType: 'ALL' },
+        ProvisionedThroughput: {
+          ReadCapacityUnits: 5,
+          WriteCapacityUnits: 5,
+        },
+      },
+    ],
+    BillingMode: 'PROVISIONED',
+    ProvisionedThroughput: {
+      ReadCapacityUnits: 5,
+      WriteCapacityUnits: 5,
+    },
   });
 
   await client.send(createCommand);
   console.log(`[OK] Table created: ${tableName}`);
+  
+  // Wait for table to be active before enabling TTL
+  await new Promise(resolve => setTimeout(resolve, 1000));
   
   const ttlCommand = new UpdateTimeToLiveCommand({
     TableName: tableName,

@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
 import { LotsController } from './lots.controller';
 import { LotsService } from './lots.service';
 
@@ -12,7 +11,6 @@ describe('LotsController', () => {
     findOne: jest.fn(),
     getHistory: jest.fn(),
     getOccupancySummary: jest.fn(),
-    recordOccupancyEvent: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -111,63 +109,6 @@ describe('LotsController', () => {
         data: mockSummary,
       });
       expect(service.getOccupancySummary).toHaveBeenCalled();
-    });
-  });
-
-  describe('recordOccupancyEvent', () => {
-    it('should record an ENTER event successfully', async () => {
-      const eventData = {
-        lot_id: 'G1',
-        event_type: 'ENTER' as const,
-        source: 'geofencing',
-        timestamp: '2026-02-06T10:30:00Z',
-      };
-
-      mockLotsService.recordOccupancyEvent.mockResolvedValue({ id: 'event-123' });
-
-      const result = await controller.recordOccupancyEvent(eventData);
-
-      expect(result).toEqual({
-        success: true,
-        message: 'Occupancy event recorded successfully',
-        event_id: 'event-123',
-      });
-      expect(service.recordOccupancyEvent).toHaveBeenCalledWith(eventData);
-    });
-
-    it('should record an EXIT event successfully', async () => {
-      const eventData = {
-        lot_id: 'G1',
-        event_type: 'EXIT' as const,
-        source: 'geofencing',
-        timestamp: '2026-02-06T11:00:00Z',
-      };
-
-      mockLotsService.recordOccupancyEvent.mockResolvedValue({ id: 'event-456' });
-
-      const result = await controller.recordOccupancyEvent(eventData);
-
-      expect(result).toEqual({
-        success: true,
-        message: 'Occupancy event recorded successfully',
-        event_id: 'event-456',
-      });
-      expect(service.recordOccupancyEvent).toHaveBeenCalledWith(eventData);
-    });
-
-    it('should throw BadRequestException when service fails', async () => {
-      const eventData = {
-        lot_id: 'INVALID',
-        event_type: 'ENTER' as const,
-        source: 'geofencing',
-        timestamp: '2026-02-06T10:30:00Z',
-      };
-
-      mockLotsService.recordOccupancyEvent.mockRejectedValue(new Error('Lot not found'));
-
-      await expect(controller.recordOccupancyEvent(eventData)).rejects.toThrow(
-        BadRequestException,
-      );
     });
   });
 });
