@@ -7,6 +7,7 @@
  * - 4 campus events with parking impacts
  * - Weather data
  * - 7 days of historical occupancy snapshots
+ * - Sample occupancy events (ENTER/EXIT from geofencing)
  * 
  * Usage: pnpm db:seed
  */
@@ -1616,6 +1617,151 @@ async function seedHistoricalOccupancy() {
   console.log(`[seed] Seeded ${snapshotCount} historical occupancy snapshots\n`);
 }
 
+/**
+ * Seed sample occupancy events (ENTER/EXIT from geofencing)
+ * These represent anonymous device events that update lot occupancy
+ */
+async function seedOccupancyEvents() {
+  console.log('[seed] Seeding occupancy events...');
+  
+  const now = new Date();
+  const sampleLots = ['G1', 'G2', 'G4', 'G7', 'G9'];
+  let eventCount = 0;
+  let snapshotCount = 0;
+  
+  // Generate sample device hashes (simulating anonymous devices)
+  const sampleDeviceHashes = [
+    '5de210df8a7e4b2c9f1a3d5e7b9c1d3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3c5d',
+    '7f3a1b5c9d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f4',
+    '9e5c3a1d7f2b8e4a0c6d2f8a4b0e6c2d8f4a0b6c2e8d4f0a6b2c8e4d0f6a2b8',
+    'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
+    'b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4',
+  ];
+  
+  // Calculate TTL (90 days from now)
+  const ttl = Math.floor((Date.now() + 90 * 24 * 60 * 60 * 1000) / 1000);
+  
+  // Generate events for the last 24 hours
+  for (let hourOffset = 0; hourOffset < 24; hourOffset++) {
+    const eventTime = new Date(now.getTime() - hourOffset * 60 * 60 * 1000);
+    
+    // Skip non-operating hours (before 6am, after 10pm)
+    const hour = eventTime.getHours();
+    if (hour < 6 || hour >= 22) continue;
+    
+    for (const lotId of sampleLots) {
+      // Generate 2-5 events per lot per hour
+      const numEvents = Math.floor(Math.random() * 4) + 2;
+      
+      for (let i = 0; i < numEvents; i++) {
+        const deviceHash = sampleDeviceHashes[Math.floor(Math.random() * sampleDeviceHashes.length)];
+        const eventType = Math.random() > 0.5 ? 'ENTER' : 'EXIT';
+        const minuteOffset = Math.floor(Math.random() * 60);
+        const eventTimestamp = new Date(eventTime.getTime() - minuteOffset * 60 * 1000);
+        const timestampISO = eventTimestamp.toISOString();
+        const eventId = `evt-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Create occupancy event
+        const eventItem = marshall({
+          PK: `LOT#${lotId}`,
+          SK: `EVENT#${timestampISO}#${eventId}`,
+          event_id: eventId,
+          lot_id: lotId,
+          event_type: eventType,
+          device_hash: deviceHash,
+          timestamp: timestampISO,
+          ttl,
+        });
+        
+        await client.send(
+          new PutItemCommand({
+            TableName: TIMESERIES_TABLE,
+            Item: eventItem,
+          })
+        );
+        
+        eventCount++;
+      }
+    }
+    
+    // Create hourly snapshots for ML training data
+    if (hourOffset % 1 === 0) {
+      const snapshotTime = new Date(eventTime.getTime());
+      snapshotTime.setMinutes(0, 0, 0);
+      const snapshotTimestamp = snapshotTime.toISOString();
+      
+      for (const lotId of sampleLots) {
+        const lot = allParkingLots.find(l => l.id === lotId);
+        if (!lot) continue;
+        
+        // Calculate snapshot metrics based on time of day
+        const isPeakHour = (hour >= 8 && hour <= 10) || (hour >= 12 && hour <= 14);
+        const baseOccupancy = isPeakHour ? 0.85 : 0.60;
+        const variance = (Math.random() - 0.5) * 0.2;
+        const occupancyRate = Math.min(0.98, Math.max(0.20, baseOccupancy + variance));
+        const currentOccupancy = Math.floor(lot.capacity * occupancyRate);
+        
+        // Random event counts for the hour
+        const enterCount = Math.floor(Math.random() * 20) + 5;
+        const exitCount = Math.floor(Math.random() * 20) + 5;
+        
+        const snapshotItem = marshall({
+          PK: `LOT#${lotId}`,
+          SK: `SNAPSHOT#${snapshotTimestamp}`,
+          lot_id: lotId,
+          timestamp: snapshotTimestamp,
+          current_occupancy: currentOccupancy,
+          capacity: lot.capacity,
+          occupancy_rate: occupancyRate,
+          enter_count: enterCount,
+          exit_count: exitCount,
+          net_change: enterCount - exitCount,
+          confidence: lot.confidence,
+          snapshot_type: 'HOURLY',
+          ttl,
+        });
+        
+        await client.send(
+          new PutItemCommand({
+            TableName: TIMESERIES_TABLE,
+            Item: snapshotItem,
+          })
+        );
+        
+        snapshotCount++;
+      }
+    }
+  }
+  
+  // Create device last-event records for deduplication
+  console.log('[seed] Creating device deduplication records...');
+  for (const deviceHash of sampleDeviceHashes) {
+    for (const lotId of sampleLots.slice(0, 2)) {
+      const lastEventType = Math.random() > 0.5 ? 'ENTER' : 'EXIT';
+      const lastEventTime = new Date(now.getTime() - Math.floor(Math.random() * 60) * 60 * 1000).toISOString();
+      
+      const deviceItem = marshall({
+        PK: `DEVICE#${deviceHash}`,
+        SK: `LAST_EVENT#${lotId}`,
+        device_hash: deviceHash,
+        lot_id: lotId,
+        last_event_type: lastEventType,
+        last_event_time: lastEventTime,
+        ttl,
+      });
+      
+      await client.send(
+        new PutItemCommand({
+          TableName: TIMESERIES_TABLE,
+          Item: deviceItem,
+        })
+      );
+    }
+  }
+  
+  console.log(`[seed] Seeded ${eventCount} occupancy events and ${snapshotCount} snapshots\n`);
+}
+
 async function verifySeededData() {
   console.log('[seed] Verifying seeded data...');
   
@@ -1663,6 +1809,7 @@ async function main() {
     await seedEvents();
     await seedWeather();
     await seedHistoricalOccupancy();
+    await seedOccupancyEvents();
     await verifySeededData();
     
     console.log('[seed] Local database seeding complete!');

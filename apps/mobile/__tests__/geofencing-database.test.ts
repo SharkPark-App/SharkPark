@@ -52,7 +52,7 @@ describe('Geofencing Database Integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockRecordOccupancyEvent.mockResolvedValue(undefined);
+    mockRecordOccupancyEvent.mockResolvedValue({ event_id: 'mock-event-id', deduplicated: false });
   });
 
   afterEach(() => {

@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
 import { WeatherModule } from './weather/weather.module';
 import { AuthModule } from './auth/auth.module';
+import { OccupancyEventsModule } from './occupancy-events/occupancy-events.module';
 
 @Module({
   imports: [
@@ -15,7 +16,8 @@ import { AuthModule } from './auth/auth.module';
     UsersModule,
     EventsModule,
     WeatherModule,
-    AuthModule
+    AuthModule,
+    OccupancyEventsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

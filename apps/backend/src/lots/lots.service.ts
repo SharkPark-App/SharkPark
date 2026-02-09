@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
-import { DynamoDBClient, QueryCommand, PutItemCommand } from '@aws-sdk/client-dynamodb';
-import { unmarshall, marshall } from '@aws-sdk/util-dynamodb';
+import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
+import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { DYNAMODB_CLIENT, TABLE_NAME, TIMESERIES_TABLE_NAME } from '../database/database.module';
 import type { ParkingLot, ParkingLotResponse, GetLotsQueryParams, OccupancySnapshot } from './interfaces/parking-lot.interface';
 
@@ -178,50 +178,6 @@ export class LotsService {
     } catch (error) {
       this.logger.error('Failed to calculate occupancy summary', error);
       throw new InternalServerErrorException('Failed to calculate occupancy summary');
-    }
-  }
-
-  /**
-   * Records an anonymous occupancy event for a parking lot.
-   * Stores geofencing events without any personally identifiable information.
-   */
-  async recordOccupancyEvent(eventData: {
-    lot_id: string;
-    event_type: 'ENTER' | 'EXIT';
-    source: string;
-    timestamp: string;
-  }): Promise<{ id: string }> {
-    try {
-      const eventId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const now = new Date().toISOString();
-
-      // Store in timeseries table for analytics
-      const item = {
-        PK: `LOT#${eventData.lot_id}`,
-        SK: `EVENT#${eventId}`,
-        EntityType: 'OccupancyEvent',
-        lot_id: eventData.lot_id,
-        event_type: eventData.event_type,
-        source: eventData.source,
-        timestamp: eventData.timestamp,
-        created_at: now,
-        ttl: Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60), // 90 days TTL
-      };
-
-      const command = new PutItemCommand({
-        TableName: this.timeseriesTableName,
-        Item: marshall(item),
-      });
-
-      await this.dynamoClient.send(command);
-
-      this.logger.log(`Recorded occupancy event: ${eventData.event_type} for lot ${eventData.lot_id} from ${eventData.source}`);
-
-      return { id: eventId };
-
-    } catch (error) {
-      this.logger.error('Failed to record occupancy event', error);
-      throw new InternalServerErrorException('Failed to record occupancy event');
     }
   }
 
