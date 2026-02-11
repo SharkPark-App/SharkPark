@@ -1,0 +1,24 @@
+# Python virtual environment
+venv/
+.venv/
+
+# Byte-compiled / cached
+__pycache__/
+*.py[cod]
+
+# Generated data
+*.parquet
+*.csv
+
+# Model artifacts
+*.joblib
+*.pkl
+*.onnx
+
+# Jupyter
+.ipynb_checkpoints/
+
+# pytest / coverage
+.pytest_cache/
+htmlcov/
+.coverage

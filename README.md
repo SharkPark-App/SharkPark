@@ -128,7 +128,7 @@ pnpm typecheck
 **Setup database first (one-time):**
 ```bash
 pnpm db:setup    # Creates DynamoDB tables
-pnpm db:seed     # Seeds test data (25 lots, 5 users, 4 events, weather)
+pnpm db:seed     # Seeds test data (28 lots, 5 users, 4 events, weather)
 ```
 
 **Start the server:**
