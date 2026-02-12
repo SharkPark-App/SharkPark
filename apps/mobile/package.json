@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "start": "react-native start",
     "test": "jest",
-    "postinstall": "test -n \"$CI\" || (cd ios && pod install && cd ..)"
+    "postinstall": "node -e \"if(process.platform==='darwin'&&!process.env.CI)require('child_process').execSync('pod install',{cwd:'ios',stdio:'inherit'})\""
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
