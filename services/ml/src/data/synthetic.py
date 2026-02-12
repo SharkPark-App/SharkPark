@@ -19,9 +19,9 @@ Output Schema (matches DynamoDB OccupancySnapshot + source marker):
     - confidence: str       # "HIGH"
     - source: str           # "synthetic" (real data won't have this / defaults to "observed")
 
-Volume: ~7,000 records per lot x 28 lots = ~196,000 total records
+Volume: ~10,000 records per lot x 28 lots = ~280,000 total records
 
-Date Range: Fall 2025 semester (Aug 17 - Dec 24, 2025)
+Date Range: Fall 2025 semester (Aug 17 - Dec 24, 2025) ~8k records
 
 Patterns Modeled:
     - Time-of-day curves (different for student vs employee lots)
@@ -44,44 +44,85 @@ from botocore.exceptions import ClientError
 import pandas as pd
 import numpy as np
 
+from src.config import (
+    SEMESTER_START,
+    SEMESTER_END,
+    DATA_START,
+    FIRST_DAY_OF_CLASSES,
+    FINALS_START,
+    FINALS_END,
+    CAMPUS_CLOSURES,
+    NO_CLASSES_CAMPUS_OPEN,
+    OPERATING_START_HOUR,
+    OPERATING_END_HOUR,
+    BUFFER_START_HOUR,
+    BUFFER_END_HOUR,
+    SNAPSHOT_INTERVAL_MINUTES,
+)
+
+
 # =============================================================================
-# CONFIGURATION (only used for synthetic generation)
-# 
-# Once real occupancy data accumulates, the model will 
-# To generate data for a new semester:
-#   1. Update SEMESTER_START/END and DATA_START to the new term dates
-#   2. Update CAMPUS_CLOSURES with that semester's holidays/breaks
-#   3. Rerun the generator — lot metadata is pulled fresh from DynamoDB
+# SEMESTER PHASE (synthetic data only — single-semester)
 # =============================================================================
 
-# Semester bounds
-SEMESTER_START = datetime(2025, 8, 18)
-SEMESTER_END = datetime(2025, 12, 24)
-DATA_START = datetime(2025, 8, 17)  # Day before semester for buffer
+@dataclass
+class SemesterPhase:
+    """Represents a phase of the semester with its occupancy multiplier."""
+    name: str
+    multiplier: float  # Applied to base occupancy
 
-# Campus closures (no activity)
-CAMPUS_CLOSURES = [
-    datetime(2025, 9, 1),   # Labor Day
-    datetime(2025, 11, 11), # Veterans Day
-    # Fall Break
-    datetime(2025, 11, 24),
-    datetime(2025, 11, 25),
-    datetime(2025, 11, 26),
-    # Thanksgiving
-    datetime(2025, 11, 27),
-    datetime(2025, 11, 28),
-    datetime(2025, 11, 29),
-    datetime(2025, 11, 30),
-]
 
-# Operating hours (7am-9pm), with buffer zones for zero-occupancy snapshots
-OPERATING_START_HOUR = 7
-OPERATING_END_HOUR = 21
-BUFFER_START_HOUR = 6
-BUFFER_END_HOUR = 22
+def get_semester_phase(date: datetime) -> SemesterPhase:
+    """
+    Determine semester phase for a given date.
 
-# Snapshot interval
-SNAPSHOT_INTERVAL_MINUTES = 15
+    NOTE: This is scoped to a single semester defined in config.py.
+    Feature engineering will use its own multi-semester-aware logic.
+
+    Phases (Fall 2025):
+        - pre_semester: Before Aug 18 (low activity)
+        - orientation: Aug 18-22 (dept meetings, no regular classes yet)
+        - first_two_weeks: Aug 25 - Sep 7 (high activity, students finding parking)
+        - normal: Regular semester weeks
+        - midterms: Oct 13 - Oct 26 (medium-high activity)
+        - finals_prep: Dec 1 - Dec 11 (high activity, includes reading day)
+        - finals: Dec 12 - Dec 18 (very high activity)
+        - post_finals: Dec 19 - Dec 24 (minimal activity)
+    """
+    # Before semester starts
+    if date < SEMESTER_START:
+        return SemesterPhase("pre_semester", 0.3)
+
+    # Orientation / departmental meetings week (Aug 18-22, before classes)
+    if SEMESTER_START <= date < FIRST_DAY_OF_CLASSES:
+        return SemesterPhase("orientation", 0.5)
+
+    # First two weeks of classes - students figuring out parking
+    first_two_weeks_end = FIRST_DAY_OF_CLASSES + timedelta(days=14)
+    if date <= first_two_weeks_end:
+        return SemesterPhase("first_two_weeks", 1.15)
+
+    # Midterms (roughly week 8-9, mid-October)
+    midterms_start = datetime(2025, 10, 13)
+    midterms_end = datetime(2025, 10, 26)
+    if midterms_start <= date <= midterms_end:
+        return SemesterPhase("midterms", 1.08)
+
+    # Finals prep (after last day of classes through day before finals)
+    finals_prep_start = datetime(2025, 12, 1)
+    if finals_prep_start <= date < FINALS_START:
+        return SemesterPhase("finals_prep", 1.12)
+
+    # Finals week (Dec 12-18)
+    if FINALS_START <= date <= FINALS_END:
+        return SemesterPhase("finals", 1.18)
+
+    # Post-finals (Dec 19-24, semester wind-down)
+    if date > FINALS_END:
+        return SemesterPhase("post_finals", 0.15)
+
+    # Normal semester
+    return SemesterPhase("normal", 1.0)
 
 # Lot popularity factors
 HIGH_DEMAND_LOTS = {"PYR", "G1", "G2", "PVS", "E1", "E2"}
@@ -169,59 +210,6 @@ def fetch_lots_from_dynamodb() -> list[LotInfo]:
         raise RuntimeError(
             f"Failed to fetch lots from DynamoDB at {endpoint}: {exc}"
         ) from exc
-
-
-# =============================================================================
-# SEMESTER PHASE DETECTION
-# =============================================================================
-
-@dataclass
-class SemesterPhase:
-    """Represents a phase of the semester with its occupancy multiplier."""
-    name: str
-    multiplier: float  # Applied to base occupancy
-
-def get_semester_phase(date: datetime) -> SemesterPhase:
-    """
-    Determine semester phase for a given date.
-
-    Phases:
-        - pre_semester: Before Aug 18 (low activity)
-        - first_two_weeks: Aug 18 - Aug 31 (high activity, students finding parking patterns)
-        - early_semester: Sep 1 - Oct 12 (normal activity)
-        - midterms: Oct 13 - Oct 26 (medium-high activity)
-        - mid_semester: Oct 27 - Nov 23 (normal activity)
-        - finals_prep: Dec 1 - Dec 14 (high activity)
-        - finals: Dec 15 - Dec 24 (very high activity)        
-    """
-    
-    # Before semester starts
-    if date < SEMESTER_START:
-        return SemesterPhase("pre_semester", 0.3)
-
-    # First two weeks - students figuring out parking
-    first_two_weeks_end = SEMESTER_START + timedelta(days=14)
-    if date <= first_two_weeks_end:
-        return SemesterPhase("first_two_weeks", 1.15)
-
-    # Midterms (roughly week 8-9, mid-October)
-    midterms_start = datetime(2025, 10, 13)
-    midterms_end = datetime(2025, 10, 26)
-    if midterms_start <= date <= midterms_end:
-        return SemesterPhase("midterms", 1.08)
-
-    # Finals prep (last 2 weeks before finals)
-    finals_prep_start = datetime(2025, 12, 1)
-    finals_start = datetime(2025, 12, 15)
-    if finals_prep_start <= date < finals_start:
-        return SemesterPhase("finals_prep", 1.12)
-
-    # Finals week
-    if date >= finals_start:
-        return SemesterPhase("finals", 1.18)
-
-    # Normal semester
-    return SemesterPhase("normal", 1.0)
 
 
 # =============================================================================
@@ -493,6 +481,10 @@ def generate_snapshot(
 
     adjusted_rate = base_rate * semester_phase.multiplier * dow_multiplier * lot_popularity
 
+    # No-classes days (campus open): employees normal, students minimal
+    if date_only in NO_CLASSES_CAMPUS_OPEN and lot_type == "student":
+        adjusted_rate *= 0.15
+
     # Add noise (less noise during buffer/closed hours)
     if base_rate > 0.05:
         final_rate = add_noise(adjusted_rate, noise_level=0.07)
@@ -555,7 +547,7 @@ def generate_lot_data(
     capacity: int,
     lot_type: Literal["student", "employee"],
     timestamps: list[datetime],
-    target_records: int = 7000,
+    target_records: int = 10000,
 ) -> list[dict]:
     """
     Generate synthetic data for a single lot.
@@ -586,13 +578,13 @@ def generate_lot_data(
     return records
 
 
-def generate_all_data(lots: list[LotInfo], target_per_lot: int = 7000) -> pd.DataFrame:
+def generate_all_data(lots: list[LotInfo], target_per_lot: int = 10000) -> pd.DataFrame:
     """
     Generate synthetic data for all lots.
 
     Args:
         lots: List of LotInfo fetched from DynamoDB
-        target_per_lot: Target records per lot (default 7000)
+        target_per_lot: Target records per lot (default 10000)
 
     Returns:
         DataFrame with all synthetic snapshots
@@ -647,8 +639,8 @@ def main():
     parser.add_argument(
         "--records-per-lot", "-n",
         type=int,
-        default=7000,
-        help="Target records per lot (default: 7000)"
+        default=10000,
+        help="Target records per lot (default: 10000)"
     )
     parser.add_argument(
         "--preview",
