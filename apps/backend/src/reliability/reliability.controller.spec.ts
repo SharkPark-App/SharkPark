@@ -117,7 +117,8 @@ describe('ReliabilityController', () => {
 
       const result = await controller.getLotReliability('G1');
 
-      expect(result).toEqual(mockReliabilityScore);
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual(mockReliabilityScore);
       expect(computationService.computeReliabilityForLot).toHaveBeenCalledWith('G1');
     });
 
@@ -127,7 +128,8 @@ describe('ReliabilityController', () => {
 
       const result = await controller.getLotReliability('G2');
 
-      expect(result.lotId).toBe('G2');
+      expect(result.success).toBe(true);
+      expect(result.data.lotId).toBe('G2');
       expect(computationService.computeReliabilityForLot).toHaveBeenCalledWith('G2');
     });
   });
@@ -138,8 +140,9 @@ describe('ReliabilityController', () => {
 
       const result = await controller.getAllLotsReliability();
 
-      expect(result).toEqual(mockScoreSummaries);
-      expect(result).toHaveLength(3);
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual(mockScoreSummaries);
+      expect(result.data).toHaveLength(3);
       expect(computationService.computeReliabilityForAllLots).toHaveBeenCalled();
     });
 
@@ -148,7 +151,8 @@ describe('ReliabilityController', () => {
 
       const result = await controller.getAllLotsReliability();
 
-      expect(result).toEqual([]);
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual([]);
     });
   });
 
@@ -156,15 +160,16 @@ describe('ReliabilityController', () => {
     it('should return weights and thresholds', () => {
       const result = controller.getConfiguration();
 
-      expect(result.weights).toEqual(mockWeights);
-      expect(result.thresholds).toEqual(mockThresholds);
+      expect(result.success).toBe(true);
+      expect(result.data.weights).toEqual(mockWeights);
+      expect(result.data.thresholds).toEqual(mockThresholds);
       expect(reliabilityService.getDefaultWeights).toHaveBeenCalled();
       expect(reliabilityService.getDefaultThresholds).toHaveBeenCalled();
     });
 
     it('should have correct weight values summing to 1', () => {
       const result = controller.getConfiguration();
-      const weightSum = Object.values(result.weights).reduce((sum, w) => sum + w, 0);
+      const weightSum = Object.values(result.data.weights).reduce((sum: number, w: number) => sum + w, 0);
 
       expect(weightSum).toBeCloseTo(1.0);
     });
@@ -172,7 +177,7 @@ describe('ReliabilityController', () => {
     it('should have thresholds where high > medium', () => {
       const result = controller.getConfiguration();
 
-      expect(result.thresholds.highConfidence).toBeGreaterThan(result.thresholds.mediumConfidence);
+      expect(result.data.thresholds.highConfidence).toBeGreaterThan(result.data.thresholds.mediumConfidence);
     });
   });
 });

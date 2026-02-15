@@ -14,18 +14,47 @@ export interface ReliabilityMeterProps {
   style?: ViewStyle;
 }
 
+// Get user-friendly description based on confidence
+const getConfidenceDescription = (confidence: ConfidenceLevel, isColdStart: boolean): string => {
+  if (isColdStart) {
+    return 'Limited Data';
+  }
+  switch (confidence) {
+    case 'HIGH':
+      return 'Reliable';
+    case 'MEDIUM':
+      return 'Moderate';
+    case 'LOW':
+      return 'Estimate';
+    default:
+      return 'Unknown';
+  }
+};
+
+// Get icon based on confidence level
+const getConfidenceIcon = (confidence: ConfidenceLevel): string => {
+  switch (confidence) {
+    case 'HIGH':
+      return '✓';
+    case 'MEDIUM':
+      return '~';
+    case 'LOW':
+      return '?';
+    default:
+      return '•';
+  }
+};
+
 export const ReliabilityMeter: React.FC<ReliabilityMeterProps> = ({
   confidence,
-  score,
   isColdStart = false,
   size = 'medium',
-  showScore = false,
-  showLabel = false,
   onPress,
   style,
 }) => {
   const color = CONFIDENCE_COLORS[confidence];
-  const label = CONFIDENCE_LABELS[confidence];
+  const description = getConfidenceDescription(confidence, isColdStart);
+  const icon = getConfidenceIcon(confidence);
 
   const containerStyle = [
     styles.container,
@@ -35,17 +64,13 @@ export const ReliabilityMeter: React.FC<ReliabilityMeterProps> = ({
   ];
 
   const textStyle = [styles.text, styles[`text_${size}`], { color }];
+  const iconStyle = [styles.icon, styles[`icon_${size}`], { color }];
 
   const content = (
     <>
-      <View style={[styles.dot, { backgroundColor: color }]} />
-      {showScore && score !== undefined && <Text style={textStyle}>{score}</Text>}
-      <Text style={textStyle}>{showLabel ? label : confidence}</Text>
-      {isColdStart && (
-        <View style={styles.coldStartBadge}>
-          <Text style={styles.coldStartText}>β</Text>
-        </View>
-      )}
+      <Text style={iconStyle}>{icon}</Text>
+      <Text style={textStyle}>{description}</Text>
+      {onPress && <Text style={[styles.infoIcon, { color }]}>ⓘ</Text>}
     </>
   );
 
@@ -55,7 +80,7 @@ export const ReliabilityMeter: React.FC<ReliabilityMeterProps> = ({
         style={containerStyle}
         onPress={onPress}
         activeOpacity={0.7}
-        accessibilityLabel={`Reliability: ${label}`}
+        accessibilityLabel={`Data reliability: ${description}`}
         accessibilityHint="Tap to see reliability details"
         accessibilityRole="button"
       >
@@ -65,7 +90,7 @@ export const ReliabilityMeter: React.FC<ReliabilityMeterProps> = ({
   }
 
   return (
-    <View style={containerStyle} accessibilityLabel={`Reliability: ${label}`}>
+    <View style={containerStyle} accessibilityLabel={`Data reliability: ${description}`}>
       {content}
     </View>
   );
@@ -131,33 +156,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 6,
   } as ViewStyle,
   container_small: {
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 8,
+    gap: 4,
   } as ViewStyle,
   container_medium: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 12,
+    gap: 6,
   } as ViewStyle,
   container_large: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 16,
+    gap: 8,
   } as ViewStyle,
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  } as ViewStyle,
-  dotOnly: {
-    // Styles applied inline
-  } as ViewStyle,
+  icon: {
+    fontWeight: '700',
+  } as TextStyle,
+  icon_small: {
+    fontSize: 10,
+  } as TextStyle,
+  icon_medium: {
+    fontSize: 14,
+  } as TextStyle,
+  icon_large: {
+    fontSize: 16,
+  } as TextStyle,
   text: {
     fontWeight: '600',
   } as TextStyle,
@@ -170,6 +202,19 @@ const styles = StyleSheet.create({
   text_large: {
     fontSize: 14,
   } as TextStyle,
+  infoIcon: {
+    fontSize: 12,
+    marginLeft: 2,
+    opacity: 0.8,
+  } as TextStyle,
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  } as ViewStyle,
+  dotOnly: {
+    // Styles applied inline
+  } as ViewStyle,
   coldStartBadge: {
     backgroundColor: '#9CA3AF',
     borderRadius: 4,

@@ -65,8 +65,6 @@ export class ReliabilityService {
     const isColdStart = this.isColdStartMode(input, thresholds);
     const explanation = this.generateExplanation(confidence, isColdStart, factors);
 
-    this.logger.debug(`Lot ${lotId}: score=${score}, confidence=${confidence}`);
-
     return {
       score,
       confidence,

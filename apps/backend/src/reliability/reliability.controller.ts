@@ -3,6 +3,11 @@ import { ReliabilityService } from './reliability.service';
 import { ReliabilityComputationService } from './reliability-computation.service';
 import { ReliabilityScore, ReliabilityScoreSummary, ReliabilityWeights, ReliabilityThresholds } from './interfaces';
 
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+}
+
 @Controller('reliability')
 export class ReliabilityController {
   private readonly logger = new Logger(ReliabilityController.name);
@@ -13,22 +18,27 @@ export class ReliabilityController {
   ) {}
 
   @Get('lots/:lotId')
-  async getLotReliability(@Param('lotId') lotId: string): Promise<ReliabilityScore> {
-    this.logger.log(`Getting reliability for lot ${lotId}`);
-    return this.computationService.computeReliabilityForLot(lotId);
+  async getLotReliability(@Param('lotId') lotId: string): Promise<ApiResponse<ReliabilityScore>> {
+    const result = await this.computationService.computeReliabilityForLot(lotId);
+    this.logger.log(`Lot ${lotId}: score=${result.score}, confidence=${result.confidence}`);
+    return { success: true, data: result };
   }
 
   @Get('lots')
-  async getAllLotsReliability(): Promise<ReliabilityScoreSummary[]> {
+  async getAllLotsReliability(): Promise<ApiResponse<ReliabilityScoreSummary[]>> {
     this.logger.log('Getting reliability for all lots');
-    return this.computationService.computeReliabilityForAllLots();
+    const result = await this.computationService.computeReliabilityForAllLots();
+    return { success: true, data: result };
   }
 
   @Get('config')
-  getConfiguration(): { weights: ReliabilityWeights; thresholds: ReliabilityThresholds } {
+  getConfiguration(): ApiResponse<{ weights: ReliabilityWeights; thresholds: ReliabilityThresholds }> {
     return {
-      weights: this.reliabilityService.getDefaultWeights(),
-      thresholds: this.reliabilityService.getDefaultThresholds(),
+      success: true,
+      data: {
+        weights: this.reliabilityService.getDefaultWeights(),
+        thresholds: this.reliabilityService.getDefaultThresholds(),
+      },
     };
   }
 }

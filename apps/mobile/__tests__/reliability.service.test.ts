@@ -1,6 +1,5 @@
 import { reliabilityApiService } from '../src/services/api/reliability';
 import { apiService } from '../src/services/api/base';
-import API_CONFIG from '../src/services/api/config';
 
 jest.mock('../src/services/api/base', () => ({
   apiService: {
@@ -41,7 +40,7 @@ describe('ReliabilityApiService', () => {
       const result = await reliabilityApiService.getLotReliability('G1');
 
       expect(mockApiService.get).toHaveBeenCalledWith(
-        `${API_CONFIG.BASE_URL}/api/v1/reliability/lots/G1`
+        '/reliability/lots/G1'
       );
       expect(result).toEqual(mockResponse.data);
       expect(result.lotId).toBe('G1');
@@ -73,7 +72,7 @@ describe('ReliabilityApiService', () => {
       const result = await reliabilityApiService.getAllLotsReliability();
 
       expect(mockApiService.get).toHaveBeenCalledWith(
-        `${API_CONFIG.BASE_URL}/api/v1/reliability/lots`
+        '/reliability/lots'
       );
       expect(result).toHaveLength(3);
       expect(result[0].confidence).toBe('HIGH');
@@ -117,7 +116,7 @@ describe('ReliabilityApiService', () => {
       const result = await reliabilityApiService.getReliabilityConfig();
 
       expect(mockApiService.get).toHaveBeenCalledWith(
-        `${API_CONFIG.BASE_URL}/api/v1/reliability/config`
+        '/reliability/config'
       );
       expect(result.weights.penetrationRate).toBe(0.35);
       expect(result.thresholds.highConfidence).toBe(70);
