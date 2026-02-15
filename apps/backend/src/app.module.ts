@@ -8,6 +8,7 @@ import { EventsModule } from './events/events.module';
 import { WeatherModule } from './weather/weather.module';
 import { AuthModule } from './auth/auth.module';
 import { OccupancyEventsModule } from './occupancy-events/occupancy-events.module';
+import { ReliabilityModule } from './reliability/reliability.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { OccupancyEventsModule } from './occupancy-events/occupancy-events.modul
     WeatherModule,
     AuthModule,
     OccupancyEventsModule,
+    ReliabilityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

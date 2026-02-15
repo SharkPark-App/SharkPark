@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Inject, Logger, InternalServerErrorException, forwardRef } from '@nestjs/common';
 import { 
   DynamoDBClient, 
   PutItemCommand, 
@@ -16,6 +16,8 @@ import type {
   EventStats,
 } from './interfaces/occupancy-event.interface';
 import { hashDeviceId, generateEventId, calculateTTL } from './utils/privacy.util';
+import { ReliabilityService } from '../reliability/reliability.service';
+import type { ReliabilityInput } from '../reliability/interfaces';
 
 /** Service for anonymous occupancy events - handles storage, deduplication, and real-time updates */
 @Injectable()
@@ -26,6 +28,7 @@ export class OccupancyEventsService {
     @Inject(DYNAMODB_CLIENT) private readonly dynamoClient: DynamoDBClient,
     @Inject(TABLE_NAME) private readonly tableName: string,
     @Inject(TIMESERIES_TABLE_NAME) private readonly timeseriesTableName: string,
+    @Inject(forwardRef(() => ReliabilityService)) private readonly reliabilityService: ReliabilityService,
   ) {}
 
   /**
@@ -177,13 +180,13 @@ export class OccupancyEventsService {
         const available = Math.max(0, capacity - occupancy);
         const occupancyRate = capacity > 0 ? occupancy / capacity : 0;
 
-        // Determine confidence based on penetration rate and data freshness
-        let confidence: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM';
-        if (lot.penetration_rate >= 0.7) {
-          confidence = 'HIGH';
-        } else if (lot.penetration_rate < 0.3) {
-          confidence = 'LOW';
-        }
+        // Compute confidence using ReliabilityService multi-factor algorithm
+        const reliabilityInput = await this.gatherReliabilityInput(lot.lot_id, lot);
+        const reliabilityScore = this.reliabilityService.computeReliabilitySummary(
+          lot.lot_id,
+          reliabilityInput,
+        );
+        const confidence = reliabilityScore.confidence;
 
         const snapshot: OccupancySnapshot = {
           PK: `LOT#${lot.lot_id}#${dateStr}`,
@@ -195,6 +198,8 @@ export class OccupancyEventsService {
           available,
           occupancy_rate: Math.round(occupancyRate * 1000) / 1000,
           confidence,
+          reliability_score: reliabilityScore.score,
+          is_cold_start: reliabilityScore.isColdStart,
           ttl: calculateTTL(90),
         };
 
@@ -329,5 +334,43 @@ export class OccupancyEventsService {
       this.logger.warn(`Failed to update device last event for lot ${lotId}`, error);
       // Non-critical, don't throw
     }
+  }
+
+  /**
+   * Gathers input data required for reliability computation.
+   * Used by createSnapshots to compute multi-factor confidence scores.
+   */
+  private async gatherReliabilityInput(
+    lotId: string,
+    lot: Record<string, unknown>,
+  ): Promise<ReliabilityInput> {
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+    // Get events from the last hour
+    const recentEvents = await this.findByLot(
+      lotId,
+      oneHourAgo.toISOString(),
+      now.toISOString(),
+      1000,
+    );
+
+    // Calculate minutes since last event
+    let minutesSinceLastEvent = 60; // Default to max if no events
+    if (recentEvents.length > 0) {
+      const lastEventTime = new Date(recentEvents[recentEvents.length - 1].timestamp);
+      minutesSinceLastEvent = (now.getTime() - lastEventTime.getTime()) / 60000;
+    }
+
+    // Count unique devices
+    const uniqueDevices = new Set(recentEvents.map((e) => e.device_hash));
+
+    return {
+      penetrationRate: (lot.penetration_rate as number) || 0,
+      minutesSinceLastEvent: Math.min(120, minutesSinceLastEvent),
+      eventsInLastHour: recentEvents.length,
+      uniqueDevicesInLastHour: uniqueDevices.size,
+      historicalAccuracy: null, // Not yet implemented
+    };
   }
 }
