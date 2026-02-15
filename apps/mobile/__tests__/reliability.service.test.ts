@@ -18,6 +18,7 @@ describe('ReliabilityApiService', () => {
   describe('getLotReliability', () => {
     it('fetches reliability score for a specific lot', async () => {
       const mockResponse = {
+        success: true,
         data: {
           lotId: 'G1',
           score: 85,
@@ -59,6 +60,7 @@ describe('ReliabilityApiService', () => {
   describe('getAllLotsReliability', () => {
     it('fetches reliability summaries for all lots', async () => {
       const mockResponse = {
+        success: true,
         data: [
           { lotId: 'G1', score: 85, confidence: 'HIGH', isColdStart: false, computedAt: '2026-02-14T20:30:00.000Z' },
           { lotId: 'G2', score: 55, confidence: 'MEDIUM', isColdStart: false, computedAt: '2026-02-14T20:30:00.000Z' },
@@ -79,7 +81,7 @@ describe('ReliabilityApiService', () => {
     });
 
     it('returns empty array when no lots', async () => {
-      mockApiService.get.mockResolvedValueOnce({ data: [] });
+      mockApiService.get.mockResolvedValueOnce({ success: true, data: [] });
 
       const result = await reliabilityApiService.getAllLotsReliability();
 
@@ -90,6 +92,7 @@ describe('ReliabilityApiService', () => {
   describe('getReliabilityConfig', () => {
     it('fetches reliability computation configuration', async () => {
       const mockResponse = {
+        success: true,
         data: {
           weights: {
             penetrationRate: 0.35,
@@ -99,8 +102,12 @@ describe('ReliabilityApiService', () => {
             historicalAccuracy: 0.05,
           },
           thresholds: {
-            high: 70,
-            medium: 40,
+            highConfidence: 70,
+            mediumConfidence: 40,
+            penetrationRateTarget: 0.75,
+            freshnessWindowMinutes: 30,
+            eventFrequencyTarget: 30,
+            sampleSizeTarget: 10,
           },
         },
       };
@@ -113,7 +120,7 @@ describe('ReliabilityApiService', () => {
         `${API_CONFIG.BASE_URL}/api/v1/reliability/config`
       );
       expect(result.weights.penetrationRate).toBe(0.35);
-      expect(result.thresholds.high).toBe(70);
+      expect(result.thresholds.highConfidence).toBe(70);
     });
   });
 });

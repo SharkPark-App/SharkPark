@@ -1,4 +1,5 @@
 import React from 'react';
+// @ts-expect-error - test file
 import { render, fireEvent } from '@testing-library/react-native';
 import { ReliabilityMeter, ReliabilityDot, ReliabilityBar } from '../src/components/ReliabilityMeter';
 
