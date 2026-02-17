@@ -1,11 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OccupancyEventsService } from './occupancy-events.service';
 import { DYNAMODB_CLIENT, TABLE_NAME, TIMESERIES_TABLE_NAME } from '../database/database.module';
+import { ReliabilityService } from '../reliability/reliability.service';
 
 describe('OccupancyEventsService', () => {
   let service: OccupancyEventsService;
   let mockDynamoClient: {
     send: jest.Mock;
+  };
+  let mockReliabilityService: {
+    computeReliabilitySummary: jest.Mock;
   };
 
   const mockTableName = 'sharkpark-main';
@@ -16,12 +20,23 @@ describe('OccupancyEventsService', () => {
       send: jest.fn(),
     };
 
+    mockReliabilityService = {
+      computeReliabilitySummary: jest.fn().mockReturnValue({
+        lotId: 'test-lot',
+        score: 50,
+        confidence: 'MEDIUM',
+        isColdStart: false,
+        computedAt: new Date().toISOString(),
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OccupancyEventsService,
         { provide: DYNAMODB_CLIENT, useValue: mockDynamoClient },
         { provide: TABLE_NAME, useValue: mockTableName },
         { provide: TIMESERIES_TABLE_NAME, useValue: mockTimeseriesTableName },
+        { provide: ReliabilityService, useValue: mockReliabilityService },
       ],
     }).compile();
 

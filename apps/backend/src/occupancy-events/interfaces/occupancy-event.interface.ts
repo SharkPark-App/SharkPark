@@ -28,6 +28,8 @@ export interface OccupancySnapshot {
   available: number;             // capacity - occupancy
   occupancy_rate: number;        // 0.0 to 1.0
   confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  reliability_score?: number;    // 0-100 score from multi-factor algorithm
+  is_cold_start?: boolean;       // True if insufficient data for reliable estimates
   ttl: number;                   // Unix timestamp for DynamoDB TTL (90 days)
 }
 
