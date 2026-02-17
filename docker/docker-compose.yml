@@ -1,12 +1,17 @@
 services:
-  dynamodb:
-    image: amazon/dynamodb-local
-    container_name: sharkpark-dynamodb
+  postgres:
+    image: postgres:16-alpine
+    container_name: sharkpark-postgres
+    environment:
+      POSTGRES_USER: sharkpark
+      POSTGRES_PASSWORD: sharkpark
+      POSTGRES_DB: sharkpark
     ports:
-      - "8000:8000"
-    command: -jar DynamoDBLocal.jar -sharedDb
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/shell/"]
+      test: ["CMD-SHELL", "pg_isready -U sharkpark"]
       interval: 5s
       timeout: 2s
       retries: 10
@@ -25,3 +30,6 @@ services:
       interval: 5s
       timeout: 2s
       retries: 20
+
+volumes:
+  pgdata:

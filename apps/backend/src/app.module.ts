@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
@@ -13,6 +15,8 @@ import { ReliabilityModule } from './reliability/reliability.module';
 @Module({
   imports: [
     DatabaseModule,
+    // Rate limiting: 20 requests per 10-second window per IP
+    ThrottlerModule.forRoot([{ ttl: 10_000, limit: 20 }]),
     LotsModule,
     UsersModule,
     EventsModule,
@@ -22,6 +26,9 @@ import { ReliabilityModule } from './reliability/reliability.module';
     ReliabilityModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

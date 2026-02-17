@@ -1,11 +1,7 @@
-import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
-import { DynamoDBClient, QueryCommand, PutItemCommand, DeleteItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
-import { unmarshall, marshall } from '@aws-sdk/util-dynamodb';
-import {
-  User,
-  UserFavorite,
-  UserResponse,
-} from './interfaces/user.interface';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { PrismaService } from '../database/database.module';
+import type { UserType } from '@prisma/client';
+import type { UserResponse } from './interfaces/user.interface';
 
 /**
  * Service for user profile and favorites management.
@@ -15,35 +11,31 @@ import {
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
-  constructor(
-    @Inject('DYNAMODB_CLIENT') private readonly dynamoClient: DynamoDBClient,
-    @Inject('TABLE_NAME') private readonly tableName: string,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Retrieves user profile with their favorited parking lots. */
   async findOne(userId: string): Promise<UserResponse> {
     try {
-      const command = new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'PK = :pk AND SK = :sk',
-        ExpressionAttributeValues: {
-          ':pk': { S: `USER#${userId}` },
-          ':sk': { S: 'PROFILE' },
-        },
+      const user = await this.prisma.user.findUnique({
+        where: { email: userId },
+        include: { favorites: true },
       });
 
-      const result = await this.dynamoClient.send(command);
-
-      if (!result.Items || result.Items.length === 0) {
+      if (!user) {
         throw new NotFoundException(`User ${userId} not found`);
       }
 
-      const user = unmarshall(result.Items[0]) as User;
-      const favorites = await this.getFavorites(userId);
-
       return {
-        ...user,
-        favorites: favorites.map((f) => f.lot_id),
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        user_type: user.user_type,
+        phone: user.phone,
+        notification_preferences: user.notification_preferences,
+        created_at: user.created_at,
+        last_login: user.last_login,
+        favorites: user.favorites.map((f) => f.lot_id),
       };
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -54,43 +46,44 @@ export class UsersService {
     }
   }
 
-  async getFavorites(userId: string): Promise<UserFavorite[]> {
-    const command = new QueryCommand({
-      TableName: this.tableName,
-      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
-      ExpressionAttributeValues: {
-        ':pk': { S: `USER#${userId}` },
-        ':sk': { S: 'FAV#' },
-      },
+  /** Retrieves user's favorite lots. */
+  async getFavorites(userId: string): Promise<{ lot_id: string; added_at: Date }[]> {
+    const user = await this.prisma.user.findUnique({ where: { email: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    const favorites = await this.prisma.userFavorite.findMany({
+      where: { user_id: user.id },
+      include: { lot: true },
     });
 
-    const result = await this.dynamoClient.send(command);
-    return (result.Items || []).map((item) => unmarshall(item)) as UserFavorite[];
+    return favorites.map(f => ({
+      lot_id: f.lot.lot_id,
+      added_at: f.added_at,
+    }));
   }
 
   /** Adds a parking lot to user's favorites. */
   async addFavorite(userId: string, lotId: string): Promise<void> {
-    // Verify user exists first
-    await this.findOne(userId);
+    // Verify user exists
+    const user = await this.prisma.user.findUnique({ where: { email: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
 
-    const now = new Date().toISOString();
-    const item = marshall({
-      PK: `USER#${userId}`,
-      SK: `FAV#${lotId}`,
-      user_id: userId,
-      lot_id: lotId,
-      added_at: now,
-      EntityType: 'UserFavorite',
-      timestamp: now,
-    });
+    // Find the lot by human-readable lot_id
+    const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+    if (!lot) {
+      throw new NotFoundException(`Lot ${lotId} not found`);
+    }
 
     try {
-      await this.dynamoClient.send(
-        new PutItemCommand({
-          TableName: this.tableName,
-          Item: item,
-        }),
-      );
+      await this.prisma.userFavorite.upsert({
+        where: { user_id_lot_id: { user_id: user.id, lot_id: lot.id } },
+        update: {},
+        create: { user_id: user.id, lot_id: lot.id },
+      });
       this.logger.log(`Added favorite ${lotId} for user ${userId}`);
     } catch (error) {
       this.logger.error(`Failed to add favorite ${lotId} for user ${userId}`, error);
@@ -100,19 +93,20 @@ export class UsersService {
 
   /** Removes a parking lot from user's favorites. */
   async removeFavorite(userId: string, lotId: string): Promise<void> {
-    // Verify user exists first
-    await this.findOne(userId);
+    const user = await this.prisma.user.findUnique({ where: { email: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+    if (!lot) {
+      throw new NotFoundException(`Lot ${lotId} not found`);
+    }
 
     try {
-      await this.dynamoClient.send(
-        new DeleteItemCommand({
-          TableName: this.tableName,
-          Key: marshall({
-            PK: `USER#${userId}`,
-            SK: `FAV#${lotId}`,
-          }),
-        }),
-      );
+      await this.prisma.userFavorite.deleteMany({
+        where: { user_id: user.id, lot_id: lot.id },
+      });
       this.logger.log(`Removed favorite ${lotId} for user ${userId}`);
     } catch (error) {
       this.logger.error(`Failed to remove favorite ${lotId} for user ${userId}`, error);
@@ -123,29 +117,18 @@ export class UsersService {
   /** Updates user's notification preferences. */
   async updateNotificationPreferences(
     userId: string,
-    preferences: Partial<User['notification_preferences']>,
+    preferences: Record<string, boolean>,
   ): Promise<UserResponse> {
-    // Verify user exists first
-    await this.findOne(userId);
+    const user = await this.prisma.user.findUnique({ where: { email: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
 
     try {
-      await this.dynamoClient.send(
-        new UpdateItemCommand({
-          TableName: this.tableName,
-          Key: marshall({
-            PK: `USER#${userId}`,
-            SK: 'PROFILE',
-          }),
-          UpdateExpression: 'SET notification_preferences = :prefs, #ts = :ts',
-          ExpressionAttributeNames: {
-            '#ts': 'timestamp',
-          },
-          ExpressionAttributeValues: marshall({
-            ':prefs': preferences,
-            ':ts': new Date().toISOString(),
-          }),
-        }),
-      );
+      await this.prisma.user.update({
+        where: { email: userId },
+        data: { notification_preferences: preferences },
+      });
       this.logger.log(`Updated notification preferences for user ${userId}`);
       return this.findOne(userId);
     } catch (error) {
@@ -156,69 +139,81 @@ export class UsersService {
 
   /** Updates a user profile, or creates one if nonexistent. */
   async findOrCreateUser(email: string, firstName: string, lastName: string): Promise<UserResponse> {
-    const userId = email;
-    const now = new Date().toISOString();
+    const now = new Date();
 
     try {
-      // see if the user exists first
-      const existingUser = await this.findOne(userId);
+      // Try to find existing user
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+        include: { favorites: true },
+      });
 
-      // if found, update the last_login timestamp
-      await this.dynamoClient.send(
-        new UpdateItemCommand({
-          TableName: this.tableName,
-          Key: marshall({
-            PK: `USER#${userId}`,
-            SK: 'PROFILE',
-          }),
-          UpdateExpression: 'SET last_login = :login, #ts = :ts',
-          ExpressionAttributeNames: { '#ts': 'timestamp' },
-          ExpressionAttributeValues: marshall({
-            ':login': now,
-            ':ts': now,
-          }),
-        }),
-      );
+      if (existingUser) {
+        // Update last_login
+        await this.prisma.user.update({
+          where: { email },
+          data: { last_login: now },
+        });
 
-      return existingUser;
+        return {
+          id: existingUser.id,
+          email: existingUser.email,
+          first_name: existingUser.first_name,
+          last_name: existingUser.last_name,
+          user_type: existingUser.user_type,
+          phone: existingUser.phone,
+          notification_preferences: existingUser.notification_preferences,
+          created_at: existingUser.created_at,
+          last_login: now,
+          favorites: existingUser.favorites.map((f) => f.lot_id),
+        };
+      }
 
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        // if not found, create a new user
-        const newUser: User = {
-          PK: `USER#${userId}`,
-          SK: 'PROFILE',
-          EntityType: 'User',
-          user_id: userId,
-          email: userId,
+      // Determine user type from email
+      const userType: UserType = email.includes('@student') ? 'STUDENT' : 'EMPLOYEE';
+
+      // Get default school (CSULB)
+      const school = await this.prisma.school.findFirst({
+        where: { short_name: 'CSULB' },
+      });
+
+      if (!school) {
+        throw new Error('Default school (CSULB) not found. Run seed first.');
+      }
+
+      const newUser = await this.prisma.user.create({
+        data: {
+          school_id: school.id,
+          email,
           first_name: firstName,
           last_name: lastName,
-          // determine user type
-          user_type: email.includes('@student') ? 'STUDENT' : 'EMPLOYEE',
-          created_at: now,
+          user_type: userType,
           last_login: now,
-          timestamp: now,
-          // default required preferences
           notification_preferences: {
             favorites_filling: false,
             favorites_clearing: false,
             surge_alerts: false,
             event_alerts: false,
           },
-        };
+        },
+      });
 
-        await this.dynamoClient.send(
-          new PutItemCommand({
-            TableName: this.tableName,
-            Item: marshall(newUser),
-          }),
-        );
+      this.logger.log(`Created new user: ${email}`);
 
-        this.logger.log(`Created new user: ${userId}`);
-        return { ...newUser, favorites: [] }; // return matched UserResponse interface
-      }
-      // if error is for a different reason
-      this.logger.error(`Failed to find or create profile for user ${userId}`, error);
+      return {
+        id: newUser.id,
+        email: newUser.email,
+        first_name: newUser.first_name,
+        last_name: newUser.last_name,
+        user_type: newUser.user_type,
+        phone: newUser.phone,
+        notification_preferences: newUser.notification_preferences,
+        created_at: newUser.created_at,
+        last_login: newUser.last_login,
+        favorites: [],
+      };
+    } catch (error) {
+      this.logger.error(`Failed to find or create profile for user ${email}`, error);
       throw error;
     }
   }

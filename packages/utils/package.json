@@ -17,11 +17,11 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
-  "keywords": ["sharkpark", "utils"],
+  "keywords": [
+    "sharkpark",
+    "utils"
+  ],
   "author": "",
   "license": "UNLICENSED",
-  "packageManager": "pnpm@10.20.0",
-  "devDependencies": {
-    "typescript": "^5.9.3"
-  }
+  "packageManager": "pnpm@10.20.0"
 }

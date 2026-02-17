@@ -1,23 +1,28 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OccupancyEventsService } from './occupancy-events.service';
-import { DYNAMODB_CLIENT, TABLE_NAME, TIMESERIES_TABLE_NAME } from '../database/database.module';
+import { PrismaService } from '../database/database.module';
 import { ReliabilityService } from '../reliability/reliability.service';
 
 describe('OccupancyEventsService', () => {
   let service: OccupancyEventsService;
-  let mockDynamoClient: {
-    send: jest.Mock;
+  let prisma: {
+    lot: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+    occupancyEvent: { create: jest.Mock; findMany: jest.Mock };
+    occupancySnapshot: { create: jest.Mock; findMany: jest.Mock };
+    deviceState: { findUnique: jest.Mock; upsert: jest.Mock };
+    $transaction: jest.Mock;
   };
   let mockReliabilityService: {
     computeReliabilitySummary: jest.Mock;
   };
 
-  const mockTableName = 'sharkpark-main';
-  const mockTimeseriesTableName = 'sharkpark-timeseries';
-
   beforeEach(async () => {
-    mockDynamoClient = {
-      send: jest.fn(),
+    prisma = {
+      lot: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+      occupancyEvent: { create: jest.fn(), findMany: jest.fn() },
+      occupancySnapshot: { create: jest.fn(), findMany: jest.fn() },
+      deviceState: { findUnique: jest.fn(), upsert: jest.fn() },
+      $transaction: jest.fn(),
     };
 
     mockReliabilityService = {
@@ -33,9 +38,7 @@ describe('OccupancyEventsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OccupancyEventsService,
-        { provide: DYNAMODB_CLIENT, useValue: mockDynamoClient },
-        { provide: TABLE_NAME, useValue: mockTableName },
-        { provide: TIMESERIES_TABLE_NAME, useValue: mockTimeseriesTableName },
+        { provide: PrismaService, useValue: prisma },
         { provide: ReliabilityService, useValue: mockReliabilityService },
       ],
     }).compile();
@@ -55,13 +58,21 @@ describe('OccupancyEventsService', () => {
       timestamp: '2026-02-07T14:30:00.000Z',
     };
 
+    const mockLot = {
+      id: 'lot-uuid-1',
+      lot_id: 'G1',
+      capacity: 100,
+      current_occupancy: 50,
+      penetration_rate: 0.65,
+    };
+
     it('should create an event and update occupancy for ENTER', async () => {
-      // Mock: no duplicate found
-      mockDynamoClient.send
-        .mockResolvedValueOnce({ Item: null }) // checkDuplicate - GetItem
-        .mockResolvedValueOnce({}) // PutItem - store event
-        .mockResolvedValueOnce({}) // UpdateItem - update occupancy
-        .mockResolvedValueOnce({}); // PutItem - update device last event
+      // No duplicate found
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
+        await fn(prisma);
+      });
 
       const result = await service.create(validDto);
 
@@ -69,17 +80,16 @@ describe('OccupancyEventsService', () => {
       expect(result.event_type).toBe('ENTER');
       expect(result.deduplicated).toBe(false);
       expect(result.event_id).toBeDefined();
-      expect(mockDynamoClient.send).toHaveBeenCalledTimes(4);
     });
 
     it('should create an event and decrement occupancy for EXIT', async () => {
       const exitDto = { ...validDto, event_type: 'EXIT' as const };
 
-      mockDynamoClient.send
-        .mockResolvedValueOnce({ Item: null })
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({});
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
+        await fn(prisma);
+      });
 
       const result = await service.create(exitDto);
 
@@ -88,82 +98,59 @@ describe('OccupancyEventsService', () => {
     });
 
     it('should return deduplicated=true when duplicate detected', async () => {
-      // Mock: duplicate found (same event type as last)
-      mockDynamoClient.send.mockResolvedValueOnce({
-        Item: {
-          PK: { S: 'DEVICE#hash' },
-          SK: { S: 'LOT#G1' },
-          last_event_type: { S: 'ENTER' },
-        },
+      // Duplicate found: device last event was also ENTER
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue({
+        device_hash: 'some-hash',
+        lot_id: 'lot-uuid-1',
+        last_event_type: 'ENTER',
       });
 
       const result = await service.create(validDto);
 
       expect(result.deduplicated).toBe(true);
-      expect(mockDynamoClient.send).toHaveBeenCalledTimes(1); // Only the check call
+      // Transaction should NOT be called for duplicates
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('should handle device hash consistently', async () => {
-      mockDynamoClient.send
-        .mockResolvedValueOnce({ Item: null })
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({});
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
+        await fn(prisma);
+      });
 
       const result1 = await service.create(validDto);
 
-      mockDynamoClient.send
-        .mockResolvedValueOnce({ Item: null })
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({});
+      prisma.deviceState.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
+        await fn(prisma);
+      });
 
       const result2 = await service.create(validDto);
 
-      // Same device should produce same behavior
       expect(result1.lot_id).toBe(result2.lot_id);
     });
 
-    it('should throw InternalServerErrorException on DynamoDB error', async () => {
-      mockDynamoClient.send
-        .mockResolvedValueOnce({ Item: null })
-        .mockRejectedValueOnce(new Error('DynamoDB error'));
+    it('should throw InternalServerErrorException on database error', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockRejectedValue(new Error('Database error'));
 
       await expect(service.create(validDto)).rejects.toThrow('Failed to record occupancy event');
-    });
-
-    it('should handle ConditionalCheckFailedException on EXIT when occupancy is 0', async () => {
-      const exitDto = { ...validDto, event_type: 'EXIT' as const };
-
-      const conditionalError = new Error('Condition not met');
-      (conditionalError as Error & { name: string }).name = 'ConditionalCheckFailedException';
-
-      mockDynamoClient.send
-        .mockResolvedValueOnce({ Item: null })
-        .mockResolvedValueOnce({})
-        .mockRejectedValueOnce(conditionalError)
-        .mockResolvedValueOnce({});
-
-      // Should not throw, just log warning
-      const result = await service.create(exitDto);
-      expect(result.deduplicated).toBe(false);
     });
   });
 
   describe('findByLot', () => {
     it('should return events for a lot within date range', async () => {
+      const mockLot = { id: 'lot-uuid-1', lot_id: 'G1' };
       const mockEvents = [
-        { PK: 'LOT#G1', SK: 'EVENT#2026-02-07T10:00:00Z#123', event_type: 'ENTER' },
-        { PK: 'LOT#G1', SK: 'EVENT#2026-02-07T12:00:00Z#456', event_type: 'EXIT' },
+        { id: '1', lot_id: 'lot-uuid-1', event_type: 'ENTER', timestamp: new Date('2026-02-07T10:00:00Z'), device_hash: 'h1' },
+        { id: '2', lot_id: 'lot-uuid-1', event_type: 'EXIT', timestamp: new Date('2026-02-07T12:00:00Z'), device_hash: 'h2' },
       ];
 
-      mockDynamoClient.send.mockResolvedValueOnce({
-        Items: mockEvents.map(e => ({
-          PK: { S: e.PK },
-          SK: { S: e.SK },
-          event_type: { S: e.event_type },
-        })),
-      });
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.occupancyEvent.findMany.mockResolvedValue(mockEvents);
 
       const result = await service.findByLot('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
@@ -173,15 +160,24 @@ describe('OccupancyEventsService', () => {
     });
 
     it('should return empty array when no events found', async () => {
-      mockDynamoClient.send.mockResolvedValueOnce({ Items: [] });
+      prisma.lot.findFirst.mockResolvedValue({ id: 'lot-uuid-1', lot_id: 'G1' });
+      prisma.occupancyEvent.findMany.mockResolvedValue([]);
 
       const result = await service.findByLot('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
       expect(result).toEqual([]);
     });
 
+    it('should return empty array when lot not found', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
+
+      const result = await service.findByLot('INVALID', '2026-02-07', '2026-02-07T23:59:59Z');
+
+      expect(result).toEqual([]);
+    });
+
     it('should throw InternalServerErrorException on error', async () => {
-      mockDynamoClient.send.mockRejectedValueOnce(new Error('Query failed'));
+      prisma.lot.findFirst.mockRejectedValue(new Error('Query failed'));
 
       await expect(service.findByLot('G1', '2026-02-07', '2026-02-07T23:59:59Z'))
         .rejects.toThrow('Failed to fetch events for lot G1');
@@ -190,13 +186,15 @@ describe('OccupancyEventsService', () => {
 
   describe('getEventStats', () => {
     it('should calculate correct statistics', async () => {
+      const mockLot = { id: 'lot-uuid-1', lot_id: 'G1' };
       const mockEvents = [
-        { PK: { S: 'LOT#G1' }, event_type: { S: 'ENTER' } },
-        { PK: { S: 'LOT#G1' }, event_type: { S: 'ENTER' } },
-        { PK: { S: 'LOT#G1' }, event_type: { S: 'EXIT' } },
+        { event_type: 'ENTER', timestamp: new Date(), device_hash: 'h1' },
+        { event_type: 'ENTER', timestamp: new Date(), device_hash: 'h2' },
+        { event_type: 'EXIT', timestamp: new Date(), device_hash: 'h3' },
       ];
 
-      mockDynamoClient.send.mockResolvedValueOnce({ Items: mockEvents });
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.occupancyEvent.findMany.mockResolvedValue(mockEvents);
 
       const stats = await service.getEventStats('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
@@ -206,7 +204,8 @@ describe('OccupancyEventsService', () => {
     });
 
     it('should handle empty events', async () => {
-      mockDynamoClient.send.mockResolvedValueOnce({ Items: [] });
+      prisma.lot.findFirst.mockResolvedValue({ id: 'lot-uuid-1', lot_id: 'G1' });
+      prisma.occupancyEvent.findMany.mockResolvedValue([]);
 
       const stats = await service.getEventStats('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
@@ -219,51 +218,23 @@ describe('OccupancyEventsService', () => {
   describe('createSnapshots', () => {
     it('should create snapshots for all lots', async () => {
       const mockLots = [
-        { lot_id: 'G1', current_occupancy: 50, capacity: 100, penetration_rate: 0.8 },
-        { lot_id: 'E7', current_occupancy: 30, capacity: 80, penetration_rate: 0.5 },
+        { id: 'lot-uuid-1', lot_id: 'G1', current_occupancy: 50, capacity: 100, penetration_rate: 0.8 },
+        { id: 'lot-uuid-2', lot_id: 'E7', current_occupancy: 30, capacity: 80, penetration_rate: 0.5 },
       ];
 
-      mockDynamoClient.send
-        .mockResolvedValueOnce({
-          Items: mockLots.map(lot => ({
-            lot_id: { S: lot.lot_id },
-            current_occupancy: { N: String(lot.current_occupancy) },
-            capacity: { N: String(lot.capacity) },
-            penetration_rate: { N: String(lot.penetration_rate) },
-          })),
-        })
-        .mockResolvedValue({}); // PutItem calls
+      prisma.lot.findMany.mockResolvedValue(mockLots);
+      prisma.occupancyEvent.findMany.mockResolvedValue([]);
+      prisma.occupancySnapshot.create.mockResolvedValue({});
 
       const result = await service.createSnapshots();
 
       expect(result.count).toBe(2);
       expect(result.timestamp).toBeDefined();
-    });
-
-    it('should determine confidence based on penetration rate', async () => {
-      const mockLots = [
-        { lot_id: 'G1', current_occupancy: 50, capacity: 100, penetration_rate: 0.8 }, // HIGH
-        { lot_id: 'E7', current_occupancy: 30, capacity: 80, penetration_rate: 0.5 },  // MEDIUM
-        { lot_id: 'F3', current_occupancy: 20, capacity: 60, penetration_rate: 0.2 },  // LOW
-      ];
-
-      mockDynamoClient.send
-        .mockResolvedValueOnce({
-          Items: mockLots.map(lot => ({
-            lot_id: { S: lot.lot_id },
-            current_occupancy: { N: String(lot.current_occupancy) },
-            capacity: { N: String(lot.capacity) },
-            penetration_rate: { N: String(lot.penetration_rate) },
-          })),
-        })
-        .mockResolvedValue({});
-
-      const result = await service.createSnapshots();
-      expect(result.count).toBe(3);
+      expect(prisma.occupancySnapshot.create).toHaveBeenCalledTimes(2);
     });
 
     it('should throw InternalServerErrorException on error', async () => {
-      mockDynamoClient.send.mockRejectedValueOnce(new Error('Query failed'));
+      prisma.lot.findMany.mockRejectedValue(new Error('Query failed'));
 
       await expect(service.createSnapshots()).rejects.toThrow('Failed to create occupancy snapshots');
     });
@@ -271,34 +242,30 @@ describe('OccupancyEventsService', () => {
 
   describe('getSnapshots', () => {
     it('should return snapshots for a lot on a specific date', async () => {
+      const mockLot = { id: 'lot-uuid-1', lot_id: 'G1' };
       const mockSnapshots = [
-        { PK: 'LOT#G1#2026-02-07', SK: 'SNAPSHOT#2026-02-07T10:00:00Z', occupancy: 50 },
-        { PK: 'LOT#G1#2026-02-07', SK: 'SNAPSHOT#2026-02-07T10:15:00Z', occupancy: 52 },
+        { lot_id: 'lot-uuid-1', timestamp: new Date('2026-02-07T10:00:00Z'), occupancy: 50 },
+        { lot_id: 'lot-uuid-1', timestamp: new Date('2026-02-07T10:15:00Z'), occupancy: 52 },
       ];
 
-      mockDynamoClient.send.mockResolvedValueOnce({
-        Items: mockSnapshots.map(s => ({
-          PK: { S: s.PK },
-          SK: { S: s.SK },
-          occupancy: { N: String(s.occupancy) },
-        })),
-      });
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.occupancySnapshot.findMany.mockResolvedValue(mockSnapshots);
 
       const result = await service.getSnapshots('G1', '2026-02-07');
 
       expect(result).toHaveLength(2);
     });
 
-    it('should return empty array when no snapshots found', async () => {
-      mockDynamoClient.send.mockResolvedValueOnce({ Items: [] });
+    it('should return empty array when lot not found', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
 
-      const result = await service.getSnapshots('G1', '2026-02-07');
+      const result = await service.getSnapshots('INVALID', '2026-02-07');
 
       expect(result).toEqual([]);
     });
 
     it('should throw InternalServerErrorException on error', async () => {
-      mockDynamoClient.send.mockRejectedValueOnce(new Error('Query failed'));
+      prisma.lot.findFirst.mockRejectedValue(new Error('Query failed'));
 
       await expect(service.getSnapshots('G1', '2026-02-07'))
         .rejects.toThrow('Failed to fetch snapshots for lot G1');

@@ -42,16 +42,17 @@ export class ReliabilityService {
     weights: ReliabilityWeights = this.defaultWeights,
     thresholds: ReliabilityThresholds = this.defaultThresholds,
   ): ReliabilityScore {
-    // Normalize weights if they don't sum to 1.0
-    const weightSum = Object.values(weights).reduce((sum, w) => sum + w, 0);
+    // Clone + normalize weights to avoid mutating the default object
+    const w = { ...weights };
+    const weightSum = Object.values(w).reduce((sum, v) => sum + v, 0);
     if (Math.abs(weightSum - 1.0) > 0.001) {
       this.logger.warn(`Weights sum to ${weightSum}, normalizing...`);
-      Object.keys(weights).forEach((key) => {
-        weights[key as keyof ReliabilityWeights] /= weightSum;
+      Object.keys(w).forEach((key) => {
+        w[key as keyof ReliabilityWeights] /= weightSum;
       });
     }
 
-    const factors = this.computeFactors(input, weights, thresholds);
+    const factors = this.computeFactors(input, w, thresholds);
 
     const score = Math.round(
       (factors.penetrationRate.weightedScore +

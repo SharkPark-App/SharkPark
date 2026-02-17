@@ -120,7 +120,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     locationService.setOnGeofenceEvent(geofenceListener);
 
     // Act: Trigger ENTER event
-    locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
     
     // Wait for async operations
     await new Promise<void>(resolve => setTimeout(() => resolve(), 50));
@@ -128,14 +128,14 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     // Assert: Alert should be shown
     expect(mockAlert).toHaveBeenCalledWith(
       'Entered Parking Lot',
-      'Welcome to lot_1!\n\nYour anonymous entry has been recorded.',
+      'Welcome to G1!\n\nYour anonymous entry has been recorded.',
       [{ text: 'OK' }]
     );
 
     // Assert: Database should be updated
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(1);
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({
-      lotId: 'lot_1',
+      lotId: 'G1',
       eventType: 'ENTER',
       source: 'GEOFENCE',
     });
@@ -164,7 +164,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     });
 
     // Act: Trigger EXIT event
-    locationService.triggerTestGeofenceEvent('lot_2', 'EXIT');
+    locationService.triggerTestGeofenceEvent('G2', 'EXIT');
     
     // Wait for async operations
     await new Promise<void>(resolve => setTimeout(() => resolve(), 50));
@@ -172,14 +172,14 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     // Assert: Alert should be shown
     expect(mockAlert).toHaveBeenCalledWith(
       'Left Parking Lot',
-      'Thanks for using lot_2!\n\nYour exit has been recorded anonymously.',
+      'Thanks for using G2!\n\nYour exit has been recorded anonymously.',
       [{ text: 'OK' }]
     );
 
     // Assert: Database should be updated
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(1);
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({
-      lotId: 'lot_2',
+      lotId: 'G2',
       eventType: 'EXIT',
       source: 'GEOFENCE',
     });
@@ -198,9 +198,9 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     locationService.setOnGeofenceEvent(handleGeofenceEvent);
 
     // Act: Trigger multiple events
-    locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
-    locationService.triggerTestGeofenceEvent('lot_1', 'EXIT');
-    locationService.triggerTestGeofenceEvent('lot_2', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'EXIT');
+    locationService.triggerTestGeofenceEvent('G2', 'ENTER');
     
     // Wait for all async operations
     await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
@@ -209,19 +209,19 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(3);
     
     expect(mockRecordOccupancyEvent).toHaveBeenNthCalledWith(1, {
-      lotId: 'lot_1',
+      lotId: 'G1',
       eventType: 'ENTER',
       source: 'GEOFENCE',
     });
 
     expect(mockRecordOccupancyEvent).toHaveBeenNthCalledWith(2, {
-      lotId: 'lot_1',
+      lotId: 'G1',
       eventType: 'EXIT',
       source: 'GEOFENCE',
     });
 
     expect(mockRecordOccupancyEvent).toHaveBeenNthCalledWith(3, {
-      lotId: 'lot_2',
+      lotId: 'G2',
       eventType: 'ENTER',
       source: 'GEOFENCE',
     });
@@ -247,7 +247,7 @@ describe('SimpleGeofencingProvider Database Integration', () => {
     locationService.setOnGeofenceEvent(handleGeofenceEvent);
 
     // Act: Trigger event that will cause database error
-    locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
     
     // Wait for async operations
     await new Promise<void>(resolve => setTimeout(() => resolve(), 50));

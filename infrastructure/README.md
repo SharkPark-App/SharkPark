@@ -705,29 +705,29 @@ SELECT * FROM lots WHERE school_id = 'csuf';
 
 ## Migration Plan (DynamoDB → PostgreSQL)
 
-### Phase 1: Database Setup (Week 1-2)
-- [ ] Add PostgreSQL to `docker-compose.yml` for local dev
-- [ ] Set up Prisma ORM with schema
-- [ ] Run initial migrations
-- [ ] Write seed script for PostgreSQL
+### Phase 1: Database Setup ✅
+- [x] Add PostgreSQL to `docker-compose.yml` for local dev
+- [x] Set up Prisma ORM with schema
+- [x] Run initial migrations
+- [x] Write seed script for PostgreSQL
 
-### Phase 2: Backend Refactor (Week 3-4)
-- [ ] Replace `DatabaseModule` (DynamoDB client → Prisma client)
-- [ ] Rewrite `LotsService` — remove app-side joins, use SQL JOINs
-- [ ] Rewrite `UsersService` — standard CRUD with relations
-- [ ] Rewrite `OccupancyEventsService` — INSERT + aggregate queries
-- [ ] Rewrite `ReliabilityComputationService` — SQL aggregations
+### Phase 2: Backend Refactor ✅
+- [x] Replace `DatabaseModule` (DynamoDB client → Prisma client)
+- [x] Rewrite `LotsService` — remove app-side joins, use SQL JOINs
+- [x] Rewrite `UsersService` — standard CRUD with relations
+- [x] Rewrite `OccupancyEventsService` — INSERT + aggregate queries
+- [x] Rewrite `ReliabilityComputationService` — SQL aggregations
 
 ### Phase 3: ML Integration (Week 5-6)
-- [ ] Add `academic_calendar` and `campus_closures` tables + seed data
-- [ ] Add `occupancy_snapshots` with ML features (`academic_period`, `week_of_semester`, `is_campus_open`)
-- [ ] Add `predictions_short_term` and `predictions_long_term` tables
+- [x] Add `academic_calendar` and `campus_closures` tables + seed data
+- [x] Add `occupancy_snapshots` with ML features (`academic_period`, `week_of_semester`, `is_campus_open`)
+- [x] Add `predictions_short_term` and `predictions_long_term` tables
 - [ ] Build ML training data queries (direct SQL)
 
-### Phase 4: Testing & Cleanup (Week 7-8)
-- [ ] Update all backend tests for PostgreSQL
+### Phase 4: Testing & Cleanup ✅
+- [x] Update all backend tests for PostgreSQL (17 suites, 142 tests passing)
 - [ ] Update e2e tests
-- [ ] Remove DynamoDB dependencies (`@aws-sdk/client-dynamodb`, `setup-dynamodb-schema.ts`)
+- [x] Remove DynamoDB dependencies (`@aws-sdk/client-dynamodb`, `setup-dynamodb-schema.ts`)
 - [ ] Update mobile API types if prediction format changed
 - [ ] Performance benchmarking
 

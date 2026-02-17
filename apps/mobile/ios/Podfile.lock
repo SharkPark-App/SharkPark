@@ -1791,8 +1791,6 @@ PODS:
   - react-native-app-auth (8.1.0):
     - AppAuth (>= 1.7.6)
     - React-Core
-  - react-native-background-timer (2.4.1):
-    - React-Core
   - react-native-geolocation (3.4.0):
     - boost
     - DoubleConversion
@@ -2846,7 +2844,6 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../../../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-app-auth (from `../../../node_modules/react-native-app-auth`)
-  - react-native-background-timer (from `../../../node_modules/react-native-background-timer`)
   - "react-native-geolocation (from `../../../node_modules/@react-native-community/geolocation`)"
   - react-native-safe-area-context (from `../../../node_modules/react-native-safe-area-context`)
   - React-NativeModulesApple (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
@@ -2980,8 +2977,6 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-app-auth:
     :path: "../../../node_modules/react-native-app-auth"
-  react-native-background-timer:
-    :path: "../../../node_modules/react-native-background-timer"
   react-native-geolocation:
     :path: "../../../node_modules/@react-native-community/geolocation"
   react-native-safe-area-context:
@@ -3110,7 +3105,6 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 06d59c448da7e34eb05b3fb2189e12f6a30fec57
   React-microtasksnativemodule: d1ee999dc9052e23f6488b730fa2d383a4ea40e5
   react-native-app-auth: e21c8ee920876b960e38c9381971bd189ebea06b
-  react-native-background-timer: 4638ae3bee00320753647900b21260b10587b6f7
   react-native-geolocation: 95e48fe2687e5a8280103085372fa62c2297c5d6
   react-native-safe-area-context: c00143b4823773bba23f2f19f85663ae89ceb460
   React-NativeModulesApple: 46690a0fe94ec28fc6fc686ec797b911d251ded0

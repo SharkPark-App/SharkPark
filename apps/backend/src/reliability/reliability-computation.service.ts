@@ -1,7 +1,5 @@
-import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
-import { DynamoDBClient, QueryCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
-import { unmarshall } from '@aws-sdk/util-dynamodb';
-import { DYNAMODB_CLIENT, TABLE_NAME, TIMESERIES_TABLE_NAME } from '../database/database.module';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../database/database.module';
 import { ReliabilityService } from './reliability.service';
 import {
   ReliabilityScore,
@@ -14,49 +12,39 @@ export class ReliabilityComputationService {
   private readonly logger = new Logger(ReliabilityComputationService.name);
 
   constructor(
-    @Inject(DYNAMODB_CLIENT) private readonly dynamoClient: DynamoDBClient,
-    @Inject(TABLE_NAME) private readonly tableName: string,
-    @Inject(TIMESERIES_TABLE_NAME) private readonly timeseriesTableName: string,
+    private readonly prisma: PrismaService,
     private readonly reliabilityService: ReliabilityService,
   ) {}
 
   async computeReliabilityForLot(lotId: string): Promise<ReliabilityScore> {
-    // Fetch lot metadata
-    const lot = await this.getLotMetadata(lotId);
+    const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
     if (!lot) {
       throw new NotFoundException(`Lot ${lotId} not found`);
     }
 
-    // Gather reliability input data
     const input = await this.gatherReliabilityInput(lotId, lot);
-
-    // Compute and return score
     return this.reliabilityService.computeReliability(lotId, input);
   }
 
   async computeReliabilityForAllLots(): Promise<ReliabilityScoreSummary[]> {
-    // Get all lots
-    const lots = await this.getAllLots();
-
+    const lots = await this.prisma.lot.findMany();
     const results: ReliabilityScoreSummary[] = [];
 
     for (const lot of lots) {
-      const lotId = lot.lot_id as string;
       try {
-        const input = await this.gatherReliabilityInput(lotId, lot);
+        const input = await this.gatherReliabilityInput(lot.lot_id, lot);
         const summary = this.reliabilityService.computeReliabilitySummary(
-          lotId,
+          lot.lot_id,
           input,
         );
         results.push(summary);
       } catch (error) {
         this.logger.warn(
-          `Failed to compute reliability for lot ${lotId}`,
+          `Failed to compute reliability for lot ${lot.lot_id}`,
           error,
         );
-        // Include with default LOW score on error
         results.push({
-          lotId,
+          lotId: lot.lot_id,
           score: 0,
           confidence: 'LOW',
           isColdStart: true,
@@ -70,127 +58,57 @@ export class ReliabilityComputationService {
 
   private async gatherReliabilityInput(
     lotId: string,
-    lot: Record<string, unknown>,
+    lot: { id: string; penetration_rate: number },
   ): Promise<ReliabilityInput> {
     const now = new Date();
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-    // Get events from the last hour
-    const recentEvents = await this.getRecentEvents(
-      lotId,
-      oneHourAgo.toISOString(),
-      now.toISOString(),
-    );
+    // Get events from the last hour using a single query
+    const recentEvents = await this.prisma.occupancyEvent.findMany({
+      where: {
+        lot_id: lot.id,
+        timestamp: { gte: oneHourAgo, lte: now },
+      },
+      orderBy: { timestamp: 'asc' },
+    });
 
     // Calculate minutes since last event
-    let minutesSinceLastEvent = 60; // Default to max if no events
+    let minutesSinceLastEvent = 60;
     if (recentEvents.length > 0) {
-      const lastEventTime = new Date(
-        recentEvents[recentEvents.length - 1].timestamp as string,
-      );
+      const lastEventTime = recentEvents[recentEvents.length - 1].timestamp;
       minutesSinceLastEvent = (now.getTime() - lastEventTime.getTime()) / 60000;
     } else {
-      // Check for events in last 2 hours if no recent events
+      // Check for events in last 2 hours
       const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-      const olderEvents = await this.getRecentEvents(
-        lotId,
-        twoHoursAgo.toISOString(),
-        oneHourAgo.toISOString(),
-      );
+      const olderEvents = await this.prisma.occupancyEvent.findMany({
+        where: {
+          lot_id: lot.id,
+          timestamp: { gte: twoHoursAgo, lt: oneHourAgo },
+        },
+        orderBy: { timestamp: 'desc' },
+        take: 1,
+      });
       if (olderEvents.length > 0) {
-        const lastEventTime = new Date(
-          olderEvents[olderEvents.length - 1].timestamp as string,
-        );
-        minutesSinceLastEvent =
-          (now.getTime() - lastEventTime.getTime()) / 60000;
+        const lastEventTime = olderEvents[0].timestamp;
+        minutesSinceLastEvent = (now.getTime() - lastEventTime.getTime()) / 60000;
       } else {
-        minutesSinceLastEvent = 120; // No events in last 2 hours
+        minutesSinceLastEvent = 120;
       }
     }
 
     // Count unique devices
-    const uniqueDevices = new Set(
-      recentEvents.map((e) => e.device_hash as string),
-    );
+    const uniqueDevices = new Set(recentEvents.map((e) => e.device_hash));
 
     // Get historical accuracy if available
     const historicalAccuracy = await this.getHistoricalAccuracy(lotId);
 
     return {
-      penetrationRate: (lot.penetration_rate as number) || 0,
-      minutesSinceLastEvent: Math.min(120, minutesSinceLastEvent), // Cap at 120 min
+      penetrationRate: lot.penetration_rate || 0,
+      minutesSinceLastEvent: Math.min(120, minutesSinceLastEvent),
       eventsInLastHour: recentEvents.length,
       uniqueDevicesInLastHour: uniqueDevices.size,
       historicalAccuracy,
     };
-  }
-
-  private async getLotMetadata(
-    lotId: string,
-  ): Promise<Record<string, unknown> | null> {
-    try {
-      const command = new GetItemCommand({
-        TableName: this.tableName,
-        Key: {
-          PK: { S: `LOT#${lotId}` },
-          SK: { S: 'METADATA' },
-        },
-      });
-
-      const result = await this.dynamoClient.send(command);
-      if (!result.Item) {
-        return null;
-      }
-
-      return unmarshall(result.Item);
-    } catch (error) {
-      this.logger.error(`Failed to get lot metadata for ${lotId}`, error);
-      throw error;
-    }
-  }
-
-  private async getAllLots(): Promise<Record<string, unknown>[]> {
-    try {
-      const command = new QueryCommand({
-        TableName: this.tableName,
-        IndexName: 'GSI1-EntityType-Timestamp',
-        KeyConditionExpression: 'EntityType = :type',
-        ExpressionAttributeValues: {
-          ':type': { S: 'ParkingLot' },
-        },
-      });
-
-      const result = await this.dynamoClient.send(command);
-      return (result.Items || []).map((item) => unmarshall(item));
-    } catch (error) {
-      this.logger.error('Failed to get all lots', error);
-      throw error;
-    }
-  }
-
-  private async getRecentEvents(
-    lotId: string,
-    startDate: string,
-    endDate: string,
-  ): Promise<Record<string, unknown>[]> {
-    try {
-      const command = new QueryCommand({
-        TableName: this.timeseriesTableName,
-        KeyConditionExpression: 'PK = :pk AND SK BETWEEN :start AND :end',
-        ExpressionAttributeValues: {
-          ':pk': { S: `LOT#${lotId}` },
-          ':start': { S: `EVENT#${startDate}` },
-          ':end': { S: `EVENT#${endDate}~` },
-        },
-        ScanIndexForward: true,
-      });
-
-      const result = await this.dynamoClient.send(command);
-      return (result.Items || []).map((item) => unmarshall(item));
-    } catch (error) {
-      this.logger.warn(`Failed to get recent events for lot ${lotId}`, error);
-      return [];
-    }
   }
 
   private async getHistoricalAccuracy(_lotId: string): Promise<number | null> {
