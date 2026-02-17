@@ -8,6 +8,7 @@ interface AuthContextType {
   user: AuthState | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  refreshSession: () => Promise<AuthState | null>;
   isLoading: boolean;
 }
 
@@ -80,8 +81,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsAuthenticated(false);
   };
 
+  // Handle Session Refresh
+  const refreshSession = async (): Promise<AuthState | null> => {
+    const savedUser = await loadAuth();
+    if (!savedUser) {
+      if (__DEV__) console.log('[AuthContext] Refresh failed, logging user out...');
+      setUser(null);
+      setIsAuthenticated(false);
+    } else {
+      if (__DEV__) console.log('[AuthContext] Refresh succeeded, returning new credentials...');
+      setUser(savedUser);
+    }
+    return savedUser;
+  };
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, refreshSession, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

@@ -55,6 +55,7 @@ describe('AzureAuth', () => {
       refreshToken: 'mock-refresh-token',
       accessTokenExpirationDate: new Date(Date.now() + 3600000).toISOString(),
       tokenType: 'Bearer',
+      userId: 'test-user-id',
       scopes: ['openid', 'profile', 'email', 'offline_access'],
     };
 
@@ -166,6 +167,7 @@ describe('AzureAuth', () => {
         refreshToken: 'test-refresh-token',
         accessTokenExpirationDate: new Date().toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.setGenericPassword as jest.Mock).mockResolvedValue(true);
@@ -206,6 +208,7 @@ describe('AzureAuth', () => {
         // Token expires in 1 hour
         accessTokenExpirationDate: new Date(Date.now() + 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({
@@ -225,6 +228,7 @@ describe('AzureAuth', () => {
         // Token expired 1 hour ago
         accessTokenExpirationDate: new Date(Date.now() - 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       const refreshedResult = {
@@ -233,6 +237,7 @@ describe('AzureAuth', () => {
         refreshToken: 'new-refresh-token',
         accessTokenExpirationDate: new Date(Date.now() + 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({
@@ -262,6 +267,7 @@ describe('AzureAuth', () => {
         refreshToken: 'invalid-refresh-token',
         accessTokenExpirationDate: new Date(Date.now() - 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({
@@ -283,6 +289,7 @@ describe('AzureAuth', () => {
         refreshToken: undefined,
         accessTokenExpirationDate: new Date(Date.now() - 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({

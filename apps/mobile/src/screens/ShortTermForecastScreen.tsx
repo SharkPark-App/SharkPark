@@ -7,6 +7,7 @@ import { Header, ReliabilityMeter } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
 import { useReliability } from '../hooks/useReliability';
+import useFavorites from '../hooks/useFavorites';
 
 import {getOccupancyColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
@@ -24,10 +25,15 @@ export function ShortTermForecastScreen() {
   // Use the API hook instead of mock data
   const { lot, forecast, loading, error, refreshLot } = useLotData(lotId);
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
-  
+
   const onBack = () => navigation.goBack();
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isReliabilityModalOpen, setIsReliabilityModalOpen] = useState(false);
+
+  // For favorites
+  const { addFavorite, removeFavorite, favoriteLots } = useFavorites();
+  // If the lotId is present in favoriteLots, then the lot is a favorite
+  const isFavorite = favoriteLots.some(fav => fav === lotId);
 
   // Show loading spinner while data is being fetched
   if (loading) {
@@ -90,10 +96,33 @@ export function ShortTermForecastScreen() {
 
   const todayEvents = getTodayEvents();
 
+  // Try to (un-)favorite a lot dependent on current isFavorite status
+  const toggleFavorite = async () => {
+    try {
+      isFavorite? await removeFavorite(lotId) : await addFavorite(lotId);
+    } catch {
+      Alert.alert(
+        'Favorite Lots Error',
+        'The favorite status of the lot could not be changed. Please try again.',
+        [{ text: 'OK', style: 'cancel' }]
+      );
+    }
+  };
+
+  // Favorite button component
+  const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => (
+    <TouchableOpacity onPress={onToggle} style={styles.favoriteButton}>
+      <Icon name={isFavorite ? "star" : "star-outline"} size={28} color={isFavorite ? COLORS.black : COLORS.darkGray} />
+    </TouchableOpacity>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
-      {/* Top Banner */}
-      <Header title="Short-Term Forecast" onBack={onBack}/>
+      {/* Top Banner & Favorite Button*/}
+      <View>
+        <Header title="Short-Term Forecast" onBack={onBack}/>
+        <FavoriteButton isFavorite={isFavorite} onToggle={toggleFavorite} />
+      </View>
 
       <ScrollView style={styles.scrollView}>
         {/* Event Notifications */}
@@ -120,7 +149,7 @@ export function ShortTermForecastScreen() {
           <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
             <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
           </View>
-          
+
           {/* Reliability Meter */}
           {!reliabilityLoading && reliability && (
             <ReliabilityMeter
@@ -260,7 +289,15 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
 
-  // Title card + Status
+  favoriteButton: {
+    position: 'absolute',
+    top: '50%',
+    right: SPACING.xxxl,
+    marginTop: -8, // Offset so that button is centered
+    padding: SPACING.xs,
+  },
+
+  // Title card + Status & Favorite Button
   lotHeaderCard: {
     borderRadius: SPACING.lg,
     padding: SPACING.xxxl,
@@ -331,6 +368,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: TYPOGRAPHY.fontSize.xxl,
   },
-
-
 });
