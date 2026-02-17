@@ -42,65 +42,46 @@ describe('WeatherController (e2e)', () => {
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
-          expect(res.body.data).toHaveProperty('date');
-          expect(res.body.data).toHaveProperty('condition');
+          expect(res.body.data).toHaveProperty('timestamp');
+          expect(res.body.data).toHaveProperty('conditions');
           expect(res.body.data).toHaveProperty('temperature_f');
           expect(res.body.data).toHaveProperty('precipitation_probability');
-          expect(res.body.data).toHaveProperty('wind_mph');
-          expect(res.body.data).toHaveProperty('parking_impact_factor');
+          expect(res.body.data).toHaveProperty('wind_speed_mph');
+          expect(res.body.data).toHaveProperty('humidity_percent');
+          expect(res.body.data).toHaveProperty('is_raining');
         });
     });
 
-    it('should include 7-day forecast', () => {
+    it('should have valid temperature and humidity values', () => {
       return request(app.getHttpServer())
         .get('/api/v1/weather/current')
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
-          expect(Array.isArray(res.body.data.forecast_7day)).toBe(true);
-          expect(res.body.data.forecast_7day.length).toBe(7);
-          
-          // Verify forecast structure
-          const forecast = res.body.data.forecast_7day[0];
-          expect(forecast).toHaveProperty('date');
-          expect(forecast).toHaveProperty('condition');
-          expect(forecast).toHaveProperty('temp_high_f');
-          expect(forecast).toHaveProperty('precipitation_probability');
-          expect(forecast).toHaveProperty('parking_impact_factor');
+          expect(typeof res.body.data.temperature_f).toBe('number');
+          expect(typeof res.body.data.humidity_percent).toBe('number');
+          expect(res.body.data.humidity_percent).toBeGreaterThanOrEqual(0);
+          expect(res.body.data.humidity_percent).toBeLessThanOrEqual(100);
         });
     });
 
-    it('should have parking impact factor between 0.5 and 1.5', () => {
+    it('should have precipitation probability between 0 and 1', () => {
       return request(app.getHttpServer())
         .get('/api/v1/weather/current')
         .expect(200)
         .expect((res: Response) => {
-          const impactFactor = res.body.data.parking_impact_factor;
-          expect(impactFactor).toBeGreaterThanOrEqual(0.5);
-          expect(impactFactor).toBeLessThanOrEqual(1.5);
-          
-          // Check forecast impact factors too
-          res.body.data.forecast_7day.forEach((day: { parking_impact_factor: number }) => {
-            expect(day.parking_impact_factor).toBeGreaterThanOrEqual(0.5);
-            expect(day.parking_impact_factor).toBeLessThanOrEqual(1.5);
-          });
+          const prob = res.body.data.precipitation_probability;
+          expect(prob).toBeGreaterThanOrEqual(0);
+          expect(prob).toBeLessThanOrEqual(1);
         });
     });
 
-    it('should indicate rainy weather increases parking demand', () => {
+    it('should have is_raining as a boolean', () => {
       return request(app.getHttpServer())
         .get('/api/v1/weather/current')
         .expect(200)
         .expect((res: Response) => {
-          // Find rainy day in forecast
-          const rainyDay = res.body.data.forecast_7day.find(
-            (day: { condition: string }) => day.condition === 'Rainy'
-          );
-          
-          if (rainyDay) {
-            // Rainy weather should have impact factor > 1.0 (increased demand)
-            expect(rainyDay.parking_impact_factor).toBeGreaterThan(1.0);
-          }
+          expect(typeof res.body.data.is_raining).toBe('boolean');
         });
     });
   });

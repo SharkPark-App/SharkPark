@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
 import type { CampusEvent, EventImpact, CampusEventType } from '@prisma/client';
+
+const VALID_EVENT_TYPES: string[] = ['ATHLETIC', 'ACADEMIC', 'PERFORMANCE', 'OTHER'];
 
 /**
  * Service for campus events that may affect parking availability.
@@ -15,8 +17,17 @@ export class EventsService {
   /** Retrieves all campus events, optionally filtered by event type. */
   async findAll(eventType?: string): Promise<CampusEvent[]> {
     try {
+      let where: { event_type?: CampusEventType } | undefined;
+      if (eventType) {
+        if (!VALID_EVENT_TYPES.includes(eventType)) {
+          throw new BadRequestException(
+            `Invalid event type '${eventType}'. Valid types: ${VALID_EVENT_TYPES.join(', ')}`,
+          );
+        }
+        where = { event_type: eventType as CampusEventType };
+      }
       return await this.prisma.campusEvent.findMany({
-        where: eventType ? { event_type: eventType as CampusEventType } : undefined,
+        where,
         orderBy: { start_time: 'asc' },
       });
     } catch (error) {

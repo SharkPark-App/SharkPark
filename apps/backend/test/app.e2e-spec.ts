@@ -21,9 +21,13 @@ describe('App (e2e)', () => {
     await request(app.getHttpServer())
       .get(`/${API_PREFIX}/health`)
       .expect(200)
-      .expect({
-        ok: true,
-        service: SERVICE_NAME,
+      .expect((res) => {
+        expect(res.body).toMatchObject({
+          ok: true,
+          service: SERVICE_NAME,
+          database: 'connected',
+        });
+        expect(res.body).toHaveProperty('timestamp');
       });
   });
 

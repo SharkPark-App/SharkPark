@@ -34,9 +34,8 @@ describe('EventsService', () => {
       const mockEvents = [
         {
           id: 'uuid-1',
-          event_id: 'basketball-2025',
           event_name: 'Basketball Game',
-          event_type: 'SPORTS',
+          event_type: 'ATHLETIC',
           start_time: new Date(),
           end_time: new Date(),
         },
@@ -54,13 +53,17 @@ describe('EventsService', () => {
     it('should filter by event type when provided', async () => {
       prisma.campusEvent.findMany.mockResolvedValue([]);
 
-      await service.findAll('SPORTS');
+      await service.findAll('ATHLETIC');
 
       expect(prisma.campusEvent.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { event_type: 'SPORTS' },
+          where: { event_type: 'ATHLETIC' },
         }),
       );
+    });
+
+    it('should reject invalid event type', async () => {
+      await expect(service.findAll('INVALID')).rejects.toThrow('Invalid event type');
     });
 
     it('should pass undefined where when no filter', async () => {
