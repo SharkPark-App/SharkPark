@@ -168,5 +168,168 @@ describe('UsersService', () => {
       await expect(service.updateNotificationPreferences('invalid@csulb.edu', {}))
         .rejects.toThrow(NotFoundException);
     });
+
+    it('should propagate error when update fails', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid', email: 'test@csulb.edu' });
+      prisma.user.update.mockRejectedValue(new Error('DB write error'));
+
+      await expect(service.updateNotificationPreferences('test@csulb.edu', { surge_alerts: true }))
+        .rejects.toThrow('DB write error');
+    });
+  });
+
+  describe('findOrCreateUser', () => {
+    const existingUser = {
+      id: 'user-uuid',
+      email: 'existing@student.csulb.edu',
+      first_name: 'Existing',
+      last_name: 'User',
+      user_type: 'STUDENT',
+      phone: null,
+      notification_preferences: { favorites_filling: true },
+      created_at: new Date('2025-01-01'),
+      last_login: new Date('2025-06-01'),
+      favorites: [{ lot_id: 'lot-uuid-1' }, { lot_id: 'lot-uuid-2' }],
+    };
+
+    it('should return existing user and update last_login', async () => {
+      prisma.user.findUnique.mockResolvedValue(existingUser);
+      prisma.user.update.mockResolvedValue(existingUser);
+
+      const result = await service.findOrCreateUser(
+        'existing@student.csulb.edu',
+        'Existing',
+        'User',
+      );
+
+      expect(result.email).toBe('existing@student.csulb.edu');
+      expect(result.favorites).toEqual(['lot-uuid-1', 'lot-uuid-2']);
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { email: 'existing@student.csulb.edu' },
+        data: { last_login: expect.any(Date) },
+      });
+      // Should NOT create a new user
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should create a STUDENT user when email contains @student', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.school.findFirst.mockResolvedValue({ id: 'school-uuid', short_name: 'CSULB' });
+
+      const newUser = {
+        id: 'new-uuid',
+        email: 'new@student.csulb.edu',
+        first_name: 'New',
+        last_name: 'Student',
+        user_type: 'STUDENT',
+        phone: null,
+        notification_preferences: {
+          favorites_filling: false,
+          favorites_clearing: false,
+          surge_alerts: false,
+          event_alerts: false,
+        },
+        created_at: new Date(),
+        last_login: new Date(),
+      };
+      prisma.user.create.mockResolvedValue(newUser);
+
+      const result = await service.findOrCreateUser(
+        'new@student.csulb.edu',
+        'New',
+        'Student',
+      );
+
+      expect(result.email).toBe('new@student.csulb.edu');
+      expect(result.user_type).toBe('STUDENT');
+      expect(result.favorites).toEqual([]);
+      expect(prisma.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          school_id: 'school-uuid',
+          email: 'new@student.csulb.edu',
+          user_type: 'STUDENT',
+        }),
+      });
+    });
+
+    it('should create an EMPLOYEE user when email does not contain @student', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.school.findFirst.mockResolvedValue({ id: 'school-uuid', short_name: 'CSULB' });
+
+      const newUser = {
+        id: 'new-uuid',
+        email: 'prof@csulb.edu',
+        first_name: 'Prof',
+        last_name: 'Smith',
+        user_type: 'EMPLOYEE',
+        phone: null,
+        notification_preferences: {},
+        created_at: new Date(),
+        last_login: new Date(),
+      };
+      prisma.user.create.mockResolvedValue(newUser);
+
+      const result = await service.findOrCreateUser('prof@csulb.edu', 'Prof', 'Smith');
+
+      expect(result.user_type).toBe('EMPLOYEE');
+      expect(prisma.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          user_type: 'EMPLOYEE',
+        }),
+      });
+    });
+
+    it('should throw when default school (CSULB) is not found', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.school.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findOrCreateUser('new@student.csulb.edu', 'New', 'Student'),
+      ).rejects.toThrow('Default school (CSULB) not found');
+    });
+
+    it('should propagate error when user creation fails', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.school.findFirst.mockResolvedValue({ id: 'school-uuid', short_name: 'CSULB' });
+      prisma.user.create.mockRejectedValue(new Error('Unique constraint violation'));
+
+      await expect(
+        service.findOrCreateUser('dup@student.csulb.edu', 'Dup', 'User'),
+      ).rejects.toThrow('Unique constraint violation');
+    });
+  });
+
+  describe('error paths', () => {
+    it('findOne should propagate non-404 errors', async () => {
+      prisma.user.findUnique.mockRejectedValue(new Error('Connection refused'));
+
+      await expect(service.findOne('test@csulb.edu')).rejects.toThrow('Connection refused');
+    });
+
+    it('addFavorite should propagate upsert errors', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid', email: 'test@csulb.edu' });
+      prisma.lot.findFirst.mockResolvedValue({ id: 'lot-uuid', lot_id: 'G1' });
+      prisma.userFavorite.upsert.mockRejectedValue(new Error('DB constraint error'));
+
+      await expect(service.addFavorite('test@csulb.edu', 'G1'))
+        .rejects.toThrow('DB constraint error');
+    });
+
+    it('removeFavorite should throw NotFoundException if lot does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid', email: 'test@csulb.edu' });
+      prisma.lot.findFirst.mockResolvedValue(null);
+
+      await expect(service.removeFavorite('test@csulb.edu', 'INVALID'))
+        .rejects.toThrow(NotFoundException);
+    });
+
+    it('removeFavorite should propagate deleteMany errors', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-uuid', email: 'test@csulb.edu' });
+      prisma.lot.findFirst.mockResolvedValue({ id: 'lot-uuid', lot_id: 'G1' });
+      prisma.userFavorite.deleteMany.mockRejectedValue(new Error('DB delete error'));
+
+      await expect(service.removeFavorite('test@csulb.edu', 'G1'))
+        .rejects.toThrow('DB delete error');
+    });
   });
 });
