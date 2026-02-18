@@ -1,6 +1,6 @@
 # SharkPark
 
-SharkPark is a real-time parking availability system built for California State University, Long Beach (CSULB). The app uses crowdsourced geofencing data from students' phones to estimate how full each campus parking lot is, giving drivers live occupancy information and short-term forecasts before they leave for campus.
+SharkPark is a real-time parking availability system built for California State University, Long Beach (CSULB). The app uses crowdsourced geofencing data from students' phones to estimate how full each campus parking lot is, giving drivers live occupancy information and short-term/long-term forecasts before they leave for campus.
 
 Parking is one of the biggest daily frustrations for commuter students. CSULB has over 30 parking lots spread across campus, and during peak hours drivers waste significant time circling lots that are already full. SharkPark solves this by turning every user's phone into an anonymous sensor. When a student's phone enters or exits a parking lot geofence, the app records that event (without storing any personal location data), and the backend aggregates these events into a live occupancy estimate for each lot.
 
@@ -180,7 +180,7 @@ Run `pnpm dev` from root to start both backend and mobile in parallel.
 | `pnpm format` | `prettier . --check` | Check formatting |
 | `pnpm format:fix` | `prettier . --write` | Fix formatting |
 | `pnpm db:setup` | `prisma migrate dev` | Create/update database schema |
-| `pnpm db:seed` | `prisma db seed` | Seed database (30 lots, users, events, etc.) |
+| `pnpm db:seed` | `prisma db seed` | Seed database (28 lots, users, events, etc.) |
 | `pnpm db:reset` | `prisma migrate reset --force` | Drop DB, re-migrate, re-seed |
 | `pnpm db:deploy` | `prisma migrate deploy` | Apply migrations (production) |
 | `pnpm db:studio` | `prisma studio` | Open Prisma Studio GUI |
@@ -395,7 +395,7 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs on every push and PR:
 
 The database seed (`pnpm db:seed`) provisions:
 
-- **30 parking lots** — G1-G16, E1-E11, PVN, PVS, PYR (student and employee lots with permit types, capacities, polygon coordinates, and metadata)
+- **28 parking lots** — G1-G14, E1-E11, PVN, PVS, PYR (student and employee lots with permit types, capacities, polygon coordinates, and metadata)
 - **5 users** with varied notification preferences and 14 favorite lot assignments
 - **4 campus events** (athletic, academic) with 16 parking impact records across nearby lots
 - **Weather records** for demand correlation features

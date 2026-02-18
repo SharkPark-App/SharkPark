@@ -251,20 +251,6 @@ const parkingLots: LotSeed[] = [
     is_covered: false, is_paved: true, penetration_rate: 0.13,
     avg_turnover_minutes: 240, confidence: ConfidenceLevel.MEDIUM,
   },
-  {
-    lot_id: 'G16', lot_name: 'Lot G16', display_name: 'Lot G16 - South Campus', lot_number: 'G16',
-    lot_type: LotType.STUDENT, capacity: 260, current_occupancy: 195,
-    location_description: 'South Campus - Near 7th Street',
-    building_proximity: ['South Gate', '7th Street Entrance'],
-    center_lat: 33.7792, center_lng: -118.1140, geofence_radius: 50,
-    permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
-    hours_weekday: { open: '06:00', close: '22:00' },
-    hours_saturday: { open: '08:00', close: '18:00' }, hours_sunday: 'CLOSED',
-    ev_charging_stations: 2, motorcycle_spaces: 4, accessible_spaces: 6,
-    has_lighting: true, has_cameras: true, has_emergency_phone: false,
-    is_covered: false, is_paved: true, penetration_rate: 0.10,
-    avg_turnover_minutes: 300, confidence: ConfidenceLevel.MEDIUM,
-  },
   // ===== EMPLOYEE LOTS =====
   {
     lot_id: 'E1', lot_name: 'Lot E1', display_name: 'Lot E1 - Faculty/Staff', lot_number: 'E1',
@@ -393,21 +379,6 @@ const parkingLots: LotSeed[] = [
     has_lighting: true, has_cameras: false, has_emergency_phone: false,
     is_covered: false, is_paved: true, penetration_rate: 0.08,
     avg_turnover_minutes: 360, confidence: ConfidenceLevel.LOW,
-  },
-  {
-    lot_id: 'G15', lot_name: 'Lot G15', display_name: 'Lot G15 - East Campus', lot_number: 'G15',
-    lot_type: LotType.STUDENT, capacity: 270, current_occupancy: 189,
-    location_description: 'East Campus - Near Beach',
-    building_proximity: ['SRWC', 'Student Recreation'],
-    center_lat: 33.7802, center_lng: -118.1080, geofence_radius: 55,
-    permit_types: ['Gold', 'Green'], daily_permit_allowed: true, daily_rate: 8.00,
-    hours_weekday: { open: '06:00', close: '22:00' },
-    hours_saturday: { open: '07:00', close: '22:00' },
-    hours_sunday: { open: '08:00', close: '20:00' },
-    ev_charging_stations: 3, motorcycle_spaces: 4, accessible_spaces: 6,
-    has_lighting: true, has_cameras: true, has_emergency_phone: true,
-    is_covered: false, is_paved: true, penetration_rate: 0.12,
-    avg_turnover_minutes: 240, confidence: ConfidenceLevel.MEDIUM,
   },
   {
     lot_id: 'E8', lot_name: 'Lot E8', display_name: 'Lot E8 - Faculty/Staff', lot_number: 'E8',
@@ -551,7 +522,7 @@ const testUsers = [
     first_name: 'Charles', last_name: 'Milton', phone: '+15625551238',
     created_at: new Date('2025-09-10'),
     notification_preferences: { favorites_filling: false, favorites_clearing: false, surge_alerts: true, event_alerts: true },
-    favorites: ['E3', 'E5', 'G16'],
+    favorites: ['E3', 'E5', 'G14'],
   },
 ];
 
@@ -611,7 +582,7 @@ const campusEvents = [
     expected_attendance: 2500,
     impacts: [
       { lot_id: 'G4', impact_level: ImpactLevel.HIGH, expected_increase_percent: 30 },
-      { lot_id: 'G16', impact_level: ImpactLevel.HIGH, expected_increase_percent: 28 },
+      { lot_id: 'G5', impact_level: ImpactLevel.HIGH, expected_increase_percent: 28 },
       { lot_id: 'G9', impact_level: ImpactLevel.MEDIUM, expected_increase_percent: 15 },
       { lot_id: 'G10', impact_level: ImpactLevel.MEDIUM, expected_increase_percent: 10 },
     ],
