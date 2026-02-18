@@ -73,7 +73,7 @@ export const GeofencingTestUtils: React.FC = () => {
           style={styles.input}
           value={testLotId}
           onChangeText={setTestLotId}
-          placeholder="e.g., lot-1, lot-2"
+          placeholder="e.g., G1, G2, E1"
           accessibilityLabel={ACCESSIBILITY_CONSTANTS.LABELS.LOT_SELECTOR}
           accessibilityHint={ACCESSIBILITY_CONSTANTS.HINTS.LOT_SELECTION}
         />

@@ -53,8 +53,8 @@ export const TEST_CONSTANTS = {
   
   // Test geofence settings
   TEST_RADIUS: GEOFENCE_CONSTANTS.RADIUS_TEST,
-  TEST_LOT_ID: 'home_parking_lot',
-  TEST_LOT_NAME: 'Home Parking Test Zone',
+  TEST_LOT_ID: 'G1',
+  TEST_LOT_NAME: 'Lot G1 (Test Zone)',
   
   // Test polygon coordinates for realistic parking lot shapes
   TEST_RECTANGULAR_LOT: [

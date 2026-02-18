@@ -66,7 +66,7 @@ describe('UsersController (e2e)', () => {
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
-          expect(res.body.data.user_id).toBe('charles.milton@csulb.edu');
+          expect(res.body.data.email).toBe('charles.milton@csulb.edu');
           expect(res.body.data.user_type).toBe('STUDENT');
           expect(res.body.data.first_name).toBe('Charles');
           expect(res.body.data.last_name).toBe('Milton');
@@ -81,7 +81,7 @@ describe('UsersController (e2e)', () => {
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
-          expect(res.body.data.user_id).toBe('ly.nguyen@csulb.edu');
+          expect(res.body.data.email).toBe('ly.nguyen@csulb.edu');
           expect(res.body.data.user_type).toBe('EMPLOYEE');
           expect(res.body.data.first_name).toBe('Ly');
           expect(res.body.data.last_name).toBe('Nguyen');
@@ -184,7 +184,7 @@ describe('UsersController (e2e)', () => {
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
           // Note: Update endpoint not fully implemented yet, just returns user profile
-          expect(res.body.data).toHaveProperty('user_id');
+          expect(res.body.data).toHaveProperty('email');
         });
     });
   });

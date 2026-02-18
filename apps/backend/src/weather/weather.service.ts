@@ -1,7 +1,6 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
-import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
-import { unmarshall } from '@aws-sdk/util-dynamodb';
-import { Weather } from './interfaces/weather.interface';
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../database/database.module';
+import type { Weather } from '@prisma/client';
 
 /**
  * Service for weather data that may influence parking patterns.
@@ -11,32 +10,28 @@ import { Weather } from './interfaces/weather.interface';
 export class WeatherService {
   private readonly logger = new Logger(WeatherService.name);
 
-  constructor(
-    @Inject('DYNAMODB_CLIENT') private readonly dynamoClient: DynamoDBClient,
-    @Inject('TABLE_NAME') private readonly tableName: string,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Retrieves current weather conditions for CSULB campus. */
   async getCurrent(): Promise<Weather | null> {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const command = new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'PK = :pk AND SK = :sk',
-        ExpressionAttributeValues: {
-          ':pk': { S: `WEATHER#${today}` },
-          ':sk': { S: 'CURRENT' },
+      const today = new Date();
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+
+      const weather = await this.prisma.weather.findFirst({
+        where: {
+          timestamp: { gte: startOfDay, lt: endOfDay },
         },
+        orderBy: { timestamp: 'desc' },
       });
 
-      const result = await this.dynamoClient.send(command);
-      
-      if (!result.Items || result.Items.length === 0) {
-        this.logger.warn(`No weather data found for ${today}`);
+      if (!weather) {
+        this.logger.warn(`No weather data found for ${startOfDay.toISOString().split('T')[0]}`);
         return null;
       }
 
-      return unmarshall(result.Items[0]) as Weather;
+      return weather;
     } catch (error) {
       this.logger.error('Failed to fetch current weather', error);
       throw error;

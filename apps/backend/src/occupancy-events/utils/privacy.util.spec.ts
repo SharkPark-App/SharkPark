@@ -1,4 +1,4 @@
-import { hashDeviceId, generateEventId, calculateTTL } from './privacy.util';
+import { hashDeviceId, generateEventId } from './privacy.util';
 
 describe('Privacy Utilities', () => {
   describe('hashDeviceId', () => {
@@ -42,26 +42,6 @@ describe('Privacy Utilities', () => {
         ids.add(generateEventId());
       }
       expect(ids.size).toBe(100);
-    });
-  });
-
-  describe('calculateTTL', () => {
-    it('should return a Unix timestamp 90 days in the future by default', () => {
-      const now = Math.floor(Date.now() / 1000);
-      const ttl = calculateTTL();
-      const expectedMin = now + (90 * 24 * 60 * 60) - 1;
-      const expectedMax = now + (90 * 24 * 60 * 60) + 1;
-      expect(ttl).toBeGreaterThanOrEqual(expectedMin);
-      expect(ttl).toBeLessThanOrEqual(expectedMax);
-    });
-
-    it('should calculate TTL for custom number of days', () => {
-      const now = Math.floor(Date.now() / 1000);
-      const ttl = calculateTTL(7);
-      const expectedMin = now + (7 * 24 * 60 * 60) - 1;
-      const expectedMax = now + (7 * 24 * 60 * 60) + 1;
-      expect(ttl).toBeGreaterThanOrEqual(expectedMin);
-      expect(ttl).toBeLessThanOrEqual(expectedMax);
     });
   });
 });

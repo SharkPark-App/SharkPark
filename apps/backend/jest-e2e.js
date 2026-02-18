@@ -5,5 +5,6 @@ module.exports = {
   testRegex: ".*\\.e2e-spec\\.ts$",
   transform: {
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  setupFiles: ["dotenv/config"]
 };

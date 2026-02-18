@@ -51,7 +51,7 @@ export const upcomingEvents: Event[] = [
     name: 'Beach Volleyball Tournament',
     date: new Date(2026, 1, 5, 11, 0),
     location: 'Sand Courts',
-    affectedLots: ['G14', 'G15', 'Pyramid'],
+    affectedLots: ['G13', 'G14', 'Pyramid'],
     description: 'Regional collegiate beach volleyball tournament. Western lots near athletic facilities will be heavily used. Tournament runs until 6 PM.',
     impact: 'medium'
   },

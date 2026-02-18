@@ -1,0 +1,313 @@
+// SharkPark PostgreSQL Schema — Aurora PostgreSQL Serverless v2 (local: Docker PostgreSQL 16)
+// Migrated from DynamoDB single-table design to relational model with Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Core Tables ──────────────────────────────────────────
+
+model School {
+  id           String   @id @default(cuid())
+  school_name  String   @unique
+  short_name   String   @unique // e.g. "CSULB"
+  timezone     String   @default("America/Los_Angeles")
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  lots             Lot[]
+  users            User[]
+  campus_events    CampusEvent[]
+  academic_periods AcademicCalendar[]
+  campus_closures  CampusClosure[]
+  weather          Weather[]
+
+  @@map("schools")
+}
+
+model Lot {
+  id                  String   @id @default(cuid())
+  school_id           String
+  lot_id              String   // e.g. "G1", "E7" — human-readable
+  lot_name            String
+  display_name        String
+  lot_number          String
+  lot_type            LotType
+  capacity            Int
+  current_occupancy   Int      @default(0)
+  location_description String
+  building_proximity  String[]
+  center_lat          Float
+  center_lng          Float
+  geofence_polygon    Json     // Array<{ lat: number; lng: number }>
+  geofence_radius     Float
+  permit_types        String[]
+  daily_permit_allowed Boolean @default(false)
+  daily_rate          Float?
+  hours_weekday       Json     // { open: string; close: string } | string
+  hours_saturday      Json
+  hours_sunday        Json
+  ev_charging_stations Int     @default(0)
+  motorcycle_spaces   Int      @default(0)
+  accessible_spaces   Int      @default(0)
+  has_lighting        Boolean  @default(true)
+  has_cameras         Boolean  @default(false)
+  has_emergency_phone Boolean  @default(false)
+  is_covered          Boolean  @default(false)
+  is_paved            Boolean  @default(true)
+  levels              Int?
+  penetration_rate    Float    @default(0)
+  avg_turnover_minutes Float   @default(0)
+  confidence          ConfidenceLevel @default(LOW)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  school              School   @relation(fields: [school_id], references: [id])
+  user_favorites      UserFavorite[]
+  occupancy_events    OccupancyEvent[]
+  occupancy_snapshots OccupancySnapshot[]
+  device_states       DeviceState[]
+  event_impacts       EventImpact[]
+  predictions_short   PredictionShortTerm[]
+  predictions_long    PredictionLongTerm[]
+
+  @@unique([school_id, lot_id])
+  @@index([lot_type], name: "idx_lots_type")
+  @@map("lots")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  school_id      String
+  email          String   @unique
+  first_name     String
+  last_name      String
+  user_type      UserType
+  phone          String?
+  notification_preferences Json @default("{\"favorites_filling\":false,\"favorites_clearing\":false,\"surge_alerts\":false,\"event_alerts\":false}")
+  created_at     DateTime @default(now())
+  last_login     DateTime?
+  updated_at     DateTime @updatedAt
+
+  school         School   @relation(fields: [school_id], references: [id])
+  favorites      UserFavorite[]
+
+  @@map("users")
+}
+
+model UserFavorite {
+  id       String   @id @default(cuid())
+  user_id  String
+  lot_id   String
+  added_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lot  Lot  @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lot_id])
+  @@map("user_favorites")
+}
+
+// ─── Timeseries Tables ────────────────────────────────────
+
+model OccupancyEvent {
+  id          String    @id @default(cuid())
+  lot_id      String
+  event_type  EventType
+  device_hash String    // SHA-256 hash of device_id + salt
+  timestamp   DateTime
+  created_at  DateTime  @default(now())
+
+  lot Lot @relation(fields: [lot_id], references: [id])
+
+  @@index([lot_id, timestamp], name: "idx_events_lot_time")
+  @@index([device_hash, lot_id], name: "idx_events_device")
+  @@map("occupancy_events")
+}
+
+model OccupancySnapshot {
+  id                String          @id @default(cuid())
+  lot_id            String
+  timestamp         DateTime
+  occupancy         Int
+  available         Int
+  occupancy_rate    Float
+  confidence        ConfidenceLevel
+  reliability_score Float?
+  is_cold_start     Boolean?
+
+  // ML feature columns
+  academic_period   String?         // "FALL", "SPRING", "SUMMER", "BREAK"
+  week_of_semester  Int?
+  is_campus_open    Boolean         @default(true)
+
+  lot Lot @relation(fields: [lot_id], references: [id])
+
+  @@index([lot_id, timestamp], name: "idx_snapshots_lot_time")
+  @@index([lot_id, timestamp, academic_period], name: "idx_snapshots_training")
+  @@map("occupancy_snapshots")
+}
+
+model DeviceState {
+  id              String    @id @default(cuid())
+  device_hash     String
+  lot_id          String
+  last_event_type EventType
+  updated_at      DateTime  @default(now())
+
+  lot Lot @relation(fields: [lot_id], references: [id])
+
+  @@unique([device_hash, lot_id])
+  @@map("device_states")
+}
+
+// ─── Campus Context Tables ────────────────────────────────
+
+model CampusEvent {
+  id                  String          @id @default(cuid())
+  school_id           String
+  event_name          String
+  event_type          CampusEventType
+  start_time          DateTime
+  end_time            DateTime
+  location            String
+  expected_attendance Int
+  created_at          DateTime        @default(now())
+
+  school  School        @relation(fields: [school_id], references: [id])
+  impacts EventImpact[]
+
+  @@map("campus_events")
+}
+
+model EventImpact {
+  id                       String      @id @default(cuid())
+  event_id                 String
+  lot_id                   String
+  impact_level             ImpactLevel
+  expected_increase_percent Float
+
+  event CampusEvent @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  lot   Lot         @relation(fields: [lot_id], references: [id])
+
+  @@unique([event_id, lot_id])
+  @@map("event_impacts")
+}
+
+model AcademicCalendar {
+  id          String   @id @default(cuid())
+  school_id   String
+  period_name String   // "Fall 2025", "Spring 2026"
+  period_type String   // "FALL", "SPRING", "SUMMER", "BREAK"
+  start_date  DateTime
+  end_date    DateTime
+
+  school School @relation(fields: [school_id], references: [id])
+
+  @@map("academic_calendar")
+}
+
+model CampusClosure {
+  id        String   @id @default(cuid())
+  school_id String
+  reason    String
+  date      DateTime
+
+  school School @relation(fields: [school_id], references: [id])
+
+  @@map("campus_closures")
+}
+
+model Weather {
+  id                        String   @id @default(cuid())
+  school_id                 String
+  timestamp                 DateTime
+  temperature_f             Float
+  feels_like_f              Float
+  humidity_percent          Float
+  wind_speed_mph            Float
+  conditions                String
+  precipitation_probability Float
+  is_raining                Boolean
+  created_at                DateTime @default(now())
+
+  school School @relation(fields: [school_id], references: [id])
+
+  @@index([school_id, timestamp])
+  @@map("weather")
+}
+
+// ─── ML Prediction Tables ─────────────────────────────────
+
+model PredictionShortTerm {
+  id              String   @id @default(cuid())
+  lot_id          String
+  predicted_at    DateTime
+  target_time     DateTime
+  predicted_occupancy Int
+  confidence_lower    Int
+  confidence_upper    Int
+  model_version   String
+
+  lot Lot @relation(fields: [lot_id], references: [id])
+
+  @@index([lot_id, target_time], name: "idx_pred_short")
+  @@map("predictions_short_term")
+}
+
+model PredictionLongTerm {
+  id              String   @id @default(cuid())
+  lot_id          String
+  predicted_at    DateTime
+  target_date     DateTime
+  target_hour     Int      // 0-23
+  predicted_occupancy Int
+  confidence_lower    Int
+  confidence_upper    Int
+  model_version   String
+
+  lot Lot @relation(fields: [lot_id], references: [id])
+
+  @@index([lot_id, target_date, target_hour], name: "idx_pred_long")
+  @@map("predictions_long_term")
+}
+
+// ─── Enums ────────────────────────────────────────────────
+
+enum LotType {
+  STUDENT
+  EMPLOYEE
+}
+
+enum UserType {
+  STUDENT
+  EMPLOYEE
+}
+
+enum EventType {
+  ENTER
+  EXIT
+}
+
+enum ConfidenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum CampusEventType {
+  ATHLETIC
+  ACADEMIC
+  PERFORMANCE
+  OTHER
+}
+
+enum ImpactLevel {
+  LOW
+  MEDIUM
+  HIGH
+}

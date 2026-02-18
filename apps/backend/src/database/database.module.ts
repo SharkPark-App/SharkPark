@@ -1,41 +1,57 @@
-import { Module, Global } from '@nestjs/common';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { ConfigModule } from '@nestjs/config';
-
-export const DYNAMODB_CLIENT = 'DYNAMODB_CLIENT';
-export const TABLE_NAME = 'TABLE_NAME';
-export const TIMESERIES_TABLE_NAME = 'TIMESERIES_TABLE_NAME';
+import { Module, Global, Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 
 /**
- * Global module providing DynamoDB client and table name constants.
- * Uses environment variables for configuration, falling back to local development defaults.
+ * PrismaService wraps @prisma/client for NestJS lifecycle management.
+ * Prisma v7 "client" engine requires a driver adapter for direct DB connections.
+ *
+ * Local  → Docker PostgreSQL 16 on port 5433, no SSL, small pool.
+ * Prod   → Aurora PostgreSQL Serverless v2, SSL required, larger pool.
+ *
+ * Switch is automatic via NODE_ENV + DATABASE_URL.
+ */
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly pool: pg.Pool;
+  private readonly logger = new Logger(PrismaService.name);
+
+  constructor() {
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    const pool = new pg.Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: isProduction ? 20 : 5,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+      ...(isProduction && { ssl: { rejectUnauthorized: true } }),
+    });
+
+    const adapter = new PrismaPg(pool);
+    super({ adapter });
+    this.pool = pool;
+  }
+
+  async onModuleInit() {
+    await this.$connect();
+    this.logger.log('Database connected');
+  }
+
+  async onModuleDestroy() {
+    await this.$disconnect();
+    await this.pool.end();
+    this.logger.log('Database disconnected');
+  }
+}
+
+/**
+ * Global module providing PrismaService to all feature modules.
+ * Replaces the previous DynamoDB client + table-name providers.
  */
 @Global()
 @Module({
-  imports: [ConfigModule.forRoot()],
-  providers: [
-    {
-      provide: DYNAMODB_CLIENT,
-      useFactory: () => {
-        return new DynamoDBClient({
-          region: process.env.AWS_REGION || 'us-west-2',
-          endpoint: process.env.DYNAMO_ENDPOINT || 'http://localhost:8000',
-          credentials: {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'local',
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'local',
-          },
-        });
-      },
-    },
-    {
-      provide: TABLE_NAME,
-      useValue: process.env.DYNAMODB_TABLE || 'sharkpark-main',
-    },
-    {
-      provide: TIMESERIES_TABLE_NAME,
-      useValue: process.env.DYNAMODB_TIMESERIES_TABLE || 'sharkpark-timeseries',
-    },
-  ],
-  exports: [DYNAMODB_CLIENT, TABLE_NAME, TIMESERIES_TABLE_NAME],
+  providers: [PrismaService],
+  exports: [PrismaService],
 })
 export class DatabaseModule {}

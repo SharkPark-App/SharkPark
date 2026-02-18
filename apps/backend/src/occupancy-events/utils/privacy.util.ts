@@ -14,14 +14,9 @@ export function hashDeviceId(deviceId: string): string {
     .digest('hex');
 }
 
-/** Generates unique event ID (timestamp + random suffix) for DynamoDB sort key */
+/** Generates unique event ID (timestamp + random suffix) */
 export function generateEventId(): string {
   const timestamp = Date.now();
   const randomSuffix = Math.random().toString(36).substring(2, 10);
   return `${timestamp}-${randomSuffix}`;
-}
-
-/** Calculates Unix TTL timestamp for DynamoDB auto-deletion */
-export function calculateTTL(daysFromNow: number = 90): number {
-  return Math.floor(Date.now() / 1000) + (daysFromNow * 24 * 60 * 60);
 }

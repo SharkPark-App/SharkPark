@@ -4,7 +4,7 @@ import ts from "@typescript-eslint/eslint-plugin";
 
 export default [
   {
-    ignores: ["dist/**"]
+    ignores: ["dist/**", "coverage/**"]
   },
   {
     files: ["src/**/*.ts"],

@@ -1,49 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
-import { DynamoDBClient, QueryCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
-import { marshall } from '@aws-sdk/util-dynamodb';
 import { ReliabilityComputationService } from './reliability-computation.service';
 import { ReliabilityService } from './reliability.service';
-import { DYNAMODB_CLIENT, TABLE_NAME, TIMESERIES_TABLE_NAME } from '../database/database.module';
+import { PrismaService } from '../database/database.module';
 
 describe('ReliabilityComputationService', () => {
   let service: ReliabilityComputationService;
-  let dynamoClient: jest.Mocked<DynamoDBClient>;
+  let prisma: {
+    lot: { findFirst: jest.Mock; findMany: jest.Mock };
+    occupancyEvent: { findMany: jest.Mock };
+  };
   let reliabilityService: jest.Mocked<ReliabilityService>;
 
-  const mockLotMetadata = {
-    PK: 'LOT#G1',
-    SK: 'METADATA',
+  const mockLot = {
+    id: 'lot-uuid-1',
     lot_id: 'G1',
     lot_name: 'Lot G1',
     capacity: 100,
     penetration_rate: 0.65,
-    EntityType: 'ParkingLot',
+    current_occupancy: 50,
   };
-
-  const mockEvents = [
-    {
-      PK: 'LOT#G1',
-      SK: 'EVENT#2026-02-14T19:30:00.000Z',
-      device_hash: 'hash1',
-      event_type: 'ENTER',
-      timestamp: '2026-02-14T19:30:00.000Z',
-    },
-    {
-      PK: 'LOT#G1',
-      SK: 'EVENT#2026-02-14T19:45:00.000Z',
-      device_hash: 'hash2',
-      event_type: 'ENTER',
-      timestamp: '2026-02-14T19:45:00.000Z',
-    },
-    {
-      PK: 'LOT#G1',
-      SK: 'EVENT#2026-02-14T19:55:00.000Z',
-      device_hash: 'hash1',
-      event_type: 'EXIT',
-      timestamp: '2026-02-14T19:55:00.000Z',
-    },
-  ];
 
   const mockReliabilityScore = {
     lotId: 'G1',
@@ -70,8 +46,9 @@ describe('ReliabilityComputationService', () => {
   };
 
   beforeEach(async () => {
-    const mockDynamoClient = {
-      send: jest.fn(),
+    prisma = {
+      lot: { findFirst: jest.fn(), findMany: jest.fn() },
+      occupancyEvent: { findMany: jest.fn() },
     };
 
     const mockReliabilityService = {
@@ -84,15 +61,12 @@ describe('ReliabilityComputationService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReliabilityComputationService,
-        { provide: DYNAMODB_CLIENT, useValue: mockDynamoClient },
-        { provide: TABLE_NAME, useValue: 'sharkpark-main' },
-        { provide: TIMESERIES_TABLE_NAME, useValue: 'sharkpark-timeseries' },
+        { provide: PrismaService, useValue: prisma },
         { provide: ReliabilityService, useValue: mockReliabilityService },
       ],
     }).compile();
 
     service = module.get<ReliabilityComputationService>(ReliabilityComputationService);
-    dynamoClient = module.get(DYNAMODB_CLIENT);
     reliabilityService = module.get(ReliabilityService);
   });
 
@@ -106,16 +80,12 @@ describe('ReliabilityComputationService', () => {
 
   describe('computeReliabilityForLot', () => {
     it('should compute reliability score for a valid lot', async () => {
-      // Mock GetItemCommand for lot metadata
-      dynamoClient.send.mockImplementation((command) => {
-        if (command instanceof GetItemCommand) {
-          return Promise.resolve({ Item: marshall(mockLotMetadata) });
-        }
-        if (command instanceof QueryCommand) {
-          return Promise.resolve({ Items: mockEvents.map(e => marshall(e)) });
-        }
-        return Promise.resolve({});
-      });
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.occupancyEvent.findMany.mockResolvedValue([
+        { device_hash: 'hash1', event_type: 'ENTER', timestamp: new Date('2026-02-14T19:30:00Z') },
+        { device_hash: 'hash2', event_type: 'ENTER', timestamp: new Date('2026-02-14T19:45:00Z') },
+        { device_hash: 'hash1', event_type: 'EXIT', timestamp: new Date('2026-02-14T19:55:00Z') },
+      ]);
 
       const result = await service.computeReliabilityForLot('G1');
 
@@ -130,26 +100,14 @@ describe('ReliabilityComputationService', () => {
     });
 
     it('should throw NotFoundException for non-existent lot', async () => {
-      dynamoClient.send.mockImplementation((command) => {
-        if (command instanceof GetItemCommand) {
-          return Promise.resolve({ Item: undefined });
-        }
-        return Promise.resolve({});
-      });
+      prisma.lot.findFirst.mockResolvedValue(null);
 
       await expect(service.computeReliabilityForLot('INVALID')).rejects.toThrow(NotFoundException);
     });
 
     it('should handle lot with no recent events', async () => {
-      dynamoClient.send.mockImplementation((command) => {
-        if (command instanceof GetItemCommand) {
-          return Promise.resolve({ Item: marshall(mockLotMetadata) });
-        }
-        if (command instanceof QueryCommand) {
-          return Promise.resolve({ Items: [] });
-        }
-        return Promise.resolve({});
-      });
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.occupancyEvent.findMany.mockResolvedValue([]);
 
       await service.computeReliabilityForLot('G1');
 
@@ -160,21 +118,12 @@ describe('ReliabilityComputationService', () => {
     });
 
     it('should calculate unique devices correctly', async () => {
-      const eventsWithDuplicateDevices = [
-        { ...mockEvents[0], device_hash: 'same-hash' },
-        { ...mockEvents[1], device_hash: 'same-hash' },
-        { ...mockEvents[2], device_hash: 'different-hash' },
-      ];
-
-      dynamoClient.send.mockImplementation((command) => {
-        if (command instanceof GetItemCommand) {
-          return Promise.resolve({ Item: marshall(mockLotMetadata) });
-        }
-        if (command instanceof QueryCommand) {
-          return Promise.resolve({ Items: eventsWithDuplicateDevices.map(e => marshall(e)) });
-        }
-        return Promise.resolve({});
-      });
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.occupancyEvent.findMany.mockResolvedValue([
+        { device_hash: 'same-hash', event_type: 'ENTER', timestamp: new Date() },
+        { device_hash: 'same-hash', event_type: 'EXIT', timestamp: new Date() },
+        { device_hash: 'different-hash', event_type: 'ENTER', timestamp: new Date() },
+      ]);
 
       await service.computeReliabilityForLot('G1');
 
@@ -187,23 +136,12 @@ describe('ReliabilityComputationService', () => {
   describe('computeReliabilityForAllLots', () => {
     it('should compute reliability for all lots', async () => {
       const allLots = [
-        { ...mockLotMetadata, lot_id: 'G1' },
-        { ...mockLotMetadata, lot_id: 'G2', PK: 'LOT#G2' },
+        { ...mockLot, lot_id: 'G1' },
+        { ...mockLot, id: 'lot-uuid-2', lot_id: 'G2' },
       ];
 
-      dynamoClient.send.mockImplementation((command) => {
-        if (command instanceof QueryCommand) {
-          const input = (command as QueryCommand).input;
-          if (input.IndexName === 'GSI1-EntityType-Timestamp') {
-            return Promise.resolve({ Items: allLots.map(l => marshall(l)) });
-          }
-          return Promise.resolve({ Items: [] });
-        }
-        if (command instanceof GetItemCommand) {
-          return Promise.resolve({ Item: marshall(mockLotMetadata) });
-        }
-        return Promise.resolve({});
-      });
+      prisma.lot.findMany.mockResolvedValue(allLots);
+      prisma.occupancyEvent.findMany.mockResolvedValue([]);
 
       const result = await service.computeReliabilityForAllLots();
 
@@ -212,12 +150,7 @@ describe('ReliabilityComputationService', () => {
     });
 
     it('should return empty array when no lots exist', async () => {
-      dynamoClient.send.mockImplementation((command) => {
-        if (command instanceof QueryCommand) {
-          return Promise.resolve({ Items: [] });
-        }
-        return Promise.resolve({});
-      });
+      prisma.lot.findMany.mockResolvedValue([]);
 
       const result = await service.computeReliabilityForAllLots();
 
@@ -225,18 +158,8 @@ describe('ReliabilityComputationService', () => {
     });
 
     it('should handle errors for individual lots gracefully', async () => {
-      const allLots = [{ ...mockLotMetadata, lot_id: 'G1' }];
-
-      dynamoClient.send.mockImplementation((command) => {
-        if (command instanceof QueryCommand) {
-          const input = (command as QueryCommand).input;
-          if (input.IndexName === 'GSI1-EntityType-Timestamp') {
-            return Promise.resolve({ Items: allLots.map(l => marshall(l)) });
-          }
-          return Promise.reject(new Error('DynamoDB error'));
-        }
-        return Promise.resolve({});
-      });
+      prisma.lot.findMany.mockResolvedValue([mockLot]);
+      prisma.occupancyEvent.findMany.mockResolvedValue([]);
 
       reliabilityService.computeReliabilitySummary.mockImplementation(() => {
         throw new Error('Computation failed');
