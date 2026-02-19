@@ -19,11 +19,11 @@ export const GeofencingTestButton: React.FC<GeofencingTestButtonProps> = ({
   if (!visible) return null;
 
   const simulateEntry = () => {
-    locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
   };
 
   const simulateExit = () => {
-    locationService.triggerTestGeofenceEvent('lot_1', 'EXIT');
+    locationService.triggerTestGeofenceEvent('G1', 'EXIT');
   };
 
   const getCurrentLocation = () => {
@@ -46,7 +46,7 @@ export const GeofencingTestButton: React.FC<GeofencingTestButtonProps> = ({
     };
     
     // Trigger a geofence event while "offline"
-    locationService.triggerTestGeofenceEvent('home_test_zone', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
     
     // Restore the API after 3 seconds
     setTimeout(() => {
@@ -60,10 +60,10 @@ export const GeofencingTestButton: React.FC<GeofencingTestButtonProps> = ({
       <Text style={styles.title}>DEV: Geofencing Test</Text>
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={[styles.button, styles.enterButton]} onPress={simulateEntry}>
-          <Text style={styles.buttonText}>Simulate Enter Lot 1</Text>
+          <Text style={styles.buttonText}>Simulate Enter G1</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.button, styles.exitButton]} onPress={simulateExit}>
-          <Text style={styles.buttonText}>Simulate Exit Lot 1</Text>
+          <Text style={styles.buttonText}>Simulate Exit G1</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.buttonContainer}>

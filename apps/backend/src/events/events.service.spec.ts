@@ -1,26 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventsService } from './events.service';
+import { PrismaService } from '../database/database.module';
 
 describe('EventsService', () => {
   let service: EventsService;
-  let mockDynamoClient: { send: jest.Mock };
+  let prisma: {
+    campusEvent: { findMany: jest.Mock };
+    eventImpact: { findMany: jest.Mock };
+  };
 
   beforeEach(async () => {
-    mockDynamoClient = {
-      send: jest.fn(),
+    prisma = {
+      campusEvent: { findMany: jest.fn() },
+      eventImpact: { findMany: jest.fn() },
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EventsService,
-        {
-          provide: 'DYNAMODB_CLIENT',
-          useValue: mockDynamoClient,
-        },
-        {
-          provide: 'TABLE_NAME',
-          useValue: 'test-table',
-        },
+        { provide: PrismaService, useValue: prisma },
       ],
     }).compile();
 
@@ -33,62 +31,74 @@ describe('EventsService', () => {
 
   describe('findAll', () => {
     it('should return array of campus events', async () => {
-      const mockEvents = {
-        Items: [
-          {
-            event_id: { S: 'basketball-2025' },
-            event_name: { S: 'Basketball Game' },
-            event_type: { S: 'SPORTS' },
-            EntityType: { S: 'CampusEvent' },
-          },
-        ],
-      };
+      const mockEvents = [
+        {
+          id: 'uuid-1',
+          event_name: 'Basketball Game',
+          event_type: 'ATHLETIC',
+          start_time: new Date(),
+          end_time: new Date(),
+        },
+      ];
 
-      mockDynamoClient.send.mockResolvedValueOnce(mockEvents);
+      prisma.campusEvent.findMany.mockResolvedValue(mockEvents);
 
       const result = await service.findAll();
 
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(1);
     });
 
     it('should filter by event type when provided', async () => {
-      const mockEvents = {
-        Items: [
-          {
-            event_id: { S: 'basketball-2025' },
-            event_type: { S: 'SPORTS' },
-            EntityType: { S: 'CampusEvent' },
-          },
-        ],
-      };
+      prisma.campusEvent.findMany.mockResolvedValue([]);
 
-      mockDynamoClient.send.mockResolvedValueOnce(mockEvents);
+      await service.findAll('ATHLETIC');
 
-      const result = await service.findAll('SPORTS');
+      expect(prisma.campusEvent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { event_type: 'ATHLETIC' },
+        }),
+      );
+    });
 
-      expect(result).toBeDefined();
+    it('should reject invalid event type', async () => {
+      await expect(service.findAll('INVALID')).rejects.toThrow('Invalid event type');
+    });
+
+    it('should pass undefined where when no filter', async () => {
+      prisma.campusEvent.findMany.mockResolvedValue([]);
+
+      await service.findAll();
+
+      expect(prisma.campusEvent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: undefined,
+        }),
+      );
     });
   });
 
   describe('getImpacts', () => {
     it('should return parking impacts for event', async () => {
-      const mockImpacts = {
-        Items: [
-          {
-            event_id: { S: 'basketball-2025' },
-            lot_id: { S: 'G2' },
-            impact_level: { S: 'HIGH' },
-          },
-        ],
-      };
+      const mockImpacts = [
+        {
+          id: 'uuid-1',
+          event_id: 'basketball-2025',
+          lot_id: 'lot-uuid',
+          impact_level: 'HIGH',
+        },
+      ];
 
-      mockDynamoClient.send.mockResolvedValueOnce(mockImpacts);
+      prisma.eventImpact.findMany.mockResolvedValue(mockImpacts);
 
       const result = await service.getImpacts('basketball-2025');
 
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
+      expect(prisma.eventImpact.findMany).toHaveBeenCalledWith({
+        where: { event_id: 'basketball-2025' },
+      });
     });
   });
 });

@@ -1,33 +1,20 @@
-export interface User {
-  PK: string;
-  SK: string;
-  EntityType: string;
-  user_id: string;
+import type { User as PrismaUser, UserFavorite as PrismaUserFavorite } from '@prisma/client';
+
+/**
+ * Re-export Prisma types for convenience.
+ */
+export type User = PrismaUser;
+export type UserFavorite = PrismaUserFavorite;
+
+export interface UserResponse {
+  id: string;
   email: string;
   first_name: string;
   last_name: string;
-  user_type: 'STUDENT' | 'EMPLOYEE';
-  phone?: string;
-  notification_preferences: {
-    favorites_filling?: boolean;
-    favorites_clearing?: boolean;
-    surge_alerts?: boolean;
-    event_alerts?: boolean;
-  };
-  created_at: string;
-  last_login?: string;
-  timestamp: string;
-}
-
-export interface UserFavorite {
-  PK: string;
-  SK: string;
-  EntityType: string;
-  user_id: string;
-  lot_id: string;
-  added_at: string;
-}
-
-export interface UserResponse extends User {
-  favorites?: string[];
+  user_type: string;
+  phone: string | null;
+  notification_preferences: unknown;
+  created_at: Date;
+  last_login: Date | null;
+  favorites: string[];
 }

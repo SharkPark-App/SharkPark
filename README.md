@@ -1,421 +1,410 @@
-# SharkPark Monorepo - Local Dev Guide
+# SharkPark
 
-This repo contains backend (NestJS), mobile (React Native), ML (planned), and shared packages in a single PNPM/Turbo monorepo.
+SharkPark is a real-time parking availability system built for California State University, Long Beach (CSULB). The app uses crowdsourced geofencing data from students' phones to estimate how full each campus parking lot is, giving drivers live occupancy information and short-term/long-term forecasts before they leave for campus.
 
-- Root: `pnpm` workspaces + `turbo`
-- Backend: `apps/backend` (Nest 11, TS, Jest)
-- Mobile: `apps/mobile` (React Native CLI)
-- Shared: `packages/types`, `packages/utils`
-- ML/service layer (planned): `services/ml/`
-- Local infra: DynamoDB Local + LocalStack (S3) via `./scripts/start-local.sh`
+Parking is one of the biggest daily frustrations for commuter students. CSULB has over 30 parking lots spread across campus, and during peak hours drivers waste significant time circling lots that are already full. SharkPark solves this by turning every user's phone into an anonymous sensor. When a student's phone enters or exits a parking lot geofence, the app records that event (without storing any personal location data), and the backend aggregates these events into a live occupancy estimate for each lot.
 
----
+## Table of Contents
 
-* [SharkPark Monorepo — Local Dev Guide](#sharkpark-monorepo--local-dev-guide)
-
-  * [Tech choices](#tech-choices)
-  * [Prerequisites](#prerequisites)
-  * [Clone and install](#clone-and-install)
-  * [Local infra (DynamoDB + LocalStack)](#local-infra-dynamodb--localstack)
-  * [Build / lint / typecheck (root)](#build--lint--typecheck-root)
-  * [Run the backend (NestJS)](#run-the-backend-nestjs)
-  * [Run tests (backend)](#run-tests-backend)
-  * [Run the mobile app](#run-the-mobile-app)
-  * [services/ml (planned)](#servicesml-planned)
-  * [File / workspace layout](#file--workspace-layout)
-  * [CI (GitHub Actions)](#ci-github-actions)
-  * [Env / secrets](#env--secrets)
-  * [Deployment (later)](#deployment-later)
-  * [Local quickstart](#local-quickstart)
+- [How It Works](#how-it-works)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Key Design Decisions](#key-design-decisions)
+- [Prerequisites](#prerequisites)
+- [Getting Started](#getting-started)
+- [Scripts Reference](#scripts-reference)
+- [API Endpoints](#api-endpoints)
+- [Testing](#testing)
+- [Environment Variables](#environment-variables)
+- [Docker Services](#docker-services)
+- [Project Structure](#project-structure)
+- [CI / CD](#ci--cd)
+- [Seed Data](#seed-data)
+- [License](#license)
 
 ---
 
-## Tech choices
+## How It Works
 
-**PNPM + Turbo**  
-One workspace to install once and build/lint/test all apps. Turbo lets the CI reuse builds and run tasks per package.
+The core flow has four stages:
 
-**NestJS (backend)**  
-Opinionated, modular, TS-first, easy testing, and easy to add Swagger, auth, and modules.
+1. **Geofence detection** — The mobile app registers geofence regions for each parking lot (using either circular or polygon boundaries). When a student's phone crosses a lot boundary, the OS fires an event that the app intercepts.
 
-**React Native CLI (mobile)**  
-Full control over native iOS/Android, good for geofencing and background location.
+2. **Anonymous event recording** — The app sends an ENTER or EXIT event to the backend with the lot ID and a random device UUID (generated once, stored locally, never tied to the user's real identity). The backend immediately hashes this UUID with SHA-256 and a server-side salt before storing anything — the raw device ID is never persisted, and no location coordinates are ever saved server-side.
 
-**Shared packages (`packages/types`, `packages/utils`)**  
-Single source of truth for contracts between mobile and backend.
+3. **Occupancy aggregation** — Each event atomically increments or decrements the lot's current occupancy count inside a database transaction. A deduplication layer (the `DeviceState` table) tracks each hashed device's last event type per lot, so duplicate ENTER-ENTER or EXIT-EXIT events are silently ignored. Every 15 minutes, a scheduled job snapshots every lot's occupancy along with metadata (reliability score, academic period, weather, campus status) to build training data for future ML predictions.
 
-**Local infra (DynamoDB Local + LocalStack)**  
-Local DB and S3 so no one needs real AWS creds to run the app.
+4. **Live display** — The mobile app renders a campus map with color-coded lot indicators (green/yellow/orange/red based on occupancy thresholds) and provides short-term forecasts using a time-of-day heuristic model. Students can tap any lot to see detailed occupancy trends, favorite specific lots, and filter by permit type.
 
-**CI (GitHub Actions)**  
-Runs build, lint, typecheck, and backend tests on every push/PR. No deploy in CI.
+### Reliability Scoring
 
-**services/ml (planned)**  
-Keeps ML / AI code separate from Nest and RN. Lets us use heavier deps (PyTorch, transformers, or TS-based inference) without polluting the Node apps, and makes it easy to run ML as its own container.
+Since occupancy accuracy depends on how many students are actually using the app, every lot gets a real-time **reliability score** computed from five weighted factors:
+
+| Factor | Weight | What it measures |
+|--------|--------|-----------------|
+| Penetration rate | 35% | Percentage of a lot's capacity represented by app users |
+| Data freshness | 25% | How recently the last event was recorded (decays linearly over 60 min) |
+| Event frequency | 20% | Number of events in the last hour vs. a target of 10 |
+| Sample size | 15% | Unique devices in the last hour vs. a target of 20 |
+| Historical accuracy | 5% | Placeholder for future ground-truth comparison |
+
+Scores are classified as HIGH (70+), MEDIUM (40-69), or LOW (<40). Lots with very sparse data enter a "cold start" mode with an explicit low-confidence indicator so students know the estimate may be unreliable.
+
+### Polygon Geofencing
+
+Parking lots are not circles. CSULB has L-shaped structures, narrow rows between buildings, and multi-level garages. SharkPark supports **polygon geofences** defined as arrays of lat/lng vertices stored directly in the database. The mobile app uses a **ray casting algorithm** (even-odd rule) to determine whether a GPS coordinate falls inside a polygon — this handles concave and irregular shapes that circular geofences would either over-cover or under-cover. Each lot stores both polygon coordinates and a centroid/radius for fallback compatibility with iOS's 20-region geofence limit.
+
+---
+
+## Tech Stack
+
+### Why these choices
+
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| **Mobile** | React Native 0.82, React 19 | Cross-platform (iOS and Android) from a single TypeScript codebase. React Native gives us native performance for GPS tracking and geofencing while sharing business logic across platforms. |
+| **Navigation** | React Navigation 7 | Industry standard for React Native screen management. Bottom tab navigator gives students quick access to map, forecasts, and profile. |
+| **Auth** | Azure AD SSO via `react-native-app-auth` | CSULB uses Azure Active Directory for all student accounts. Using the university's existing SSO means students log in with their school credentials — no separate account creation, and we can verify they are actual CSULB students. |
+| **Backend** | NestJS 11 (Node.js) | TypeScript-native framework with built-in support for modules, dependency injection, guards, pipes, and scheduled tasks. The modular architecture maps cleanly to our domain (lots, users, events, weather, reliability). Comes with first-class testing support. |
+| **ORM** | Prisma 7 | Type-safe database queries generated from a schema file (`prisma/schema.prisma`). Catches query errors at compile time instead of runtime, auto-generates migrations, and provides a visual data browser (`prisma studio`). Uses the `@prisma/adapter-pg` driver adapter for direct PostgreSQL connection pooling. |
+| **Database** | PostgreSQL 16 (local) / Aurora PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events impact multiple lots). We run standard PostgreSQL 16 in Docker for local development. In production we deploy to Amazon Aurora PostgreSQL Serverless v2, which is wire-compatible with PostgreSQL but adds auto-scaling, automated backups, and multi-AZ replication. The only change between environments is the `DATABASE_URL` connection string. |
+| **Security** | Helmet, Throttler, CORS, Passport JWT | Helmet sets security HTTP headers. The throttler rate-limits to 20 requests per 10 seconds per IP. CORS is locked down in production. Passport validates Azure AD JWTs against Microsoft's JWKS endpoint with automatic key rotation. |
+| **Monorepo** | pnpm 10 workspaces + Turborepo | pnpm's strict dependency resolution prevents phantom dependencies. Turborepo parallelizes builds, tests, and lints across workspaces with caching. Shared packages (`packages/types`, `packages/utils`) are consumed by both the backend and mobile app. |
+| **Infra** | Docker Compose | Single `docker compose up` gives every developer an identical PostgreSQL + LocalStack (S3) environment. The postinstall script automates this so `pnpm install` is the only command needed. |
+
+---
+
+## Architecture
+
+```
+┌──────────────────┐         ┌──────────────────────┐
+│  React Native    │  REST   │  NestJS API          │
+│  iOS / Android   │ ──────> │  /api/v1/*           │
+│  (apps/mobile)   │         │  (apps/backend)      │
+└──────────────────┘         └────────┬─────────────┘
+                                      │ Prisma ORM
+                              ┌───────▼───────┐
+                              │  PostgreSQL   │
+                              │  (Docker dev) │
+                              │  (Aurora prod)│
+                              └───────────────┘
+```
+
+The backend is organized into feature modules, each with its own controller, service, and interfaces:
+
+- **Lots** — CRUD for parking lots, occupancy summaries, historical snapshots, and filtering by type/permit/availability.
+- **Users** — Profile management, favorite lots, notification preferences. All endpoints are guarded by Azure AD authentication.
+- **Events** — Campus events (athletic games, graduation, etc.) and their predicted parking impact on nearby lots.
+- **Occupancy Events** — The core data pipeline: receives anonymous geofence ENTER/EXIT events, deduplicates, updates occupancy atomically, and produces periodic snapshots for ML training.
+- **Reliability** — Real-time confidence scoring for each lot's occupancy estimate, computed from the five-factor weighted model described above.
+- **Weather** — Current weather data used as an ML feature (rain correlates with higher driving and lot demand).
+- **Database** — Global Prisma module with environment-aware connection pooling (pool size 5 locally, 20 in production, SSL required in production).
+
+The mobile app uses a provider-based architecture:
+
+- **AuthContext** — Manages Azure AD login state and token refresh.
+- **SimpleGeofencingProvider** — Initializes GPS tracking, monitors geofence regions, fires anonymous events to the backend, and prevents duplicate alerts via an in-memory set.
+- **ThemeContext** — Light/dark mode support.
+- **API service layer** — Centralized HTTP client with platform-aware URL resolution (Android emulator uses `10.0.2.2`, iOS simulator uses `localhost`, production uses `api.sharkpark.csulb.edu`).
+
+---
+
+## Key Design Decisions
+
+### Privacy-first data collection
+
+We never store personal location data. The mobile app generates a random UUID once, stores it locally in secure storage, and sends it with each event. The backend hashes it with SHA-256 and a salt before persisting — the raw ID is never written to the database. Only the lot ID (which lot was entered/exited) is stored, never GPS coordinates. Data retention is limited: anonymous events are purged after 30 days, logs after 7 days. Rate limits cap events at 100/hour and 1,000/day per device to prevent abuse.
+
+### Atomic occupancy updates
+
+Each ENTER/EXIT event runs inside a Prisma `$transaction` that atomically: (1) creates the event record, (2) increments or decrements the lot's `currentOccupancy`, and (3) upserts the device's state. This prevents race conditions where two simultaneous events could corrupt the count. A floor guard ensures occupancy never drops below zero.
+
+### Client-side forecasting
+
+Short-term forecasts are generated on the mobile device using a time-of-day heuristic (peak multipliers for 8-10 AM and 5-7 PM, low multipliers for 10 PM-6 AM) applied to the current occupancy rate. Confidence margins are wider for lots with lower reliability scores. This runs client-side so forecasts work even when offline. The ML service (`services/ml/`) will eventually replace this with trained models backed by the snapshot data.
+
+### Multi-tenant schema
+
+The database schema is designed around a `School` entity as the top-level tenant. Every lot, user, event, and calendar entry belongs to a school. While we currently only support CSULB, this means the system can be deployed to other universities without schema changes — just add a new school and its associated lot data.
 
 ---
 
 ## Prerequisites
 
-- Node: v22.x
-- pnpm: `pnpm@10.20.0`
-- Docker running
-- Xcode (for iOS) or Android Studio (for Android)
-- Git
-
-Optional for iOS:
-```bash
-xcode-select --switch /Applications/Xcode.app
-````
+| Tool | Version |
+|------|---------|
+| Node.js | >= 20 |
+| pnpm | 10.20.0 (`corepack enable && corepack prepare pnpm@10.20.0 --activate`) |
+| Docker | Latest (for PostgreSQL + LocalStack) |
+| Xcode | 16+ (iOS builds, includes CocoaPods via `xcode-select`) |
+| CocoaPods | Installed via Xcode or `gem install cocoapods` |
 
 ---
 
-## Clone and install
+## Getting Started
 
 ```bash
-git clone <repo-url> SharkPark
-cd SharkPark
+# 1. Clone and install (Docker, migrations, and seeding run automatically via postinstall)
+git clone <repo-url> && cd SharkPark
 pnpm install
+
+# 2. Set up environment
+cp .env.example apps/backend/.env
+# Edit apps/backend/.env with your values (see Environment Variables below)
+
+# 3. Start the backend (http://localhost:3000)
+pnpm --filter @sharkpark/backend dev
+
+# 4. Start the mobile app (in a second terminal)
+pnpm --filter mobile ios
 ```
 
-If you don’t want local infra to start during install (CI, or no Docker):
+Run `pnpm dev` from root to start both backend and mobile in parallel.
 
-```bash
-SKIP_LOCAL_INFRA=1 pnpm install
-```
+**What happens on `pnpm install`?** The postinstall script automatically starts Docker containers, waits for PostgreSQL to accept connections, runs Prisma migrations (idempotent, safe to re-run), generates the Prisma client, and seeds the database if it is empty. Set `SKIP_LOCAL_INFRA=1` to skip all of this (used in CI).
 
 ---
 
-## Local infra (DynamoDB + LocalStack)
+## Scripts Reference
 
-```bash
-./scripts/start-local.sh
-```
+### Root (monorepo)
 
-This starts:
+| Script | Command | Description |
+|--------|---------|-------------|
+| `pnpm install` | — | Install all deps, start Docker, migrate, and seed |
+| `pnpm dev` | `turbo run dev --parallel` | Start backend + mobile in parallel |
+| `pnpm build` | `turbo run build` | Build all workspaces |
+| `pnpm test` | `turbo run test` | Run all tests across workspaces |
+| `pnpm lint` | `turbo run lint` | Lint all workspaces |
+| `pnpm typecheck` | `turbo run typecheck` | Type-check all workspaces |
+| `pnpm format` | `prettier . --check` | Check formatting |
+| `pnpm format:fix` | `prettier . --write` | Fix formatting |
+| `pnpm db:setup` | `prisma migrate dev` | Create/update database schema |
+| `pnpm db:seed` | `prisma db seed` | Seed database (28 lots, users, events, etc.) |
+| `pnpm db:reset` | `prisma migrate reset --force` | Drop DB, re-migrate, re-seed |
+| `pnpm db:deploy` | `prisma migrate deploy` | Apply migrations (production) |
+| `pnpm db:studio` | `prisma studio` | Open Prisma Studio GUI |
+| `pnpm network-ip` | `node scripts/get-network-ip.js` | Print local network IP (for mobile to backend) |
 
-* `sharkpark-dynamodb` on `8000`
-* `sharkpark-localstack` on `4566`
+### Backend (`apps/backend`)
 
-To skip:
+| Script | Command | Description |
+|--------|---------|-------------|
+| `pnpm dev` | `nest start --watch` | Start dev server with hot reload |
+| `pnpm start` | `nest start` | Start server |
+| `pnpm start:prod` | `node dist/main` | Start production build |
+| `pnpm build` | `nest build` | Compile TypeScript |
+| `pnpm test` | `jest` | Run 142 unit tests (17 suites) |
+| `pnpm test:e2e` | `jest --config jest-e2e.js` | Run E2E tests |
+| `pnpm lint` | `eslint .` | Lint backend source |
+| `pnpm typecheck` | `tsc --noEmit` | Type-check without emitting |
 
-```bash
-SKIP_LOCAL_INFRA=1 pnpm install
-SKIP_LOCAL_INFRA=1 pnpm build
-```
+### Mobile (`apps/mobile`)
 
-In CI:
-
-```yaml
-env:
-  SKIP_LOCAL_INFRA: "1"
-```
-
----
-
-## Build / lint / typecheck (root)
-
-```bash
-pnpm build
-pnpm lint
-pnpm typecheck
-```
-
----
-
-## Run the backend (NestJS)
-
-**Setup database first (one-time):**
-```bash
-pnpm db:setup    # Creates DynamoDB tables
-pnpm db:seed     # Seeds test data (28 lots, 5 users, 4 events, weather)
-```
-
-**Start the server:**
-```bash
-cd apps/backend
-pnpm dev
-```
-
-API base URL: `http://localhost:3000/api/v1`
-
-**Endpoints:**
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/lots` | Get all parking lots (supports query filters) |
-| GET | `/lots/summary` | Campus-wide occupancy summary |
-| GET | `/lots/:id` | Get specific lot |
-| GET | `/lots/:id/history` | Historical occupancy data |
-| GET | `/users/:userId` | Get user profile |
-| GET | `/users/:userId/favorites` | Get user's favorite lots |
-| POST | `/users/:userId/favorites/:lotId` | Add to favorites |
-| DELETE | `/users/:userId/favorites/:lotId` | Remove from favorites |
-| PATCH | `/users/:userId/notifications` | Update notification preferences |
-| GET | `/events` | Get campus events |
-| GET | `/events/:eventId/impacts` | Get event parking impacts |
-| GET | `/weather/current` | Get current weather |
+| Script | Command | Description |
+|--------|---------|-------------|
+| `pnpm ios` | `react-native run-ios` | Build and run on iOS simulator |
+| `pnpm android` | `react-native run-android` | Build and run on Android emulator |
+| `pnpm start` | `react-native start` | Start Metro bundler |
+| `pnpm test` | `jest` | Run 106 unit tests (13 suites) |
+| `pnpm lint` | `eslint .` | Lint mobile source |
+| `pnpm typecheck` | `tsc --noEmit` | Type-check without emitting |
 
 ---
 
-## Run tests (backend)
+## API Endpoints
 
-From root:
+All endpoints are prefixed with `/api/v1`. The backend runs on port 3000 by default.
+
+### Health
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/` | Health check (returns status, timestamp, database connectivity) |
+
+### Lots
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/lots` | List all parking lots (filterable by `type`, `available`, `minCapacity`, `maxCapacity`, `search`, `favorite`) |
+| `GET` | `/api/v1/lots/summary` | Campus-wide occupancy summary |
+| `GET` | `/api/v1/lots/:id` | Get a single lot by ID |
+| `GET` | `/api/v1/lots/:id/history` | Historical occupancy (`from`, `to` query params) |
+
+### Users (authenticated)
+
+All user endpoints require Azure AD authentication.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/users/:userId` | Get user profile |
+| `GET` | `/api/v1/users/:userId/favorites` | List favorite lots |
+| `POST` | `/api/v1/users/:userId/favorites` | Add a lot to favorites |
+| `DELETE` | `/api/v1/users/:userId/favorites/:lotId` | Remove a favorite lot |
+| `PATCH` | `/api/v1/users/:userId/notifications` | Update notification preferences |
+
+### Events
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/events` | List campus events (optional `date` filter) |
+| `GET` | `/api/v1/events/:id/parking-impact` | Parking impact for a specific event |
+
+### Weather
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/weather/current` | Current weather data for parking demand correlation |
+
+### Occupancy Events
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/occupancy-events` | Record anonymous geofencing ENTER/EXIT event |
+| `GET` | `/api/v1/occupancy-events/lot/:lotId` | Events for a lot in a date range (`from`, `to`, `type`) |
+| `GET` | `/api/v1/occupancy-events/lot/:lotId/stats` | Enter/exit counts for a lot (`from`, `to`) |
+| `POST` | `/api/v1/occupancy-events/snapshots/trigger` | Manually trigger occupancy snapshot |
+| `GET` | `/api/v1/occupancy-events/lot/:lotId/snapshots` | Snapshots for a lot on a date (`date`, `lotId`) |
+
+### Reliability
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/reliability/:lotId` | Reliability score for a specific lot |
+| `GET` | `/api/v1/reliability` | Reliability scores for all lots |
+| `GET` | `/api/v1/reliability/config` | Reliability computation config (weights and thresholds) |
+
+**Total: 19 endpoints** (14 GET, 3 POST, 1 DELETE, 1 PATCH)
+
+---
+
+## Testing
 
 ```bash
-pnpm -C apps/backend test       # 41 unit tests
-pnpm -C apps/backend test:e2e   # 27 E2E tests
-```
-
-Or inside backend:
-
-```bash
-cd apps/backend
+# Run all 248 tests
 pnpm test
-pnpm test:e2e
-```
 
-Unit tests cover all services and controllers. E2E tests hit real DynamoDB Local.
+# Backend only (142 tests, 17 suites)
+pnpm --filter @sharkpark/backend test
+
+# Mobile only (106 tests, 13 suites)
+pnpm --filter mobile test
+
+# Backend E2E (requires running DB)
+pnpm --filter @sharkpark/backend test:e2e
+```
 
 ---
 
-## Run the mobile app
+## Environment Variables
+
+Create `apps/backend/.env` from `.env.example`:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string (local Docker or Aurora endpoint) | `postgresql://sharkpark:sharkpark@localhost:5433/sharkpark` |
+| `PORT` | API server port | `3000` |
+| `NODE_ENV` | Environment (`development` / `production`) | `development` |
+| `AZURE_TENANT_ID` | Azure AD tenant for SSO | — |
+| `AZURE_CLIENT_ID` | Azure AD application (client) ID | — |
+| `CORS_ORIGIN` | Allowed CORS origin (comma-separated in production) | `*` |
+| `THROTTLE_TTL` | Rate limit window (seconds) | `10` |
+| `THROTTLE_LIMIT` | Max requests per window | `20` |
+
+---
+
+## Docker Services
+
+Defined in `docker/docker-compose.yml`:
+
+| Service | Image | Port | Purpose |
+|---------|-------|------|---------|
+| `postgres` | `postgres:16-alpine` | `5433 -> 5432` | Local dev database (Aurora PostgreSQL in production) |
+| `localstack` | `localstack/localstack` | `4566` | Local S3 emulation |
 
 ```bash
-cd apps/mobile
-pnpm install
-pnpm ios
-# or
-pnpm android
-```
-
-If you see the `xcodebuild ... requires Xcode` error:
-
-```bash
-sudo xcode-select --switch /Applications/Xcode.app
-```
-
-RN config files (`metro.config.js`, `babel.config.js`) stay CommonJS so `require(...)` works.
-
----
-
-## services/ml (planned)
-
-Path: `services/ml/`
-
-Purpose:
-
-* isolate ML/AI logic from Nest and RN
-* keep heavy deps (Python or TS ML) out of the app packages
-* let backend/mobile call ML over HTTP/gRPC
-
-What goes here:
-
-* model / inference code
-* HTTP wrapper (e.g. `/predict`)
-* Dockerfile for ML service
-* unit tests / sample payloads
-
-Local shape (TS example):
-
-```bash
-cd services/ml
-pnpm install
-pnpm dev
-# service on http://localhost:8001
-```
-
-Backend → ML:
-
-* backend calls `http://localhost:8001/predict` in local dev
-* in real deployment this becomes an internal URL (ECS/K8s)
-* keeps versioning of ML independent from Nest
-
----
-
-## File / workspace layout
-
-```text
-SharkPark/                      # monorepo root
-├── package.json                # root scripts + dev deps (turbo, husky, prettier, etc.)
-├── pnpm-workspace.yaml         # tells pnpm which folders are part of the workspace
-├── turbo.json                  # defines shared build/lint/typecheck pipelines across apps
-├── tsconfig.json               # root TS config (extends tsconfig.base.json)
-├── tsconfig.base.json          # shared TS settings for all packages
-├── eslint.config.mjs           # shared lint rules for all packages/apps
-├── .prettierrc                 # code formatting rules
-├── .prettierignore             # files to skip formatting
-├── .husky/                     # git hooks (pre-commit runs lint + typecheck)
-│   └── pre-commit
-├── scripts/                    # helper shell scripts for local/dev ops
-│   ├── start-local.sh          # spins up local infra (dynamodb-local, localstack)
-│   ├── setup-dynamodb-schema.ts # creates DynamoDB tables with indexes
-│   └── seed-database.ts        # seeds test data (lots, users, events, weather)
-├── docker/                     # local development infrastructure
-│   └── docker-compose.yml      # DynamoDB Local + LocalStack (S3)
-├── infrastructure/             # AWS deployment code (CDK/SST - planned)
-│   └── README.md
-├── apps/                       # runnable applications (what we actually ship)
-│   ├── backend/                # NestJS API server (parking data, auth, events)
-│   │   ├── src/                # backend source code
-│   │   │   ├── main.ts         # NestJS entrypoint / bootstrap
-│   │   │   ├── app.module.ts   # root module, imports feature modules
-│   │   │   ├── app.controller.ts # health check endpoint
-│   │   │   ├── app.service.ts  # health check service
-│   │   │   ├── constants.ts    # API prefix, service name
-│   │   │   ├── database/       # DynamoDB client module
-│   │   │   ├── lots/           # parking lots (service, controller, interfaces)
-│   │   │   ├── users/          # users and favorites
-│   │   │   ├── events/         # campus events
-│   │   │   ├── weather/        # weather data
-│   │   │   └── common/         # shared filters, guards
-│   │   ├── test/               # E2E tests (27 tests across 5 suites)
-│   │   ├── dist/               # compiled output (gitignored)
-│   │   ├── tsconfig.json       # backend-specific TS settings (extends root)
-│   │   ├── tsconfig.build.json # TS build target for NestJS
-│   │   ├── jest.config.js      # Jest config for unit tests
-│   │   ├── jest-e2e.js         # Jest config for e2e tests
-│   │   ├── eslint.config.mjs   # backend-specific lint rules
-│   │   └── package.json        # backend app deps/scripts
-│   └── mobile/                 # React Native app (iOS/Android client)
-│       ├── App.tsx             # RN root component (entry point)
-│       ├── android/            # Android native project (auto-generated, rarely edited)
-│       ├── ios/                # iOS native project (auto-generated, rarely edited)
-│       ├── __tests__/          # mobile app tests
-│       ├── metro.config.js     # RN bundler config
-│       ├── babel.config.js     # RN/Babel transforms
-│       ├── eslint.config.mjs   # mobile-specific lint rules
-│       ├── tsconfig.json       # mobile TS config
-│       └── package.json        # mobile app deps/scripts
-├── services/                   # non-Node services / background jobs
-│   └── ml/                     # future ML/inference/training code (Python/TS)
-│                               # will run as separate service with own Dockerfile
-└── packages/                   # shared, versioned libraries for the monorepo
-    ├── types/                  # shared TypeScript types
-    │   ├── src/
-    │   │   └── index.ts        # ParkingLot, OccupancyEvent, Forecast types
-    │   ├── dist/               # compiled declarations (gitignored)
-    │   ├── tsconfig.json       # types package TS config
-    │   └── package.json        # @sharkpark/types
-    └── utils/                  # shared helper functions
-        ├── src/
-        │   └── index.ts        # isoNow(), toOccupancyBucket(), normalizeEmail()
-        ├── dist/               # compiled code (gitignored)
-        ├── tsconfig.json       # utils package TS config
-        └── package.json        # @sharkpark/utils
+# Containers start automatically on pnpm install.
+# To manage manually:
+docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml down
 ```
 
 ---
 
-## CI (GitHub Actions)
+## Project Structure
 
-```yaml
-name: CI
-on: [push, pull_request]
-
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    env:
-      SKIP_LOCAL_INFRA: "1"
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.20.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install deps
-        run: pnpm install
-
-      - name: Build
-        run: pnpm build
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Backend unit tests
-        run: pnpm -C apps/backend test
-
-      - name: Backend e2e tests
-        run: pnpm -C apps/backend test:e2e
 ```
-
-What it does:
-
-* installs
-* builds all workspaces
-* lints
-* typechecks
-* runs backend unit + e2e tests
-* does not start Docker
-* does not deploy
+SharkPark/
+├── apps/
+│   ├── backend/                  # NestJS API
+│   │   ├── prisma/               # Schema, migrations, seed data
+│   │   ├── src/
+│   │   │   ├── auth/             # Azure AD JWT strategy (Passport)
+│   │   │   ├── common/           # Global exception filters
+│   │   │   ├── database/         # Prisma module (connection pooling, env config)
+│   │   │   ├── events/           # Campus events and parking impact
+│   │   │   ├── lots/             # Parking lot CRUD, filtering, occupancy summaries
+│   │   │   ├── occupancy-events/ # Geofence event pipeline, dedup, snapshots, scheduler
+│   │   │   ├── reliability/      # Multi-factor weighted reliability scoring
+│   │   │   ├── users/            # Profiles, favorites, notification preferences
+│   │   │   └── weather/          # Weather data for demand correlation
+│   │   └── test/                 # E2E tests
+│   │
+│   └── mobile/                   # React Native app
+│       ├── src/
+│       │   ├── auth/             # Azure AD SSO (react-native-app-auth)
+│       │   ├── components/       # UI components (Header, Modals, Charts, etc.)
+│       │   ├── constants/        # Theme, geofencing config, campus coordinates
+│       │   ├── context/          # Auth, Geofencing, Theme providers
+│       │   ├── data/             # Mock data for offline development
+│       │   ├── hooks/            # Custom hooks (lots, location, reliability)
+│       │   ├── navigation/       # React Navigation tab navigator
+│       │   ├── screens/          # Map, Forecast, Profile, Login, Verification
+│       │   ├── services/         # API client layer and location services
+│       │   ├── types/            # TypeScript type definitions
+│       │   └── utils/            # Geofencing (ray casting), map, parking utilities
+│       └── __tests__/            # Unit tests
+│
+├── packages/
+│   ├── types/                    # Shared TypeScript types
+│   └── utils/                    # Shared utility functions
+│
+├── docker/                       # Docker Compose configuration
+├── docs/                         # Project documentation
+├── infrastructure/               # Deployment infrastructure (planned)
+├── scripts/                      # Dev scripts (start-local, network IP)
+└── services/
+    └── ml/                       # ML prediction service (planned)
+```
 
 ---
 
-## Env / secrets
+## CI / CD
 
-Local:
+GitHub Actions workflow at `.github/workflows/ci.yml` runs on every push and PR:
 
-```bash
-cp .env.example .env.local
-```
-
-Put AWS, DB, and service creds in `.env.local`. Do not commit it.
-
-Nest loads env via `@nestjs/config`.
-
-CI: add secrets in GitHub → Actions → Repository secrets.
+1. Install dependencies (`pnpm install` with `SKIP_LOCAL_INFRA=1`)
+2. Lint (`pnpm lint`)
+3. Type-check (`pnpm typecheck`)
+4. Test (`pnpm test`)
+5. Build (`pnpm build`)
 
 ---
 
-## Deployment (later)
+## Seed Data
 
-* build Docker for `apps/backend`
-* push to registry
-* deploy to ECS/Lambda/K8s
-* mobile is shipped separately (Expo/EAS or native)
-* CI stays as quality gate
+The database seed (`pnpm db:seed`) provisions:
 
-`services/ml` can be built and deployed as a separate image, versioned independently.
+- **28 parking lots** — G1-G14, E1-E11, PVN, PVS, PYR (student and employee lots with permit types, capacities, polygon coordinates, and metadata)
+- **5 users** with varied notification preferences and 14 favorite lot assignments
+- **4 campus events** (athletic, academic) with 16 parking impact records across nearby lots
+- **Weather records** for demand correlation features
+- **~2,240 occupancy snapshots** (hourly data for each lot, used as ML training data)
+- **~293 occupancy events** (anonymous geofencing enter/exit events)
+- **10 device state records** (for deduplication testing)
 
 ---
 
-## Local quickstart
+## License
 
-```bash
-# 1. Install dependencies (also starts Docker containers)
-pnpm install
-
-# 2. Setup and seed database (one-time)
-pnpm db:setup
-pnpm db:seed
-
-# 3. Verify everything builds
-pnpm build
-pnpm lint
-pnpm typecheck
-
-# 4. Run backend
-cd apps/backend
-pnpm dev
-# API at http://localhost:3000/api/v1
-
-# 5. Run mobile (new terminal)
-cd apps/mobile
-pnpm ios   # or pnpm android
-```
-
-If Docker containers stopped, restart them:
-```bash
-./scripts/start-local.sh
-```
+UNLICENSED — private project.

@@ -6,21 +6,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SKIP_LOCAL_INFRA: "1"
-      DYNAMO_ENDPOINT: "http://localhost:8000"
-      AWS_REGION: "us-west-2"
-      AWS_ACCESS_KEY_ID: "local"
-      AWS_SECRET_ACCESS_KEY: "local"
+      DATABASE_URL: "postgresql://sharkpark:sharkpark@localhost:5432/sharkpark?schema=public"
     
     services:
-      dynamodb:
-        image: amazon/dynamodb-local:latest
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sharkpark
+          POSTGRES_PASSWORD: sharkpark
+          POSTGRES_DB: sharkpark
         ports:
-          - "8000:8000"
+          - "5432:5432"
         options: >-
-          --health-cmd="java -version"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+          --health-cmd="pg_isready -U sharkpark"
+          --health-interval=5s
+          --health-timeout=2s
+          --health-retries=10
     
     steps:
       - uses: actions/checkout@v4
@@ -45,8 +46,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Setup DynamoDB tables
-        run: pnpm db:setup
+      - name: Run database migrations
+        run: pnpm db:deploy
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
 
       - name: Seed test data
         run: pnpm db:seed
@@ -60,14 +64,11 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Backend unit tests with coverage
-        run: pnpm -C apps/backend test --coverage
+      - name: Run unit tests
+        run: pnpm test -- --coverage
 
       - name: Backend E2E tests
         run: pnpm -C apps/backend test:e2e
-
-      - name: Mobile tests with coverage
-        run: pnpm -C apps/mobile test --coverage
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -120,6 +121,6 @@ jobs:
             -workspace mobile.xcworkspace \
             -scheme mobile \
             -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -destination 'generic/platform=iOS Simulator' \
             -quiet \
             CODE_SIGNING_ALLOWED=NO

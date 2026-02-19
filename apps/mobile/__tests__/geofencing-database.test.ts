@@ -75,7 +75,7 @@ describe('Geofencing Database Integration', () => {
     locationService.setOnGeofenceEvent(databaseListener);
 
     // Act: Trigger a test geofence event
-    locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
 
     // Wait for async operations to complete
     await wait(100);
@@ -83,7 +83,7 @@ describe('Geofencing Database Integration', () => {
     // Assert: Database should have been called
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(1);
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({
-      lotId: 'lot_1',
+      lotId: 'G1',
       eventType: 'ENTER',
       source: 'GEOFENCE',
     });
@@ -104,7 +104,7 @@ describe('Geofencing Database Integration', () => {
     locationService.setOnGeofenceEvent(databaseListener);
 
     // Act: Trigger a test geofence event
-    locationService.triggerTestGeofenceEvent('lot_2', 'EXIT');
+    locationService.triggerTestGeofenceEvent('G2', 'EXIT');
 
     // Wait for async operations to complete
     await wait(100);
@@ -112,7 +112,7 @@ describe('Geofencing Database Integration', () => {
     // Assert: Database should have been called
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(1);
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({
-      lotId: 'lot_2',
+      lotId: 'G2',
       eventType: 'EXIT',
       source: 'GEOFENCE',
     });
@@ -131,9 +131,9 @@ describe('Geofencing Database Integration', () => {
     locationService.setOnGeofenceEvent(databaseListener);
 
     // Act: Trigger multiple events
-    locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
-    locationService.triggerTestGeofenceEvent('lot_1', 'EXIT');
-    locationService.triggerTestGeofenceEvent('lot_2', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'EXIT');
+    locationService.triggerTestGeofenceEvent('G2', 'ENTER');
 
     // Wait for async operations to complete
     await wait(100);
@@ -142,19 +142,19 @@ describe('Geofencing Database Integration', () => {
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(3);
     
     expect(mockRecordOccupancyEvent).toHaveBeenNthCalledWith(1, {
-      lotId: 'lot_1',
+      lotId: 'G1',
       eventType: 'ENTER',
       source: 'GEOFENCE',
     });
 
     expect(mockRecordOccupancyEvent).toHaveBeenNthCalledWith(2, {
-      lotId: 'lot_1',
+      lotId: 'G1',
       eventType: 'EXIT',
       source: 'GEOFENCE',
     });
 
     expect(mockRecordOccupancyEvent).toHaveBeenNthCalledWith(3, {
-      lotId: 'lot_2',
+      lotId: 'G2',
       eventType: 'ENTER',
       source: 'GEOFENCE',
     });
@@ -181,7 +181,7 @@ describe('Geofencing Database Integration', () => {
     locationService.setOnGeofenceEvent(databaseListener);
 
     // Act: Trigger event that will fail
-    locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
 
     // Wait for async operations to complete
     await wait(100);
@@ -219,7 +219,7 @@ describe('Geofencing Database Integration', () => {
     locationService.setOnGeofenceEvent(listener2);
 
     // Act: Trigger one event
-    locationService.triggerTestGeofenceEvent('lot_1', 'ENTER');
+    locationService.triggerTestGeofenceEvent('G1', 'ENTER');
 
     // Wait for async operations to complete
     await wait(100);
@@ -228,13 +228,13 @@ describe('Geofencing Database Integration', () => {
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(2);
     
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({
-      lotId: 'lot_1',
+      lotId: 'G1',
       eventType: 'ENTER',
       source: 'GEOFENCE',
     });
 
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({
-      lotId: 'analytics_lot_1',
+      lotId: 'analytics_G1',
       eventType: 'ENTER',
       source: 'GEOFENCE',
     });

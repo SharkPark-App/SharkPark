@@ -13,9 +13,13 @@
     "format:fix": "prettier . --write",
     "prepare": "husky || true",
     "postinstall": "node -e \"if (process.env.SKIP_LOCAL_INFRA !== '1') require('child_process').execSync('./scripts/start-local.sh', {stdio: 'inherit'})\" || true",
-    "test": "echo \"no tests yet\"",
-    "db:setup": "tsx scripts/setup-dynamodb-schema.ts",
-    "db:seed": "tsx scripts/seed-database.ts",
+    "test": "turbo run test",
+    "db:setup": "pnpm --filter @sharkpark/backend exec prisma migrate dev",
+    "db:deploy": "pnpm --filter @sharkpark/backend exec prisma migrate deploy",
+    "db:generate": "pnpm --filter @sharkpark/backend exec prisma generate",
+    "db:seed": "pnpm --filter @sharkpark/backend exec prisma db seed",
+    "db:reset": "pnpm --filter @sharkpark/backend exec prisma migrate reset --force",
+    "db:studio": "pnpm --filter @sharkpark/backend exec prisma studio",
     "network-ip": "node scripts/get-network-ip.js"
   },
   "devDependencies": {
@@ -30,10 +34,5 @@
     "prettier": "^3.6.2",
     "turbo": "^2.6.0",
     "typescript": "^5.9.3"
-  },
-  "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.948.0",
-    "@aws-sdk/util-dynamodb": "^3.948.0",
-    "tsx": "^4.21.0"
   }
 }

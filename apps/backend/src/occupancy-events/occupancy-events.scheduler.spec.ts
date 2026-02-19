@@ -55,7 +55,7 @@ describe('OccupancyEventsScheduler', () => {
 
     it('should handle createSnapshots error gracefully', async () => {
       occupancyEventsService.createSnapshots.mockRejectedValue(
-        new Error('DynamoDB unavailable')
+        new Error('Database unavailable')
       );
 
       await expect(scheduler.handleSnapshotCron()).resolves.not.toThrow();
@@ -64,13 +64,13 @@ describe('OccupancyEventsScheduler', () => {
     it('should log error when snapshot creation fails', async () => {
       const errorSpy = jest.spyOn(scheduler['logger'], 'error');
       occupancyEventsService.createSnapshots.mockRejectedValue(
-        new Error('DynamoDB unavailable')
+        new Error('Database unavailable')
       );
 
       await scheduler.handleSnapshotCron();
 
       expect(errorSpy).toHaveBeenCalledWith(
-        'Failed to create occupancy snapshots: DynamoDB unavailable',
+        'Failed to create occupancy snapshots: Database unavailable',
         expect.any(String)
       );
     });

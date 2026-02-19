@@ -1,79 +1,49 @@
-import { Injectable, Inject, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
-import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
-import { unmarshall } from '@aws-sdk/util-dynamodb';
-import { DYNAMODB_CLIENT, TABLE_NAME, TIMESERIES_TABLE_NAME } from '../database/database.module';
-import type { ParkingLot, ParkingLotResponse, GetLotsQueryParams, OccupancySnapshot } from './interfaces/parking-lot.interface';
+import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
+import { PrismaService } from '../database/database.module';
+import type { Lot, LotType } from '@prisma/client';
+import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse } from './interfaces/parking-lot.interface';
 
 /**
  * Service for parking lot data access and business logic.
- * Queries DynamoDB for lot metadata and timeseries occupancy data.
+ * Queries PostgreSQL via Prisma for lot metadata and timeseries occupancy data.
  */
 @Injectable()
 export class LotsService {
   private readonly logger = new Logger(LotsService.name);
 
-  constructor(
-    @Inject(DYNAMODB_CLIENT) private readonly dynamoClient: DynamoDBClient,
-    @Inject(TABLE_NAME) private readonly tableName: string,
-    @Inject(TIMESERIES_TABLE_NAME) private readonly timeseriesTableName: string,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Retrieves all parking lots, with optional filtering.
-   * Fetches from GSI and applies client-side filters for flexibility.
+   * Prisma WHERE clauses replace client-side filtering from DynamoDB.
    */
   async findAll(query: GetLotsQueryParams = {}): Promise<ParkingLotResponse[]> {
     try {
-      // Query GSI to get all parking lots
-      const command = new QueryCommand({
-        TableName: this.tableName,
-        IndexName: 'GSI1-EntityType-Timestamp',
-        KeyConditionExpression: 'EntityType = :type',
-        ExpressionAttributeValues: {
-          ':type': { S: 'ParkingLot' },
+      const lots = await this.prisma.lot.findMany({
+        where: {
+          ...(query.type && { lot_type: query.type as LotType }),
+          ...(query.permit_type && { permit_types: { has: query.permit_type } }),
+          ...(query.daily_permit !== undefined && { daily_permit_allowed: query.daily_permit }),
+          ...(query.ev_charging && { ev_charging_stations: { gt: 0 } }),
         },
       });
 
-      const result = await this.dynamoClient.send(command);
-      const lots = (result.Items?.map(item => unmarshall(item)) || []) as ParkingLot[];
-
-      // Apply client-side filters
       let filteredLots = lots;
 
-      if (query.type) {
-        filteredLots = filteredLots.filter(lot => lot.lot_type === query.type);
-      }
-
-      if (query.permit_type) {
-        filteredLots = filteredLots.filter(lot => 
-          lot.permit_types.includes(query.permit_type!)
-        );
-      }
-
-      if (query.daily_permit !== undefined) {
-        filteredLots = filteredLots.filter(lot => 
-          lot.daily_permit_allowed === query.daily_permit
-        );
-      }
-
-      if (query.ev_charging) {
-        filteredLots = filteredLots.filter(lot => lot.ev_charging_stations > 0);
-      }
-
+      // These filters require computed values, so apply after fetch
       if (query.min_available) {
-        filteredLots = filteredLots.filter(lot => 
+        filteredLots = filteredLots.filter(lot =>
           (lot.capacity - lot.current_occupancy) >= query.min_available!
         );
       }
 
       if (query.available_only) {
-        filteredLots = filteredLots.filter(lot => 
+        filteredLots = filteredLots.filter(lot =>
           lot.current_occupancy < lot.capacity
         );
       }
 
       return filteredLots.map(lot => this.transformToResponse(lot));
-
     } catch (error) {
       this.logger.error('Failed to fetch parking lots', error);
       throw new InternalServerErrorException('Failed to fetch parking lots');
@@ -82,24 +52,15 @@ export class LotsService {
 
   async findOne(lotId: string): Promise<ParkingLotResponse> {
     try {
-      const command = new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'PK = :pk AND SK = :sk',
-        ExpressionAttributeValues: {
-          ':pk': { S: `LOT#${lotId}` },
-          ':sk': { S: 'METADATA' },
-        },
+      const lot = await this.prisma.lot.findFirst({
+        where: { lot_id: lotId },
       });
 
-      const result = await this.dynamoClient.send(command);
-
-      if (!result.Items || result.Items.length === 0) {
+      if (!lot) {
         throw new NotFoundException(`Parking lot ${lotId} not found`);
       }
 
-      const lot = unmarshall(result.Items[0]) as ParkingLot;
       return this.transformToResponse(lot);
-
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -111,29 +72,43 @@ export class LotsService {
 
   /**
    * Retrieves historical occupancy snapshots for a specific lot and date.
-   * Data is stored in the timeseries table, partitioned by lot+date.
    */
   async getHistory(
     lotId: string,
     date: string,
     limit: number = 96,
-  ): Promise<OccupancySnapshot[]> {
+  ): Promise<OccupancySnapshotResponse[]> {
     try {
-      // Query timeseries table for historical occupancy snapshots
-      const command = new QueryCommand({
-        TableName: this.timeseriesTableName,
-        KeyConditionExpression: 'PK = :pk',
-        ExpressionAttributeValues: {
-          ':pk': { S: `LOT#${lotId}#${date}` },
+      // Find the lot's internal ID from the human-readable lot_id
+      const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+      if (!lot) {
+        throw new NotFoundException(`Parking lot ${lotId} not found`);
+      }
+
+      const startOfDay = new Date(`${date}T00:00:00.000Z`);
+      const endOfDay = new Date(`${date}T23:59:59.999Z`);
+
+      const snapshots = await this.prisma.occupancySnapshot.findMany({
+        where: {
+          lot_id: lot.id,
+          timestamp: { gte: startOfDay, lte: endOfDay },
         },
-        Limit: limit,
-        ScanIndexForward: false, // Most recent first
+        orderBy: { timestamp: 'desc' },
+        take: limit,
       });
 
-      const result = await this.dynamoClient.send(command);
-      return (result.Items?.map(item => unmarshall(item)) || []) as OccupancySnapshot[];
-
+      return snapshots.map(s => ({
+        lot_id: lotId,
+        timestamp: s.timestamp.toISOString(),
+        occupancy: s.occupancy,
+        available: s.available,
+        occupancy_rate: s.occupancy_rate,
+        confidence: s.confidence,
+      }));
     } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
       this.logger.error(`Failed to fetch history for lot ${lotId}`, error);
       throw new InternalServerErrorException(`Failed to fetch historical data for lot ${lotId}`);
     }
@@ -174,7 +149,6 @@ export class LotsService {
           occupied: employeeLots.reduce((sum, lot) => sum + lot.current_occupancy, 0),
         },
       };
-
     } catch (error) {
       this.logger.error('Failed to calculate occupancy summary', error);
       throw new InternalServerErrorException('Failed to calculate occupancy summary');
@@ -183,12 +157,11 @@ export class LotsService {
 
   /**
    * Adds computed fields to parking lot data for client consumption.
-   * Calculates available spaces, occupancy rate, and categorical fill status.
    */
-  private transformToResponse(lot: ParkingLot): ParkingLotResponse {
+  private transformToResponse(lot: Lot): ParkingLotResponse {
     const available = lot.capacity - lot.current_occupancy;
     const occupancy_rate = lot.capacity > 0 ? lot.current_occupancy / lot.capacity : 0;
-    
+
     let fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
     if (occupancy_rate >= 0.95) {
       fill_status = 'FULL';
@@ -208,3 +181,4 @@ export class LotsService {
     };
   }
 }
+

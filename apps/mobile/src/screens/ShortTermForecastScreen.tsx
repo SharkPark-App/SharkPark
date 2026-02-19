@@ -1,15 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator} from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
-import { Header } from '../components';
+import { Header, ReliabilityMeter } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
+import { useReliability } from '../hooks/useReliability';
 
 import {getOccupancyColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
 import { ReportModal } from '../components/Modals/ReportModal';
+import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
 import type { MapStackScreenProps } from '../types/navigation';
 
 // Navigation-aware component
@@ -21,9 +23,11 @@ export function ShortTermForecastScreen() {
   
   // Use the API hook instead of mock data
   const { lot, forecast, loading, error, refreshLot } = useLotData(lotId);
+  const { reliability, loading: reliabilityLoading } = useReliability(lotId);
   
   const onBack = () => navigation.goBack();
-  const [isReportModalOpen, setIsReportModalOpen] = React.useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isReliabilityModalOpen, setIsReliabilityModalOpen] = useState(false);
 
   // Show loading spinner while data is being fetched
   if (loading) {
@@ -116,6 +120,16 @@ export function ShortTermForecastScreen() {
           <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
             <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
           </View>
+          
+          {/* Reliability Meter */}
+          {!reliabilityLoading && reliability && (
+            <ReliabilityMeter
+              confidence={reliability.confidence}
+              isColdStart={reliability.isColdStart}
+              size="medium"
+              onPress={() => setIsReliabilityModalOpen(true)}
+            />
+          )}
         </View>
 
         {/* Chart */}
@@ -146,6 +160,13 @@ export function ShortTermForecastScreen() {
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         onSubmit={() => {}} // currently do nothing on submit
+      />
+
+      {/* Reliability Details Modal */}
+      <ReliabilityModal
+        isOpen={isReliabilityModalOpen}
+        onClose={() => setIsReliabilityModalOpen(false)}
+        reliability={reliability}
       />
     </View>
   );
@@ -310,4 +331,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: TYPOGRAPHY.fontSize.xxl,
   },
+
+
 });

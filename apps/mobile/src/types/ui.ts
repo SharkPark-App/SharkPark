@@ -20,7 +20,4 @@ export interface LongTermForecastScreenProps {
   onBack: () => void; // currently useless back arrow
 }
 
-export interface ShortTermForecastScreenProps {
-  lot: ParkingLotUI,
-  onBack: () => void; // currently useless back arrow
-}
+// ShortTermForecastScreenProps is defined in navigation.ts for type-safe navigation
