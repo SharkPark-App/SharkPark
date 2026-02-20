@@ -2,26 +2,38 @@
 Synthetic Data Generator for SharkPark ML Training
 
 Generates realistic parking occupancy snapshots for model training during cold-start.
-Lot metadata (IDs, capacities, types) is fetched from DynamoDB to stay in sync
-with the backend.
+Lot metadata (IDs, capacities, types) is fetched from Aurora PostgreSQL.
 
 Usage (from services/ml/):
     python -m src.data.synthetic                    # Generate and save to parquet (default name: synthetic_occupancy_snapshot)
     python -m src.data.synthetic --preview 10       # Preview 10 (fresh samples) records per lot type
     python -m src.data.synthetic --output data.parquet
 
-Output Schema (matches DynamoDB OccupancySnapshot + source marker):
-    - lot_id: str           # Lot identifier (G1, E1, PYR, etc.)
-    - timestamp: str        # ISO8601 timestamp
-    - occupancy: int        # Current vehicle count
-    - available: int        # capacity - occupancy
-    - occupancy_rate: float # 0.0-1.0
-    - confidence: str       # "HIGH"
-    - source: str           # "synthetic" (real data won't have this / defaults to "observed")
+Output Schema (matches Aurora occupancy_snapshots + local-only fields):
+    - lot_id: str              # Lot identifier (G1, E1, PYR, etc.)
+    - timestamp: str           # ISO8601 timestamp
+    - occupancy: int           # Current vehicle count
+    - available: int           # capacity - occupancy
+    - occupancy_rate: float    # 0.0-1.0
+    - confidence: str          # "HIGH"
+    - is_cold_start: bool      # True for synthetic data
+    - academic_period: str     # "regular", "finals", "break", etc.
+    - week_of_semester: int    # 0-16
+    - is_campus_open: bool     # Whether campus is open
+    - source: str              # "synthetic" (local-only, not in Aurora)
 
 Volume: ~10,000 records per lot x 28 lots = ~280,000 total records
 
-Date Range: Fall 2025 semester (Aug 17 - Dec 24, 2025) ~8k records
+Semester Configuration:
+    The target semester is set by the ``_fall`` lookup near the top of this module:
+
+        _fall = ACADEMIC_CALENDARS["2025-2026"]["fall"]
+
+    To generate for a different semester/year, change the year key and/or
+    semester key (fall, spring, winter, may_intersession, summer).
+    All dates (semester start/end, finals, breaks, closures) are derived from
+    this single lookup via the heuristic calendar in academic_calendar.py,
+    so no other constants need to change.
 
 Patterns Modeled:
     - Time-of-day curves (different for student vs employee lots)
@@ -38,21 +50,20 @@ from typing import Literal
 from dataclasses import dataclass
 import argparse
 
-import boto3
-from boto3.dynamodb.types import TypeDeserializer
-from botocore.exceptions import ClientError
+import psycopg2
 import pandas as pd
 import numpy as np
 
+from src.academic_calendar import (
+    ACADEMIC_CALENDARS,
+    get_academic_period,
+    get_week_of_semester,
+    is_campus_open,
+    _all_break_dates,
+    _all_closed_dates,
+)
 from src.config import (
-    SEMESTER_START,
-    SEMESTER_END,
-    DATA_START,
-    FIRST_DAY_OF_CLASSES,
-    FINALS_START,
-    FINALS_END,
-    CAMPUS_CLOSURES,
-    NO_CLASSES_CAMPUS_OPEN,
+    DATABASE_URL,
     OPERATING_START_HOUR,
     OPERATING_END_HOUR,
     BUFFER_START_HOUR,
@@ -60,14 +71,40 @@ from src.config import (
     SNAPSHOT_INTERVAL_MINUTES,
 )
 
+# ---------------------------------------------------------------------------
+# Derive calendar dates from academic_calendar (Fall 2025)
+# ---------------------------------------------------------------------------
+_fall = ACADEMIC_CALENDARS["2025-2026"]["fall"]
+
+SEMESTER_START = datetime.combine(_fall["semester_start"], datetime.min.time())
+SEMESTER_END = datetime.combine(_fall["semester_end"], datetime.min.time())
+DATA_START = SEMESTER_START - timedelta(days=1)  # Day before semester for buffer
+FIRST_DAY_OF_CLASSES = datetime.combine(_fall["classes_start"], datetime.min.time())
+FINALS_START = datetime.combine(_fall["finals_start"], datetime.min.time())
+FINALS_END = datetime.combine(_fall["finals_end"], datetime.min.time())
+
+# Campus closures: dates where campus_closed=True
+CAMPUS_CLOSURES = [
+    datetime.combine(d, datetime.min.time()) for d in sorted(_all_closed_dates(_fall))
+]
+
+# No-classes days where campus stays open: break dates (not closed) + reading days
+_break_not_closed = _all_break_dates(_fall) - _all_closed_dates(_fall)
+NO_CLASSES_CAMPUS_OPEN = [
+    datetime.combine(d, datetime.min.time())
+    for d in sorted(_break_not_closed | set(_fall["reading_days"]))
+]
+
 
 # =============================================================================
 # SEMESTER PHASE (synthetic data only — single-semester)
 # =============================================================================
 
+
 @dataclass
 class SemesterPhase:
     """Represents a phase of the semester with its occupancy multiplier."""
+
     name: str
     multiplier: float  # Applied to base occupancy
 
@@ -76,18 +113,19 @@ def get_semester_phase(date: datetime) -> SemesterPhase:
     """
     Determine semester phase for a given date.
 
-    NOTE: This is scoped to a single semester defined in config.py.
-    Feature engineering will use its own multi-semester-aware logic.
+    All thresholds are relative to SEMESTER_START, FIRST_DAY_OF_CLASSES,
+    and FINALS_START/FINALS_END, so this works for any semester selected
+    at the top of the module — no date edits needed.
 
-    Phases (Fall 2025):
-        - pre_semester: Before Aug 18 (low activity)
-        - orientation: Aug 18-22 (dept meetings, no regular classes yet)
-        - first_two_weeks: Aug 25 - Sep 7 (high activity, students finding parking)
+    Phases (offsets from key dates):
+        - pre_semester: Before semester start (low activity)
+        - orientation: Semester start to first day of classes (dept meetings)
+        - first_two_weeks: First 14 days of classes (high activity)
         - normal: Regular semester weeks
-        - midterms: Oct 13 - Oct 26 (medium-high activity)
-        - finals_prep: Dec 1 - Dec 11 (high activity, includes reading day)
-        - finals: Dec 12 - Dec 18 (very high activity)
-        - post_finals: Dec 19 - Dec 24 (minimal activity)
+        - midterms: Weeks 8-9 of classes (medium-high activity)
+        - finals_prep: ~11 days before finals start (high activity)
+        - finals: Finals start to finals end (very high activity)
+        - post_finals: After finals end through semester end (minimal activity)
     """
     # Before semester starts
     if date < SEMESTER_START:
@@ -102,14 +140,14 @@ def get_semester_phase(date: datetime) -> SemesterPhase:
     if date <= first_two_weeks_end:
         return SemesterPhase("first_two_weeks", 1.15)
 
-    # Midterms (roughly week 8-9, mid-October)
-    midterms_start = datetime(2025, 10, 13)
-    midterms_end = datetime(2025, 10, 26)
+    # Midterms (roughly week 8-9)
+    midterms_start = FIRST_DAY_OF_CLASSES + timedelta(weeks=7)
+    midterms_end = midterms_start + timedelta(days=13)
     if midterms_start <= date <= midterms_end:
         return SemesterPhase("midterms", 1.08)
 
-    # Finals prep (after last day of classes through day before finals)
-    finals_prep_start = datetime(2025, 12, 1)
+    # Finals prep (last ~2 weeks of classes through day before finals)
+    finals_prep_start = FINALS_START - timedelta(days=11)
     if finals_prep_start <= date < FINALS_START:
         return SemesterPhase("finals_prep", 1.12)
 
@@ -124,97 +162,82 @@ def get_semester_phase(date: datetime) -> SemesterPhase:
     # Normal semester
     return SemesterPhase("normal", 1.0)
 
+
 # Lot popularity factors
-HIGH_DEMAND_LOTS = {"PYR", "G1", "G2", "PVS", "E1", "E2"}
-LOW_DEMAND_LOTS = {"G13", "G14", "G15", "E6", "E7"}
+HIGH_DEMAND_LOTS = {
+    "G1",
+    "G3",
+    "PVS",
+    "G4",
+    "G5",
+    "G6",
+    "PYR",
+    "E8",
+    "E9",
+    "E7",
+    "E10",
+    "E11",
+}
+LOW_DEMAND_LOTS = {"G8", "G9", "G11"}
 
 
 # =============================================================================
-# DYNAMODB LOT LOADER
+# AURORA LOT LOADER
 # =============================================================================
+
 
 @dataclass
 class LotInfo:
-    """Parking lot metadata fetched from DynamoDB."""
+    """Parking lot metadata fetched from Aurora PostgreSQL."""
+
     lot_id: str
     capacity: int
     lot_type: str  # "STUDENT" | "EMPLOYEE"
 
 
-def fetch_lots_from_dynamodb() -> list[LotInfo]:
+def fetch_lots() -> list[LotInfo]:
     """
-    Fetch parking lot metadata from DynamoDB.
+    Fetch parking lot metadata from Aurora PostgreSQL.
 
-    Uses the same table and access pattern as the backend:
-    GSI1 query with EntityType = 'ParkingLot'
-
-    Requires DynamoDB Local to be running (docker compose up).
+    Queries the ``lots`` table for lot_id, capacity, and lot_type.
 
     Environment variables:
-        DYNAMODB_TABLE: Table name (default: sharkpark-main)
-        AWS_REGION: AWS region (default: us-west-2)
-        DYNAMO_ENDPOINT: Endpoint URL (default: http://localhost:8000)
+        DATABASE_URL: PostgreSQL connection string
+                      (default: from config.DATABASE_URL)
     """
-    table_name = os.environ.get('DYNAMODB_TABLE', 'sharkpark-main')
-    region = os.environ.get('AWS_REGION', 'us-west-2')
-    endpoint = os.environ.get('DYNAMO_ENDPOINT', 'http://localhost:8000')
-
-    client_kwargs = {
-        'region_name': region,
-        'endpoint_url': endpoint,
-        'aws_access_key_id': os.environ.get('AWS_ACCESS_KEY_ID', 'local'),
-        'aws_secret_access_key': os.environ.get('AWS_SECRET_ACCESS_KEY', 'local'),
-    }
+    db_url = os.environ.get("DATABASE_URL", DATABASE_URL)
 
     try:
-        client = boto3.client('dynamodb', **client_kwargs)
-        deserializer = TypeDeserializer()
+        conn = psycopg2.connect(db_url)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT lot_id, capacity, lot_type FROM lots")
+                rows = cur.fetchall()
+        finally:
+            conn.close()
 
-        response = client.query(
-            TableName=table_name,
-            IndexName='GSI1-EntityType-Timestamp',
-            KeyConditionExpression='EntityType = :type',
-            ExpressionAttributeValues={':type': {'S': 'ParkingLot'}},
-        )
+        if not rows:
+            raise RuntimeError("No parking lots found in Aurora 'lots' table.")
 
-        lots = []
-        for item in response['Items']:
-            lot = {k: deserializer.deserialize(v) for k, v in item.items()}
-            lots.append(LotInfo(
-                lot_id=lot['lot_id'],
-                capacity=int(lot['capacity']),
-                lot_type=lot['lot_type'].upper(),
-            ))
-
-        if not lots:
-            raise RuntimeError(
-                f"No parking lots found in DynamoDB table '{table_name}'."
+        return [
+            LotInfo(
+                lot_id=row[0],
+                capacity=int(row[1]),
+                lot_type=row[2].upper(),
             )
+            for row in rows
+        ]
 
-        return lots
-
-    except ConnectionRefusedError:
-        raise RuntimeError(
-            f"Could not connect to DynamoDB at {endpoint}."
-        )
-    except ClientError as exc:
-        code = exc.response["Error"]["Code"]
-        if code == "ResourceNotFoundException":
-            raise RuntimeError(
-                f"DynamoDB table '{table_name}' or GSI 'GSI1-EntityType-Timestamp' not found."
-            ) from exc
-        raise RuntimeError(
-            f"DynamoDB request failed ({code}): {exc}"
-        ) from exc
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to fetch lots from DynamoDB at {endpoint}: {exc}"
-        ) from exc
+    except psycopg2.OperationalError as exc:
+        raise RuntimeError(f"Could not connect to Aurora at {db_url}: {exc}") from exc
+    except psycopg2.Error as exc:
+        raise RuntimeError(f"Aurora query failed: {exc}") from exc
 
 
 # =============================================================================
 # TIME-OF-DAY PATTERNS
 # =============================================================================
+
 
 def get_student_lot_hourly_pattern(hour: int, minute: int) -> float:
     """
@@ -334,7 +357,10 @@ def get_employee_lot_hourly_pattern(hour: int, minute: int) -> float:
 # DAY-OF-WEEK PATTERNS
 # =============================================================================
 
-def get_day_of_week_multiplier(weekday: int, lot_type: Literal["student", "employee"]) -> float:
+
+def get_day_of_week_multiplier(
+    weekday: int, lot_type: Literal["student", "employee"]
+) -> float:
     """
     Adjust occupancy based on day of week.
 
@@ -354,20 +380,20 @@ def get_day_of_week_multiplier(weekday: int, lot_type: Literal["student", "emplo
     """
     if lot_type == "student":
         multipliers = {
-            0: 1.0,   # Monday
-            1: 1.0,   # Tuesday
-            2: 1.0,   # Wednesday
-            3: 1.0,   # Thursday
+            0: 1.0,  # Monday
+            1: 1.0,  # Tuesday
+            2: 1.0,  # Wednesday
+            3: 1.0,  # Thursday
             4: 0.85,  # Friday
             5: 0.25,  # Saturday
             6: 0.20,  # Sunday
         }
     else:  # employee
         multipliers = {
-            0: 1.0,   # Monday
-            1: 1.0,   # Tuesday
-            2: 1.0,   # Wednesday
-            3: 1.0,   # Thursday
+            0: 1.0,  # Monday
+            1: 1.0,  # Tuesday
+            2: 1.0,  # Wednesday
+            3: 1.0,  # Thursday
             4: 0.95,  # Friday
             5: 0.15,  # Saturday
             6: 0.08,  # Sunday
@@ -379,6 +405,7 @@ def get_day_of_week_multiplier(weekday: int, lot_type: Literal["student", "emplo
 # =============================================================================
 # LOT-SPECIFIC VARIATION
 # =============================================================================
+
 
 def get_lot_popularity_factor(lot_id: str) -> float:
     """
@@ -412,6 +439,7 @@ def get_lot_peak_shift(lot_id: str) -> float:
 # NOISE GENERATION
 # =============================================================================
 
+
 def add_noise(base_rate: float, noise_level: float = 0.08) -> float:
     """
     Add random noise to occupancy rate.
@@ -433,6 +461,7 @@ def add_noise(base_rate: float, noise_level: float = 0.08) -> float:
 # MAIN GENERATION LOGIC
 # =============================================================================
 
+
 def generate_snapshot(
     lot_id: str,
     timestamp: datetime,
@@ -453,8 +482,12 @@ def generate_snapshot(
     Returns:
         Dict matching OccupancySnapshot schema
     """
-    # Check if campus is closed
+    # Compute calendar features
     date_only = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+    campus_open = is_campus_open(timestamp)
+    academic_period = get_academic_period(timestamp)
+    week_of_sem, _, _ = get_week_of_semester(timestamp.date())
+
     if date_only in CAMPUS_CLOSURES:
         return {
             "lot_id": lot_id,
@@ -464,6 +497,10 @@ def generate_snapshot(
             "occupancy_rate": 0.0,
             "confidence": "HIGH",
             "source": "synthetic",
+            "is_cold_start": True,
+            "academic_period": academic_period,
+            "week_of_semester": week_of_sem,
+            "is_campus_open": campus_open,
         }
 
     hour = timestamp.hour
@@ -479,7 +516,9 @@ def generate_snapshot(
     semester_phase = get_semester_phase(timestamp)
     dow_multiplier = get_day_of_week_multiplier(timestamp.weekday(), lot_type)
 
-    adjusted_rate = base_rate * semester_phase.multiplier * dow_multiplier * lot_popularity
+    adjusted_rate = (
+        base_rate * semester_phase.multiplier * dow_multiplier * lot_popularity
+    )
 
     # No-classes days (campus open): employees normal, students minimal
     if date_only in NO_CLASSES_CAMPUS_OPEN and lot_type == "student":
@@ -506,6 +545,10 @@ def generate_snapshot(
         "occupancy_rate": round(final_rate, 4),
         "confidence": "HIGH",
         "source": "synthetic",
+        "is_cold_start": True,
+        "academic_period": academic_period,
+        "week_of_semester": week_of_sem,
+        "is_campus_open": campus_open,
     }
 
 
@@ -524,7 +567,9 @@ def generate_timestamps(
     """
     timestamps = []
     # Date generation begins at buffer start hour on start_date
-    current_date = start_date.replace(hour=BUFFER_START_HOUR, minute=0, second=0, microsecond=0)
+    current_date = start_date.replace(
+        hour=BUFFER_START_HOUR, minute=0, second=0, microsecond=0
+    )
 
     while current_date <= end_date:
         # Only include hours within buffer zone
@@ -535,7 +580,9 @@ def generate_timestamps(
         current_date += timedelta(minutes=interval_minutes)
 
         # If we've passed buffer end hour, jump to next day's buffer start
-        if current_date.hour > BUFFER_END_HOUR or (current_date.hour == 0 and current_date.minute == 0):
+        if current_date.hour > BUFFER_END_HOUR or (
+            current_date.hour == 0 and current_date.minute == 0
+        ):
             next_day = current_date.replace(hour=0, minute=0) + timedelta(days=1)
             current_date = next_day.replace(hour=BUFFER_START_HOUR, minute=0)
 
@@ -598,7 +645,9 @@ def generate_all_data(lots: list[LotInfo], target_per_lot: int = 10000) -> pd.Da
     print(f"Target records per lot: {target_per_lot}")
 
     # Generate all possible timestamps once (according to semester range)
-    all_timestamps = generate_timestamps(DATA_START, SEMESTER_END, SNAPSHOT_INTERVAL_MINUTES)
+    all_timestamps = generate_timestamps(
+        DATA_START, SEMESTER_END, SNAPSHOT_INTERVAL_MINUTES
+    )
     print(f"Total possible timestamps: {len(all_timestamps)}")
 
     all_records = []
@@ -606,14 +655,18 @@ def generate_all_data(lots: list[LotInfo], target_per_lot: int = 10000) -> pd.Da
     # Generate student lot data
     print(f"\nGenerating {len(student_lots)} student lots...")
     for lot in student_lots:
-        records = generate_lot_data(lot.lot_id, lot.capacity, "student", all_timestamps, target_per_lot)
+        records = generate_lot_data(
+            lot.lot_id, lot.capacity, "student", all_timestamps, target_per_lot
+        )
         all_records.extend(records)
         print(f"  {lot.lot_id}: {len(records)} records (capacity: {lot.capacity})")
 
     # Generate employee lot data
     print(f"\nGenerating {len(employee_lots)} employee lots...")
     for lot in employee_lots:
-        records = generate_lot_data(lot.lot_id, lot.capacity, "employee", all_timestamps, target_per_lot)
+        records = generate_lot_data(
+            lot.lot_id, lot.capacity, "employee", all_timestamps, target_per_lot
+        )
         all_records.extend(records)
         print(f"  {lot.lot_id}: {len(records)} records (capacity: {lot.capacity})")
 
@@ -627,32 +680,35 @@ def generate_all_data(lots: list[LotInfo], target_per_lot: int = 10000) -> pd.Da
 # CLI INTERFACE
 # =============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate synthetic parking occupancy data for SharkPark ML training"
     )
     parser.add_argument(
-        "--output", "-o",
-        default="synthetic_occupancy_snapshot.parquet",
-        help="Output file path (default: synthetic_occupancy_snapshot.parquet)"
+        "--output",
+        "-o",
+        default="data/synthetic_occupancy_snapshot.parquet",
+        help="Output file path (default: data/synthetic_occupancy_snapshot.parquet)",
     )
     parser.add_argument(
-        "--records-per-lot", "-n",
+        "--records-per-lot",
+        "-n",
         type=int,
         default=10000,
-        help="Target records per lot (default: 10000)"
+        help="Target records per lot (default: 10000)",
     )
     parser.add_argument(
         "--preview",
         type=int,
         metavar="N",
-        help="Preview N records per lot type instead of saving"
+        help="Preview N records per lot type instead of saving",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=42,
-        help="Random seed for reproducibility (default: 42)"
+        help="Random seed for reproducibility (default: 42)",
     )
 
     args = parser.parse_args()
@@ -661,40 +717,52 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    # Fetch lot metadata from DynamoDB
-    print("Fetching lot metadata from DynamoDB...")
-    lots = fetch_lots_from_dynamodb()
+    # Fetch lot metadata from Aurora
+    print("Fetching lot metadata from Aurora...")
+    lots = fetch_lots()
     print(f"Found {len(lots)} lots\n")
 
     if args.preview:
         # Preview mode: show sample records
         print("=== PREVIEW MODE ===\n")
 
-        all_timestamps = generate_timestamps(DATA_START, SEMESTER_END, SNAPSHOT_INTERVAL_MINUTES)
-        sample_ts = random.sample(all_timestamps, min(args.preview, len(all_timestamps)))
+        all_timestamps = generate_timestamps(
+            DATA_START, SEMESTER_END, SNAPSHOT_INTERVAL_MINUTES
+        )
+        sample_ts = random.sample(
+            all_timestamps, min(args.preview, len(all_timestamps))
+        )
 
         student_lot = next((l for l in lots if l.lot_type == "STUDENT"), None)
         employee_lot = next((l for l in lots if l.lot_type == "EMPLOYEE"), None)
 
         if student_lot:
-            print(f"Student lot sample ({student_lot.lot_id}, capacity {student_lot.capacity}):")
-            for ts in sorted(sample_ts)[:args.preview]:
+            print(
+                f"Student lot sample ({student_lot.lot_id}, capacity {student_lot.capacity}):"
+            )
+            for ts in sorted(sample_ts)[: args.preview]:
                 snapshot = generate_snapshot(
                     student_lot.lot_id, ts, student_lot.capacity, "student", 1.05
                 )
-                print(f"  {snapshot['timestamp']}: {snapshot['occupancy_rate']:.2%} "
-                      f"({snapshot['occupancy']}/{student_lot.capacity})")
+                print(
+                    f"  {snapshot['timestamp']}: {snapshot['occupancy_rate']:.2%} "
+                    f"({snapshot['occupancy']}/{student_lot.capacity})"
+                )
 
         if employee_lot:
-            print(f"\nEmployee lot sample ({employee_lot.lot_id}, capacity {employee_lot.capacity}):")
-            for ts in sorted(sample_ts)[:args.preview]:
+            print(
+                f"\nEmployee lot sample ({employee_lot.lot_id}, capacity {employee_lot.capacity}):"
+            )
+            for ts in sorted(sample_ts)[: args.preview]:
                 snapshot = generate_snapshot(
                     employee_lot.lot_id, ts, employee_lot.capacity, "employee", 1.02
                 )
-                print(f"  {snapshot['timestamp']}: {snapshot['occupancy_rate']:.2%} "
-                      f"({snapshot['occupancy']}/{employee_lot.capacity})")
+                print(
+                    f"  {snapshot['timestamp']}: {snapshot['occupancy_rate']:.2%} "
+                    f"({snapshot['occupancy']}/{employee_lot.capacity})"
+                )
 
-    else: # Generation mode: generate and save samples        
+    else:  # Generation mode: generate and save samples
         df = generate_all_data(lots, args.records_per_lot)
 
         output = args.output
@@ -710,8 +778,8 @@ def main():
         print(f"Total records: {len(df):,}")
         print(f"Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
         print(f"Lots: {df['lot_id'].nunique()}")
-        print(f"\nOccupancy rate distribution:")
-        print(df['occupancy_rate'].describe())
+        print("\nOccupancy rate distribution:")
+        print(df["occupancy_rate"].describe())
 
 
 if __name__ == "__main__":
