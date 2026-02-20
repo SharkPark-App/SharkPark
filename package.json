@@ -12,7 +12,7 @@
     "format": "prettier . --check",
     "format:fix": "prettier . --write",
     "prepare": "husky || true",
-    "postinstall": "node -e \"if (process.env.SKIP_LOCAL_INFRA !== '1') require('child_process').execSync('./scripts/start-local.sh', {stdio: 'inherit'})\" || true",
+    "postinstall": "node -e \"if (process.env.SKIP_LOCAL_INFRA !== '1') require('child_process').execSync('bash scripts/start-local.sh', {stdio: 'inherit'})\" || true",
     "test": "turbo run test",
     "db:setup": "pnpm --filter @sharkpark/backend exec prisma migrate dev",
     "db:deploy": "pnpm --filter @sharkpark/backend exec prisma migrate deploy",
