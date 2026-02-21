@@ -20,14 +20,14 @@ class FavoritesApiService {
       return await apiCall(accessToken);
     } catch (error) {
       if ((error as ApiError).status == 401) {
-        if (__DEV__) console.log('Token expired. Attempting to reload authentication.');
+        if (__DEV__) console.log('[favoritesService] Token expired. Attempting to reload authentication.');
 
         const newAuth = await refreshSession();
         if (newAuth?.accessToken)
           return await apiCall(newAuth?.accessToken);
       }
       // If re-authentication wasn't successful
-      if (__DEV__) console.error('Failed to retry the endpoint:', error);
+      if (__DEV__) console.error('[favoritesService] Failed to retry the endpoint:', error);
       throw error;
     }
   }

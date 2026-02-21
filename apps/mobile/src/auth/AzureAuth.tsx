@@ -40,11 +40,13 @@ const config = {
   issuer: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/v2.0`,
   clientId: AZURE_CONFIG.CLIENT_ID,
   redirectUrl: REDIRECT_URL,
-  scopes: ['openid',
-           'profile',
-           'email',
-           'offline_access',
-           `api://${AZURE_CONFIG.CLIENT_ID}/access_as_user`],
+  scopes: [
+    'openid',
+    'profile',
+    'email',
+    'offline_access',
+    `api://${AZURE_CONFIG.CLIENT_ID}/access_as_user`
+  ],
   serviceConfiguration: {
     authorizationEndpoint: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/oauth2/v2.0/authorize`,
     tokenEndpoint: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/oauth2/v2.0/token`,
@@ -217,11 +219,11 @@ export const logoutFromAzure = async (idToken?: string): Promise<void> => {
         const errorMessage = (logoutError as Error).message || '';
         
         // Check if user explicitly cancelled the logout
-//         if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
-//           log('[AzureAuth] User cancelled logout');
-//           // User cancelled - don't clear local state
-//           throw logoutError;
-//         }
+        if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
+          log('[AzureAuth] User cancelled logout');
+          // User cancelled - don't clear local state
+          throw logoutError;
+        }
         
         // AppAuth error -3 (OIDErrorCodeUserCanceledAuthorizationFlow) is expected with Azure AD
         // The logout endpoint clears the session but doesn't redirect back properly

@@ -164,9 +164,9 @@ const MapScreen: React.FC = () => {
 
   const handleLotPress = (lot: ParkingLotUI) => {
     // Navigate to ShortTermForecastScreen with lot data
-    navigation.navigate('Short Term Forecast', { 
-      lotId: lot.id, 
-      lotName: lot.name 
+    navigation.navigate('Short Term Forecast', {
+      lotId: lot.id,
+      lotName: lot.name
     });
   };
 
@@ -185,6 +185,14 @@ const MapScreen: React.FC = () => {
   const handleApplyFilter = (filteredLots: string[]) => {
     setSelectedLots(filteredLots);
     setIsFilterModalOpen(false);
+  };
+
+  // Redirect to Short-Term Forecast Screen of the lot selected within the navigation modal
+  const handleLotNavigation = (id: string, name: string) => {
+    navigation.navigate('Short Term Forecast', {
+      lotId: id,
+      lotName: name
+    });
   };
 
   const openNavigationModal = async (type: 'favorites' | 'recommended') => {
@@ -270,6 +278,7 @@ const MapScreen: React.FC = () => {
         isOpen={isNavigationModalOpen}
         lotIdList={navigableLots}
         onClose={handleNavigateClose}
+        onSelectLot={(id, name) => handleLotNavigation(id, name)}
       />
     </View>
   );

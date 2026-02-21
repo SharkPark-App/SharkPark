@@ -8,7 +8,7 @@ import favoritesApi from '../services/api/favorites';
 import { ApiError } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-interface UseFavoritesReturn {
+export interface UseFavoritesReturn {
   favoriteLots: string[];
   isLoading: boolean;
   error: string | null;

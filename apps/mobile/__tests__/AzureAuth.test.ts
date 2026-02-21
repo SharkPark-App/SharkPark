@@ -56,7 +56,13 @@ describe('AzureAuth', () => {
       accessTokenExpirationDate: new Date(Date.now() + 3600000).toISOString(),
       tokenType: 'Bearer',
       userId: 'test-user-id',
-      scopes: ['openid', 'profile', 'email', 'offline_access'],
+      scopes: [
+        'openid',
+        'profile',
+        'email',
+        'offline_access',
+        `api://9aea0ab1-4502-4868-a31b-0a8f333cec9c/access_as_user`
+      ],
     };
 
     it('should successfully login and return auth result', async () => {
@@ -67,7 +73,13 @@ describe('AzureAuth', () => {
       expect(authorize).toHaveBeenCalledWith(
         expect.objectContaining({
           clientId: '9aea0ab1-4502-4868-a31b-0a8f333cec9c',
-          scopes: ['openid', 'profile', 'email', 'offline_access'],
+          scopes: [
+            'openid',
+            'profile',
+            'email',
+            'offline_access',
+            `api://9aea0ab1-4502-4868-a31b-0a8f333cec9c/access_as_user`
+          ],
           usePKCE: true,
           useNonce: true,
         }),

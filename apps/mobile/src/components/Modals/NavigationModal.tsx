@@ -13,9 +13,10 @@ interface NavigationModalProps {
   isOpen: boolean;
   lotIdList: string[];
   onClose: () => void;
+  onSelectLot: (lotId: string, lotName: string) => void;
 }
 
-export function NavigationModal({ isOpen, lotIdList, onClose }: NavigationModalProps) {
+export function NavigationModal({ isOpen, lotIdList, onClose, onSelectLot }: NavigationModalProps) {
   const { lots, loading } = useLotsList();
 
   const displayLots = useMemo(() => {
@@ -23,9 +24,9 @@ export function NavigationModal({ isOpen, lotIdList, onClose }: NavigationModalP
     return lots.filter(lot => lotIdList.includes(lot.lot_id));
   }, [lots, lotIdList]);
 
-  const handleLotPress = (lotId: string) => {
-    // TODO: open third-party map service (dependent: real-world lot coordinates)
-    if (__DEV__) console.log(`[NavigationModal] ${lotId} selected for navigation`);
+  const handleLotPress = (lotId: string, lotName: string) => {
+    onClose();
+    onSelectLot(lotId, lotName);
   };
 
   return (
@@ -63,13 +64,13 @@ export function NavigationModal({ isOpen, lotIdList, onClose }: NavigationModalP
                 <TouchableOpacity
                   key={lot.lot_id}
                   style={styles.lotRow}
-                  onPress={() => handleLotPress(lot.lot_id)}
+                  onPress={() => handleLotPress(lot.lot_id, lot.lot_name)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.infoContainer}>
                     <Text style={styles.lotName}>{lot.lot_name}</Text>
                     <Text style={styles.occupancyText}>
-                      ~{Math.round(lot.occupancy_rate * lot.capacity)} / {lot.capacity} spots taken
+                      Estimate: {Math.round(lot.occupancy_rate * lot.capacity)} / {lot.capacity} spots taken
                     </Text>
 
                     {/* Visual Occupancy Bar */}
