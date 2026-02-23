@@ -117,7 +117,7 @@ def prepare_training_features(df: pd.DataFrame) -> pd.DataFrame:
         lot_id = row["lot_id"]
         date = row["date"]
 
-        # Create multi-horizon hours for given snapshot
+        # Create hours for given snapshot
         for target_hour in PREDICTION_HOURS:
             # Exclude hours before current snapshots
             if target_hour <= current_hour:
