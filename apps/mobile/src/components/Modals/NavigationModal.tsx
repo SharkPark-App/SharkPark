@@ -9,18 +9,32 @@ import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { useLotsList } from '../../hooks/useLotData';
 import { getOccupancyColor } from '../../utils/parkingUtils';
 
+// Defines what text to display in the case of an empty lots list
+const EMPTY_CONTENT = {
+  favorites: {
+    title: "No Favorites Yet",
+    subtext: "Favorited lots will appear here for quick navigation."
+  },
+  recommended: {
+    title: "No Recommendations",
+    subtext: "No lots could be recommended at this time."
+  }
+};
+
 interface NavigationModalProps {
   isOpen: boolean;
   lotIdList: string[];
   onClose: () => void;
   onSelectLot: (lotId: string, lotName: string) => void;
+  mode: 'favorites' | 'recommended';
 }
 
-export function NavigationModal({ isOpen, lotIdList, onClose, onSelectLot }: NavigationModalProps) {
+export function NavigationModal({ isOpen, lotIdList, onClose, onSelectLot, mode }: NavigationModalProps) {
+  const currentContent = EMPTY_CONTENT[mode];
   const { lots, loading } = useLotsList();
 
   const displayLots = useMemo(() => {
-    if (!lotIdList) return [];
+    if (!lotIdList || lotIdList.length === 0) return [];
     return lots.filter(lot => lotIdList.includes(lot.lot_id));
   }, [lots, lotIdList]);
 
@@ -53,10 +67,8 @@ export function NavigationModal({ isOpen, lotIdList, onClose, onSelectLot }: Nav
           ) : displayLots.length === 0 ? (
                 /* Empty State View */
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyTitle}>No Favorites Yet</Text>
-                  <Text style={styles.emptySubtext}>
-                    Favorited lots will appear here for quick navigation.
-                  </Text>
+                  <Text style={styles.emptyTitle}>{currentContent.title}</Text>
+                  <Text style={styles.emptySubtext}>{currentContent.subtext}</Text>
                 </View>
           ) : (
             <ScrollView contentContainerStyle={styles.scrollContent}>

@@ -23,6 +23,13 @@ import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
 import type { MapStackScreenProps } from '../types/navigation';
 
+// Favorite button component
+const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => (
+  <TouchableOpacity onPress={onToggle} style={styles.favoriteButton}>
+    <Icon name={isFavorite ? "star" : "star-outline"} size={28} color={isFavorite ? COLORS.black : COLORS.darkGray} />
+  </TouchableOpacity>
+);
+
 // Navigation-aware component
 export function ShortTermForecastScreen() {
   const navigation = useNavigation();
@@ -116,13 +123,6 @@ export function ShortTermForecastScreen() {
       );
     }
   };
-
-  // Favorite button component
-  const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => (
-    <TouchableOpacity onPress={onToggle} style={styles.favoriteButton}>
-      <Icon name={isFavorite ? "star" : "star-outline"} size={28} color={isFavorite ? COLORS.black : COLORS.darkGray} />
-    </TouchableOpacity>
-  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>

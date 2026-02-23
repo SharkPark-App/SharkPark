@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -79,6 +79,7 @@ const MapScreen: React.FC = () => {
   const [isNavigationModalOpen, setIsNavigationModalOpen] = useState(false);
   const { refreshFavorites } = useFavorites();
   const [navigableLots, setNavigableLots] = useState<string[]>([]);
+  const [navigationMode, setNavigationMode] = useState<'favorites' | 'recommended'>('recommended');
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   
   // Shared values for map transformations (pan and zoom)
@@ -195,16 +196,17 @@ const MapScreen: React.FC = () => {
     });
   };
 
-  const openNavigationModal = async (type: 'favorites' | 'recommended') => {
+  const openNavigationModal = useCallback(async (type: 'favorites' | 'recommended') => {
+    setNavigationMode(type);
     if (type === 'favorites') {
       const favoriteLots = await refreshFavorites(); // Ensures that current instance of favoriteLots is up-to-date
       setNavigableLots(favoriteLots);
     } else {
-      // TODO: Implement lot recommendation system; using all lots as a placeholder
-      setNavigableLots(parkingLots.map(lot => lot.id));
+      // TODO: Implement lot recommendation system
+      setNavigableLots([]);
     }
     setIsNavigationModalOpen(true);
-  };
+  }, [refreshFavorites]);
 
   // Filter parking lots based on selected filter
   const filteredParkingLots = selectedLots.length > 0 
@@ -279,6 +281,7 @@ const MapScreen: React.FC = () => {
         lotIdList={navigableLots}
         onClose={handleNavigateClose}
         onSelectLot={(id, name) => handleLotNavigation(id, name)}
+        mode={navigationMode}
       />
     </View>
   );

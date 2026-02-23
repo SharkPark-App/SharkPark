@@ -2,7 +2,8 @@
  * Tests for useFavorite hooks
  */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { useFavorites, UseFavoritesReturn } from '../src/hooks/useFavorites';
+import { renderHook, act, waitFor } from '@testing-library/react-native';
+import { useFavorites } from '../src/hooks/useFavorites';
 import { useAuth } from '../src/context/AuthContext';
 import { AuthResult } from '../src/auth/AzureAuth';
 import favoritesApi from '../src/services/api/favorites';
@@ -12,15 +13,6 @@ jest.mock('../src/services/api/favorites');
 
 const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 const mockFavoritesApi = favoritesApi as jest.Mocked<typeof favoritesApi>;
-
-/**
- * Harness to test hook functionality, due to the lack of a testing library
- */
-function HookTestComponent({ onHookValue }: { onHookValue: (val: UseFavoritesReturn) => void }) {
-  const hookVal = useFavorites();
-  onHookValue(hookVal);
-  return null;
-}
 
 describe('useFavorites hooks', () => {
   const mockUser: AuthResult = {
@@ -51,68 +43,121 @@ describe('useFavorites hooks', () => {
       const mockLots = ['G1', 'G3'];
       mockFavoritesApi.getAllFavorites.mockResolvedValueOnce(mockLots);
 
-      let hookResult: UseFavoritesReturn;
-      // Manually capture hook state
-      const capture = (val: UseFavoritesReturn) => { hookResult = val; };
+      const { result } = renderHook(() => useFavorites());
+      expect(result.current.isLoading).toBe(true);
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      // Simulating the effect trigger
-      await (async () => {
-        await favoritesApi.getAllFavorites(mockUser.userId, mockUser.accessToken, mockRefresh);
-      })();
-
-      expect(mockFavoritesApi.getAllFavorites).toHaveBeenCalledWith(
-        mockUser.userId,
-        mockUser.accessToken,
-        mockRefresh
-      );
+      expect(result.current.favoriteLots).toEqual(mockLots);
+      expect(mockFavoritesApi.getAllFavorites).toHaveBeenCalled();
     });
   });
 
-  describe('Optimistic updates', () => {
-    it('handles optimistic updates correctly', async () => {
-      const newLot = 'G5';
+  describe('addFavorite', () => {
+    it('performs optimistic update and handles success', async () => {
+      mockFavoritesApi.getAllFavorites.mockResolvedValueOnce([]);
       mockFavoritesApi.addFavorite.mockResolvedValueOnce(undefined);
 
-      const state: string[] = ['G1'];
-      const optimisticState = [...state, newLot];
+      const { result } = renderHook(() => useFavorites());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      expect(optimisticState).toContain(newLot);
+      let addPromise: Promise<void>;
+      act(() => {
+        addPromise = result.current.addFavorite('G5');
+      });
 
-      await favoritesApi.addFavorite(mockUser.userId, mockUser.accessToken, newLot, mockRefresh);
-      expect(mockFavoritesApi.addFavorite).toHaveBeenCalled();
+      expect(result.current.favoriteLots).toContain('G5');
+
+      await act(async () => {
+        await addPromise;
+      });
+
+      expect(result.current.favoriteLots).toContain('G5');
     });
 
-    it('rollbacks state if the API fails', async () => {
-      const failedLot = 'G10';
-      mockFavoritesApi.addFavorite.mockRejectedValueOnce(new Error('API Fail'));
+    it('rolls back state if addFavorite API fails', async () => {
+      mockFavoritesApi.getAllFavorites.mockResolvedValueOnce(['G1']);
+      mockFavoritesApi.addFavorite.mockRejectedValueOnce(new Error('API Failure'));
 
-      let favoriteLots: string[] = [];
-      try {
-        favoriteLots = [failedLot];
-        await favoritesApi.addFavorite(mockUser.userId, mockUser.accessToken, failedLot, mockRefresh);
-      } catch (e) {
-        favoriteLots = favoriteLots.filter(id => id !== failedLot);
-      }
+      const { result } = renderHook(() => useFavorites());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      expect(favoriteLots).not.toContain(failedLot);
+      await act(async () => {
+        try {
+          await result.current.addFavorite('G10');
+        } catch {
+          /* Expected throw */
+        }
+      });
+
+      expect(result.current.favoriteLots).not.toContain('G10');
+      expect(result.current.favoriteLots).toEqual(['G1']);
     });
   });
 
-  describe('AuthGuard verification', () => {
-    it('does not perform operations if user is null', async () => {
+  describe('removeFavorite', () => {
+    it('performs optimistic update and handles success', async () => {
+      const initialLots = ['G1', 'G2'];
+      mockFavoritesApi.getAllFavorites.mockResolvedValueOnce(initialLots);
+      mockFavoritesApi.removeFavorite.mockResolvedValueOnce(undefined);
+
+      const { result } = renderHook(() => useFavorites());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      let removePromise: Promise<void>;
+      act(() => {
+        removePromise = result.current.removeFavorite('G1');
+      });
+
+      expect(result.current.favoriteLots).not.toContain('G1');
+      expect(result.current.favoriteLots).toEqual(['G2']);
+
+      await act(async () => {
+        await removePromise;
+      });
+    });
+
+    it('rolls back state if removeFavorite API fails', async () => {
+      mockFavoritesApi.getAllFavorites.mockResolvedValueOnce(['G1']);
+      mockFavoritesApi.removeFavorite.mockRejectedValueOnce(new Error('API Failure'));
+
+      const { result } = renderHook(() => useFavorites());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      await act(async () => {
+        try {
+          await result.current.removeFavorite('G1');
+        } catch {
+          /* Expected throw */
+        }
+      });
+
+      expect(result.current.favoriteLots).toContain('G1');
+      expect(result.current.error).toBeTruthy();
+    });
+  });
+
+  describe('Authentication clear', () => {
+    it('clears state and skips fetch if user logs out', async () => {
+      mockFavoritesApi.getAllFavorites.mockResolvedValueOnce(['G1']);
+
+      const { result, rerender } = renderHook(() => useFavorites());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
       mockUseAuth.mockReturnValue({
         user: null,
         refreshSession: mockRefresh,
         isAuthenticated: false,
+        isLoading: false,
         login: jest.fn(),
         logout: jest.fn(),
-        isLoading: false,
       });
 
-      const userId = null;
-      if (!userId) {
-         expect(mockFavoritesApi.getAllFavorites).not.toHaveBeenCalled();
-      }
+      await act(async () => {
+        rerender({});
+      });
+
+      expect(result.current.favoriteLots).toEqual([]);
+      expect(mockFavoritesApi.getAllFavorites).toHaveBeenCalledTimes(1);
     });
   });
 });

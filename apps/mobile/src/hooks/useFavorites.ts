@@ -3,12 +3,12 @@
  *   Responsible for retrieving & managing a local copy of the user's favorites list
  *   A valid userId & accessToken are required
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import favoritesApi from '../services/api/favorites';
 import { ApiError } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-export interface UseFavoritesReturn {
+interface UseFavoritesReturn {
   favoriteLots: string[];
   isLoading: boolean;
   error: string | null;
@@ -23,12 +23,11 @@ export const useFavorites = (): UseFavoritesReturn => {
   const [isLoading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const favoritesRef = useRef(favoriteLots);
+  favoritesRef.current = favoriteLots;
+
   const userId = user?.userId;
   const accessToken = user?.accessToken;
-
-  useEffect(() => {
-    refreshFavorites();
-  }, [userId, accessToken]);
 
   // Add the lot to the user's favorites list & return a copy
   const refreshFavorites = useCallback(async (): Promise<string[]> => {
@@ -45,16 +44,27 @@ export const useFavorites = (): UseFavoritesReturn => {
         ? `${error.message} (${error.status})`
         : `[useFavorites] Retrieving favorites failed for ${userId}`;
       setError(errorMessage);
+      return [];
     } finally {
       setLoading(false);
-    } return [];
+    }
   }, [userId, accessToken]);
+
+  useEffect(() => {
+    if (!userId) {
+      setFavoriteLots([]); // Clear local state on logout
+      setLoading(false);
+    } else {
+      refreshFavorites();
+    }
+  }, [userId, refreshFavorites]);
 
   // Add the lot to the user's favorites list
   const addFavorite = useCallback(async (lotId: string): Promise<void> => {
     if (!userId || !accessToken) return;
 
     // Optimistic local update
+    const previousFavorites = [...favoritesRef.current];
     setFavoriteLots((prev) => [...prev, lotId]);
 
     try {
@@ -62,7 +72,7 @@ export const useFavorites = (): UseFavoritesReturn => {
       await favoritesApi.addFavorite(userId, accessToken, lotId, refreshSession);
     } catch (error) {
       // Rollback on failure
-      setFavoriteLots((prev) => prev.filter(fav => fav !== lotId));
+      setFavoriteLots(previousFavorites);
 
       const errorMessage = error instanceof ApiError
         ? `${error.message} (${error.status})`
@@ -77,7 +87,7 @@ export const useFavorites = (): UseFavoritesReturn => {
     if (!userId || !accessToken) return;
 
     // Optimistic local update
-    const previousFavorites = [...favoriteLots];
+    const previousFavorites = [...favoritesRef.current];
     setFavoriteLots((prev) => prev.filter(fav => fav !== lotId));
 
     try {
@@ -93,7 +103,7 @@ export const useFavorites = (): UseFavoritesReturn => {
       setError(errorMessage);
       throw error;
     }
-  }, [favoriteLots, userId, accessToken]);
+  }, [userId, accessToken]);
 
   return { favoriteLots, isLoading, error, addFavorite, removeFavorite, refreshFavorites};
 };
