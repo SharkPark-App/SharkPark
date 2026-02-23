@@ -20,7 +20,7 @@ Output Schema (matches Aurora occupancy_snapshots + local-only fields):
     - academic_period: str     # "regular", "finals", "break", etc.
     - week_of_semester: int    # 0-16
     - is_campus_open: bool     # Whether campus is open
-    - source: str              # "synthetic" (local-only, not in Aurora)
+
 
 Volume: ~10,000 records per lot x 28 lots = ~280,000 total records
 
@@ -496,7 +496,6 @@ def generate_snapshot(
             "available": capacity,
             "occupancy_rate": 0.0,
             "confidence": "HIGH",
-            "source": "synthetic",
             "is_cold_start": True,
             "academic_period": academic_period,
             "week_of_semester": week_of_sem,
@@ -544,7 +543,6 @@ def generate_snapshot(
         "available": available,
         "occupancy_rate": round(final_rate, 4),
         "confidence": "HIGH",
-        "source": "synthetic",
         "is_cold_start": True,
         "academic_period": academic_period,
         "week_of_semester": week_of_sem,

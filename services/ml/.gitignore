@@ -18,6 +18,13 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
+# Editable install metadata
+*.egg-info/
+
+# MLflow tracking
+mlruns/
+mlflow.db
+
 # pytest / coverage
 .pytest_cache/
 htmlcov/
