@@ -29,3 +29,6 @@ mlflow.db
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Linter cache
+.ruff_cache/
