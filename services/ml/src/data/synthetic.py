@@ -22,7 +22,8 @@ Output Schema (matches Aurora occupancy_snapshots + local-only fields):
     - is_campus_open: bool     # Whether campus is open
 
 
-Volume: ~10,000 records per lot x 28 lots = ~280,000 total records
+Volume: ~8,450 records per lot × 28 lots ≈ 237K total records
+    (one snapshot per 15-min slot across the semester; actual count depends on semester length)
 
 Semester Configuration:
     The target semester is set by the ``_fall`` lookup near the top of this module:
@@ -34,6 +35,10 @@ Semester Configuration:
     All dates (semester start/end, finals, breaks, closures) are derived from
     this single lookup via the heuristic calendar in academic_calendar.py,
     so no other constants need to change.
+
+    Multi-semester: The generator only supports one semester per run. To combine
+    semesters, run the script once per semester with different ``--output`` paths,
+    then ``pd.concat`` the parquets at training time.
 
 Patterns Modeled:
     - Time-of-day curves (different for student vs employee lots)
@@ -592,7 +597,7 @@ def generate_lot_data(
     capacity: int,
     lot_type: Literal["student", "employee"],
     timestamps: list[datetime],
-    target_records: int = 10000,
+    max_records: int = 10000,
 ) -> list[dict]:
     """
     Generate synthetic data for a single lot.
@@ -602,16 +607,18 @@ def generate_lot_data(
         capacity: Lot capacity
         lot_type: "student" or "employee"
         timestamps: All possible timestamps
-        target_records: Target number of records to generate
+        max_records: Max records per lot. If the semester produces fewer
+                     timestamps than this (the typical case), all timestamps
+                     are used. Only takes effect for downsampling.
 
     Returns:
         List of OccupancySnapshot dicts
     """
     lot_popularity = get_lot_popularity_factor(lot_id)
 
-    # Randomly sample timestamps if we have more than target
-    if len(timestamps) > target_records:
-        sampled_timestamps = sorted(random.sample(timestamps, target_records))
+    # Downsample if requested; otherwise use all semester timestamps
+    if len(timestamps) > max_records:
+        sampled_timestamps = sorted(random.sample(timestamps, max_records))
     else:
         sampled_timestamps = timestamps
 
@@ -623,24 +630,26 @@ def generate_lot_data(
     return records
 
 
-def generate_all_data(lots: list[LotInfo], target_per_lot: int = 10000) -> pd.DataFrame:
+def generate_all_data(lots: list[LotInfo], max_per_lot: int = 10000) -> pd.DataFrame:
     """
     Generate synthetic data for all lots.
 
     Args:
-        lots: List of LotInfo fetched from DynamoDB
-        target_per_lot: Target records per lot (default 10000)
+        lots: List of LotInfo fetched from PostgreSQL
+        max_per_lot: Max records per lot (default 10000). The semester
+                     typically produces fewer timestamps (~8,450 for Fall),
+                     so all slots are used unless this is set lower.
 
     Returns:
         DataFrame with all synthetic snapshots
     """
-    student_lots = [l for l in lots if l.lot_type == "STUDENT"]
-    employee_lots = [l for l in lots if l.lot_type == "EMPLOYEE"]
+    student_lots = [lot for lot in lots if lot.lot_type == "STUDENT"]
+    employee_lots = [lot for lot in lots if lot.lot_type == "EMPLOYEE"]
 
     print(f"Generating synthetic data for {len(lots)} lots...")
     print(f"  Student lots: {len(student_lots)}, Employee lots: {len(employee_lots)}")
     print(f"Date range: {DATA_START.date()} to {SEMESTER_END.date()}")
-    print(f"Target records per lot: {target_per_lot}")
+    print(f"Max records per lot: {max_per_lot}")
 
     # Generate all possible timestamps once (according to semester range)
     all_timestamps = generate_timestamps(
@@ -654,7 +663,7 @@ def generate_all_data(lots: list[LotInfo], target_per_lot: int = 10000) -> pd.Da
     print(f"\nGenerating {len(student_lots)} student lots...")
     for lot in student_lots:
         records = generate_lot_data(
-            lot.lot_id, lot.capacity, "student", all_timestamps, target_per_lot
+            lot.lot_id, lot.capacity, "student", all_timestamps, max_per_lot
         )
         all_records.extend(records)
         print(f"  {lot.lot_id}: {len(records)} records (capacity: {lot.capacity})")
@@ -663,7 +672,7 @@ def generate_all_data(lots: list[LotInfo], target_per_lot: int = 10000) -> pd.Da
     print(f"\nGenerating {len(employee_lots)} employee lots...")
     for lot in employee_lots:
         records = generate_lot_data(
-            lot.lot_id, lot.capacity, "employee", all_timestamps, target_per_lot
+            lot.lot_id, lot.capacity, "employee", all_timestamps, max_per_lot
         )
         all_records.extend(records)
         print(f"  {lot.lot_id}: {len(records)} records (capacity: {lot.capacity})")
@@ -690,11 +699,11 @@ def main():
         help="Output file path (default: data/synthetic_occupancy_snapshot.parquet)",
     )
     parser.add_argument(
-        "--records-per-lot",
+        "--max-records-per-lot",
         "-n",
         type=int,
         default=10000,
-        help="Target records per lot (default: 10000)",
+        help="Max records per lot — semester typically produces ~8,450; only useful for downsampling (default: 10000)",
     )
     parser.add_argument(
         "--preview",
@@ -731,8 +740,8 @@ def main():
             all_timestamps, min(args.preview, len(all_timestamps))
         )
 
-        student_lot = next((l for l in lots if l.lot_type == "STUDENT"), None)
-        employee_lot = next((l for l in lots if l.lot_type == "EMPLOYEE"), None)
+        student_lot = next((lot for lot in lots if lot.lot_type == "STUDENT"), None)
+        employee_lot = next((lot for lot in lots if lot.lot_type == "EMPLOYEE"), None)
 
         if student_lot:
             print(
@@ -761,7 +770,7 @@ def main():
                 )
 
     else:  # Generation mode: generate and save samples
-        df = generate_all_data(lots, args.records_per_lot)
+        df = generate_all_data(lots, args.max_records_per_lot)
 
         output = args.output
         if not output.endswith(".parquet"):

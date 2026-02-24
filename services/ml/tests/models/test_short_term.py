@@ -46,7 +46,7 @@ def synthetic_df(sample_lots):
     """Generate a small synthetic dataset for training tests."""
     random.seed(42)
     np.random.seed(42)
-    return generate_all_data(sample_lots, target_per_lot=200)
+    return generate_all_data(sample_lots, max_per_lot=200)
 
 
 # =============================================================================

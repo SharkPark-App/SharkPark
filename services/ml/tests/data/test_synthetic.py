@@ -136,7 +136,7 @@ class TestGenerateAllData:
         Ensure schema matches downstream ML expectations.
         Missing or renamed columns would break training/inference.
         """
-        df = generate_all_data(sample_lots, target_per_lot=50)
+        df = generate_all_data(sample_lots, max_per_lot=50)
         expected_cols = {
             "lot_id",
             "timestamp",
@@ -156,7 +156,7 @@ class TestGenerateAllData:
         Each input lot must generate data.
         Prevent silent dropping due to filtering or logic errors.
         """
-        df = generate_all_data(sample_lots, target_per_lot=50)
+        df = generate_all_data(sample_lots, max_per_lot=50)
         assert set(df["lot_id"].unique()) == {"G1", "G2", "E1"}
 
     def test_occupancy_rate_in_valid_range(self, sample_lots):
@@ -164,6 +164,6 @@ class TestGenerateAllData:
         occupancy_rate must remain normalized in [0, 1].
         Larger sample used to stress boundary behavior.
         """
-        df = generate_all_data(sample_lots, target_per_lot=200)
+        df = generate_all_data(sample_lots, max_per_lot=200)
         assert (df["occupancy_rate"] >= 0.0).all()
         assert (df["occupancy_rate"] <= 1.0).all()
