@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,11 +16,14 @@ import { getOccupancyColor } from '../utils/parkingUtils';
 import { ParkingLotUI } from '../types/ui';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
+import { NavigationModal } from '../components/Modals/NavigationModal';
+import { NavigationSpeedDial } from '../components/NavigationSpeedDial';
 import { TYPOGRAPHY, SPACING, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
+import useFavorites from '../hooks/useFavorites';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -73,6 +76,10 @@ const MapScreen: React.FC = () => {
   const { colors } = useTheme();
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
+  const [isNavigationModalOpen, setIsNavigationModalOpen] = useState(false);
+  const { refreshFavorites } = useFavorites();
+  const [navigableLots, setNavigableLots] = useState<string[]>([]);
+  const [navigationMode, setNavigationMode] = useState<'favorites' | 'recommended'>('recommended');
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   
   // Shared values for map transformations (pan and zoom)
@@ -158,9 +165,9 @@ const MapScreen: React.FC = () => {
 
   const handleLotPress = (lot: ParkingLotUI) => {
     // Navigate to ShortTermForecastScreen with lot data
-    navigation.navigate('Short Term Forecast', { 
-      lotId: lot.id, 
-      lotName: lot.name 
+    navigation.navigate('Short Term Forecast', {
+      lotId: lot.id,
+      lotName: lot.name
     });
   };
 
@@ -168,18 +175,38 @@ const MapScreen: React.FC = () => {
     setIsFilterModalOpen(true);
   };
 
-  const handleNavigatePress = () => {
-    // TODO: Add navigation logic here (e.g., open Google Maps to campus)
-  };
-
   const handleFilterClose = () => {
     setIsFilterModalOpen(false);
+  };
+
+  const handleNavigateClose = () => {
+    setIsNavigationModalOpen(false);
   };
 
   const handleApplyFilter = (filteredLots: string[]) => {
     setSelectedLots(filteredLots);
     setIsFilterModalOpen(false);
   };
+
+  // Redirect to Short-Term Forecast Screen of the lot selected within the navigation modal
+  const handleLotNavigation = (id: string, name: string) => {
+    navigation.navigate('Short Term Forecast', {
+      lotId: id,
+      lotName: name
+    });
+  };
+
+  const openNavigationModal = useCallback(async (type: 'favorites' | 'recommended') => {
+    setNavigationMode(type);
+    if (type === 'favorites') {
+      const favoriteLots = await refreshFavorites(); // Ensures that current instance of favoriteLots is up-to-date
+      setNavigableLots(favoriteLots);
+    } else {
+      // TODO: Implement lot recommendation system
+      setNavigableLots([]);
+    }
+    setIsNavigationModalOpen(true);
+  }, [refreshFavorites]);
 
   // Filter parking lots based on selected filter
   const filteredParkingLots = selectedLots.length > 0 
@@ -228,8 +255,17 @@ const MapScreen: React.FC = () => {
       {/* Filter button - bottom left */}
       <FilterButton onPress={handleFilterPress} colors={colors} />
 
-      {/* Navigate button - bottom right */}
-      <NavigateButton onPress={handleNavigatePress} colors={colors} />
+      {/* Navigation speed dial via Navigate button FAB - bottom right */}
+      <NavigationSpeedDial
+        onSelectRecommended={() => openNavigationModal('recommended')}
+        onSelectFavorites={() => openNavigationModal('favorites')}
+        renderTrigger={(isOpen, toggle) => (
+          <NavigateButton
+            onPress={toggle}
+            colors={colors}
+          />
+        )}
+      />
 
       {/* Filter Modal */}
       <LotFilterModal
@@ -237,6 +273,15 @@ const MapScreen: React.FC = () => {
         onClose={handleFilterClose}
         selectedLots={selectedLots}
         onApplyFilter={handleApplyFilter}
+      />
+
+      {/* Navigation Modal */}
+      <NavigationModal
+        isOpen={isNavigationModalOpen}
+        lotIdList={navigableLots}
+        onClose={handleNavigateClose}
+        onSelectLot={(id, name) => handleLotNavigation(id, name)}
+        mode={navigationMode}
       />
     </View>
   );
@@ -297,9 +342,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   navigateButton: {
-    position: 'absolute',
-    bottom: SPACING.xxl, // Same as filter button
-    right: SPACING.xxl, // Symmetric position on the right
     width: 56,
     height: 56,
     borderRadius: 28,

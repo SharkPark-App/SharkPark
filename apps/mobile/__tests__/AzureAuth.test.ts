@@ -55,7 +55,14 @@ describe('AzureAuth', () => {
       refreshToken: 'mock-refresh-token',
       accessTokenExpirationDate: new Date(Date.now() + 3600000).toISOString(),
       tokenType: 'Bearer',
-      scopes: ['openid', 'profile', 'email', 'offline_access'],
+      userId: 'test-user-id',
+      scopes: [
+        'openid',
+        'profile',
+        'email',
+        'offline_access',
+        `api://9aea0ab1-4502-4868-a31b-0a8f333cec9c/access_as_user`
+      ],
     };
 
     it('should successfully login and return auth result', async () => {
@@ -66,7 +73,13 @@ describe('AzureAuth', () => {
       expect(authorize).toHaveBeenCalledWith(
         expect.objectContaining({
           clientId: '9aea0ab1-4502-4868-a31b-0a8f333cec9c',
-          scopes: ['openid', 'profile', 'email', 'offline_access'],
+          scopes: [
+            'openid',
+            'profile',
+            'email',
+            'offline_access',
+            `api://9aea0ab1-4502-4868-a31b-0a8f333cec9c/access_as_user`
+          ],
           usePKCE: true,
           useNonce: true,
         }),
@@ -166,6 +179,7 @@ describe('AzureAuth', () => {
         refreshToken: 'test-refresh-token',
         accessTokenExpirationDate: new Date().toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.setGenericPassword as jest.Mock).mockResolvedValue(true);
@@ -206,6 +220,7 @@ describe('AzureAuth', () => {
         // Token expires in 1 hour
         accessTokenExpirationDate: new Date(Date.now() + 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({
@@ -225,6 +240,7 @@ describe('AzureAuth', () => {
         // Token expired 1 hour ago
         accessTokenExpirationDate: new Date(Date.now() - 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       const refreshedResult = {
@@ -233,6 +249,7 @@ describe('AzureAuth', () => {
         refreshToken: 'new-refresh-token',
         accessTokenExpirationDate: new Date(Date.now() + 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({
@@ -262,6 +279,7 @@ describe('AzureAuth', () => {
         refreshToken: 'invalid-refresh-token',
         accessTokenExpirationDate: new Date(Date.now() - 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({
@@ -283,6 +301,7 @@ describe('AzureAuth', () => {
         refreshToken: undefined,
         accessTokenExpirationDate: new Date(Date.now() - 3600000).toISOString(),
         tokenType: 'Bearer',
+        userId: 'test-user-id',
       };
 
       (Keychain.getGenericPassword as jest.Mock).mockResolvedValue({
