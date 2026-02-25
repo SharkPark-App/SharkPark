@@ -1,13 +1,7 @@
 packages:
-  - apps/*
-  - packages/*
-  - services/*
-  - infrastructure
-  - docker
-  - scripts
-
-onlyBuiltDependencies:
-  - '@nestjs/core'
-  - '@scarf/scarf'
-  - esbuild
-  - unrs-resolver
+  - "apps/*"
+  - "packages/*"
+  - "services/*"
+  - "infrastructure"
+  - "docker"
+  - "scripts"
