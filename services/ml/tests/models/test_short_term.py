@@ -10,43 +10,12 @@ Run from services/ml/:
     python -m pytest tests/models/test_short_term.py -v
 """
 
-import random
 import tempfile
 
 import numpy as np
 import pytest
 
-from src.data.synthetic import LotInfo, generate_all_data
 from src.models.short_term import ShortTermModel
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
-@pytest.fixture(autouse=True)
-def fixed_seed():
-    """Fix random seeds for reproducibility."""
-    random.seed(42)
-    np.random.seed(42)
-
-
-@pytest.fixture(scope="module")
-def sample_lots():
-    """Minimal set of lots for fast test runs."""
-    return [
-        LotInfo("G1", 180, "STUDENT"),
-        LotInfo("E1", 185, "EMPLOYEE"),
-    ]
-
-
-@pytest.fixture(scope="module")
-def synthetic_df(sample_lots):
-    """Generate a small synthetic dataset for training tests."""
-    random.seed(42)
-    np.random.seed(42)
-    return generate_all_data(sample_lots, max_per_lot=200)
 
 
 # =============================================================================

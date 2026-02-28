@@ -26,6 +26,12 @@ from .base import (
     normalize_timestamps,
 )
 
+__all__ = [
+    "compute_lag_features",
+    "prepare_training_features",
+    "prepare_inference_features",
+]
+
 
 # =============================================================================
 # Constants

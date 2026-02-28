@@ -14,6 +14,11 @@ import pandas as pd
 
 from src.evaluation.metrics import compute_metrics
 
+__all__ = [
+    "PersistenceBaseline",
+    "MajorityClassBaseline",
+]
+
 
 # =============================================================================
 # Persistence Baseline
@@ -24,16 +29,15 @@ class PersistenceBaseline:
     """
     Predict that current occupancy stays the same for all future hours.
     Use Case: Short-Term
-
-    Note: predict() is scaffolding for future API inference use.
-    Currently only evaluate() is wired up (via compare.py).
     """
 
-    def predict(self, *args, **kwargs):
-        # TODO: Wire up for real-time API inference.
-        # Should take recent snapshots + lot_ids, return the latest
-        # occupancy_rate repeated for each remaining PREDICTION_HOURS.
-        raise NotImplementedError("predict() not yet wired up for inference")
+    def predict(self, current_rate: float, horizons: int = 1) -> np.ndarray:
+        """Trivial predict: repeat current rate for all future horizons.
+
+        When the API inference path is built, this should accept recent
+        snapshots + lot_ids and return per-lot predictions.
+        """
+        return np.full(horizons, fill_value=current_rate, dtype=float)
 
     @staticmethod
     def evaluate(test_features: pd.DataFrame) -> dict:
@@ -70,16 +74,18 @@ class MajorityClassBaseline:
     """
     Always predict the global median occupancy rate.
     Use Case: Short-term, Long-term
-
-    Note: predict() is scaffolding for future API inference use.
-    Currently only evaluate() is wired up (via compare.py).
     """
 
-    def predict(self, *args, **kwargs):
-        # TODO: Wire up for real-time API inference.
-        # Should take historical snapshots + lot_ids, return global median
-        # occupancy_rate for each lot × each PREDICTION_HOURS slot.
-        raise NotImplementedError("predict() not yet wired up for inference")
+    def predict(self, raw_df: pd.DataFrame, horizons: int = 1) -> np.ndarray:
+        """Trivial predict: return global median for all future horizons.
+
+        When the API inference path is built, this should accept historical
+        snapshots + lot_ids and return per-lot median predictions.
+        """
+        median_rate = raw_df["occupancy_rate"].median()
+        if np.isnan(median_rate):
+            median_rate = 0.5
+        return np.full(horizons, fill_value=median_rate, dtype=float)
 
     @staticmethod
     def evaluate(test_features: pd.DataFrame, raw_df: pd.DataFrame) -> dict:

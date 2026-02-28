@@ -210,23 +210,8 @@ class TestAddActivityLevel:
 class TestValidateSnapshotData:
     """Verify data validation and cleaning."""
 
-    def _make_valid_df(self, n=3):
-        return pd.DataFrame(
-            {
-                "lot_id": ["G1"] * n,
-                "timestamp": pd.to_datetime(["2025-10-15T10:00:00"] * n),
-                "occupancy": [50, 100, 150],
-                "occupancy_rate": [0.3, 0.6, 0.9],
-                "confidence": ["HIGH"] * n,
-                "academic_period": ["regular"] * n,
-                "week_of_semester": [5] * n,
-                "is_campus_open": [True] * n,
-            }
-        )
-
-    def test_valid_data_passes(self):
-        df = self._make_valid_df()
-        result = validate_snapshot_data(df)
+    def test_valid_data_passes(self, sample_snapshot_df):
+        result = validate_snapshot_data(sample_snapshot_df)
         assert len(result) == 3
 
     def test_missing_required_column_raises(self):
@@ -234,24 +219,21 @@ class TestValidateSnapshotData:
         with pytest.raises(ValueError, match="Missing required columns"):
             validate_snapshot_data(df)
 
-    def test_filters_low_confidence(self):
-        df = self._make_valid_df()
-        df.loc[0, "confidence"] = "LOW"
-        result = validate_snapshot_data(df)
+    def test_filters_low_confidence(self, sample_snapshot_df):
+        sample_snapshot_df.loc[0, "confidence"] = "LOW"
+        result = validate_snapshot_data(sample_snapshot_df)
         assert len(result) == 2
 
-    def test_clamps_occupancy_rate(self):
-        df = self._make_valid_df()
-        df.loc[0, "occupancy_rate"] = 1.5
-        df.loc[1, "occupancy_rate"] = -0.2
-        result = validate_snapshot_data(df)
+    def test_clamps_occupancy_rate(self, sample_snapshot_df):
+        sample_snapshot_df.loc[0, "occupancy_rate"] = 1.5
+        sample_snapshot_df.loc[1, "occupancy_rate"] = -0.2
+        result = validate_snapshot_data(sample_snapshot_df)
         assert result["occupancy_rate"].max() <= 1.0
         assert result["occupancy_rate"].min() >= 0.0
 
-    def test_removes_negative_occupancy(self):
-        df = self._make_valid_df()
-        df.loc[0, "occupancy"] = -1
-        result = validate_snapshot_data(df)
+    def test_removes_negative_occupancy(self, sample_snapshot_df):
+        sample_snapshot_df.loc[0, "occupancy"] = -1
+        result = validate_snapshot_data(sample_snapshot_df)
         assert len(result) == 2
 
 
@@ -263,26 +245,8 @@ class TestValidateSnapshotData:
 class TestPrepareBaseFeatures:
     """Verify full base feature pipeline."""
 
-    def test_pipeline_adds_all_expected_columns(self):
-        df = pd.DataFrame(
-            {
-                "lot_id": ["G1", "G1", "G1"],
-                "timestamp": pd.to_datetime(
-                    [
-                        "2025-10-15T10:00:00",
-                        "2025-10-15T14:00:00",
-                        "2025-10-15T18:00:00",
-                    ]
-                ),
-                "occupancy": [50, 100, 80],
-                "occupancy_rate": [0.3, 0.6, 0.5],
-                "confidence": ["HIGH", "HIGH", "HIGH"],
-                "academic_period": ["regular", "regular", "regular"],
-                "week_of_semester": [5, 5, 5],
-                "is_campus_open": [True, True, True],
-            }
-        )
-        result = prepare_base_features(df)
+    def test_pipeline_adds_all_expected_columns(self, sample_snapshot_df):
+        result = prepare_base_features(sample_snapshot_df)
 
         expected_new_cols = [
             "hour",

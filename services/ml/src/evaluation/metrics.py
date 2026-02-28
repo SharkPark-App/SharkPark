@@ -12,6 +12,13 @@ Usage:
 
 import numpy as np
 
+__all__ = [
+    "MAE_TARGET_THRESHOLD",
+    "compute_metrics",
+    "meets_mae_target",
+    "compute_directional_accuracy",
+]
+
 MAE_TARGET_THRESHOLD = 0.10  # Serves as model quality gate
 
 

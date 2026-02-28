@@ -76,6 +76,15 @@ from src.config import (
     SNAPSHOT_INTERVAL_MINUTES,
 )
 
+__all__ = [
+    "SemesterPhase",
+    "LotInfo",
+    "fetch_lots",
+    "generate_timestamps",
+    "generate_lot_data",
+    "generate_all_data",
+]
+
 # ---------------------------------------------------------------------------
 # Derive calendar dates from academic_calendar (Fall 2025)
 # ---------------------------------------------------------------------------

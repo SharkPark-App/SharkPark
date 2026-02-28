@@ -28,6 +28,16 @@ import calendar as _cal
 from datetime import date, datetime, timedelta
 from functools import lru_cache
 
+__all__ = [
+    "ACADEMIC_CALENDARS",
+    "generate_academic_year",
+    "get_week_of_semester",
+    "is_class_day",
+    "get_semester_progress",
+    "get_academic_period",
+    "is_campus_open",
+]
+
 
 # ---------------------------------------------------------------------------
 # Date utilities

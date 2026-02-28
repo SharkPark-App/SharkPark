@@ -11,6 +11,20 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+__all__ = [
+    "normalize_timestamps",
+    "encode_cyclical",
+    "add_hour_encoding",
+    "add_day_encoding",
+    "extract_time_components",
+    "bucket_hour",
+    "add_time_bucket",
+    "bucket_occupancy_rate",
+    "add_activity_level",
+    "validate_snapshot_data",
+    "prepare_base_features",
+]
+
 
 # =============================================================================
 # Timestamp Normalization

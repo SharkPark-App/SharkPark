@@ -9,40 +9,15 @@ Run from services/ml/:
     python -m pytest tests/data/test_synthetic.py -v
 """
 
-import random
 from unittest.mock import patch, MagicMock
 
-import numpy as np
 import psycopg2
 import pytest
 
 from src.data.synthetic import (
-    LotInfo,
     fetch_lots,
     generate_all_data,
 )
-
-
-# =============================================================================
-# FIXTURES
-# =============================================================================
-
-
-@pytest.fixture(autouse=True)
-def fixed_seed():
-    """Fix random seeds for reproducibility across tests"""
-    random.seed(42)
-    np.random.seed(42)
-
-
-@pytest.fixture
-def sample_lots():
-    """Sample lot definitions"""
-    return [
-        LotInfo("G1", 180, "STUDENT"),
-        LotInfo("G2", 425, "STUDENT"),
-        LotInfo("E1", 185, "EMPLOYEE"),
-    ]
 
 
 # =============================================================================

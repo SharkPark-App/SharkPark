@@ -23,6 +23,14 @@ import xgboost as xgb
 
 from src.features.short_term import prepare_training_features
 
+__all__ = [
+    "NUMERIC_FEATURES",
+    "CATEGORICAL_FEATURES",
+    "TARGET_COL",
+    "HOLDOUT_DAYS",
+    "ShortTermModel",
+]
+
 
 # =============================================================================
 # Feature Configuration
