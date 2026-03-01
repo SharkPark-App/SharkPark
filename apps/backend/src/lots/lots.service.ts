@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
 import type { Lot, LotType } from '@prisma/client';
-import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse } from './interfaces/parking-lot.interface';
+import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
 
 /**
  * Service for parking lot data access and business logic.
@@ -155,6 +155,139 @@ export class LotsService {
     }
   }
 
+  // ─── Recommendation Engine ───────────────────────────────
+
+  /** Scoring weights for the recommendation algorithm */
+  private static readonly RECOMMENDATION_WEIGHTS = {
+    availability: 0.40,
+    distance: 0.35,
+    typeMatch: 0.15,
+    permitCompat: 0.10,
+  };
+
+  /** Maximum distance (meters) used to normalize distance scores. Lots beyond this get 0. */
+  private static readonly MAX_DISTANCE_METERS = 2000;
+
+  /** Occupancy rate threshold at which a lot is considered too full to recommend */
+  private static readonly FULL_THRESHOLD = 0.75;
+
+  /**
+   * Recommends alternative lots when a preferred lot is full or nearly full.
+   * Scores candidates using weighted factors: availability, distance, type match, permit compatibility.
+   * Excludes the source lot and any lots at ≥75% occupancy.
+   */
+  async getRecommendations(lotId: string, limit: number = 5): Promise<LotRecommendation[]> {
+    // Look up the source lot
+    const sourceLot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+    if (!sourceLot) {
+      throw new NotFoundException(`Parking lot ${lotId} not found`);
+    }
+
+    // Fetch all lots of the same type (students shouldn't see employee lots and vice versa)
+    const candidates = await this.prisma.lot.findMany({
+      where: {
+        lot_type: sourceLot.lot_type,
+        id: { not: sourceLot.id },
+      },
+    });
+
+    const W = LotsService.RECOMMENDATION_WEIGHTS;
+
+    const scored = candidates
+      .map(candidate => {
+        const response = this.transformToResponse(candidate);
+
+        // Skip lots that are full
+        if (response.occupancy_rate >= LotsService.FULL_THRESHOLD) return null;
+
+        // --- Availability score (0–1): higher = more space available ---
+        const availabilityScore = candidate.capacity > 0
+          ? (candidate.capacity - candidate.current_occupancy) / candidate.capacity
+          : 0;
+
+        // --- Distance score (0–1): closer = higher ---
+        const distance = this.haversineDistance(
+          sourceLot.center_lat, sourceLot.center_lng,
+          candidate.center_lat, candidate.center_lng,
+        );
+        const distanceScore = Math.max(0, 1 - distance / LotsService.MAX_DISTANCE_METERS);
+
+        // --- Type match (0 or 1) — already filtered to same type, so always 1 ---
+        const typeScore = candidate.lot_type === sourceLot.lot_type ? 1 : 0;
+
+        // --- Permit compatibility (0–1): fraction of source permits that the candidate also accepts ---
+        const sourcePermits = new Set(sourceLot.permit_types);
+        const overlap = candidate.permit_types.filter(p => sourcePermits.has(p)).length;
+        const permitScore = sourcePermits.size > 0 ? overlap / sourcePermits.size : 1;
+
+        const score = Math.round(
+          (W.availability * availabilityScore +
+           W.distance    * distanceScore +
+           W.typeMatch   * typeScore +
+           W.permitCompat * permitScore) * 100,
+        );
+
+        // Build a human-readable reason
+        const reason = this.buildRecommendationReason(response, distance);
+
+        return {
+          ...response,
+          recommendation_score: score,
+          distance_meters: Math.round(distance),
+          reason,
+        } satisfies LotRecommendation;
+      })
+      .filter((entry): entry is LotRecommendation => entry !== null)
+      .sort((a, b) => b.recommendation_score - a.recommendation_score)
+      .slice(0, limit);
+
+    return scored;
+  }
+
+  /**
+   * Haversine formula — returns distance between two lat/lng points in meters.
+   */
+  private haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const EARTH_RADIUS = 6_371_000; // meters
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return EARTH_RADIUS * c;
+  }
+
+  /**
+   * Produces a short, user-friendly reason string for why a lot is recommended.
+   */
+  private buildRecommendationReason(
+    lot: ParkingLotResponse,
+    distanceMeters: number,
+  ): string {
+    const parts: string[] = [];
+
+    if (lot.fill_status === 'AVAILABLE') {
+      parts.push(`${lot.available} spots available`);
+    } else if (lot.fill_status === 'FILLING') {
+      parts.push(`${lot.available} spots left, filling up`);
+    } else {
+      parts.push(`${lot.available} spots remaining`);
+    }
+
+    if (distanceMeters < 300) {
+      parts.push('very close by');
+    } else if (distanceMeters < 600) {
+      parts.push('nearby');
+    } else {
+      parts.push(`~${Math.round(distanceMeters / 100) * 100}m away`);
+    }
+
+    return parts.join(' · ');
+  }
+
   /**
    * Adds computed fields to parking lot data for client consumption.
    */
@@ -165,9 +298,9 @@ export class LotsService {
     let fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
     if (occupancy_rate >= 0.95) {
       fill_status = 'FULL';
-    } else if (occupancy_rate >= 0.80) {
+    } else if (occupancy_rate >= 0.75) {
       fill_status = 'NEARLY_FULL';
-    } else if (occupancy_rate >= 0.60) {
+    } else if (occupancy_rate >= 0.50) {
       fill_status = 'FILLING';
     } else {
       fill_status = 'AVAILABLE';

@@ -9,7 +9,9 @@ import {
   HttpStatus,
   BadRequestException,
   ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { OccupancyEventsService } from './occupancy-events.service';
 import { CreateOccupancyEventDto } from './dto/create-occupancy-event.dto';
 
@@ -104,6 +106,7 @@ export class OccupancyEventsController {
   }
 
   /** Manually trigger snapshot creation (normally called by scheduler) */
+  @UseGuards(AuthGuard('azure-ad'))
   @Post('snapshots')
   @HttpCode(HttpStatus.CREATED)
   async createSnapshots() {

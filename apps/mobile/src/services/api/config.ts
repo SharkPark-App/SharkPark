@@ -41,6 +41,7 @@ export const API_CONFIG = {
     LOTS_SUMMARY: '/lots/summary',
     LOT_DETAILS: (id: string) => `/lots/${id}`,
     LOT_HISTORY: (id: string) => `/lots/${id}/history`,
+    LOT_RECOMMENDATIONS: (id: string) => `/lots/${id}/recommendations`,
     OCCUPANCY_EVENTS: '/occupancy-events',
     USERS: '/users',
     WEATHER: '/weather',

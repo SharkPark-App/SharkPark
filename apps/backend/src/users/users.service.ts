@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
 import type { UserType } from '@prisma/client';
 import type { UserResponse } from './interfaces/user.interface';
+import type { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 
 /**
  * Service for user profile and favorites management.
@@ -114,10 +115,10 @@ export class UsersService {
     }
   }
 
-  /** Updates user's notification preferences. */
+  /** Updates user's notification preferences. Merges with existing preferences. */
   async updateNotificationPreferences(
     userId: string,
-    preferences: Record<string, boolean>,
+    preferences: UpdateNotificationPreferencesDto,
   ): Promise<UserResponse> {
     const user = await this.prisma.user.findUnique({ where: { email: userId } });
     if (!user) {
@@ -125,9 +126,13 @@ export class UsersService {
     }
 
     try {
+      // Merge incoming partial preferences with existing ones
+      const existing = (user.notification_preferences ?? {}) as Record<string, boolean>;
+      const merged = { ...existing, ...preferences };
+
       await this.prisma.user.update({
         where: { email: userId },
-        data: { notification_preferences: preferences },
+        data: { notification_preferences: merged },
       });
       this.logger.log(`Updated notification preferences for user ${userId}`);
       return this.findOne(userId);

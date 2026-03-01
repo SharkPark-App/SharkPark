@@ -99,6 +99,12 @@ export interface GetHistoryParams {
   limit?: number; 
 }
 
+export interface LotRecommendation extends ParkingLotResponse {
+  recommendation_score: number;
+  distance_meters: number;
+  reason: string;
+}
+
 class LotsApiService {
   /**
    * Get all parking lots with optional filtering
@@ -139,6 +145,21 @@ class LotsApiService {
     const endpoint = `${API_CONFIG.ENDPOINTS.LOT_HISTORY(lotId)}${queryString}`;
     
     const response = await apiService.get<OccupancyHistoryRecord[]>(endpoint);
+    return response.data;
+  }
+
+  /**
+   * Get recommended alternative lots for a given source lot.
+   * Returns lots ranked by availability, distance, type match, and permit compatibility.
+   */
+  async getRecommendedLots(
+    sourceLotId: string,
+    limit: number = 5,
+  ): Promise<LotRecommendation[]> {
+    const queryString = limit !== 5 ? `?limit=${limit}` : '';
+    const endpoint = `${API_CONFIG.ENDPOINTS.LOT_RECOMMENDATIONS(sourceLotId)}${queryString}`;
+
+    const response = await apiService.get<LotRecommendation[]>(endpoint);
     return response.data;
   }
 

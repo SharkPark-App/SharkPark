@@ -122,4 +122,111 @@ describe('LotsController (e2e)', () => {
         });
     });
   });
+
+  describe('/api/v1/lots/:id/recommendations (GET)', () => {
+    it('should return recommendations for a valid lot', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/recommendations')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.source_lot).toBe('G1');
+          expect(Array.isArray(res.body.data)).toBe(true);
+          expect(res.body.count).toBe(res.body.data.length);
+
+          // Each recommendation should have required fields
+          res.body.data.forEach((rec: Record<string, unknown>) => {
+            expect(rec).toHaveProperty('lot_id');
+            expect(rec).toHaveProperty('recommendation_score');
+            expect(rec).toHaveProperty('distance_meters');
+            expect(rec).toHaveProperty('reason');
+            expect(rec).toHaveProperty('available');
+            expect(rec).toHaveProperty('fill_status');
+            expect(typeof rec.recommendation_score).toBe('number');
+            expect(typeof rec.distance_meters).toBe('number');
+          });
+        });
+    });
+
+    it('should not include the source lot in recommendations', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/recommendations')
+        .expect(200)
+        .expect((res: Response) => {
+          const lotIds = res.body.data.map((r: { lot_id: string }) => r.lot_id);
+          expect(lotIds).not.toContain('G1');
+        });
+    });
+
+    it('should only return lots of the same type as the source', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/recommendations')
+        .expect(200)
+        .expect((res: Response) => {
+          res.body.data.forEach((rec: { lot_type: string }) => {
+            expect(rec.lot_type).toBe('STUDENT');
+          });
+        });
+    });
+
+    it('should not include full lots (≥95% occupancy)', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/recommendations')
+        .expect(200)
+        .expect((res: Response) => {
+          res.body.data.forEach((rec: { occupancy_rate: number }) => {
+            expect(rec.occupancy_rate).toBeLessThan(0.95);
+          });
+        });
+    });
+
+    it('should return recommendations sorted by score (descending)', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/recommendations')
+        .expect(200)
+        .expect((res: Response) => {
+          const scores = res.body.data.map((r: { recommendation_score: number }) => r.recommendation_score);
+          for (let i = 1; i < scores.length; i++) {
+            expect(scores[i - 1]).toBeGreaterThanOrEqual(scores[i]);
+          }
+        });
+    });
+
+    it('should respect the limit parameter', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/recommendations?limit=2')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.data.length).toBeLessThanOrEqual(2);
+        });
+    });
+
+    it('should also work for employee lots', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/E1/recommendations')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.source_lot).toBe('E1');
+          res.body.data.forEach((rec: { lot_type: string }) => {
+            expect(rec.lot_type).toBe('EMPLOYEE');
+          });
+        });
+    });
+
+    it('should return 404 for non-existent lot', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/INVALID/recommendations')
+        .expect(404);
+    });
+
+    it('should handle lowercase lot IDs', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/g1/recommendations')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.source_lot).toBe('G1');
+        });
+    });
+  });
 });
