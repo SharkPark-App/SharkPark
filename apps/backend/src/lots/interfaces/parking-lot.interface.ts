@@ -29,3 +29,12 @@ export interface OccupancySnapshotResponse {
   occupancy_rate: number;
   confidence: string;
 }
+
+export interface LotRecommendation extends ParkingLotResponse {
+  /** Overall recommendation score 0–100 */
+  recommendation_score: number;
+  /** Haversine distance in meters from the source lot */
+  distance_meters: number;
+  /** Why this lot was recommended */
+  reason: string;
+}

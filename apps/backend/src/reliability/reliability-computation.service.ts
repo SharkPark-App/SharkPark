@@ -56,7 +56,11 @@ export class ReliabilityComputationService {
     return results;
   }
 
-  private async gatherReliabilityInput(
+  /**
+   * Gathers input data required for reliability computation.
+   * Public so OccupancyEventsService can use the same logic for snapshot generation.
+   */
+  async gatherReliabilityInput(
     lotId: string,
     lot: { id: string; penetration_rate: number },
   ): Promise<ReliabilityInput> {

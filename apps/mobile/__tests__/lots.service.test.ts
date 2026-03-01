@@ -213,4 +213,92 @@ describe('LotsService', () => {
       );
     });
   });
+
+  describe('getRecommendedLots', () => {
+    it('should fetch recommendations for a source lot', async () => {
+      const mockRecommendations = [
+        {
+          lot_id: 'G2',
+          lot_name: 'Lot G2',
+          recommendation_score: 78,
+          distance_meters: 150,
+          reason: '300 spots available · very close by',
+          available: 300,
+          occupancy_rate: 0.25,
+          fill_status: 'AVAILABLE',
+        },
+        {
+          lot_id: 'G4',
+          lot_name: 'Lot G4',
+          recommendation_score: 62,
+          distance_meters: 500,
+          reason: '132 spots left, filling up · nearby',
+          available: 132,
+          occupancy_rate: 0.71,
+          fill_status: 'FILLING',
+        },
+      ];
+
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: mockRecommendations,
+        count: 2,
+      });
+
+      const result = await lotsApi.getRecommendedLots('G1');
+
+      expect(mockApiService.get).toHaveBeenCalledWith('/lots/G1/recommendations');
+      expect(result).toEqual(mockRecommendations);
+      expect(result).toHaveLength(2);
+      expect(result[0].recommendation_score).toBe(78);
+    });
+
+    it('should pass custom limit as query parameter', async () => {
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: [],
+        count: 0,
+      });
+
+      await lotsApi.getRecommendedLots('G1', 3);
+
+      expect(mockApiService.get).toHaveBeenCalledWith('/lots/G1/recommendations?limit=3');
+    });
+
+    it('should not append limit query param when using default (5)', async () => {
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: [],
+        count: 0,
+      });
+
+      await lotsApi.getRecommendedLots('G1');
+
+      expect(mockApiService.get).toHaveBeenCalledWith('/lots/G1/recommendations');
+    });
+
+    it('should return empty array when no recommendations exist', async () => {
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: [],
+        count: 0,
+      });
+
+      const result = await lotsApi.getRecommendedLots('G1');
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle network errors gracefully', async () => {
+      mockApiService.get.mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(lotsApi.getRecommendedLots('G1')).rejects.toThrow('Network error');
+    });
+
+    it('should handle 404 when lot does not exist', async () => {
+      mockApiService.get.mockRejectedValueOnce(new Error('HTTP 404: Not Found'));
+
+      await expect(lotsApi.getRecommendedLots('INVALID')).rejects.toThrow('HTTP 404: Not Found');
+    });
+  });
 });

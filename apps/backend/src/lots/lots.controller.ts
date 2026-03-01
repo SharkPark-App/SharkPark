@@ -74,6 +74,27 @@ export class LotsController {
     };
   }
 
+  @Get(':id/recommendations')
+  @HttpCode(HttpStatus.OK)
+  async getRecommendations(
+    @Param('id') id: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+  ) {
+    const cappedLimit = limit && limit >= 1 && limit <= 20 ? limit : 5;
+
+    const recommendations = await this.lotsService.getRecommendations(
+      id.toUpperCase(),
+      cappedLimit,
+    );
+
+    return {
+      success: true,
+      source_lot: id.toUpperCase(),
+      count: recommendations.length,
+      data: recommendations,
+    };
+  }
+
   @Get(':id/history')
   @HttpCode(HttpStatus.OK)
   async getLotHistory(

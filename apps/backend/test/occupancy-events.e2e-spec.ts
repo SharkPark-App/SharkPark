@@ -1,9 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ValidationPipe, CanActivate } from '@nestjs/common';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
+import { AuthGuard } from '@nestjs/passport';
+
+/** Mock guard to bypass Azure AD auth in e2e tests */
+class MockAuthGuard implements CanActivate {
+  canActivate(): boolean {
+    return true;
+  }
+}
 
 describe('OccupancyEventsController (e2e)', () => {
   let app: INestApplication;
@@ -11,7 +19,10 @@ describe('OccupancyEventsController (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+    .overrideGuard(AuthGuard('azure-ad'))
+    .useClass(MockAuthGuard)
+    .compile();
 
     app = moduleFixture.createNestApplication();
 
