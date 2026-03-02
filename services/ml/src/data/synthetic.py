@@ -5,8 +5,9 @@ Generates realistic parking occupancy snapshots for model training during cold-s
 Lot metadata (IDs, capacities, types) is fetched from Aurora PostgreSQL.
 
 Usage (from services/ml/):
-    python -m src.data.synthetic                    # Generate and save to parquet (default name: synthetic_occupancy_snapshot)
-    python -m src.data.synthetic --preview 10       # Preview 10 (fresh samples) records per lot type
+    python -m src.data.synthetic                                  # Generate Fall 2025 (default)
+    python -m src.data.synthetic --semester spring-2026            # Generate Spring 2026
+    python -m src.data.synthetic --semester fall-2025 --preview 10 # Preview 10 records
     python -m src.data.synthetic --output data.parquet
 
 Output Schema (matches Aurora occupancy_snapshots + local-only fields):
@@ -26,15 +27,16 @@ Volume: ~8,450 records per lot x 28 lots ≈ 237K total records
     (one snapshot per 15-min slot across the semester; actual count depends on semester length)
 
 Semester Configuration:
-    The target semester is set by the ``_fall`` lookup near the top of this module:
+    The target semester is selected at runtime via the ``--semester`` flag:
 
-        _fall = ACADEMIC_CALENDARS["2025-2026"]["fall"]
+        python -m src.data.synthetic --semester fall-2025
+        python -m src.data.synthetic --semester spring-2026
 
-    To generate for a different semester/year, change the year key and/or
-    semester key (fall, spring, winter, may_intersession, summer).
+    The format is ``{term}-{year}`` where *year* is the calendar year the
+    term occurs in. Valid terms: fall, spring.  (Intersessions are excluded
+    because the occupancy heuristics assume a ~16-week semester structure.)
     All dates (semester start/end, finals, breaks, closures) are derived from
-    this single lookup via the heuristic calendar in academic_calendar.py,
-    so no other constants need to change.
+    the heuristic calendar in academic_calendar.py via ``resolve_semester()``.
 
     Multi-semester: The generator only supports one semester per run. To combine
     semesters, run the script once per semester with different ``--output`` paths,
@@ -77,32 +79,102 @@ from src.config import (
 )
 
 __all__ = [
+    "SemesterConfig",
     "SemesterPhase",
     "LotInfo",
+    "resolve_semester",
     "fetch_lots",
     "generate_timestamps",
     "generate_lot_data",
     "generate_all_data",
 ]
 
+
 # ---------------------------------------------------------------------------
-# Derive calendar dates from academic_calendar (Fall 2025)
+# Semester configuration — resolved at runtime from CLI --semester flag
 # ---------------------------------------------------------------------------
-_fall = ACADEMIC_CALENDARS["2025-2026"]["fall"]
 
-SEMESTER_START = datetime.combine(_fall["semester_start"], datetime.min.time())
-SEMESTER_END = datetime.combine(_fall["semester_end"], datetime.min.time())
-DATA_START = SEMESTER_START - timedelta(days=1)  # Day before semester for buffer
-FIRST_DAY_OF_CLASSES = datetime.combine(_fall["classes_start"], datetime.min.time())
-FINALS_START = datetime.combine(_fall["finals_start"], datetime.min.time())
-FINALS_END = datetime.combine(_fall["finals_end"], datetime.min.time())
+# Valid term names accepted by --semester (mapped to academic_calendar keys).
+# Limited to fall/spring — the occupancy heuristics assume a ~16-week semester structure.
+_VALID_TERMS = {"fall", "spring"}
 
-# Campus closures: dates where campus_closed=True
-CAMPUS_CLOSURES: set[date] = set(_all_closed_dates(_fall))
 
-# No-classes days where campus stays open: break dates (not closed) + reading days
-_break_not_closed = _all_break_dates(_fall) - _all_closed_dates(_fall)
-NO_CLASSES_CAMPUS_OPEN: set[date] = _break_not_closed | set(_fall["reading_days"])
+@dataclass(frozen=True)
+class SemesterConfig:
+    """Resolved calendar dates for a single semester.
+
+    Built by ``resolve_semester()`` from a CLI key like ``fall-2025``.
+    Passed through the generation pipeline.
+    """
+
+    semester_start: datetime
+    semester_end: datetime
+    data_start: datetime  # semester_start - 1 day (buffer)
+    first_day_of_classes: datetime
+    finals_start: datetime
+    finals_end: datetime
+    campus_closures: frozenset[date]
+    no_classes_campus_open: frozenset[date]
+
+
+def resolve_semester(key: str) -> SemesterConfig:
+    """Parse a CLI semester key and return a resolved ``SemesterConfig``.
+
+    Args:
+        key: ``{term}-{year}`` where *year* is the calendar year the term
+             occurs in. Examples: ``fall-2025``, ``spring-2026``
+
+    Valid terms: fall, spring.
+    """
+    # Split on last hyphen to separate year from term
+    parts = key.rsplit("-", 1)
+    if len(parts) != 2:
+        raise ValueError(
+            f"Invalid semester key '{key}'. Expected format: {{term}}-{{year}} "
+            f"(e.g., fall-2025, spring-2026)"
+        )
+
+    term_str, year_str = parts
+    try:
+        year = int(year_str)
+    except ValueError:
+        raise ValueError(
+            f"Invalid year '{year_str}' in semester key '{key}'."
+        ) from None
+
+    if term_str not in _VALID_TERMS:
+        valid = ", ".join(sorted(_VALID_TERMS))
+        raise ValueError(f"Unknown term '{term_str}'. Valid terms: {valid}")
+
+    # Map calendar year -> academic year key
+    # Spring belongs to the prior academic year (spring-2026 -> 2025-2026)
+    if term_str == "spring":
+        academic_year = f"{year - 1}-{year}"
+    else:
+        academic_year = f"{year}-{year + 1}"
+
+    sem = ACADEMIC_CALENDARS[academic_year][term_str]
+
+    semester_start = datetime.combine(sem["semester_start"], datetime.min.time())
+    semester_end = datetime.combine(sem["semester_end"], datetime.min.time())
+    classes_start = datetime.combine(sem["classes_start"], datetime.min.time())
+    finals_start = datetime.combine(sem["finals_start"], datetime.min.time())
+    finals_end = datetime.combine(sem["finals_end"], datetime.min.time())
+
+    closed = frozenset(_all_closed_dates(sem))
+    break_not_closed = _all_break_dates(sem) - _all_closed_dates(sem)
+    no_classes_open = frozenset(break_not_closed | set(sem.get("reading_days", [])))
+
+    return SemesterConfig(
+        semester_start=semester_start,
+        semester_end=semester_end,
+        data_start=semester_start - timedelta(days=1),
+        first_day_of_classes=classes_start,
+        finals_start=finals_start,
+        finals_end=finals_end,
+        campus_closures=closed,
+        no_classes_campus_open=no_classes_open,
+    )
 
 
 # =============================================================================
@@ -118,17 +190,16 @@ class SemesterPhase:
     multiplier: float  # Applied to base occupancy
 
 
-def get_semester_phase(date: datetime) -> SemesterPhase:
+def get_semester_phase(date: datetime, cfg: SemesterConfig) -> SemesterPhase:
     """
     Determine semester phase for a given date.
 
-    All thresholds are relative to SEMESTER_START, FIRST_DAY_OF_CLASSES,
-    and FINALS_START/FINALS_END, so this works for any semester selected
-    at the top of the module — no date edits needed.
+    All thresholds are relative to ``cfg`` dates, so this works for any
+    semester resolved at runtime.
 
     Phases (offsets from key dates):
         - pre_semester: Before semester start (low activity)
-        - orientation: Semester start to first day of classes (dept meetings)
+        - orientation: Semester start to first day of classes (moderate activity)
         - first_two_weeks: First 14 days of classes (high activity)
         - normal: Regular semester weeks
         - midterms: Weeks 8-9 of classes (medium-high activity)
@@ -137,35 +208,35 @@ def get_semester_phase(date: datetime) -> SemesterPhase:
         - post_finals: After finals end through semester end (minimal activity)
     """
     # Before semester starts
-    if date < SEMESTER_START:
+    if date < cfg.semester_start:
         return SemesterPhase("pre_semester", 0.3)
 
-    # Orientation / departmental meetings week (Aug 18-22, before classes)
-    if SEMESTER_START <= date < FIRST_DAY_OF_CLASSES:
+    # Orientation / departmental meetings week (before classes)
+    if cfg.semester_start <= date < cfg.first_day_of_classes:
         return SemesterPhase("orientation", 0.5)
 
     # First two weeks of classes - students figuring out parking
-    first_two_weeks_end = FIRST_DAY_OF_CLASSES + timedelta(days=14)
+    first_two_weeks_end = cfg.first_day_of_classes + timedelta(days=14)
     if date <= first_two_weeks_end:
         return SemesterPhase("first_two_weeks", 1.15)
 
     # Midterms (roughly week 8-9)
-    midterms_start = FIRST_DAY_OF_CLASSES + timedelta(weeks=7)
+    midterms_start = cfg.first_day_of_classes + timedelta(weeks=7)
     midterms_end = midterms_start + timedelta(days=13)
     if midterms_start <= date <= midterms_end:
         return SemesterPhase("midterms", 1.08)
 
     # Finals prep (last ~2 weeks of classes through day before finals)
-    finals_prep_start = FINALS_START - timedelta(days=11)
-    if finals_prep_start <= date < FINALS_START:
+    finals_prep_start = cfg.finals_start - timedelta(days=11)
+    if finals_prep_start <= date < cfg.finals_start:
         return SemesterPhase("finals_prep", 1.12)
 
-    # Finals week (Dec 12-18)
-    if FINALS_START <= date <= FINALS_END:
+    # Finals week
+    if cfg.finals_start <= date <= cfg.finals_end:
         return SemesterPhase("finals", 1.18)
 
-    # Post-finals (Dec 19-24, semester wind-down)
-    if date > FINALS_END:
+    # Post-finals (semester wind-down)
+    if date > cfg.finals_end:
         return SemesterPhase("post_finals", 0.15)
 
     # Normal semester
@@ -477,6 +548,7 @@ def generate_snapshot(
     capacity: int,
     lot_type: Literal["student", "employee"],
     lot_popularity: float,
+    cfg: SemesterConfig | None = None,
 ) -> dict:
     """
     Generate a single occupancy snapshot for a lot at a specific time.
@@ -487,17 +559,21 @@ def generate_snapshot(
         capacity: Lot capacity
         lot_type: "student" or "employee"
         lot_popularity: Lot-specific popularity multiplier
+        cfg: Resolved semester configuration
 
     Returns:
         Dict matching OccupancySnapshot schema
     """
+    if cfg is None:
+        cfg = resolve_semester("fall-2025")
+
     # Compute calendar features
     date_only = timestamp.date()
     campus_open = is_campus_open(timestamp)
     academic_period = get_academic_period(timestamp)
     week_of_sem, _, _ = get_week_of_semester(timestamp.date())
 
-    if date_only in CAMPUS_CLOSURES:
+    if date_only in cfg.campus_closures:
         return {
             "lot_id": lot_id,
             "timestamp": timestamp.isoformat() + "Z",
@@ -521,7 +597,7 @@ def generate_snapshot(
         base_rate = get_employee_lot_hourly_pattern(hour, minute)
 
     # Apply multipliers (semester and week)
-    semester_phase = get_semester_phase(timestamp)
+    semester_phase = get_semester_phase(timestamp, cfg)
     dow_multiplier = get_day_of_week_multiplier(timestamp.weekday(), lot_type)
 
     adjusted_rate = (
@@ -529,7 +605,7 @@ def generate_snapshot(
     )
 
     # No-classes days (campus open): employees normal, students minimal
-    if date_only in NO_CLASSES_CAMPUS_OPEN and lot_type == "student":
+    if date_only in cfg.no_classes_campus_open and lot_type == "student":
         adjusted_rate *= 0.15
 
     # Add noise (less noise during buffer/closed hours)
@@ -601,6 +677,7 @@ def generate_lot_data(
     capacity: int,
     lot_type: Literal["student", "employee"],
     timestamps: list[datetime],
+    cfg: SemesterConfig,
     max_records: int = 10000,
 ) -> list[dict]:
     """
@@ -611,6 +688,7 @@ def generate_lot_data(
         capacity: Lot capacity
         lot_type: "student" or "employee"
         timestamps: All possible timestamps
+        cfg: Resolved semester configuration
         max_records: Max records per lot. If the semester produces fewer
                      timestamps than this (the typical case), all timestamps
                      are used. Only takes effect for downsampling.
@@ -628,18 +706,26 @@ def generate_lot_data(
 
     records = []
     for time in sampled_timestamps:
-        snapshot = generate_snapshot(lot_id, time, capacity, lot_type, lot_popularity)
+        snapshot = generate_snapshot(
+            lot_id, time, capacity, lot_type, lot_popularity, cfg
+        )
         records.append(snapshot)
 
     return records
 
 
-def generate_all_data(lots: list[LotInfo], max_per_lot: int = 10000) -> pd.DataFrame:
+def generate_all_data(
+    lots: list[LotInfo],
+    cfg: SemesterConfig | None = None,
+    max_per_lot: int = 10000,
+) -> pd.DataFrame:
     """
     Generate synthetic data for all lots.
 
     Args:
         lots: List of LotInfo fetched from PostgreSQL
+        cfg: Resolved semester configuration. Defaults to fall-2025
+             for backward compatibility.
         max_per_lot: Max records per lot (default 10000). The semester
                      typically produces fewer timestamps (~8,450 for Fall),
                      so all slots are used unless this is set lower.
@@ -647,17 +733,20 @@ def generate_all_data(lots: list[LotInfo], max_per_lot: int = 10000) -> pd.DataF
     Returns:
         DataFrame with all synthetic snapshots
     """
+    if cfg is None:
+        cfg = resolve_semester("fall-2025")
+
     student_lots = [lot for lot in lots if lot.lot_type == "STUDENT"]
     employee_lots = [lot for lot in lots if lot.lot_type == "EMPLOYEE"]
 
     print(f"Generating synthetic data for {len(lots)} lots...")
     print(f"  Student lots: {len(student_lots)}, Employee lots: {len(employee_lots)}")
-    print(f"Date range: {DATA_START.date()} to {SEMESTER_END.date()}")
+    print(f"Date range: {cfg.data_start.date()} to {cfg.semester_end.date()}")
     print(f"Max records per lot: {max_per_lot}")
 
     # Generate all possible timestamps once (according to semester range)
     all_timestamps = generate_timestamps(
-        DATA_START, SEMESTER_END, SNAPSHOT_INTERVAL_MINUTES
+        cfg.data_start, cfg.semester_end, SNAPSHOT_INTERVAL_MINUTES
     )
     print(f"Total possible timestamps: {len(all_timestamps)}")
 
@@ -667,7 +756,7 @@ def generate_all_data(lots: list[LotInfo], max_per_lot: int = 10000) -> pd.DataF
     print(f"\nGenerating {len(student_lots)} student lots...")
     for lot in student_lots:
         records = generate_lot_data(
-            lot.lot_id, lot.capacity, "student", all_timestamps, max_per_lot
+            lot.lot_id, lot.capacity, "student", all_timestamps, cfg, max_per_lot
         )
         all_records.extend(records)
         print(f"  {lot.lot_id}: {len(records)} records (capacity: {lot.capacity})")
@@ -676,7 +765,7 @@ def generate_all_data(lots: list[LotInfo], max_per_lot: int = 10000) -> pd.DataF
     print(f"\nGenerating {len(employee_lots)} employee lots...")
     for lot in employee_lots:
         records = generate_lot_data(
-            lot.lot_id, lot.capacity, "employee", all_timestamps, max_per_lot
+            lot.lot_id, lot.capacity, "employee", all_timestamps, cfg, max_per_lot
         )
         all_records.extend(records)
         print(f"  {lot.lot_id}: {len(records)} records (capacity: {lot.capacity})")
@@ -716,6 +805,17 @@ def main():
         help="Preview N records per lot type instead of saving",
     )
     parser.add_argument(
+        "--semester",
+        "-s",
+        default="fall-2025",
+        help=(
+            "Semester to generate data for, as {term}-{year} where year is the "
+            "calendar year the term occurs in. "
+            "Valid terms: fall, spring. "
+            "(default: fall-2025)"
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -723,6 +823,10 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Resolve semester calendar
+    cfg = resolve_semester(args.semester)
+    print(f"Semester: {args.semester}")
 
     # Set random seeds for reproducibility
     random.seed(args.seed)
@@ -738,7 +842,7 @@ def main():
         print("=== PREVIEW MODE ===\n")
 
         all_timestamps = generate_timestamps(
-            DATA_START, SEMESTER_END, SNAPSHOT_INTERVAL_MINUTES
+            cfg.data_start, cfg.semester_end, SNAPSHOT_INTERVAL_MINUTES
         )
         sample_ts = random.sample(
             all_timestamps, min(args.preview, len(all_timestamps))
@@ -753,7 +857,7 @@ def main():
             )
             for ts in sorted(sample_ts)[: args.preview]:
                 snapshot = generate_snapshot(
-                    student_lot.lot_id, ts, student_lot.capacity, "student", 1.05
+                    student_lot.lot_id, ts, student_lot.capacity, "student", 1.05, cfg
                 )
                 print(
                     f"  {snapshot['timestamp']}: {snapshot['occupancy_rate']:.2%} "
@@ -766,7 +870,12 @@ def main():
             )
             for ts in sorted(sample_ts)[: args.preview]:
                 snapshot = generate_snapshot(
-                    employee_lot.lot_id, ts, employee_lot.capacity, "employee", 1.02
+                    employee_lot.lot_id,
+                    ts,
+                    employee_lot.capacity,
+                    "employee",
+                    1.02,
+                    cfg,
                 )
                 print(
                     f"  {snapshot['timestamp']}: {snapshot['occupancy_rate']:.2%} "
@@ -774,7 +883,7 @@ def main():
                 )
 
     else:  # Generation mode: generate and save samples
-        df = generate_all_data(lots, args.max_records_per_lot)
+        df = generate_all_data(lots, cfg, args.max_records_per_lot)
 
         output = args.output
         if not output.endswith(".parquet"):

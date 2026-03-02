@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.data.synthetic import LotInfo, generate_all_data
+from src.data.synthetic import LotInfo, generate_all_data, resolve_semester
 
 
 # =============================================================================
@@ -87,9 +87,21 @@ def sample_snapshot_df():
 # =============================================================================
 
 
+@pytest.fixture
+def fall_2025_cfg():
+    """Default semester config for tests."""
+    return resolve_semester("fall-2025")
+
+
 @pytest.fixture(scope="module")
-def synthetic_df(sample_lots_minimal):
+def fall_2025_cfg_module():
+    """Module-scoped semester config for heavier test fixtures."""
+    return resolve_semester("fall-2025")
+
+
+@pytest.fixture(scope="module")
+def synthetic_df(sample_lots_minimal, fall_2025_cfg_module):
     """Generate a small synthetic dataset for training / integration tests."""
     random.seed(42)
     np.random.seed(42)
-    return generate_all_data(sample_lots_minimal, max_per_lot=200)
+    return generate_all_data(sample_lots_minimal, fall_2025_cfg_module, max_per_lot=200)

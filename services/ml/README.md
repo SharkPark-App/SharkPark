@@ -86,18 +86,21 @@ pip install -e ".[dev]"
 
 ### 0. Generate synthetic data (cold-start)
 ```bash
-python -m src.data.synthetic
+python -m src.data.synthetic                                        # Generate Fall 2025 (default)
+python -m src.data.synthetic --semester spring-2026                  # Generate Spring 2026
 ```
-Generates synthetic occupancy snapshots for each parking lot across the Fall 2025 semester at 15-minute intervals. Fetches lot metadata (IDs, capacities, types) from PostgreSQL and outputs a parquet file to `data/`.
+Generates synthetic occupancy snapshots for each parking lot at 15-minute intervals across the specified semester. Fetches lot metadata (IDs, capacities, types) from PostgreSQL and outputs a parquet file to `data/`.
 
-> **Note:** You only need to run this once. Re-run only if you change the synthetic data generator or want a different seed.
+The `--semester` flag accepts `{term}-{year}` where year is the calendar year the term occurs in. Valid terms: `fall`, `spring`.
+
+> **Note:** You only need to run this once per semester. Re-run only if you change the synthetic data generator or want a different seed. To combine semesters, run once per semester with different `--output` paths and concatenate the parquets.
 
 Options:
 ```bash
-python -m src.data.synthetic --preview 10                          # Preview 10 sample records per lot type
-python -m src.data.synthetic --output data/custom.parquet          # Custom output filename
+python -m src.data.synthetic --semester fall-2025 --preview 10      # Preview 10 sample records per lot type
+python -m src.data.synthetic --output data/custom.parquet           # Custom output filename
 python -m src.data.synthetic --max-records-per-lot 5000             # Downsample to fewer records per lot
-python -m src.data.synthetic --seed 123                            # Different random seed (default: 42)
+python -m src.data.synthetic --seed 123                             # Different random seed (default: 42)
 ```
 
 Requires PostgreSQL to be running with seeded lot data. 
