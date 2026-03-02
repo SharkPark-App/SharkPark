@@ -12,6 +12,7 @@ Features:
 """
 
 from datetime import datetime
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -77,7 +78,10 @@ def compute_lag_features(df: pd.DataFrame) -> pd.DataFrame:
 # =============================================================================
 
 
-def prepare_training_features(df: pd.DataFrame) -> pd.DataFrame:
+def prepare_training_features(
+    df: pd.DataFrame,
+    min_confidence: Sequence[str] | None = ("HIGH", "MEDIUM"),
+) -> pd.DataFrame:
     """
     Prepare training data for the short-term XGBoost model.
 
@@ -89,6 +93,9 @@ def prepare_training_features(df: pd.DataFrame) -> pd.DataFrame:
         df: Raw OccupancySnapshot DataFrame with columns:
             lot_id, timestamp, occupancy, occupancy_rate,
             academic_period, week_of_semester, is_campus_open.
+        min_confidence: Accepted confidence levels. Defaults to
+            ("HIGH", "MEDIUM") for training quality. Pass None to
+            skip confidence filtering.
 
     Returns:
         DataFrame with columns: lot_id, hour, day_of_week, academic_period,
@@ -96,7 +103,7 @@ def prepare_training_features(df: pd.DataFrame) -> pd.DataFrame:
         occupancy_rate_lag_1..4, momentum, sin_hour, cos_hour,
         sin_day, cos_day, target_hour, hours_ahead, target_occupancy_rate.
     """
-    df = validate_snapshot_data(df)
+    df = validate_snapshot_data(df, min_confidence=min_confidence)
     df = normalize_timestamps(df)
     df = extract_time_components(df, "timestamp")
 
@@ -113,53 +120,43 @@ def prepare_training_features(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return _empty_training_df()
 
-    # Build a lookup of actual occupancy_rate by (lot_id, date, hour)
-    actuals = df.set_index(["lot_id", "date", "hour"])["occupancy_rate"].to_dict()
+    # Vectorised cross-join: expand each snapshot to all future prediction hours
+    feature_cols = [
+        "lot_id",
+        "hour",
+        "day_of_week",
+        "academic_period",
+        "week_of_semester",
+        "is_campus_open",
+        "occupancy_rate",
+        "occupancy_rate_lag_1",
+        "occupancy_rate_lag_2",
+        "occupancy_rate_lag_3",
+        "occupancy_rate_lag_4",
+        "momentum",
+        "date",
+    ]
+    hours_df = pd.DataFrame({"target_hour": PREDICTION_HOURS})
+    expanded = df[feature_cols].merge(hours_df, how="cross")
 
-    # For each snapshot, create rows for each future prediction hour
-    rows = []
-    for _, row in df.iterrows():
-        current_hour = row["hour"]
-        lot_id = row["lot_id"]
-        date = row["date"]
+    # Keep only future hours (target must be after current snapshot)
+    expanded = expanded[expanded["target_hour"] > expanded["hour"]]
 
-        # Create hours for given snapshot
-        for target_hour in PREDICTION_HOURS:
-            # Exclude hours before current snapshots
-            if target_hour <= current_hour:
-                continue
-
-            # Look up the actual occupancy at the target hour
-            target_val = actuals.get((lot_id, date, target_hour))
-            if target_val is None:
-                continue  # No ground truth for this target
-
-            hours_ahead = target_hour - current_hour
-
-            rows.append(
-                {
-                    "lot_id": lot_id,
-                    "hour": current_hour,
-                    "day_of_week": row["day_of_week"],
-                    "academic_period": row["academic_period"],
-                    "week_of_semester": row["week_of_semester"],
-                    "is_campus_open": row["is_campus_open"],
-                    "occupancy_rate": row["occupancy_rate"],
-                    "occupancy_rate_lag_1": row["occupancy_rate_lag_1"],
-                    "occupancy_rate_lag_2": row["occupancy_rate_lag_2"],
-                    "occupancy_rate_lag_3": row["occupancy_rate_lag_3"],
-                    "occupancy_rate_lag_4": row["occupancy_rate_lag_4"],
-                    "momentum": row["momentum"],
-                    "target_hour": target_hour,
-                    "hours_ahead": hours_ahead,
-                    "target_occupancy_rate": target_val,
-                }
-            )
-
-    if not rows:
+    if expanded.empty:
         return _empty_training_df()
 
-    features = pd.DataFrame(rows)
+    expanded["hours_ahead"] = expanded["target_hour"] - expanded["hour"]
+
+    # Join actual occupancy at each target hour as the training label
+    actuals_df = df[["lot_id", "date", "hour", "occupancy_rate"]].rename(
+        columns={"hour": "target_hour", "occupancy_rate": "target_occupancy_rate"}
+    )
+    expanded = expanded.merge(
+        actuals_df, on=["lot_id", "date", "target_hour"], how="inner"
+    )
+
+    # Drop the intermediate date column used for the actuals join
+    features = expanded.drop(columns=["date"])
     features = add_hour_encoding(features)
     features = add_day_encoding(features)
 
@@ -204,6 +201,7 @@ def prepare_inference_features(
     recent_snapshots: pd.DataFrame,
     lot_ids: list[str],
     prediction_time: datetime | None = None,
+    min_confidence: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """
     Prepare inference features for short-term predictions.
@@ -220,6 +218,9 @@ def prepare_inference_features(
         lot_ids: List of lot IDs to generate predictions for.
         prediction_time: "Now" — when the prediction is being made.
             Defaults to datetime.now() if None.
+        min_confidence: Accepted confidence levels. Defaults to None
+            (accept all) since inference during cold-start may only
+            have LOW-confidence readings available.
 
     Returns:
         DataFrame with columns: lot_id, hour, day_of_week, academic_period,
@@ -230,7 +231,7 @@ def prepare_inference_features(
     if prediction_time is None:
         prediction_time = datetime.now()
 
-    df = validate_snapshot_data(recent_snapshots)
+    df = validate_snapshot_data(recent_snapshots, min_confidence=min_confidence)
     df = normalize_timestamps(df)
     df = extract_time_components(df, "timestamp")
 

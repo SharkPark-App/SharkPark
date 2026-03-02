@@ -3,15 +3,17 @@ Tests for the short-term XGBoost model (src.models.short_term).
 
 Covers:
     - Training and prediction pipeline
-    - Save/load round-trip
+    - Save/load round-trip (local and MLflow)
     - Error handling for untrained model
 
 Run from services/ml/:
     python -m pytest tests/models/test_short_term.py -v
 """
 
+import os
 import tempfile
 
+import mlflow
 import numpy as np
 import pytest
 
@@ -135,3 +137,33 @@ class TestShortTermModel:
         model = ShortTermModel()
         with pytest.raises(RuntimeError, match="No trained model"):
             model.save("/tmp/test_model")
+
+    def test_mlflow_save_and_load(self, synthetic_df):
+        """save_mlflow → load_mlflow round-trip produces identical predictions."""
+        model = ShortTermModel()
+        result = model.train(synthetic_df)
+
+        if "test_features" not in result or result["test_features"].empty:
+            pytest.skip("No test features produced")
+
+        # Capture predictions from the original in-memory model
+        test_features = result["test_features"]
+        original_preds = model.predict(test_features)
+
+        # Point MLflow at a temp directory so artifacts don't
+        # pollute the real mlruns/ used during development
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mlflow.set_tracking_uri(f"file:///{tmpdir.replace(os.sep, '/')}")
+
+            run_id = model.save_mlflow(metrics={"mae": 0.05})
+            loaded_model = ShortTermModel.load_mlflow(run_id)
+
+        # Predictions from loaded model should match the original
+        loaded_preds = loaded_model.predict(test_features)
+        np.testing.assert_array_almost_equal(original_preds, loaded_preds)
+
+    def test_mlflow_save_before_train_raises(self):
+        """save_mlflow on an untrained model should raise RuntimeError."""
+        model = ShortTermModel()
+        with pytest.raises(RuntimeError, match="No trained model"):
+            model.save_mlflow(metrics={"mae": 0.0})

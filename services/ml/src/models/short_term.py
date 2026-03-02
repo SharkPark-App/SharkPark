@@ -324,14 +324,14 @@ class ShortTermModel:
                 mlflow.log_params(params)
             mlflow.log_metrics(metrics)
 
-            # Save model artifact
-            from urllib.parse import urlparse, unquote
+            # Save model artifacts
+            import tempfile
 
-            parsed = urlparse(run.info.artifact_uri)
-            artifact_path = Path(unquote(parsed.path)).resolve()
-            model_dir = artifact_path / "model"
-            model_dir.mkdir(parents=True, exist_ok=True)
-            self.save(str(model_dir))
+            # Save via temp dir + MLflow artifacts for backend-agnostic storage
+            with tempfile.TemporaryDirectory() as tmp:
+                model_dir = Path(tmp) / "model"
+                self.save(str(model_dir))
+                mlflow.log_artifacts(str(model_dir), artifact_path="model")
 
             return run.info.run_id
 
@@ -346,14 +346,13 @@ class ShortTermModel:
         Returns:
             ShortTermModel instance ready for prediction.
         """
-        from urllib.parse import urlparse, unquote
+        import tempfile
 
-        client = mlflow.tracking.MlflowClient()
-        run = client.get_run(run_id)
-        parsed = urlparse(run.info.artifact_uri)
-
-        artifact_path = Path(unquote(parsed.path)).resolve() / "model"
-        return cls.load(str(artifact_path))
+        with tempfile.TemporaryDirectory() as tmp:
+            local_dir = mlflow.artifacts.download_artifacts(
+                run_id=run_id, artifact_path="model", dst_path=tmp
+            )
+            return cls.load(local_dir)
 
     # -----------------------------------------------------------------
     # Internal helpers

@@ -7,9 +7,13 @@ Contains common transformations used by both short-term and long-term models:
 - Time bucketing
 """
 
-from typing import Tuple
+import logging
+from typing import Sequence, Tuple
+
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "normalize_timestamps",
@@ -239,12 +243,19 @@ def add_activity_level(
 # =============================================================================
 
 
-def validate_snapshot_data(df: pd.DataFrame) -> pd.DataFrame:
+def validate_snapshot_data(
+    df: pd.DataFrame,
+    min_confidence: Sequence[str] | None = ("HIGH", "MEDIUM"),
+) -> pd.DataFrame:
     """
     Validate and clean occupancy snapshot data.
 
     Args:
         df: Raw snapshot DataFrame
+        min_confidence: Accepted confidence levels. Defaults to
+            ("HIGH", "MEDIUM") for training quality. Pass None to
+            accept all confidence levels (useful for inference
+            during cold-start when most readings are LOW).
 
     Returns:
         Cleaned DataFrame with invalid rows removed
@@ -270,9 +281,21 @@ def validate_snapshot_data(df: pd.DataFrame) -> pd.DataFrame:
     # Remove rows with null values in required columns
     df = df.dropna(subset=required_cols)
 
-    # Filter out low-confidence snapshots
-    if "confidence" in df.columns:
-        df = df[df["confidence"].isin(["HIGH", "MEDIUM"])]
+    # Filter by confidence level
+    if min_confidence is not None and "confidence" in df.columns:
+        pre_filter = len(df)
+        df = df[df["confidence"].isin(min_confidence)]
+        dropped = pre_filter - len(df)
+        if pre_filter > 0 and dropped / pre_filter > 0.5:
+            logger.warning(
+                "Confidence filter dropped %d / %d rows (%.0f%%). "
+                "Accepted levels: %s. Consider passing min_confidence=None "
+                "if LOW-confidence data is acceptable for this use case.",
+                dropped,
+                pre_filter,
+                100 * dropped / pre_filter,
+                list(min_confidence),
+            )
 
     # Clamp occupancy_rate to valid range
     df["occupancy_rate"] = df["occupancy_rate"].clip(0.0, 1.0)
@@ -289,7 +312,9 @@ def validate_snapshot_data(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_base_features(
-    df: pd.DataFrame, timestamp_col: str = "timestamp"
+    df: pd.DataFrame,
+    timestamp_col: str = "timestamp",
+    min_confidence: Sequence[str] | None = ("HIGH", "MEDIUM"),
 ) -> pd.DataFrame:
     """
     Apply base feature transformations used by both models.
@@ -303,11 +328,13 @@ def prepare_base_features(
     Args:
         df: Raw snapshot DataFrame
         timestamp_col: Name of timestamp column
+        min_confidence: Accepted confidence levels (passed to
+            validate_snapshot_data).
 
     Returns:
         DataFrame with base features added
     """
-    df = validate_snapshot_data(df)
+    df = validate_snapshot_data(df, min_confidence=min_confidence)
     df = extract_time_components(df, timestamp_col)
     df = add_hour_encoding(df)
     df = add_day_encoding(df)

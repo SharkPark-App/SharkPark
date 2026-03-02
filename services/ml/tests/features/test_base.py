@@ -224,6 +224,41 @@ class TestValidateSnapshotData:
         result = validate_snapshot_data(sample_snapshot_df)
         assert len(result) == 2
 
+    def test_min_confidence_none_keeps_all(self, sample_snapshot_df):
+        """Passing min_confidence=None should skip confidence filtering."""
+        sample_snapshot_df.loc[0, "confidence"] = "LOW"
+        result = validate_snapshot_data(sample_snapshot_df, min_confidence=None)
+        assert len(result) == 3
+
+    def test_min_confidence_custom_levels(self, sample_snapshot_df):
+        """Custom confidence levels should be respected."""
+        sample_snapshot_df["confidence"] = ["LOW", "MEDIUM", "HIGH"]
+        result = validate_snapshot_data(
+            sample_snapshot_df, min_confidence=["LOW", "MEDIUM"]
+        )
+        assert len(result) == 2
+
+    def test_warns_when_majority_dropped(self, sample_snapshot_df, caplog):
+        """Should warn when >50% of rows are dropped by confidence filter."""
+        import logging
+
+        # Make 2 of 3 rows LOW confidence (67% drop rate)
+        sample_snapshot_df["confidence"] = ["LOW", "LOW", "HIGH"]
+
+        with caplog.at_level(logging.WARNING, logger="src.features.base"):
+            result = validate_snapshot_data(sample_snapshot_df)
+        assert len(result) == 1
+        assert "dropped 2 / 3" in caplog.text.lower()
+
+    def test_no_warning_when_minority_dropped(self, sample_snapshot_df, caplog):
+        """Should not warn when <=50% of rows are dropped."""
+        import logging
+
+        sample_snapshot_df["confidence"] = ["LOW", "HIGH", "HIGH"]
+        with caplog.at_level(logging.WARNING, logger="src.features.base"):
+            validate_snapshot_data(sample_snapshot_df)
+        assert "dropped" not in caplog.text.lower()
+
     def test_clamps_occupancy_rate(self, sample_snapshot_df):
         sample_snapshot_df.loc[0, "occupancy_rate"] = 1.5
         sample_snapshot_df.loc[1, "occupancy_rate"] = -0.2

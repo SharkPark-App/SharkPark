@@ -22,7 +22,7 @@ Output Schema (matches Aurora occupancy_snapshots + local-only fields):
     - is_campus_open: bool     # Whether campus is open
 
 
-Volume: ~8,450 records per lot × 28 lots ≈ 237K total records
+Volume: ~8,450 records per lot x 28 lots ≈ 237K total records
     (one snapshot per 15-min slot across the semester; actual count depends on semester length)
 
 Semester Configuration:
@@ -50,7 +50,7 @@ Patterns Modeled:
 
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 from dataclasses import dataclass
 import argparse
@@ -98,16 +98,11 @@ FINALS_START = datetime.combine(_fall["finals_start"], datetime.min.time())
 FINALS_END = datetime.combine(_fall["finals_end"], datetime.min.time())
 
 # Campus closures: dates where campus_closed=True
-CAMPUS_CLOSURES = [
-    datetime.combine(d, datetime.min.time()) for d in sorted(_all_closed_dates(_fall))
-]
+CAMPUS_CLOSURES: set[date] = set(_all_closed_dates(_fall))
 
 # No-classes days where campus stays open: break dates (not closed) + reading days
 _break_not_closed = _all_break_dates(_fall) - _all_closed_dates(_fall)
-NO_CLASSES_CAMPUS_OPEN = [
-    datetime.combine(d, datetime.min.time())
-    for d in sorted(_break_not_closed | set(_fall["reading_days"]))
-]
+NO_CLASSES_CAMPUS_OPEN: set[date] = _break_not_closed | set(_fall["reading_days"])
 
 
 # =============================================================================
@@ -272,7 +267,7 @@ def get_student_lot_hourly_pattern(hour: int, minute: int) -> float:
     time_decimal = hour + minute / 60.0
 
     # Buffer hours (closed)
-    if hour < OPERATING_START_HOUR or hour >= OPERATING_END_HOUR:
+    if hour < OPERATING_START_HOUR or hour > OPERATING_END_HOUR:
         return 0.0
 
     # Early morning ramp (7-8am)
@@ -333,7 +328,7 @@ def get_employee_lot_hourly_pattern(hour: int, minute: int) -> float:
     time_decimal = hour + minute / 60.0
 
     # Buffer hours
-    if hour < OPERATING_START_HOUR or hour >= OPERATING_END_HOUR:
+    if hour < OPERATING_START_HOUR or hour > OPERATING_END_HOUR:
         return 0.0
 
     # Early arrival (7-8am)
@@ -497,7 +492,7 @@ def generate_snapshot(
         Dict matching OccupancySnapshot schema
     """
     # Compute calendar features
-    date_only = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+    date_only = timestamp.date()
     campus_open = is_campus_open(timestamp)
     academic_period = get_academic_period(timestamp)
     week_of_sem, _, _ = get_week_of_semester(timestamp.date())
