@@ -74,8 +74,6 @@ model Lot {
   event_impacts       EventImpact[]
   predictions_short   PredictionShortTerm[]
   predictions_long    PredictionLongTerm[]
-  validation_events   ValidationEvent[]
-  parking_sessions    ParkingSession[]
 
   @@unique([school_id, lot_id])
   @@index([lot_type], name: "idx_lots_type")
@@ -117,17 +115,23 @@ model UserFavorite {
 // ─── Timeseries Tables ────────────────────────────────────
 
 model OccupancyEvent {
-  id          String    @id @default(cuid())
-  lot_id      String
-  event_type  EventType
-  device_hash String    // SHA-256 hash of device_id + salt
-  timestamp   DateTime
-  created_at  DateTime  @default(now())
+  id                String           @id @default(cuid())
+  lot_id            String
+  event_type        EventType
+  device_hash       String           // SHA-256 hash of device_id + salt
+  timestamp         DateTime
+  created_at        DateTime         @default(now())
+  
+  // Client-side validation fields (privacy-preserving)
+  validation_status ValidationStatus? // Client-calculated behavior classification
+  confidence_score  Float?            // Client-calculated confidence (0.0-1.0)
+  analysis_metadata Json?             // Client analysis details (no PII)
 
   lot Lot @relation(fields: [lot_id], references: [id])
 
   @@index([lot_id, timestamp], name: "idx_events_lot_time")
   @@index([device_hash, lot_id], name: "idx_events_device")
+  @@index([validation_status], name: "idx_events_validation")
   @@map("occupancy_events")
 }
 
@@ -165,56 +169,6 @@ model DeviceState {
 
   @@unique([device_hash, lot_id])
   @@map("device_states")
-}
-
-// ─── Parking Validation Tables ───────────────────────────
-
-model ValidationEvent {
-  id               String                 @id @default(cuid())
-  device_hash      String
-  lot_id           String
-  event_type       ValidationEventType
-  timestamp        DateTime
-  speed_mph        Float?                 // Speed in miles per hour
-  accuracy_meters  Float?                 // GPS accuracy in meters
-  confidence_score Float                  @default(0.5) // 0.0 to 1.0
-  bluetooth_state  BluetoothState?        // Connected/Disconnected state
-  raw_data         Json?                  // Additional sensor data
-  created_at       DateTime               @default(now())
-
-  lot Lot @relation(fields: [lot_id], references: [id])
-
-  @@index([device_hash, lot_id, timestamp], name: "idx_validation_device_time")
-  @@index([lot_id, timestamp], name: "idx_validation_lot_time")
-  @@map("validation_events")
-}
-
-model ParkingSession {
-  id                      String                 @id @default(cuid())
-  device_hash             String
-  lot_id                  String
-  enter_time              DateTime
-  exit_time               DateTime?
-  validation_status       ValidationStatus       @default(ANALYZING)
-  confidence_score        Float?                 // Overall session confidence
-  occupancy_contribution  Boolean                @default(false) // Count toward occupancy?
-  
-  // Validation factors (JSON for flexibility)
-  speed_transition_score  Float?                 // 0-1: Quality of speed changes
-  dwell_time_score       Float?                 // 0-1: Time spent in lot
-  movement_pattern_score Float?                 // 0-1: Walking/driving patterns
-  bluetooth_score        Float?                 // 0-1: BT disconnect/connect
-  
-  validation_metadata    Json?                  // Additional validation data
-  created_at             DateTime               @default(now())
-  updated_at             DateTime               @updatedAt
-
-  lot Lot @relation(fields: [lot_id], references: [id])
-
-  @@index([device_hash, enter_time], name: "idx_sessions_device_time")
-  @@index([lot_id, enter_time], name: "idx_sessions_lot_time")
-  @@index([validation_status], name: "idx_sessions_status")
-  @@map("parking_sessions")
 }
 
 // ─── Campus Context Tables ────────────────────────────────
@@ -364,27 +318,9 @@ enum ImpactLevel {
   HIGH
 }
 
-enum ValidationEventType {
-  SPEED_CHANGE       // Significant speed change detected
-  STATIONARY         // Device stopped moving
-  WALKING            // Walking speed detected (2-4 mph)
-  DRIVING            // Driving speed detected (10+ mph)
-  BLUETOOTH_CONNECT  // Bluetooth device connected
-  BLUETOOTH_DISCONNECT // Bluetooth device disconnected
-  GEOFENCE_ENTER     // Entered lot geofence
-  GEOFENCE_EXIT      // Exited lot geofence
-  GPS_ACCURACY_CHANGE // GPS accuracy changed significantly
-}
-
-enum BluetoothState {
-  CONNECTED
-  DISCONNECTED
-  UNKNOWN
-}
-
 enum ValidationStatus {
   ANALYZING          // Session still being analyzed
-  PARKED            // Confirmed parking event
+  PARKED            // Confirmed parking event  
   DROVE_THROUGH     // Just drove through, no parking
   SEARCHING         // Was searching for parking
   UNKNOWN           // Cannot determine with confidence

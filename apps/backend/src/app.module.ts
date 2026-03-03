@@ -11,7 +11,6 @@ import { WeatherModule } from './weather/weather.module';
 import { AuthModule } from './auth/auth.module';
 import { OccupancyEventsModule } from './occupancy-events/occupancy-events.module';
 import { ReliabilityModule } from './reliability/reliability.module';
-import { ParkingValidationModule } from './parking-validation/parking-validation.module';
 
 @Module({
   imports: [
@@ -25,7 +24,6 @@ import { ParkingValidationModule } from './parking-validation/parking-validation
     AuthModule,
     OccupancyEventsModule,
     ReliabilityModule,
-    ParkingValidationModule,
   ],
   controllers: [AppController],
   providers: [

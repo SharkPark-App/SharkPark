@@ -26,7 +26,8 @@ export class OccupancyEventsService {
    * Includes deduplication logic to prevent ENTER→ENTER or EXIT→EXIT.
    */
   async create(dto: CreateOccupancyEventDto): Promise<CreateEventResponse> {
-    const deviceHash = hashDeviceId(dto.device_id);
+    // Use client-provided hash if available, otherwise generate one
+    const deviceHash = dto.device_hash || hashDeviceId(dto.device_id);
     const eventId = generateEventId();
     const now = new Date().toISOString();
 
@@ -52,28 +53,36 @@ export class OccupancyEventsService {
       throw new InternalServerErrorException(`Lot ${dto.lot_id} not found`);
     }
 
+    // Determine if this event should count toward occupancy based on client validation
+    const shouldCountTowardOccupancy = this.shouldCountTowardOccupancy(dto);
+
     try {
       // Use a transaction for atomicity: store event + update occupancy + update device state
       await this.prisma.$transaction(async (tx) => {
-        // Store the event
+        // Store the event with validation data
         await tx.occupancyEvent.create({
           data: {
             lot_id: lot.id,
             event_type: dto.event_type as EventType,
             device_hash: deviceHash,
             timestamp: new Date(dto.timestamp),
+            validation_status: dto.validation_status || null,
+            confidence_score: dto.confidence_score || null,
+            analysis_metadata: dto.analysis_metadata ? JSON.parse(JSON.stringify(dto.analysis_metadata)) : undefined,
           },
         });
 
-        // Update lot occupancy atomically
-        const increment = dto.event_type === 'ENTER' ? 1 : -1;
-        if (dto.event_type === 'EXIT' && lot.current_occupancy <= 0) {
-          this.logger.warn(`Cannot decrement occupancy below 0 for lot ${dto.lot_id}`);
-        } else {
-          await tx.lot.update({
-            where: { id: lot.id },
-            data: { current_occupancy: { increment } },
-          });
+        // Update lot occupancy atomically - only if validation indicates it should count
+        if (shouldCountTowardOccupancy) {
+          const increment = dto.event_type === 'ENTER' ? 1 : -1;
+          if (dto.event_type === 'EXIT' && lot.current_occupancy <= 0) {
+            this.logger.warn(`Cannot decrement occupancy below 0 for lot ${dto.lot_id}`);
+          } else {
+            await tx.lot.update({
+              where: { id: lot.id },
+              data: { current_occupancy: { increment } },
+            });
+          }
         }
 
         // Update device's last event type for deduplication
@@ -84,9 +93,11 @@ export class OccupancyEventsService {
         });
       });
 
-      this.logger.log(
-        `Recorded ${dto.event_type} event for lot ${dto.lot_id} (device: ${deviceHash.substring(0, 8)}...)`
-      );
+      const logMessage = shouldCountTowardOccupancy 
+        ? `Recorded ${dto.event_type} event for lot ${dto.lot_id} (validation: ${dto.validation_status || 'none'})`
+        : `Recorded ${dto.event_type} event for lot ${dto.lot_id} (excluded from occupancy: ${dto.validation_status})`;
+      
+      this.logger.log(`${logMessage} (device: ${deviceHash.substring(0, 8)}...)`);
 
       return {
         event_id: eventId,
@@ -98,6 +109,35 @@ export class OccupancyEventsService {
     } catch (error) {
       this.logger.error(`Failed to record occupancy event for lot ${dto.lot_id}`, error);
       throw new InternalServerErrorException('Failed to record occupancy event');
+    }
+  }
+
+  /**
+   * Determine if an event should count toward occupancy based on client-side validation
+   */
+  private shouldCountTowardOccupancy(dto: CreateOccupancyEventDto): boolean {
+    // If no validation status provided, count all events (backward compatibility)
+    if (!dto.validation_status) {
+      return true;
+    }
+
+    // Only count events that the client classified as actual parking
+    // This filters out drive-throughs and searching behavior
+    switch (dto.validation_status) {
+      case 'PARKED':
+        return true;
+      case 'DROVE_THROUGH':
+      case 'SEARCHING':
+        return false;
+      case 'ANALYZING':
+      case 'UNKNOWN':
+        // For uncertain classifications, use confidence score if available
+        if (dto.confidence_score !== undefined) {
+          return dto.confidence_score > 0.7; // High confidence threshold
+        }
+        return true; // Default to counting if no confidence score
+      default:
+        return true;
     }
   }
 

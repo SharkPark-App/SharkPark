@@ -1,0 +1,17 @@
+{
+  "name": "@sharkpark/parking-validation",
+  "version": "1.0.0",
+  "description": "Parking behavior analysis algorithms for client-side validation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.7.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
