@@ -31,7 +31,6 @@ from src.academic_calendar import (
     get_week_of_semester,
     is_class_day,
     get_semester_progress,
-    get_academic_period,
     is_campus_open,
 )
 
@@ -56,6 +55,5 @@ __all__ = [
     "get_week_of_semester",
     "is_class_day",
     "get_semester_progress",
-    "get_academic_period",
     "is_campus_open",
 ]

@@ -109,11 +109,13 @@ class TestResolveSemester:
 
     def test_fall_semester(self):
         cfg = resolve_semester("fall-2025")
+        assert cfg.semester == "fall"
         assert cfg.semester_start.year == 2025
         assert cfg.finals_start is not None
 
     def test_spring_semester(self):
         cfg = resolve_semester("spring-2026")
+        assert cfg.semester == "spring"
         assert cfg.first_day_of_classes.year == 2026
         assert cfg.finals_start is not None
 
@@ -148,9 +150,11 @@ class TestGenerateAllData:
             "occupancy_rate",
             "confidence",
             "is_cold_start",
+            "semester",
             "academic_period",
             "week_of_semester",
             "is_campus_open",
+            "source",
         }
         assert expected_cols == set(df.columns)
 
@@ -170,6 +174,11 @@ class TestGenerateAllData:
         df = generate_all_data(sample_lots, fall_2025_cfg, max_per_lot=200)
         assert (df["occupancy_rate"] >= 0.0).all()
         assert (df["occupancy_rate"] <= 1.0).all()
+
+    def test_source_column_is_synthetic(self, sample_lots, fall_2025_cfg):
+        """Every generated row must be tagged source='synthetic'"""
+        df = generate_all_data(sample_lots, fall_2025_cfg, max_per_lot=50)
+        assert (df["source"] == "synthetic").all()
 
     def test_spring_semester_generates_data(self, sample_lots):
         """Verify that a non-default semester produces valid data."""

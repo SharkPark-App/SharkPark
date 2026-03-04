@@ -34,7 +34,7 @@ __all__ = [
     "get_week_of_semester",
     "is_class_day",
     "get_semester_progress",
-    "get_academic_period",
+    "get_semester",
     "is_campus_open",
 ]
 
@@ -416,7 +416,7 @@ def _academic_year_for_date(d: date) -> int:
     return d.year if d.month >= 8 else d.year - 1
 
 
-def _find_semester(d: date) -> tuple[dict, str, bool] | None:
+def _find_semester(d: date) -> tuple[dict, str, str, bool] | None:
     """
     Find the semester that contains a given date.
 
@@ -428,7 +428,7 @@ def _find_semester(d: date) -> tuple[dict, str, bool] | None:
         d: The date to look up.
 
     Returns:
-        A tuple of (semester_dict, semester_label, is_intersession),
+        A tuple of (semester_dict, semester_label, sem_key, is_intersession),
         or None if the date does not fall within any semester.
     """
     # Locate year data for given date
@@ -443,7 +443,7 @@ def _find_semester(d: date) -> tuple[dict, str, bool] | None:
         if start and end and start <= d <= end:
             is_intersession = sem_name in INTERSESSION_KEYS
             label = sem_name.replace("_", " ").title()
-            return sem, f"{label} {year_key}", is_intersession
+            return sem, f"{label} {year_key}", sem_name, is_intersession
     return None
 
 
@@ -452,25 +452,34 @@ def _find_semester(d: date) -> tuple[dict, str, bool] | None:
 # ---------------------------------------------------------------------------
 
 
-def get_week_of_semester(d: date) -> tuple[int, str, str]:
+def get_week_of_semester(d: date) -> tuple[int, str]:
     """
-    Get the week number, period type, and semester name for a date.
+    Get the week number and academic period for a date.
 
     Args:
         d: The date to classify.
 
     Returns:
-        Tuple of (week_number, period_type, semester_name).
-        week_number: 1-based week of the semester (0 if before classes).
-        period_type: One of "classes", "finals", "break", "reading_day",
-                     "pre_classes", "intersession", "between_semesters".
-        semester_name: e.g. "Fall 2025-2026" or "Between Semesters".
+        Tuple of (week_number, period).
+        week_number: 1-based week of the semester (0 if outside classes).
+        period: One of "early", "regular", "midterms", "late",
+            "dead_week", "finals", "break".
+            - "early": first 2 weeks of classes (weeks 1-2, fall/spring only)
+            - "regular": standard class weeks (weeks 3-7, fall/spring only)
+            - "midterms": weeks 8-9 of classes (fall/spring only)
+            - "late": post-midterm stretch (weeks 10-14, fall/spring only)
+            - "dead_week": last week of classes before finals (week 15, fall/spring only)
+            - "finals": official finals period
+            - "break": breaks, holidays, or outside any semester
     """
+    if isinstance(d, datetime):
+        d = d.date() if hasattr(d, "date") else d
+
     result = _find_semester(d)
     if result is None:
-        return 0, "between_semesters", "Between Semesters"
+        return 0, "break"
 
-    sem, sem_name, is_intersession = result
+    sem, _, _, is_intersession = result
 
     classes_start = sem.get("classes_start")
     classes_end = sem.get("classes_end")
@@ -485,21 +494,30 @@ def get_week_of_semester(d: date) -> tuple[int, str, str]:
     else:
         week = 0
 
-    # Determine period type
-    if d in reading_days:
-        period = "reading_day"
-    elif d in break_dates:
+    # Determine period
+    if d in break_dates:
         period = "break"
     elif finals_start and finals_end and finals_start <= d <= finals_end:
         period = "finals"
     elif classes_start and classes_end and classes_start <= d <= classes_end:
-        period = "intersession" if is_intersession else "classes"
-    elif classes_start and d < classes_start:
-        period = "pre_classes"
+        if not is_intersession and week <= 2:
+            period = "early"
+        elif not is_intersession and 3 <= week <= 7:
+            period = "regular"
+        elif not is_intersession and 8 <= week <= 9:
+            period = "midterms"
+        elif not is_intersession and 10 <= week <= 14:
+            period = "late"
+        elif not is_intersession and week >= 15:
+            period = "dead_week"
+        else:
+            period = "regular"
+    elif d in reading_days:
+        period = "dead_week"
     else:
         period = "break"
 
-    return week, period, sem_name
+    return week, period
 
 
 def is_class_day(d: date) -> bool:
@@ -517,7 +535,7 @@ def is_class_day(d: date) -> bool:
     if result is None:
         return False
 
-    sem, _, _ = result
+    sem, _, _, _ = result
     classes_start = sem.get("classes_start")
     classes_end = sem.get("classes_end")
 
@@ -546,7 +564,7 @@ def get_semester_progress(d: date) -> float:
     if result is None:
         return 0.0
 
-    sem, _, _ = result
+    sem, _, _, _ = result
     start = sem.get("classes_start")
     end = sem.get("finals_end") or sem.get("classes_end")
 
@@ -563,36 +581,34 @@ def get_semester_progress(d: date) -> float:
     return elapsed / total_days if total_days > 0 else 0.0
 
 
-def get_academic_period(d: date) -> str:
+_SEMESTER_MAP = {
+    "fall": "fall",
+    "spring": "spring",
+    "winter": "session",
+    "may_intersession": "session",
+    "summer": "summer",
+}
+
+
+def get_semester(d: date) -> str:
     """
-    Classify a date into a simplified academic period for ML features.
+    Classify a date into a semester category for ML features.
 
-    Returns one of: "regular", "finals", "break", "intersession", "off_session".
+    Returns one of: "fall", "spring", "summer", "session", "break".
 
-    Mapping from get_week_of_semester period types:
-        classes      -> regular
-        finals       -> finals
-        break        -> break
-        reading_day  -> regular
-        pre_classes  -> regular
-        intersession -> intersession
-        between_semesters -> off_session
+    Winter intersession and may intersession map to "session".
+    Summer session maps to "summer". Dates not within any session
+    map to "break".
     """
     if isinstance(d, datetime):
         d = d.date() if hasattr(d, "date") else d
 
-    _, period_type, _ = get_week_of_semester(d)
+    result = _find_semester(d)
+    if result is None:
+        return "break"
 
-    period_map = {
-        "classes": "regular",
-        "finals": "finals",
-        "break": "break",
-        "reading_day": "regular",
-        "pre_classes": "regular",
-        "intersession": "intersession",
-        "between_semesters": "off_session",
-    }
-    return period_map.get(period_type, "regular")
+    _, _, sem_key, _ = result
+    return _SEMESTER_MAP[sem_key]
 
 
 def is_campus_open(d: date) -> bool:
@@ -610,6 +626,6 @@ def is_campus_open(d: date) -> bool:
     if result is None:
         return True
 
-    sem, _, _ = result
+    sem, _, _, _ = result
     closed_dates = _all_closed_dates(sem)
     return d not in closed_dates

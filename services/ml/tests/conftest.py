@@ -60,7 +60,7 @@ def sample_snapshot_df():
     """A small, valid snapshot DataFrame matching the expected schema.
 
     Columns: lot_id, timestamp, occupancy, occupancy_rate, confidence,
-             academic_period, week_of_semester, is_campus_open.
+             semester, academic_period, week_of_semester, is_campus_open.
     """
     return pd.DataFrame(
         {
@@ -75,7 +75,8 @@ def sample_snapshot_df():
             "occupancy": [50, 100, 80],
             "occupancy_rate": [0.3, 0.6, 0.5],
             "confidence": ["HIGH", "HIGH", "HIGH"],
-            "academic_period": ["regular", "regular", "regular"],
+            "semester": ["fall", "fall", "fall"],
+            "academic_period": ["midterms", "midterms", "midterms"],
             "week_of_semester": [5, 5, 5],
             "is_campus_open": [True, True, True],
         }

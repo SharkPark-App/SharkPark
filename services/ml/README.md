@@ -106,7 +106,7 @@ python -m src.data.synthetic --seed 123                             # Different 
 Requires PostgreSQL to be running with seeded lot data. 
 Set `DATABASE_URL` for local PostgreSQL (default: `postgresql://sharkpark:sharkpark@localhost:5433/sharkpark`).
 
-> Output includes an `is_cold_start: true` flag for the training pipeline to distinguish synthetic from real data during the blended transition phase.
+> Output includes an `is_cold_start: true` flag and a `source: "synthetic"` column. The `source` column is generator-only (absent in real Aurora data) and is used at training time to apply sample weights when blending synthetic and real data — rows without it are treated as real.
 ----
 ### 1. Train a model
 

@@ -268,6 +268,7 @@ def validate_snapshot_data(
         "timestamp",
         "occupancy",
         "occupancy_rate",
+        "semester",
         "academic_period",
         "week_of_semester",
         "is_campus_open",

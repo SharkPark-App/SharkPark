@@ -2,7 +2,7 @@
 Tests for academic calendar config (src.academic_calendar).
 
 Covers:
-    - get_week_of_semester: week numbering, period classification, edge cases
+    - get_week_of_semester: week numbering, academic period (early/regular/midterms/late/dead_week/finals/break)
     - is_class_day: weekday/weekend, breaks, reading days, finals
     - get_semester_progress: boundaries, midpoint, outside semester
     - ACADEMIC_CALENDARS data structure integrity
@@ -21,7 +21,7 @@ from src.academic_calendar import (
     get_week_of_semester,
     is_class_day,
     get_semester_progress,
-    get_academic_period,
+    get_semester,
     is_campus_open,
 )
 
@@ -93,82 +93,121 @@ class TestGetWeekOfSemester:
     """Test week_of_semester computation and period classification."""
 
     def test_first_day_of_fall_classes(self):
-        week, period, name = get_week_of_semester(date(2025, 8, 25))
+        week, period = get_week_of_semester(date(2025, 8, 25))
         assert week == 1
-        assert period == "classes"
-        assert "Fall" in name
+        assert period == "early"
 
     def test_second_week(self):
-        week, period, _ = get_week_of_semester(date(2025, 9, 2))
+        week, period = get_week_of_semester(date(2025, 9, 2))
         assert week == 2
-        assert period == "classes"
+        assert period == "early"
 
     def test_labor_day_is_break(self):
-        week, period, _ = get_week_of_semester(date(2025, 9, 1))
+        _, period = get_week_of_semester(date(2025, 9, 1))
         assert period == "break"
 
-    def test_reading_day(self):
-        week, period, _ = get_week_of_semester(date(2025, 12, 11))
-        assert period == "reading_day"
+    def test_reading_day_is_dead_week(self):
+        _, period = get_week_of_semester(date(2025, 12, 11))
+        assert period == "dead_week"
 
     def test_finals_period(self):
-        week, period, _ = get_week_of_semester(date(2025, 12, 15))
+        _, period = get_week_of_semester(date(2025, 12, 15))
         assert period == "finals"
 
-    def test_between_semesters(self):
+    def test_between_semesters_is_break(self):
         # Dec 25 falls between fall end (Dec 24) and winter start (Jan 2)
-        week, period, name = get_week_of_semester(date(2025, 12, 25))
+        week, period = get_week_of_semester(date(2025, 12, 25))
         assert week == 0
-        assert period == "between_semesters"
+        assert period == "break"
 
-    def test_pre_classes_fall(self):
-        # Aug 18 is semester_start but before classes_start (Aug 25)
-        week, period, _ = get_week_of_semester(date(2025, 8, 20))
-        assert period == "pre_classes"
+    def test_pre_classes_is_break(self):
+        # Aug 20 is semester_start but before classes_start (Aug 25)
+        week, period = get_week_of_semester(date(2025, 8, 20))
+        assert period == "break"
         assert week == 0
 
     def test_spring_first_week(self):
-        week, period, name = get_week_of_semester(date(2026, 1, 20))
+        week, period = get_week_of_semester(date(2026, 1, 20))
         assert week == 1
-        assert period == "classes"
-        assert "Spring" in name
+        assert period == "early"
 
     def test_spring_finals(self):
-        week, period, _ = get_week_of_semester(date(2026, 5, 12))
+        _, period = get_week_of_semester(date(2026, 5, 12))
         assert period == "finals"
 
     def test_veterans_day_break(self):
-        _, period, _ = get_week_of_semester(date(2025, 11, 11))
+        _, period = get_week_of_semester(date(2025, 11, 11))
         assert period == "break"
 
     def test_thanksgiving_break(self):
-        _, period, _ = get_week_of_semester(date(2025, 11, 27))
+        _, period = get_week_of_semester(date(2025, 11, 27))
         assert period == "break"
 
-    def test_winter_session_is_intersession(self):
-        week, period, name = get_week_of_semester(date(2026, 1, 5))
-        assert period == "intersession"
-        assert "Winter" in name
+    def test_winter_session_regular(self):
+        week, period = get_week_of_semester(date(2026, 1, 5))
+        assert period == "regular"
 
-    def test_may_intersession_is_intersession(self):
-        week, period, name = get_week_of_semester(date(2026, 5, 20))
-        assert period == "intersession"
-        assert "May Intersession" in name
+    def test_may_intersession_regular(self):
+        week, period = get_week_of_semester(date(2026, 5, 20))
+        assert period == "regular"
 
-    def test_summer_session_is_intersession(self):
-        week, period, name = get_week_of_semester(date(2026, 7, 1))
-        assert period == "intersession"
-        assert "Summer" in name
+    def test_summer_session_regular(self):
+        week, period = get_week_of_semester(date(2026, 7, 1))
+        assert period == "regular"
 
     def test_intersession_break_is_break(self):
         # Memorial Day during May Intersession
-        _, period, _ = get_week_of_semester(date(2026, 5, 25))
+        _, period = get_week_of_semester(date(2026, 5, 25))
         assert period == "break"
 
     def test_independence_day_break(self):
         # Independence Day during Summer Session
-        _, period, _ = get_week_of_semester(date(2026, 7, 3))
+        _, period = get_week_of_semester(date(2026, 7, 3))
         assert period == "break"
+
+    def test_midterms_week_8(self):
+        week, period = get_week_of_semester(date(2025, 10, 15))
+        assert week == 8
+        assert period == "midterms"
+
+    def test_midterms_week_9(self):
+        week, period = get_week_of_semester(date(2025, 10, 20))
+        assert week == 9
+        assert period == "midterms"
+
+    def test_regular_after_early(self):
+        # Week 3 should be regular, not early
+        week, period = get_week_of_semester(date(2025, 9, 8))
+        assert week == 3
+        assert period == "regular"
+
+    def test_late_after_midterms(self):
+        # Week 10 should be late, not regular
+        week, period = get_week_of_semester(date(2025, 10, 27))
+        assert week == 10
+        assert period == "late"
+
+    def test_late_week_13(self):
+        # Week 13 should be late
+        week, period = get_week_of_semester(date(2025, 11, 17))
+        assert week == 13
+        assert period == "late"
+
+    def test_dead_week_15(self):
+        # Week 15 — dead week before finals
+        week, period = get_week_of_semester(date(2025, 12, 1))
+        assert week == 15
+        assert period == "dead_week"
+
+    def test_dead_week_16(self):
+        # Week 16 (partial, last class days before reading/finals) — also dead_week
+        week, period = get_week_of_semester(date(2025, 12, 8))
+        assert week == 16
+        assert period == "dead_week"
+
+    def test_accepts_datetime(self):
+        _, period = get_week_of_semester(datetime(2025, 9, 3, 10, 30, 0))
+        assert period == "early"
 
 
 # =============================================================================
@@ -281,52 +320,42 @@ class TestGetSemesterProgress:
 
 
 # =============================================================================
-# Adapter: get_academic_period
+# Adapter: get_semester
 # =============================================================================
 
 
-class TestGetAcademicPeriod:
-    """Test the get_academic_period adapter function."""
+class TestGetSemester:
+    """Test the get_semester adapter function."""
 
-    def test_regular_class_day(self):
-        assert get_academic_period(date(2025, 9, 3)) == "regular"
+    def test_fall_class_day(self):
+        assert get_semester(date(2025, 9, 3)) == "fall"
 
-    def test_finals(self):
-        assert get_academic_period(date(2025, 12, 15)) == "finals"
+    def test_spring_class_day(self):
+        assert get_semester(date(2026, 2, 10)) == "spring"
 
-    def test_break_holiday(self):
-        assert get_academic_period(date(2025, 9, 1)) == "break"  # Labor Day
+    def test_winter_intersession_is_session(self):
+        assert get_semester(date(2026, 1, 5)) == "session"
 
-    def test_between_semesters_returns_off_session(self):
-        # Dec 25 is between fall end (Dec 24) and winter start (Jan 2)
-        assert get_academic_period(date(2025, 12, 25)) == "off_session"
+    def test_may_intersession_is_session(self):
+        assert get_semester(date(2026, 5, 20)) == "session"
 
-    def test_reading_day_is_regular(self):
-        # Reading days map to "regular" (not a break for period classification)
-        assert get_academic_period(date(2025, 12, 11)) == "regular"
+    def test_summer_session_is_summer(self):
+        assert get_semester(date(2026, 7, 1)) == "summer"
 
-    def test_pre_classes_is_regular(self):
-        assert get_academic_period(date(2025, 8, 20)) == "regular"
+    def test_between_semesters_is_break(self):
+        # Dec 25 is between fall end and winter start
+        assert get_semester(date(2025, 12, 25)) == "break"
+
+    def test_fall_finals_still_fall(self):
+        assert get_semester(date(2025, 12, 15)) == "fall"
+
+    def test_fall_break_still_fall(self):
+        # Labor Day is within fall semester
+        assert get_semester(date(2025, 9, 1)) == "fall"
 
     def test_accepts_datetime(self):
         dt = datetime(2025, 9, 3, 10, 30, 0)
-        assert get_academic_period(dt) == "regular"
-
-    def test_spring_regular(self):
-        assert get_academic_period(date(2026, 2, 10)) == "regular"
-
-    def test_winter_session_intersession(self):
-        assert get_academic_period(date(2026, 1, 5)) == "intersession"
-
-    def test_may_intersession_intersession(self):
-        assert get_academic_period(date(2026, 5, 20)) == "intersession"
-
-    def test_summer_session_intersession(self):
-        assert get_academic_period(date(2026, 7, 1)) == "intersession"
-
-    def test_intersession_break_is_break(self):
-        # Memorial Day during May Intersession
-        assert get_academic_period(date(2026, 5, 25)) == "break"
+        assert get_semester(dt) == "fall"
 
 
 # =============================================================================

@@ -92,14 +92,14 @@ def prepare_training_features(
     Args:
         df: Raw OccupancySnapshot DataFrame with columns:
             lot_id, timestamp, occupancy, occupancy_rate,
-            academic_period, week_of_semester, is_campus_open.
+            semester, academic_period, week_of_semester, is_campus_open.
         min_confidence: Accepted confidence levels. Defaults to
             ("HIGH", "MEDIUM") for training quality. Pass None to
             skip confidence filtering.
 
     Returns:
-        DataFrame with columns: lot_id, hour, day_of_week, academic_period,
-        week_of_semester, is_campus_open, occupancy_rate,
+        DataFrame with columns: lot_id, hour, day_of_week, semester,
+        academic_period, week_of_semester, is_campus_open, occupancy_rate,
         occupancy_rate_lag_1..4, momentum, sin_hour, cos_hour,
         sin_day, cos_day, target_hour, hours_ahead, target_occupancy_rate.
     """
@@ -125,6 +125,7 @@ def prepare_training_features(
         "lot_id",
         "hour",
         "day_of_week",
+        "semester",
         "academic_period",
         "week_of_semester",
         "is_campus_open",
@@ -172,6 +173,7 @@ def _empty_training_df() -> pd.DataFrame:
             "lot_id",
             "hour",
             "day_of_week",
+            "semester",
             "academic_period",
             "week_of_semester",
             "is_campus_open",
@@ -213,8 +215,8 @@ def prepare_inference_features(
     Args:
         recent_snapshots: Recent OccupancySnapshot data (last ~1 hour
             per lot is sufficient). Must include lot_id, timestamp,
-            occupancy, occupancy_rate, academic_period, week_of_semester,
-            is_campus_open.
+            occupancy, occupancy_rate, semester, academic_period,
+            week_of_semester, is_campus_open.
         lot_ids: List of lot IDs to generate predictions for.
         prediction_time: "Now" — when the prediction is being made.
             Defaults to datetime.now() if None.
@@ -223,8 +225,8 @@ def prepare_inference_features(
             have LOW-confidence readings available.
 
     Returns:
-        DataFrame with columns: lot_id, hour, day_of_week, academic_period,
-        week_of_semester, is_campus_open, occupancy_rate,
+        DataFrame with columns: lot_id, hour, day_of_week, semester,
+        academic_period, week_of_semester, is_campus_open, occupancy_rate,
         occupancy_rate_lag_1..4, momentum, sin_hour, cos_hour,
         sin_day, cos_day, target_hour, hours_ahead.
     """
@@ -264,6 +266,7 @@ def prepare_inference_features(
                     "lot_id": lot_id,
                     "hour": current_hour,
                     "day_of_week": row["day_of_week"],
+                    "semester": row["semester"],
                     "academic_period": row["academic_period"],
                     "week_of_semester": row["week_of_semester"],
                     "is_campus_open": row["is_campus_open"],
@@ -301,6 +304,7 @@ def _empty_inference_df() -> pd.DataFrame:
             "lot_id",
             "hour",
             "day_of_week",
+            "semester",
             "academic_period",
             "week_of_semester",
             "is_campus_open",

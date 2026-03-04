@@ -55,7 +55,7 @@ NUMERIC_FEATURES = [
     "hours_ahead",
 ]
 
-CATEGORICAL_FEATURES = ["lot_id", "academic_period"]
+CATEGORICAL_FEATURES = ["lot_id", "semester", "academic_period"]
 
 TARGET_COL = "target_occupancy_rate"
 

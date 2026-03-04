@@ -141,14 +141,15 @@ model OccupancySnapshot {
   is_cold_start     Boolean?
 
   // ML feature columns
-  academic_period   String?         // "FALL", "SPRING", "SUMMER", "BREAK"
+  semester          String?         // "FALL", "SPRING", "SUMMER", "SESSION", "BREAK"
+  academic_period   String?         // "EARLY", "REGULAR", "MIDTERMS", "LATE", "DEAD_WEEK", "FINALS", "BREAK"
   week_of_semester  Int?
   is_campus_open    Boolean         @default(true)
 
   lot Lot @relation(fields: [lot_id], references: [id])
 
   @@index([lot_id, timestamp], name: "idx_snapshots_lot_time")
-  @@index([lot_id, timestamp, academic_period], name: "idx_snapshots_training")
+  @@index([lot_id, timestamp, semester, academic_period], name: "idx_snapshots_training")
   @@map("occupancy_snapshots")
 }
 
@@ -202,7 +203,7 @@ model AcademicCalendar {
   id          String   @id @default(cuid())
   school_id   String
   period_name String   // "Fall 2025", "Spring 2026"
-  period_type String   // "FALL", "SPRING", "SUMMER", "BREAK"
+  period_type String   // "FALL", "SPRING", "SUMMER", "SESSION", "BREAK"
   start_date  DateTime
   end_date    DateTime
 

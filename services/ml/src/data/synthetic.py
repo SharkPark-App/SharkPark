@@ -18,9 +18,12 @@ Output Schema (matches Aurora occupancy_snapshots + local-only fields):
     - occupancy_rate: float    # 0.0-1.0
     - confidence: str          # "HIGH"
     - is_cold_start: bool      # True for synthetic data
-    - academic_period: str     # "regular", "finals", "break", etc.
+    - semester: str            # "fall", "spring", "summer", "session", "break"
+    - academic_period: str     # "early", "regular", "midterms", "late", "dead_week", "finals", "break"
     - week_of_semester: int    # 0-16
     - is_campus_open: bool     # Whether campus is open
+    - source: str              # "synthetic" (generator-only; absent in real data,
+                               #  used at training time to apply sample weights)
 
 
 Volume: ~8,450 records per lot x 28 lots ≈ 237K total records
@@ -63,7 +66,6 @@ import numpy as np
 
 from src.academic_calendar import (
     ACADEMIC_CALENDARS,
-    get_academic_period,
     get_week_of_semester,
     is_campus_open,
     _all_break_dates,
@@ -107,6 +109,7 @@ class SemesterConfig:
     Passed through the generation pipeline.
     """
 
+    semester: str  # "fall" or "spring" (the CLI term)
     semester_start: datetime
     semester_end: datetime
     data_start: datetime  # semester_start - 1 day (buffer)
@@ -166,6 +169,7 @@ def resolve_semester(key: str) -> SemesterConfig:
     no_classes_open = frozenset(break_not_closed | set(sem.get("reading_days", [])))
 
     return SemesterConfig(
+        semester=term_str,
         semester_start=semester_start,
         semester_end=semester_end,
         data_start=semester_start - timedelta(days=1),
@@ -570,8 +574,7 @@ def generate_snapshot(
     # Compute calendar features
     date_only = timestamp.date()
     campus_open = is_campus_open(timestamp)
-    academic_period = get_academic_period(timestamp)
-    week_of_sem, _, _ = get_week_of_semester(timestamp.date())
+    week_of_sem, academic_period = get_week_of_semester(timestamp.date())
 
     if date_only in cfg.campus_closures:
         return {
@@ -582,9 +585,11 @@ def generate_snapshot(
             "occupancy_rate": 0.0,
             "confidence": "HIGH",
             "is_cold_start": True,
+            "semester": cfg.semester,
             "academic_period": academic_period,
             "week_of_semester": week_of_sem,
             "is_campus_open": campus_open,
+            "source": "synthetic",
         }
 
     hour = timestamp.hour
@@ -629,9 +634,11 @@ def generate_snapshot(
         "occupancy_rate": round(final_rate, 4),
         "confidence": "HIGH",
         "is_cold_start": True,
+        "semester": cfg.semester,
         "academic_period": academic_period,
         "week_of_semester": week_of_sem,
         "is_campus_open": campus_open,
+        "source": "synthetic",
     }
 
 

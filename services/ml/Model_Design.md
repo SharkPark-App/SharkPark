@@ -73,11 +73,12 @@ CREATE TABLE occupancy_snapshots (
   is_cold_start     BOOLEAN,
 
   -- ML feature columns (populated at write time)
-  academic_period   TEXT,                  -- "FALL", "SPRING", "SUMMER", "BREAK"
+  semester          TEXT,                  -- "fall", "spring", "summer", "break"
+  academic_period   TEXT,                  -- "early", "regular", "midterm", "finals", "break"
   week_of_semester  INT,
   is_campus_open    BOOLEAN DEFAULT TRUE
 );
--- Indexes: (lot_id, timestamp), (lot_id, timestamp, academic_period)
+-- Indexes: (lot_id, timestamp), (lot_id, timestamp, semester, academic_period)
 ```
 
 ### Output: Short-Term Predictions
@@ -122,7 +123,7 @@ The ML pipeline also reads from these operational tables:
 | `lots` | Lot metadata & capacity | `lot_id`, `capacity`, `current_occupancy`, `lot_type`, `penetration_rate`, `confidence` |
 | `campus_events` + `event_impacts` | Event-aware features | `event_type` (ATHLETIC \| ACADEMIC \| PERFORMANCE \| OTHER), `expected_attendance`, `impact_level`, `expected_increase_percent` |
 | `weather` | Weather features | `temperature_f`, `humidity_percent`, `wind_speed_mph`, `precipitation_probability`, `is_raining` |
-| `academic_calendar` | Period classification | `period_type` (FALL \| SPRING \| SUMMER \| BREAK), `start_date`, `end_date` |
+| `academic_calendar` | Period classification | `semester` (FALL \| SPRING \| SUMMER \| SESSION \| BREAK), `period_type` (EARLY \| REGULAR \| MIDTERMS \| LATE \| DEAD_WEEK \| FINALS), `start_date`, `end_date` |
 | `campus_closures` | `is_campus_open` flag | `date`, `reason` |
 
 ## Model Rationale
@@ -201,6 +202,10 @@ Week-ahead predictions answer "what will parking look like next Thursday at 10am
 - Event impacts (spikes near campus events)
 - Noise and random fluctuations
 
+### Source Tagging & Sample Weighting
+
+Synthetic data includes a `source: "synthetic"` column that is **generator-only** — real Aurora snapshots do not have this column. When synthetic and real parquets are concatenated at training time, real rows will have `NaN` in the `source` column. This enables sample weighting to downweight synthetic data as real data accumulates (e.g., `{"synthetic": 0.3, "real": 1.0}`).
+
 ### Transition to Real Data
 
 | Phase       | Source     | Notes                                              |
@@ -231,7 +236,7 @@ At launch, we'll have zero historical data. Here's how we bootstrap predictions:
 
 **Academic calendar integration:**
 
-The `academic_period` feature (`regular`, `finals`, `break`, `summer`) is derived from CSULB's academic calendar and is a core feature for both models — not a future addition. Campus closures (holidays, breaks) are also tracked via `is_campus_open`.
+The `semester` (`fall`, `spring`, `summer`, `session`, `break`) and `academic_period` (`early`, `regular`, `midterms`, `late`, `dead_week`, `finals`) features are derived from CSULB's academic calendar and are core features for both models — not a future addition. Campus closures (holidays, breaks) are also tracked via `is_campus_open`.
 
 **Additional external signals (future):**
 
@@ -250,7 +255,16 @@ The `academic_period` feature (`regular`, `finals`, `break`, `summer`) is derive
 - Momentum: rate of change (e.g., `current - occupancy_15min_ago`)
 - Time context: hour of day, day of week
 - Lot ID (categorical)
-- `academic_period`: categorical (`regular`, `finals`, `break`, `summer`) — derived from CSULB academic calendar. During breaks/summer, the model learns that low occupancy is expected rather than treating it as anomalous.
+- `semester`: categorical (`fall`, `spring`, `summer`, `session`, `break`) — which term the date falls in. `session` covers winter/may intersessions.
+- `academic_period`: categorical (`early`, `regular`, `midterms`, `late`, `dead_week`, `finals`) — derived from CSULB academic calendar.
+  - `early`: first 2 weeks of classes (weeks 1-2) — students figuring out schedules and parking, higher churn
+  - `regular`: standard class weeks outside early/midterm periods (weeks 3-7)
+  - `midterms`: weeks 8-9 of classes — exam season with higher campus activity
+  - `late`: weeks 10-14 — post-midterm stretch, stable patterns
+  - `dead_week`: week 15 (last week of classes before finals) — reduced class activity, increased study patterns
+  - `finals`: official finals week with altered schedules
+
+> **Cold-start granularity note:** During cold start, we intentionally use more granular `academic_period` categories (6 periods instead of the typical early/regular/finals split). This lets us capture finer-grained occupancy patterns in synthetic data. As real data accumulates starting in the hybrid phase, we'll compare distributions across these periods — if adjacent periods (e.g., `regular` vs `late`) show statistically similar occupancy patterns, we can collapse them to reduce feature cardinality and improve model generalization.
 
 ### Long-term Features
 
@@ -264,7 +278,8 @@ The `academic_period` feature (`regular`, `finals`, `break`, `summer`) is derive
 - `days_ahead` (1-7, critical for horizon-specific learning)
 - `day_of_week`, `hour`
 - `week_of_semester` (1-16 during active semester, 0 outside semester)
-- `academic_period`: categorical (`regular`, `finals`, `break`, `summer`) — primary indicator for whether normal occupancy patterns apply
+- `semester`: categorical (`fall`, `spring`, `summer`, `session`, `break`)
+- `academic_period`: categorical (`early`, `regular`, `midterms`, `late`, `dead_week`, `finals`)
 - `is_campus_open`: boolean — false on holidays/closures (Labor Day, Thanksgiving, etc.)
 - `lot_id` (categorical)
 - Weather forecasts (future, days 1-5): `temperature_forecast`, `precipitation_prob`
