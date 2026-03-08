@@ -10,6 +10,7 @@ import type {
 import { hashDeviceId, generateEventId } from './utils/privacy.util';
 import { ReliabilityService } from '../reliability/reliability.service';
 import { ReliabilityComputationService } from '../reliability/reliability-computation.service';
+import { PenetrationEstimationService } from '../lots/penetration-estimation.service';
 
 /** Service for anonymous occupancy events - handles storage, deduplication, and real-time updates */
 @Injectable()
@@ -20,6 +21,7 @@ export class OccupancyEventsService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => ReliabilityService)) private readonly reliabilityService: ReliabilityService,
     @Inject(forwardRef(() => ReliabilityComputationService)) private readonly reliabilityComputationService: ReliabilityComputationService,
+    private readonly penetrationService: PenetrationEstimationService,
   ) {}
 
   /**
@@ -162,12 +164,20 @@ export class OccupancyEventsService {
     try {
       const lots = await this.prisma.lot.findMany();
 
+      // Batch-estimate penetration for all lots at once
+      const estimates = await this.penetrationService.estimateForAllLots(lots, now);
+
       let count = 0;
       for (const lot of lots) {
-        const occupancy = lot.current_occupancy || 0;
+        const estimate = estimates.get(lot.id);
+        const rawOccupancy = lot.current_occupancy || 0;
+        const estimatedOccupancy = estimate ? estimate.estimatedOccupancy : rawOccupancy;
         const capacity = lot.capacity || 100;
-        const available = Math.max(0, capacity - occupancy);
-        const occupancyRate = capacity > 0 ? occupancy / capacity : 0;
+
+        // Snapshot stores raw occupancy/available/rate for ML consistency;
+        // estimated_occupancy is the separate scaled-up field
+        const rawAvailable = Math.max(0, capacity - rawOccupancy);
+        const rawOccupancyRate = capacity > 0 ? rawOccupancy / capacity : 0;
 
         // Compute confidence using ReliabilityComputationService (single source of truth)
         const reliabilityInput = await this.reliabilityComputationService.gatherReliabilityInput(lot.lot_id, lot);
@@ -181,13 +191,17 @@ export class OccupancyEventsService {
           data: {
             lot_id: lot.id,
             timestamp: now,
-            occupancy,
-            available,
-            occupancy_rate: Math.round(occupancyRate * 1000) / 1000,
+            occupancy: rawOccupancy,
+            available: rawAvailable,
+            occupancy_rate: Math.round(rawOccupancyRate * 1000) / 1000,
             confidence,
             reliability_score: reliabilityScore.score,
             is_cold_start: reliabilityScore.isColdStart,
-            is_campus_open: true, // TODO: derive from academic calendar
+            is_campus_open: estimate ? !estimate.isClosure : true,
+            estimated_occupancy: estimatedOccupancy,
+            penetration_rate_used: estimate
+              ? Math.round(estimate.effectiveRate * 10000) / 10000
+              : null,
           },
         });
 

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, InternalServerErrorException, Logger } f
 import { PrismaService } from '../database/database.module';
 import type { Lot, LotType } from '@prisma/client';
 import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
+import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
 
 /**
  * Service for parking lot data access and business logic.
@@ -11,7 +12,10 @@ import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse,
 export class LotsService {
   private readonly logger = new Logger(LotsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly penetrationService: PenetrationEstimationService,
+  ) {}
 
   /**
    * Retrieves all parking lots, with optional filtering.
@@ -28,22 +32,22 @@ export class LotsService {
         },
       });
 
-      let filteredLots = lots;
+      // Batch-estimate penetration for all lots at once (single set of DB queries)
+      const estimates = await this.penetrationService.estimateForAllLots(lots);
 
-      // These filters require computed values, so apply after fetch
+      // Transform to responses first so filters can use estimated values
+      let responses = lots.map(lot => this.transformToResponse(lot, estimates.get(lot.id)));
+
+      // Post-estimation filters — use estimated availability for accuracy
       if (query.min_available) {
-        filteredLots = filteredLots.filter(lot =>
-          (lot.capacity - lot.current_occupancy) >= query.min_available!
-        );
+        responses = responses.filter(r => r.estimated_available >= query.min_available!);
       }
 
       if (query.available_only) {
-        filteredLots = filteredLots.filter(lot =>
-          lot.current_occupancy < lot.capacity
-        );
+        responses = responses.filter(r => r.estimated_available > 0);
       }
 
-      return filteredLots.map(lot => this.transformToResponse(lot));
+      return responses;
     } catch (error) {
       this.logger.error('Failed to fetch parking lots', error);
       throw new InternalServerErrorException('Failed to fetch parking lots');
@@ -60,7 +64,7 @@ export class LotsService {
         throw new NotFoundException(`Parking lot ${lotId} not found`);
       }
 
-      return this.transformToResponse(lot);
+      return this.transformToResponse(lot, await this.penetrationService.estimateForLot(lot));
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -130,7 +134,7 @@ export class LotsService {
       const employeeLots = lots.filter(lot => lot.lot_type === 'EMPLOYEE');
 
       const totalCapacity = lots.reduce((sum, lot) => sum + lot.capacity, 0);
-      const totalOccupied = lots.reduce((sum, lot) => sum + lot.current_occupancy, 0);
+      const totalOccupied = lots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0);
 
       return {
         total_lots: lots.length,
@@ -141,12 +145,12 @@ export class LotsService {
         student_lots: {
           count: studentLots.length,
           capacity: studentLots.reduce((sum, lot) => sum + lot.capacity, 0),
-          occupied: studentLots.reduce((sum, lot) => sum + lot.current_occupancy, 0),
+          occupied: studentLots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0),
         },
         employee_lots: {
           count: employeeLots.length,
           capacity: employeeLots.reduce((sum, lot) => sum + lot.capacity, 0),
-          occupied: employeeLots.reduce((sum, lot) => sum + lot.current_occupancy, 0),
+          occupied: employeeLots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0),
         },
       };
     } catch (error) {
@@ -191,18 +195,22 @@ export class LotsService {
       },
     });
 
+    // Batch-estimate penetration for all candidates
+    const estimates = await this.penetrationService.estimateForAllLots(candidates);
+
     const W = LotsService.RECOMMENDATION_WEIGHTS;
 
     const scored = candidates
       .map(candidate => {
-        const response = this.transformToResponse(candidate);
+        const estimate = estimates.get(candidate.id);
+        const response = this.transformToResponse(candidate, estimate);
 
-        // Skip lots that are full
+        // Skip lots that are full (based on estimated occupancy)
         if (response.occupancy_rate >= LotsService.FULL_THRESHOLD) return null;
 
         // --- Availability score (0–1): higher = more space available ---
         const availabilityScore = candidate.capacity > 0
-          ? (candidate.capacity - candidate.current_occupancy) / candidate.capacity
+          ? response.estimated_available / candidate.capacity
           : 0;
 
         // --- Distance score (0–1): closer = higher ---
@@ -290,10 +298,17 @@ export class LotsService {
 
   /**
    * Adds computed fields to parking lot data for client consumption.
+   * When a PenetrationEstimate is provided, uses estimated occupancy for
+   * availability, occupancy_rate, and fill_status calculations.
    */
-  private transformToResponse(lot: Lot): ParkingLotResponse {
-    const available = lot.capacity - lot.current_occupancy;
-    const occupancy_rate = lot.capacity > 0 ? lot.current_occupancy / lot.capacity : 0;
+  private transformToResponse(lot: Lot, estimate?: PenetrationEstimate): ParkingLotResponse {
+    const rawOccupancy = lot.current_occupancy;
+    const estimatedOccupancy = estimate ? estimate.estimatedOccupancy : rawOccupancy;
+
+    // `available` uses estimated occupancy — represents the best-guess true availability.
+    // `estimated_available` is an explicit alias; both use the same estimated value.
+    const available = lot.capacity - estimatedOccupancy;
+    const occupancy_rate = lot.capacity > 0 ? estimatedOccupancy / lot.capacity : 0;
 
     let fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
     if (occupancy_rate >= 0.95) {
@@ -308,9 +323,15 @@ export class LotsService {
 
     return {
       ...lot,
-      available,
+      available: Math.max(0, available),
       occupancy_rate: Math.round(occupancy_rate * 1000) / 1000,
       fill_status,
+      estimated_occupancy: estimatedOccupancy,
+      estimated_available: Math.max(0, available),
+      raw_occupancy: rawOccupancy,
+      effective_penetration_rate: estimate
+        ? Math.round(estimate.effectiveRate * 10000) / 10000
+        : 1,
     };
   }
 }

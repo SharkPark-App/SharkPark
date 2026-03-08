@@ -3,6 +3,7 @@ import { OccupancyEventsService } from './occupancy-events.service';
 import { PrismaService } from '../database/database.module';
 import { ReliabilityService } from '../reliability/reliability.service';
 import { ReliabilityComputationService } from '../reliability/reliability-computation.service';
+import { PenetrationEstimationService } from '../lots/penetration-estimation.service';
 
 describe('OccupancyEventsService', () => {
   let service: OccupancyEventsService;
@@ -19,6 +20,11 @@ describe('OccupancyEventsService', () => {
   let mockReliabilityComputationService: {
     computeReliability: jest.Mock;
     gatherReliabilityInput: jest.Mock;
+  };
+  let mockPenetrationService: {
+    estimateForAllLots: jest.Mock;
+    estimateForLot: jest.Mock;
+    isCampusClosure: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -51,12 +57,33 @@ describe('OccupancyEventsService', () => {
       }),
     };
 
+    mockPenetrationService = {
+      estimateForAllLots: jest.fn().mockImplementation(async (lots: any[]) => {
+        const map = new Map();
+        for (const lot of lots) {
+          map.set(lot.id, {
+            effectiveRate: 1,
+            rawOccupancy: lot.current_occupancy || 0,
+            estimatedOccupancy: lot.current_occupancy || 0,
+            estimatedRate: lot.capacity > 0 ? (lot.current_occupancy || 0) / lot.capacity : 0,
+            campusDevices: 0,
+            adjustedCommuters: 0,
+            isClosure: false,
+          });
+        }
+        return map;
+      }),
+      estimateForLot: jest.fn(),
+      isCampusClosure: jest.fn().mockResolvedValue(false),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OccupancyEventsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ReliabilityService, useValue: mockReliabilityService },
         { provide: ReliabilityComputationService, useValue: mockReliabilityComputationService },
+        { provide: PenetrationEstimationService, useValue: mockPenetrationService },
       ],
     }).compile();
 
@@ -233,10 +260,10 @@ describe('OccupancyEventsService', () => {
   });
 
   describe('createSnapshots', () => {
-    it('should create snapshots for all lots', async () => {
+    it('should create snapshots for all lots with estimated occupancy', async () => {
       const mockLots = [
-        { id: 'lot-uuid-1', lot_id: 'G1', current_occupancy: 50, capacity: 100, penetration_rate: 0.8 },
-        { id: 'lot-uuid-2', lot_id: 'E7', current_occupancy: 30, capacity: 80, penetration_rate: 0.5 },
+        { id: 'lot-uuid-1', lot_id: 'G1', current_occupancy: 50, capacity: 100, penetration_rate: 0.8, school_id: 'school-1' },
+        { id: 'lot-uuid-2', lot_id: 'E7', current_occupancy: 30, capacity: 80, penetration_rate: 0.5, school_id: 'school-1' },
       ];
 
       prisma.lot.findMany.mockResolvedValue(mockLots);
@@ -248,6 +275,15 @@ describe('OccupancyEventsService', () => {
       expect(result.count).toBe(2);
       expect(result.timestamp).toBeDefined();
       expect(prisma.occupancySnapshot.create).toHaveBeenCalledTimes(2);
+      expect(mockPenetrationService.estimateForAllLots).toHaveBeenCalledWith(mockLots, expect.any(Date));
+
+      // Verify snapshot includes estimated_occupancy and penetration_rate_used
+      const firstCallData = prisma.occupancySnapshot.create.mock.calls[0][0].data;
+      expect(firstCallData.estimated_occupancy).toBe(50);
+      expect(firstCallData.penetration_rate_used).toBe(1);
+      expect(firstCallData.occupancy).toBe(50); // raw occupancy preserved
+      expect(firstCallData.available).toBe(50); // raw: capacity(100) - rawOccupancy(50)
+      expect(firstCallData.is_campus_open).toBe(true); // derived from estimate.isClosure
     });
 
     it('should throw InternalServerErrorException on error', async () => {

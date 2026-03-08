@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { LotsService } from './lots.service';
 import { PrismaService } from '../database/database.module';
+import { PenetrationEstimationService } from './penetration-estimation.service';
 
 describe('LotsService', () => {
   let service: LotsService;
@@ -9,6 +10,21 @@ describe('LotsService', () => {
     lot: { findMany: jest.Mock; findFirst: jest.Mock };
     occupancySnapshot: { findMany: jest.Mock };
   };
+  let penetrationService: {
+    estimateForAllLots: jest.Mock;
+    estimateForLot: jest.Mock;
+  };
+
+  /** Helper: builds a default PenetrationEstimate from a lot's raw values */
+  const makeEstimate = (lot: { current_occupancy: number; capacity: number }) => ({
+    effectiveRate: 1,
+    rawOccupancy: lot.current_occupancy,
+    estimatedOccupancy: lot.current_occupancy,
+    estimatedRate: lot.capacity > 0 ? lot.current_occupancy / lot.capacity : 0,
+    campusDevices: 0,
+    adjustedCommuters: 0,
+    isClosure: false,
+  });
 
   beforeEach(async () => {
     prisma = {
@@ -16,10 +32,22 @@ describe('LotsService', () => {
       occupancySnapshot: { findMany: jest.fn() },
     };
 
+    penetrationService = {
+      estimateForAllLots: jest.fn().mockImplementation(async (lots: any[]) => {
+        const map = new Map();
+        for (const lot of lots) {
+          map.set(lot.id, makeEstimate(lot));
+        }
+        return map;
+      }),
+      estimateForLot: jest.fn().mockImplementation(async (lot: any) => makeEstimate(lot)),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LotsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: PenetrationEstimationService, useValue: penetrationService },
       ],
     }).compile();
 
@@ -81,7 +109,7 @@ describe('LotsService', () => {
     });
 
     it('should filter by available_only after fetch', async () => {
-      const fullLot = { ...mockLot, current_occupancy: 100 };
+      const fullLot = { ...mockLot, id: 'uuid-full', lot_id: 'G2', current_occupancy: 100 };
       prisma.lot.findMany.mockResolvedValue([mockLot, fullLot]);
       const result = await service.findAll({ available_only: true });
       expect(result).toHaveLength(1);
