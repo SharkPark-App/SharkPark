@@ -19,6 +19,7 @@ import useFavorites from '../hooks/useFavorites';
 
 import {getOccupancyColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
+import { LotAmenities } from '../components/LotAmenities';
 import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
 import type { MapStackScreenProps } from '../types/navigation';
@@ -171,6 +172,9 @@ export function ShortTermForecastScreen() {
 
         {/* Chart */}
         <HourlyChart data={forecast}/>
+
+        {/* Lot Amenities & Details */}
+        <LotAmenities lot={lot} />
       </ScrollView>
 
       {/* Report Button */}
