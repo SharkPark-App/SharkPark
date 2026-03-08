@@ -178,7 +178,7 @@ export function RecommendationModal({
                   </View>
                 </View>
                 <Text style={styles.occupancyText}>
-                  {lot.current_occupancy} / {lot.capacity} spots taken
+                  ~{lot.estimated_occupancy ?? lot.current_occupancy} / {lot.capacity} spots taken
                 </Text>
                 <View style={styles.progressBarBg}>
                   <View
@@ -263,7 +263,7 @@ export function RecommendationModal({
                   </View>
                 </View>
                 <Text style={styles.occupancyText}>
-                  {rec.current_occupancy} / {rec.capacity} spots taken
+                  ~{rec.estimated_occupancy ?? rec.current_occupancy} / {rec.capacity} spots taken
                 </Text>
                 <Text style={styles.reasonText}>
                   {rec.reason}
@@ -416,11 +416,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.textPrimary,
+    flex: 1,
+    flexShrink: 1,
   },
   pctBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
+    flexShrink: 0,
   },
   pctBadgeText: {
     fontSize: 12,

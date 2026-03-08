@@ -170,6 +170,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: SPACING.xl,
     borderTopRightRadius: SPACING.xl,
     padding: SPACING.xl,
+    paddingBottom: SPACING.xxxl + SPACING.xl,
     maxHeight: '80%',
   },
   modalHeader: {
