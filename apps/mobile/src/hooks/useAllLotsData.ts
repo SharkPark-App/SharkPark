@@ -1,8 +1,12 @@
 /**
  * Custom hook for managing all lots data
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { lotsApi, ParkingLotResponse } from '../services/api';
+
+/** How often to re-fetch all lots data (ms) */
+const ALL_LOTS_POLL_MS = 30_000; // 30 seconds
 
 interface UseAllLotsDataReturn {
   lots: ParkingLotResponse[];
@@ -30,8 +34,27 @@ export function useAllLotsData(): UseAllLotsDataReturn {
     }
   };
 
+  // Initial fetch + polling
   useEffect(() => {
     fetchLots();
+
+    const interval = setInterval(() => {
+      fetchLots();
+    }, ALL_LOTS_POLL_MS);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Re-fetch when the app returns to the foreground
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && next === 'active') {
+        fetchLots();
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
   }, []);
 
   return {

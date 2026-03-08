@@ -72,6 +72,10 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   available: 100,
   occupancy_rate: 0.5,
   fill_status: 'AVAILABLE',
+  estimated_occupancy: 100,
+  estimated_available: 100,
+  raw_occupancy: 100,
+  effective_penetration_rate: 1,
   ...overrides,
 });
 
@@ -99,6 +103,10 @@ const lotG2 = makeLot({
   current_occupancy: 120,
   occupancy_rate: 0.4,
   available: 180,
+  estimated_occupancy: 120,
+  estimated_available: 180,
+  raw_occupancy: 120,
+  effective_penetration_rate: 1,
 });
 
 // ────────────────────── Tests ──────────────────────
@@ -471,6 +479,10 @@ describe('RecommendationModal', () => {
         current_occupancy: 80,
         occupancy_rate: 0.8,
         available: 20,
+        estimated_occupancy: 80,
+        estimated_available: 20,
+        raw_occupancy: 80,
+        effective_penetration_rate: 1,
         fill_status: 'NEARLY_FULL',
       });
       mockUseLotsList.mockReturnValue({ lots: [lotG1, highOccupancyLot], loading: false });

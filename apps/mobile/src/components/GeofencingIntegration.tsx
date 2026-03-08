@@ -202,8 +202,8 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
           </Text>
           <Text style={styles.currentLotDetails}>
             Capacity: {currentLotInfo.capacity} • 
-            Available: {currentLotInfo.available || 'N/A'} • 
-            {Math.round((currentLotInfo.current_occupancy / currentLotInfo.capacity) * 100)}% full
+            Available: ~{currentLotInfo.estimated_available ?? currentLotInfo.available ?? 'N/A'} • 
+            {Math.round((currentLotInfo.occupancy_rate ?? (currentLotInfo.current_occupancy / currentLotInfo.capacity)) * 100)}% full
           </Text>
         </View>
       )}
