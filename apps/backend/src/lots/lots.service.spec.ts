@@ -17,7 +17,6 @@ describe('LotsService', () => {
 
   /** Helper: builds a default PenetrationEstimate from a lot's raw values */
   const makeEstimate = (lot: { current_occupancy: number; capacity: number }) => ({
-    effectiveRate: 1,
     rawOccupancy: lot.current_occupancy,
     estimatedOccupancy: lot.current_occupancy,
     estimatedRate: lot.capacity > 0 ? lot.current_occupancy / lot.capacity : 0,

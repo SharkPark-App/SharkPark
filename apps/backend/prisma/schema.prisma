@@ -22,9 +22,6 @@ model School {
   lots             Lot[]
   users            User[]
   campus_events    CampusEvent[]
-  academic_periods AcademicCalendar[]
-  campus_closures  CampusClosure[]
-  activity_baselines CampusActivityBaseline[]
   weather          Weather[]
 
   @@map("schools")
@@ -145,9 +142,9 @@ model OccupancySnapshot {
   estimated_occupancy    Int?     // Scaled-up occupancy estimate
   penetration_rate_used  Float?   // Effective penetration rate at snapshot time
 
-  // ML feature columns
-  semester          String?         // "FALL", "SPRING", "SUMMER", "SESSION", "BREAK"
-  academic_period   String?         // "EARLY", "REGULAR", "MIDTERMS", "LATE", "DEAD_WEEK", "FINALS", "BREAK"
+  // ML feature columns (populated at write time by academic-calendar.ts)
+  semester          String?         // "fall", "spring", "summer", "session", "break"
+  academic_period   String?         // "early", "regular", "midterms", "late", "dead_week", "finals", "break"
   week_of_semester  Int?
   is_campus_open    Boolean         @default(true)
 
@@ -202,48 +199,6 @@ model EventImpact {
 
   @@unique([event_id, lot_id])
   @@map("event_impacts")
-}
-
-model AcademicCalendar {
-  id                  String   @id @default(cuid())
-  school_id           String
-  period_name         String   // "Fall 2025", "Spring 2026"
-  period_type         String   // "FALL", "SPRING", "SUMMER", "SESSION", "BREAK"
-  start_date          DateTime
-  end_date            DateTime
-  expected_commuters  Int      @default(35000) // Estimated daily commuters for this period
-
-  school School @relation(fields: [school_id], references: [id])
-
-  @@map("academic_calendar")
-}
-
-model CampusClosure {
-  id        String   @id @default(cuid())
-  school_id String
-  reason    String
-  date      DateTime
-
-  school School @relation(fields: [school_id], references: [id])
-
-  @@map("campus_closures")
-}
-
-model CampusActivityBaseline {
-  id           String   @id @default(cuid())
-  school_id    String
-  period_type  String   // "FALL", "SPRING", "SUMMER", "SESSION", "BREAK"
-  day_of_week  Int      // 0 = Sunday, 6 = Saturday
-  hour_of_day  Int      // 0–23
-  avg_devices  Float    @default(0) // Rolling average of unique devices seen
-  peak_devices Int      @default(0) // Max ever seen in this slot
-  sample_count Int      @default(0) // Number of observations averaged
-  updated_at   DateTime @updatedAt
-
-  school School @relation(fields: [school_id], references: [id])
-
-  @@unique([school_id, period_type, day_of_week, hour_of_day])
-  @@map("campus_activity_baselines")
 }
 
 model Weather {

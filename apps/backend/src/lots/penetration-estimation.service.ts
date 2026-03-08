@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
 import { Prisma } from '@prisma/client';
 import type { Lot } from '@prisma/client';
+import {
+  getExpectedCommuters as calendarGetExpectedCommuters,
+  isCampusOpen as calendarIsCampusOpen,
+} from './academic-calendar';
 
 // ─── Types ─────────────────────────────────────────────────
 
@@ -29,9 +33,6 @@ const MIN_PENETRATION_RATE = 0.01;
 
 /** How far back to count active devices (milliseconds) */
 const DEVICE_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
-
-/** Fallback commuter count when no academic calendar is seeded */
-const DEFAULT_COMMUTERS = 35_000;
 
 /**
  * Time-of-day multipliers applied to the academic period's expected_commuters.
@@ -103,13 +104,15 @@ export class PenetrationEstimationService {
   async estimateForLot(lot: Lot, now: Date = new Date()): Promise<PenetrationEstimate> {
     const rawOccupancy = lot.current_occupancy;
 
-    // Layer 1: Academic calendar — base expected commuters
-    const baseCommuters = await this.getExpectedCommuters(lot.school_id, now);
-
-    // Layer 2: Time-of-day + campus closure adjustments
+    // Convert to school time for calendar and time-of-day calculations
     const schoolTz = await this.getSchoolTimezone(lot.school_id);
     const schoolTime = this.toSchoolTime(now, schoolTz);
-    const isClosure = await this.isCampusClosure(lot.school_id, now);
+
+    // Layer 1: Academic calendar — base expected commuters
+    const baseCommuters = this.getExpectedCommuters(schoolTime);
+
+    // Layer 2: Time-of-day + campus closure adjustments
+    const isClosure = this.isCampusClosure(schoolTime);
     const timeMultiplier = isClosure ? CLOSURE_MULTIPLIER : this.getTimeMultiplier(schoolTime);
     const adjustedCommuters = Math.max(1, Math.round(baseCommuters * timeMultiplier));
 
@@ -174,15 +177,15 @@ export class PenetrationEstimationService {
     // All lots belong to the same school in our current setup
     const schoolId = lots[0].school_id;
 
-    // Shared queries (run once for the batch)
-    const [baseCommuters, isClosure, campusDevices, schoolTz] = await Promise.all([
-      this.getExpectedCommuters(schoolId, now),
-      this.isCampusClosure(schoolId, now),
+    // Shared queries — DB for devices+timezone; calendar module for the rest
+    const [campusDevices, schoolTz] = await Promise.all([
       this.countCampusDevices(schoolId, now),
       this.getSchoolTimezone(schoolId),
     ]);
 
     const schoolTime = this.toSchoolTime(now, schoolTz);
+    const baseCommuters = this.getExpectedCommuters(schoolTime);
+    const isClosure = this.isCampusClosure(schoolTime);
     const timeMultiplier = isClosure ? CLOSURE_MULTIPLIER : this.getTimeMultiplier(schoolTime);
     const adjustedCommuters = Math.max(1, Math.round(baseCommuters * timeMultiplier));
     const campusRate = campusDevices > 0 ? campusDevices / adjustedCommuters : 0;
@@ -244,37 +247,10 @@ export class PenetrationEstimationService {
 
   /**
    * Returns the expected_commuters for the academic period containing `date`.
-   * Falls back to DEFAULT_COMMUTERS if no matching period exists.
+   * Accepts a school-local Date (call toSchoolTime first).
    */
-  async getExpectedCommuters(schoolId: string, date: Date): Promise<number> {
-    const period = await this.prisma.academicCalendar.findFirst({
-      where: {
-        school_id: schoolId,
-        start_date: { lte: date },
-        end_date: { gte: date },
-      },
-      orderBy: { start_date: 'desc' },
-    });
-
-    if (period) {
-      return period.expected_commuters;
-    }
-
-    // No matching period — try the most recent one as fallback
-    const recent = await this.prisma.academicCalendar.findFirst({
-      where: { school_id: schoolId, end_date: { lt: date } },
-      orderBy: { end_date: 'desc' },
-    });
-
-    if (recent) {
-      this.logger.warn(
-        `No academic period for ${date.toISOString()}. Using most recent: ${recent.period_name} (${recent.expected_commuters} commuters)`,
-      );
-      return recent.expected_commuters;
-    }
-
-    this.logger.warn(`No academic calendar data found. Using default: ${DEFAULT_COMMUTERS}`);
-    return DEFAULT_COMMUTERS;
+  getExpectedCommuters(schoolTime: Date): number {
+    return calendarGetExpectedCommuters(schoolTime);
   }
 
   // ─── Layer 2: Time & Closures ────────────────────────────
@@ -325,20 +301,10 @@ export class PenetrationEstimationService {
 
   /**
    * Checks whether the given date falls on a campus closure.
+   * Accepts a school-local Date (call toSchoolTime first).
    */
-  async isCampusClosure(schoolId: string, date: Date): Promise<boolean> {
-    // Normalize to date-only (midnight UTC)
-    const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1);
-
-    const closure = await this.prisma.campusClosure.findFirst({
-      where: {
-        school_id: schoolId,
-        date: { gte: startOfDay, lte: endOfDay },
-      },
-    });
-
-    return closure !== null;
+  isCampusClosure(schoolTime: Date): boolean {
+    return !calendarIsCampusOpen(schoolTime);
   }
 
   // ─── Layer 3: Activity-Based Cap ─────────────────────────

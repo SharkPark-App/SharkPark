@@ -25,6 +25,8 @@ describe('OccupancyEventsService', () => {
     estimateForAllLots: jest.Mock;
     estimateForLot: jest.Mock;
     isCampusClosure: jest.Mock;
+    getSchoolTimezone: jest.Mock;
+    toSchoolTime: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -74,7 +76,9 @@ describe('OccupancyEventsService', () => {
         return map;
       }),
       estimateForLot: jest.fn(),
-      isCampusClosure: jest.fn().mockResolvedValue(false),
+      isCampusClosure: jest.fn().mockReturnValue(false),
+      getSchoolTimezone: jest.fn().mockResolvedValue('America/Los_Angeles'),
+      toSchoolTime: jest.fn().mockImplementation((date: Date) => date),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -320,6 +324,11 @@ describe('OccupancyEventsService', () => {
       expect(firstCallData.occupancy).toBe(50); // raw occupancy preserved
       expect(firstCallData.available).toBe(50); // raw: capacity(100) - rawOccupancy(50)
       expect(firstCallData.is_campus_open).toBe(true); // derived from estimate.isClosure
+
+      // Academic calendar ML feature columns
+      expect(firstCallData.semester).toBeDefined();
+      expect(firstCallData.academic_period).toBeDefined();
+      expect(typeof firstCallData.week_of_semester).toBe('number');
     });
 
     it('should throw InternalServerErrorException on error', async () => {

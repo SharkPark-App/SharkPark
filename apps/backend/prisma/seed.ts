@@ -607,9 +607,6 @@ async function main() {
   await prisma.predictionLongTerm.deleteMany();
   await prisma.campusEvent.deleteMany();
   await prisma.weather.deleteMany();
-  await prisma.academicCalendar.deleteMany();
-  await prisma.campusClosure.deleteMany();
-  await prisma.campusActivityBaseline.deleteMany();
   await prisma.user.deleteMany();
   await prisma.lot.deleteMany();
   await prisma.school.deleteMany();
@@ -757,65 +754,6 @@ async function main() {
   });
   console.log('[seed] Seeded weather data\n');
 
-  // 6b. Seed Academic Calendar
-  console.log('[seed] Seeding academic calendar...');
-  const academicPeriods = [
-    // Fall 2025 (historical — classes Aug 25 through finals week Dec 18)
-    { name: 'Fall 2025',              type: 'FALL',    start: '2025-08-25', end: '2025-12-18', commuters: 35000 },
-    // Winter break — campus mostly closed, minimal staff
-    { name: 'Winter Break 2025-26',   type: 'BREAK',   start: '2025-12-19', end: '2026-01-19', commuters: 1500 },
-    // Winter intersession — smaller enrollment, campus open
-    { name: 'Winter Session 2026',    type: 'SESSION', start: '2026-01-05', end: '2026-01-16', commuters: 3000 },
-    // Spring 2026 — classes start Jan 20 (Tue after MLK Day)
-    { name: 'Spring 2026',            type: 'SPRING',  start: '2026-01-20', end: '2026-05-22', commuters: 34000 },
-    // Spring break — no classes, campus open for staff/employees only
-    { name: 'Spring Break 2026',      type: 'BREAK',   start: '2026-03-30', end: '2026-04-05', commuters: 3600 },
-    // Summer 2026 — 12-week session starts May 26
-    { name: 'Summer 2026',            type: 'SUMMER',  start: '2026-05-26', end: '2026-08-14', commuters: 8000 },
-    { name: 'Fall 2026',              type: 'FALL',    start: '2026-08-24', end: '2026-12-18', commuters: 35000 },
-    { name: 'Winter Break 2026-27',   type: 'BREAK',   start: '2026-12-19', end: '2027-01-18', commuters: 1500 },
-  ];
-  for (const period of academicPeriods) {
-    await prisma.academicCalendar.create({
-      data: {
-        school_id: school.id,
-        period_name: period.name,
-        period_type: period.type,
-        start_date: new Date(period.start),
-        end_date: new Date(period.end),
-        expected_commuters: period.commuters,
-      },
-    });
-  }
-  console.log(`[seed] Seeded ${academicPeriods.length} academic periods\n`);
-
-  // 6c. Seed Campus Closures (2025-2026)
-  console.log('[seed] Seeding campus closures...');
-  const campusClosures = [
-    // Spring break is NOT a closure — campus stays open for staff/employees;
-    // handled via the 'Spring Break 2026' BREAK period with reduced commuters.
-    // Presidents' Day is NOT observed as a campus closure at CSULB.
-    { date: '2026-01-19', reason: 'Martin Luther King Jr. Day' },
-    { date: '2026-03-31', reason: 'Cesar Chavez Day' },
-    { date: '2026-05-25', reason: 'Memorial Day' },
-    { date: '2026-06-19', reason: 'Juneteenth' },
-    { date: '2026-07-03', reason: 'Independence Day (observed)' },
-    { date: '2026-09-07', reason: 'Labor Day' },
-    { date: '2026-11-11', reason: 'Veterans Day' },
-    { date: '2026-11-26', reason: 'Thanksgiving' },
-    { date: '2026-11-27', reason: 'Thanksgiving Friday' },
-  ];
-  for (const closure of campusClosures) {
-    await prisma.campusClosure.create({
-      data: {
-        school_id: school.id,
-        reason: closure.reason,
-        date: new Date(closure.date),
-      },
-    });
-  }
-  console.log(`[seed] Seeded ${campusClosures.length} campus closures\n`);
-
   // 7. Seed Historical Occupancy Snapshots (7 days, every 15 min during operating hours)
   console.log('[seed] Seeding historical occupancy snapshots...');
   const sampleLotIds = ['G1', 'G2', 'G4', 'G7', 'G9'];
@@ -940,8 +878,6 @@ async function main() {
     favorites: await prisma.userFavorite.count(),
     events: await prisma.campusEvent.count(),
     impacts: await prisma.eventImpact.count(),
-    academicPeriods: await prisma.academicCalendar.count(),
-    campusClosures: await prisma.campusClosure.count(),
     weather: await prisma.weather.count(),
     snapshots: await prisma.occupancySnapshot.count(),
     occEvents: await prisma.occupancyEvent.count(),

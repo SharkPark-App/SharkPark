@@ -71,16 +71,12 @@ const makeLot = (overrides: Partial<Lot> = {}): Lot => ({
 describe('PenetrationEstimationService', () => {
   let service: PenetrationEstimationService;
   let prisma: {
-    academicCalendar: { findFirst: jest.Mock };
-    campusClosure: { findFirst: jest.Mock };
     school: { findUnique: jest.Mock };
     $queryRaw: jest.Mock;
   };
 
   beforeEach(async () => {
     prisma = {
-      academicCalendar: { findFirst: jest.fn().mockResolvedValue(null) },
-      campusClosure: { findFirst: jest.fn().mockResolvedValue(null) },
       school: { findUnique: jest.fn().mockResolvedValue({ timezone: 'UTC' }) },
       $queryRaw: jest.fn().mockResolvedValue([{ count: BigInt(0) }]),
     };
@@ -97,6 +93,9 @@ describe('PenetrationEstimationService', () => {
     // Default spy — makes toSchoolTime a no-op so local-time test dates
     // pass through directly to getTimeMultiplier.
     jest.spyOn(service, 'toSchoolTime').mockImplementation((date: Date) => date);
+    // Default spies for calendar-based methods — allow tests to control values
+    jest.spyOn(service, 'getExpectedCommuters').mockReturnValue(35_000);
+    jest.spyOn(service, 'isCampusClosure').mockReturnValue(false);
   });
 
   it('should be defined', () => {
@@ -202,49 +201,61 @@ describe('PenetrationEstimationService', () => {
     });
   });
 
-  // ─── getExpectedCommuters ─────────────────────────────
+  // ─── getExpectedCommuters (delegates to academic calendar module) ────
 
   describe('getExpectedCommuters', () => {
-    it('returns commuters from matching academic period', async () => {
-      prisma.academicCalendar.findFirst.mockResolvedValue({
-        period_name: 'Spring 2026',
-        expected_commuters: 34_000,
-      });
-
-      const result = await service.getExpectedCommuters('school-1', WEEKDAY_PEAK);
-      expect(result).toBe(34_000);
+    beforeEach(() => {
+      // Restore the real implementation for this describe block
+      (service.getExpectedCommuters as jest.Mock).mockRestore();
     });
 
-    it('falls back to most recent period when no match', async () => {
-      prisma.academicCalendar.findFirst
-        .mockResolvedValueOnce(null) // no matching period
-        .mockResolvedValueOnce({ period_name: 'Fall 2025', expected_commuters: 35_000 }); // most recent
-
-      const result = await service.getExpectedCommuters('school-1', WEEKDAY_PEAK);
-      expect(result).toBe(35_000);
+    it('returns spring commuters for a weekday in Spring semester', () => {
+      // March 10, 2026 is during Spring 2026
+      expect(service.getExpectedCommuters(WEEKDAY_PEAK)).toBe(34_000);
     });
 
-    it('returns DEFAULT_COMMUTERS (35000) when no calendar data', async () => {
-      prisma.academicCalendar.findFirst.mockResolvedValue(null);
+    it('returns fall commuters for a weekday in Fall semester', () => {
+      // October 15, 2025 is during Fall 2025
+      expect(service.getExpectedCommuters(dateAt(2025, 10, 15, 10, 0))).toBe(35_000);
+    });
 
-      const result = await service.getExpectedCommuters('school-1', WEEKDAY_PEAK);
-      expect(result).toBe(35_000);
+    it('returns break commuters for a date between semesters', () => {
+      // December 30, 2025 is between Fall and Winter session
+      expect(service.getExpectedCommuters(dateAt(2025, 12, 30, 10, 0))).toBe(1_500);
+    });
+
+    it('returns break commuters for a campus-closed holiday', () => {
+      // MLK Day 2026 = Jan 19 (campus closed)
+      expect(service.getExpectedCommuters(dateAt(2026, 1, 19, 10, 0))).toBe(1_500);
+    });
+
+    it('returns reduced commuters for in-semester break', () => {
+      // Spring Recess 2026: Mar 30 (campus open, no classes) → 10% of Spring
+      expect(service.getExpectedCommuters(dateAt(2026, 3, 30, 10, 0))).toBe(3_400);
     });
   });
 
-  // ─── isCampusClosure ──────────────────────────────────
+  // ─── isCampusClosure (delegates to academic calendar module) ────
 
   describe('isCampusClosure', () => {
-    it('returns true when a closure exists for the date', async () => {
-      prisma.campusClosure.findFirst.mockResolvedValue({ reason: 'MLK Day' });
-      const result = await service.isCampusClosure('school-1', WEEKDAY_PEAK);
-      expect(result).toBe(true);
+    beforeEach(() => {
+      (service.isCampusClosure as jest.Mock).mockRestore();
     });
 
-    it('returns false when no closure exists', async () => {
-      prisma.campusClosure.findFirst.mockResolvedValue(null);
-      const result = await service.isCampusClosure('school-1', WEEKDAY_PEAK);
-      expect(result).toBe(false);
+    it('returns true for MLK Day', () => {
+      expect(service.isCampusClosure(dateAt(2026, 1, 19, 10, 0))).toBe(true);
+    });
+
+    it('returns true for Cesar Chavez Day', () => {
+      expect(service.isCampusClosure(dateAt(2026, 3, 31, 10, 0))).toBe(true);
+    });
+
+    it('returns false for a regular class day', () => {
+      expect(service.isCampusClosure(WEEKDAY_PEAK)).toBe(false);
+    });
+
+    it('returns false for a spring break day (campus open, no classes)', () => {
+      expect(service.isCampusClosure(dateAt(2026, 3, 30, 10, 0))).toBe(false);
     });
   });
 
@@ -319,11 +330,8 @@ describe('PenetrationEstimationService', () => {
     } = {}) => {
       const { commuters = 35_000, closure = false, campusDeviceCount = 0 } = opts;
 
-      prisma.academicCalendar.findFirst.mockResolvedValue({
-        period_name: 'Spring 2026',
-        expected_commuters: commuters,
-      });
-      prisma.campusClosure.findFirst.mockResolvedValue(closure ? { reason: 'Holiday' } : null);
+      (service.getExpectedCommuters as jest.Mock).mockReturnValue(commuters);
+      (service.isCampusClosure as jest.Mock).mockReturnValue(closure);
       (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(campusDeviceCount) }]);
     };
 
@@ -510,11 +518,6 @@ describe('PenetrationEstimationService', () => {
     });
 
     it('estimates for multiple lots sharing campus-wide data', async () => {
-      prisma.academicCalendar.findFirst.mockResolvedValue({
-        period_name: 'Spring 2026',
-        expected_commuters: 35_000,
-      });
-      prisma.campusClosure.findFirst.mockResolvedValue(null);
       (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(100) }]);
 
       const lots = [
@@ -534,11 +537,6 @@ describe('PenetrationEstimationService', () => {
     });
 
     it('applies floor for lots with zero occupancy during peak', async () => {
-      prisma.academicCalendar.findFirst.mockResolvedValue({
-        period_name: 'Spring 2026',
-        expected_commuters: 35_000,
-      });
-      prisma.campusClosure.findFirst.mockResolvedValue(null);
       (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(0) }]);
 
       const lots = [makeLot({ current_occupancy: 0, capacity: 1000 })];
@@ -552,12 +550,7 @@ describe('PenetrationEstimationService', () => {
       expect(estimate.isClosure).toBe(false);
     });
 
-    it('queries academic calendar only once for the batch', async () => {
-      prisma.academicCalendar.findFirst.mockResolvedValue({
-        period_name: 'Spring 2026',
-        expected_commuters: 35_000,
-      });
-      prisma.campusClosure.findFirst.mockResolvedValue(null);
+    it('computes commuters and closure only once for the batch', async () => {
       (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(0) }]);
 
       const lots = [
@@ -567,16 +560,12 @@ describe('PenetrationEstimationService', () => {
 
       await service.estimateForAllLots(lots, WEEKDAY_PEAK);
 
-      // Academic calendar should be queried once (not once per lot)
-      expect(prisma.academicCalendar.findFirst).toHaveBeenCalledTimes(1);
+      // Calendar methods should be called once (not once per lot)
+      expect(service.getExpectedCommuters).toHaveBeenCalledTimes(1);
+      expect(service.isCampusClosure).toHaveBeenCalledTimes(1);
     });
 
     it('handles zero-capacity lot in batch estimation', async () => {
-      prisma.academicCalendar.findFirst.mockResolvedValue({
-        period_name: 'Spring 2026',
-        expected_commuters: 35_000,
-      });
-      prisma.campusClosure.findFirst.mockResolvedValue(null);
       (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(0) }]);
 
       const lots = [makeLot({ id: 'lot-zero', current_occupancy: 5, capacity: 0 })];

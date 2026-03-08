@@ -11,6 +11,10 @@ import { hashDeviceId, generateEventId } from './utils/privacy.util';
 import { ReliabilityService } from '../reliability/reliability.service';
 import { ReliabilityComputationService } from '../reliability/reliability-computation.service';
 import { PenetrationEstimationService } from '../lots/penetration-estimation.service';
+import {
+  getSemester,
+  getWeekOfSemester,
+} from '../lots/academic-calendar';
 
 /** Service for anonymous occupancy events - handles storage, deduplication, and real-time updates */
 @Injectable()
@@ -167,6 +171,18 @@ export class OccupancyEventsService {
       // Batch-estimate penetration for all lots at once
       const estimates = await this.penetrationService.estimateForAllLots(lots, now);
 
+      // Compute academic calendar features once for the batch.
+      // Convert to school local time so calendar lookups are date-correct.
+      const schoolId = lots[0]?.school_id;
+      const schoolTz = schoolId
+        ? await this.penetrationService.getSchoolTimezone(schoolId)
+        : 'America/Los_Angeles';
+      const schoolTime = this.penetrationService.toSchoolTime(now, schoolTz);
+
+      const semester = getSemester(schoolTime);
+      const [weekOfSemester, periodType] = getWeekOfSemester(schoolTime);
+      const academicPeriod = periodType;
+
       let count = 0;
       for (const lot of lots) {
         const estimate = estimates.get(lot.id);
@@ -197,6 +213,9 @@ export class OccupancyEventsService {
             confidence,
             reliability_score: reliabilityScore.score,
             is_cold_start: reliabilityScore.isColdStart,
+            semester,
+            academic_period: academicPeriod,
+            week_of_semester: weekOfSemester,
             is_campus_open: estimate ? !estimate.isClosure : true,
             estimated_occupancy: estimatedOccupancy,
             penetration_rate_used: estimate

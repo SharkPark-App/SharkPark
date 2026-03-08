@@ -358,12 +358,19 @@ CREATE TABLE occupancy_snapshots (
   available     INTEGER NOT NULL,
   occupancy_rate DOUBLE PRECISION NOT NULL, -- 0.0 to 1.0
   confidence    TEXT NOT NULL CHECK (confidence IN ('LOW', 'MEDIUM', 'HIGH')),
-  reliability_score INTEGER,               -- 0-100
+  reliability_score DOUBLE PRECISION,      -- 0-100
   is_cold_start BOOLEAN DEFAULT FALSE,
-  academic_period TEXT NOT NULL DEFAULT 'regular'
-    CHECK (academic_period IN ('regular', 'finals', 'break', 'summer')),
+
+  -- Penetration rate estimation columns
+  estimated_occupancy    INTEGER,          -- Scaled-up occupancy estimate
+  penetration_rate_used  DOUBLE PRECISION, -- Effective penetration rate at snapshot time
+
+  -- ML feature columns (populated at write time by academic-calendar.ts)
+  semester        TEXT,                    -- fall | spring | summer | session | break
+  academic_period TEXT,                    -- early | regular | midterms | late | dead_week | finals | break
+  week_of_semester INTEGER,               -- 0-16
   is_campus_open BOOLEAN NOT NULL DEFAULT TRUE,
-  week_of_semester INTEGER DEFAULT 0,      -- 0-16
+
   PRIMARY KEY (id),
   FOREIGN KEY (school_id, lot_id) REFERENCES lots(school_id, lot_id)
 );
@@ -380,27 +387,6 @@ CREATE TABLE campus_events (
   expected_attendance INTEGER,
   created_at    TIMESTAMPTZ DEFAULT NOW(),
   PRIMARY KEY (id)
-);
-
--- Academic calendar config
-CREATE TABLE academic_calendar (
-  id            BIGINT GENERATED ALWAYS AS IDENTITY,
-  school_id     TEXT NOT NULL REFERENCES schools(school_id),
-  period_name   TEXT NOT NULL,             -- 'Spring 2026', 'Spring Break', etc.
-  period_type   TEXT NOT NULL CHECK (period_type IN ('regular', 'finals', 'break', 'summer')),
-  start_date    DATE NOT NULL,
-  end_date      DATE NOT NULL,
-  PRIMARY KEY (id)
-);
-
--- Holidays / campus closures
-CREATE TABLE campus_closures (
-  id            BIGINT GENERATED ALWAYS AS IDENTITY,
-  school_id     TEXT NOT NULL REFERENCES schools(school_id),
-  closure_date  DATE NOT NULL,
-  reason        TEXT,
-  PRIMARY KEY (id),
-  UNIQUE (school_id, closure_date)
 );
 
 -- Short-term predictions (overwritten every 15 min)
@@ -447,7 +433,7 @@ CREATE INDEX idx_events_device ON occupancy_events(device_hash, lot_id, timestam
 
 -- Snapshots for ML training queries
 CREATE INDEX idx_snapshots_lot_time ON occupancy_snapshots(school_id, lot_id, timestamp DESC);
-CREATE INDEX idx_snapshots_training ON occupancy_snapshots(school_id, lot_id, academic_period, timestamp);
+CREATE INDEX idx_snapshots_training ON occupancy_snapshots(school_id, lot_id, semester, academic_period, timestamp);
 
 -- Predictions lookup (primary read path)
 CREATE INDEX idx_pred_short ON predictions_short_term(school_id, lot_id);
@@ -479,9 +465,12 @@ SELECT
   s.occupancy,
   s.occupancy_rate,
   s.confidence,
+  s.semester,
   s.academic_period,
   s.is_campus_open,
   s.week_of_semester,
+  s.estimated_occupancy,
+  s.penetration_rate_used,
   EXTRACT(dow FROM s.timestamp) AS day_of_week,
   EXTRACT(hour FROM s.timestamp) AS hour,
   l.lot_type,
@@ -655,7 +644,7 @@ EventBridge (cron) → Lambda (ML inference)
 ```
 EventBridge (cron) → Lambda (ML inference)
                         │
-                        ├── 1. Query occupancy_snapshots + academic_calendar
+                        ├── 1. Query occupancy_snapshots
                         ├── 2. Compute historical baselines (SQL window functions)
                         ├── 3. Run XGBoost adjustment model
                         └── 4. UPSERT predictions_long_term
@@ -719,8 +708,7 @@ SELECT * FROM lots WHERE school_id = 'csuf';
 - [x] Rewrite `ReliabilityComputationService` — SQL aggregations
 
 ### Phase 3: ML Integration (Week 5-6)
-- [x] Add `academic_calendar` and `campus_closures` tables + seed data
-- [x] Add `occupancy_snapshots` with ML features (`academic_period`, `week_of_semester`, `is_campus_open`)
+- [x] Add `occupancy_snapshots` with ML features (`semester`, `academic_period`, `week_of_semester`, `is_campus_open`)
 - [x] Add `predictions_short_term` and `predictions_long_term` tables
 - [ ] Build ML training data queries (direct SQL)
 
