@@ -183,6 +183,42 @@ describe('OccupancyEventsService', () => {
 
       await expect(service.create(validDto)).rejects.toThrow('Failed to record occupancy event');
     });
+
+    it('should throw NotFoundException when lot not found', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
+
+      await expect(service.create(validDto)).rejects.toThrow('Lot G1 not found');
+    });
+
+    it('should not decrement occupancy below 0 on EXIT', async () => {
+      const zeroLot = { ...mockLot, current_occupancy: 0 };
+      const exitDto = { ...validDto, event_type: 'EXIT' as const };
+
+      prisma.lot.findFirst.mockResolvedValue(zeroLot);
+      prisma.deviceState.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
+        await fn(prisma);
+      });
+
+      const result = await service.create(exitDto);
+
+      expect(result.deduplicated).toBe(false);
+      // lot.update should NOT be called because occupancy is already 0
+      expect(prisma.lot.update).not.toHaveBeenCalled();
+    });
+
+    it('should handle checkDuplicate failure gracefully (not duplicate)', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockRejectedValue(new Error('Redis down'));
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
+        await fn(prisma);
+      });
+
+      const result = await service.create(validDto);
+
+      // Should proceed as non-duplicate when checkDuplicate fails
+      expect(result.deduplicated).toBe(false);
+    });
   });
 
   describe('findByLot', () => {

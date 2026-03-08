@@ -479,6 +479,26 @@ describe('PenetrationEstimationService', () => {
       expect(result.effectiveRate).toBe(0.01);
       expect(result.estimatedOccupancy).toBe(200); // capped at 2× with 0 devices
     });
+
+    it('handles zero capacity lot gracefully', async () => {
+      setupMocks({ commuters: 35_000, campusDeviceCount: 100 });
+
+      const lot = makeLot({ current_occupancy: 10, capacity: 0 });
+      const result = await service.estimateForLot(lot, WEEKDAY_PEAK);
+
+      expect(result.estimatedRate).toBe(0);
+      expect(result.estimatedOccupancy).toBe(10); // clamped to max(raw, min(scaled, 0))
+    });
+
+    it('returns zero floor for zero-capacity lot with zero occupancy', async () => {
+      setupMocks({ commuters: 35_000 });
+
+      const lot = makeLot({ current_occupancy: 0, capacity: 0 });
+      const result = await service.estimateForLot(lot, WEEKDAY_PEAK);
+
+      expect(result.estimatedOccupancy).toBe(0);
+      expect(result.estimatedRate).toBe(0);
+    });
   });
 
   // ─── estimateForAllLots ───────────────────────────────
@@ -549,6 +569,22 @@ describe('PenetrationEstimationService', () => {
 
       // Academic calendar should be queried once (not once per lot)
       expect(prisma.academicCalendar.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles zero-capacity lot in batch estimation', async () => {
+      prisma.academicCalendar.findFirst.mockResolvedValue({
+        period_name: 'Spring 2026',
+        expected_commuters: 35_000,
+      });
+      prisma.campusClosure.findFirst.mockResolvedValue(null);
+      (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(0) }]);
+
+      const lots = [makeLot({ id: 'lot-zero', current_occupancy: 5, capacity: 0 })];
+      const result = await service.estimateForAllLots(lots, WEEKDAY_PEAK);
+
+      const estimate = result.get('lot-zero')!;
+      expect(estimate.estimatedRate).toBe(0);
+      expect(estimate.rawOccupancy).toBe(5);
     });
   });
 });

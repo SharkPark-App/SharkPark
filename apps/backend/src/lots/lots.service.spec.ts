@@ -116,6 +116,15 @@ describe('LotsService', () => {
       expect(result[0].lot_id).toBe('G1');
     });
 
+    it('should filter by min_available after estimation', async () => {
+      const smallLot = { ...mockLot, id: 'uuid-small', lot_id: 'G3', capacity: 100, current_occupancy: 80 };
+      // G1: available = 50, G3: available = 20
+      prisma.lot.findMany.mockResolvedValue([mockLot, smallLot]);
+      const result = await service.findAll({ min_available: 30 });
+      expect(result).toHaveLength(1);
+      expect(result[0].lot_id).toBe('G1');
+    });
+
     it('should throw InternalServerErrorException on error', async () => {
       prisma.lot.findMany.mockRejectedValue(new Error('DB error'));
       await expect(service.findAll()).rejects.toThrow(InternalServerErrorException);
@@ -142,6 +151,59 @@ describe('LotsService', () => {
       prisma.lot.findFirst.mockResolvedValue(null);
       await expect(service.findOne('INVALID')).rejects.toThrow(NotFoundException);
     });
+
+    it('should throw InternalServerErrorException on non-NotFoundException', async () => {
+      prisma.lot.findFirst.mockRejectedValue(new Error('Connection lost'));
+      await expect(service.findOne('G1')).rejects.toThrow(InternalServerErrorException);
+    });
+  });
+
+  describe('getOccupancySummary', () => {
+    it('should calculate totals across all lots', async () => {
+      const lots = [
+        {
+          id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
+          current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
+          daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+        },
+        {
+          id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
+          current_occupancy: 30, lot_type: 'EMPLOYEE', permit_types: [],
+          daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+        },
+      ];
+      prisma.lot.findMany.mockResolvedValue(lots);
+
+      const summary = await service.getOccupancySummary();
+
+      expect(summary.total_lots).toBe(2);
+      expect(summary.total_capacity).toBe(180);
+      expect(summary.total_occupied).toBe(80);
+      expect(summary.total_available).toBe(100);
+      expect(summary.overall_occupancy_rate).toBeCloseTo(80 / 180, 2);
+      expect(summary.student_lots.count).toBe(1);
+      expect(summary.student_lots.capacity).toBe(100);
+      expect(summary.student_lots.occupied).toBe(50);
+      expect(summary.employee_lots.count).toBe(1);
+      expect(summary.employee_lots.capacity).toBe(80);
+      expect(summary.employee_lots.occupied).toBe(30);
+    });
+
+    it('should return zero rate when total capacity is zero', async () => {
+      prisma.lot.findMany.mockResolvedValue([]);
+      const summary = await service.getOccupancySummary();
+      expect(summary.total_lots).toBe(0);
+      expect(summary.overall_occupancy_rate).toBe(0);
+    });
+
+    it('should throw InternalServerErrorException on error', async () => {
+      prisma.lot.findMany.mockRejectedValue(new Error('Boom'));
+      await expect(service.getOccupancySummary()).rejects.toThrow(InternalServerErrorException);
+    });
   });
 
   describe('getHistory', () => {
@@ -161,6 +223,11 @@ describe('LotsService', () => {
     it('should throw NotFoundException when lot not found', async () => {
       prisma.lot.findFirst.mockResolvedValue(null);
       await expect(service.getHistory('INVALID', '2026-02-07')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw InternalServerErrorException on non-NotFoundException', async () => {
+      prisma.lot.findFirst.mockRejectedValue(new Error('Connection lost'));
+      await expect(service.getHistory('G1', '2026-02-07')).rejects.toThrow(InternalServerErrorException);
     });
   });
 
