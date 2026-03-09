@@ -84,26 +84,28 @@ class ApiService {
     return controller.signal;
   }
 
-  async get<T>(endpoint: string): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>(endpoint, { method: 'GET' });
+  async get<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+    return this.makeRequest<T>(endpoint, { ...options, method: 'GET' });
   }
 
-  async post<T>(endpoint: string, body: unknown): Promise<ApiResponse<T>> {
+  async post<T>(endpoint: string, body: unknown, options: RequestInit = {}): Promise<ApiResponse<T>> {
     return this.makeRequest<T>(endpoint, {
+      ...options,
       method: 'POST',
       body: JSON.stringify(body),
     });
   }
 
-  async put<T>(endpoint: string, body: unknown): Promise<ApiResponse<T>> {
+  async put<T>(endpoint: string, body: unknown, options: RequestInit = {}): Promise<ApiResponse<T>> {
     return this.makeRequest<T>(endpoint, {
+      ...options,
       method: 'PUT',
       body: JSON.stringify(body),
     });
   }
 
-  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>(endpoint, { method: 'DELETE' });
+  async delete<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+    return this.makeRequest<T>(endpoint, { ...options, method: 'DELETE' });
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -11,16 +11,19 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { parkingLots } from '../data/mockParkingLots';
+import { parkingLots as mockParkingLots } from '../data/mockParkingLots';
 import { getOccupancyColor } from '../utils/parkingUtils';
 import { ParkingLotUI } from '../types/ui';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
+import { RecommendationModal } from '../components/Modals/RecommendationModal';
+import { useLotsList } from '../hooks/useLotData';
 import { TYPOGRAPHY, SPACING, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
+import useFavorites from '../hooks/useFavorites';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -57,23 +60,41 @@ const InteractiveLot: React.FC<{
 
 // Filter button component
 const FilterButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = ({ onPress, colors }) => (
-  <TouchableOpacity style={[styles.filterButton, { backgroundColor: colors.primary, shadowColor: colors.shadowDark }]} onPress={onPress} activeOpacity={0.8}>
+  <TouchableOpacity style={[styles.fab, styles.filterButton, { backgroundColor: colors.primary, shadowColor: colors.shadowDark }]} onPress={onPress} activeOpacity={0.8}>
     <Icon name="filter" size={24} color={colors.white} />
   </TouchableOpacity>
 );
 
 // Navigate button component
 const NavigateButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = ({ onPress, colors }) => (
-  <TouchableOpacity style={[styles.navigateButton, { backgroundColor: colors.secondary, shadowColor: colors.shadowDark }]} onPress={onPress} activeOpacity={0.8}>
+  <TouchableOpacity style={[styles.fab, { backgroundColor: colors.secondary, shadowColor: colors.shadowDark }]} onPress={onPress} activeOpacity={0.8}>
     <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={colors.white} />
   </TouchableOpacity>
 );
 
 const MapScreen: React.FC = () => {
   const { colors } = useTheme();
+  const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
+  const { favoriteLots, refreshFavorites } = useFavorites();
+  const { lots: apiLots } = useLotsList();
+
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
-  const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
+  const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
+
+  // Merge live API occupancy data with mock position data
+  // API provides real-time occupancy; mock data provides map x/y positions
+  const parkingLots: ParkingLotUI[] = useMemo(() => {
+    if (apiLots.length === 0) return mockParkingLots;
+    return mockParkingLots.map(mockLot => {
+      const apiLot = apiLots.find(a => a.lot_id === mockLot.id);
+      if (!apiLot) return mockLot;
+      return {
+        ...mockLot,
+        occupancy: Math.round(apiLot.occupancy_rate * 100),
+      };
+    });
+  }, [apiLots]);
   
   // Shared values for map transformations (pan and zoom)
   const translateX = useSharedValue(0);
@@ -158,18 +179,14 @@ const MapScreen: React.FC = () => {
 
   const handleLotPress = (lot: ParkingLotUI) => {
     // Navigate to ShortTermForecastScreen with lot data
-    navigation.navigate('Short Term Forecast', { 
-      lotId: lot.id, 
-      lotName: lot.name 
+    navigation.navigate('Short Term Forecast', {
+      lotId: lot.id,
+      lotName: lot.name
     });
   };
 
   const handleFilterPress = () => {
     setIsFilterModalOpen(true);
-  };
-
-  const handleNavigatePress = () => {
-    // TODO: Add navigation logic here (e.g., open Google Maps to campus)
   };
 
   const handleFilterClose = () => {
@@ -180,6 +197,19 @@ const MapScreen: React.FC = () => {
     setSelectedLots(filteredLots);
     setIsFilterModalOpen(false);
   };
+
+  // Redirect to Short-Term Forecast Screen of the lot selected within the navigation modal
+  const handleLotNavigation = (id: string, name: string) => {
+    navigation.navigate('Short Term Forecast', {
+      lotId: id,
+      lotName: name
+    });
+  };
+
+  const openRecommendationModal = useCallback(() => {
+    refreshFavorites();
+    setIsRecommendationModalOpen(true);
+  }, [refreshFavorites]);
 
   // Filter parking lots based on selected filter
   const filteredParkingLots = selectedLots.length > 0 
@@ -228,8 +258,10 @@ const MapScreen: React.FC = () => {
       {/* Filter button - bottom left */}
       <FilterButton onPress={handleFilterPress} colors={colors} />
 
-      {/* Navigate button - bottom right */}
-      <NavigateButton onPress={handleNavigatePress} colors={colors} />
+      {/* Navigate button FAB - bottom right */}
+      <View style={styles.navigateButtonContainer}>
+        <NavigateButton onPress={openRecommendationModal} colors={colors} />
+      </View>
 
       {/* Filter Modal */}
       <LotFilterModal
@@ -237,6 +269,14 @@ const MapScreen: React.FC = () => {
         onClose={handleFilterClose}
         selectedLots={selectedLots}
         onApplyFilter={handleApplyFilter}
+      />
+
+      {/* Combined Favorites & Recommendations Modal */}
+      <RecommendationModal
+        isOpen={isRecommendationModalOpen}
+        favoriteLotIds={favoriteLots}
+        onClose={() => setIsRecommendationModalOpen(false)}
+        onSelectLot={(id, name) => handleLotNavigation(id, name)}
       />
     </View>
   );
@@ -279,10 +319,7 @@ const styles = StyleSheet.create({
     fontWeight: TYPOGRAPHY.fontWeight.bold,
     textAlign: 'center',
   },
-  filterButton: {
-    position: 'absolute',
-    bottom: SPACING.xxl,
-    left: SPACING.xxl, // Top right position
+  fab: {
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -296,22 +333,15 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 8,
   },
-  navigateButton: {
+  filterButton: {
     position: 'absolute',
-    bottom: SPACING.xxl, // Same as filter button
-    right: SPACING.xxl, // Symmetric position on the right
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: {
-      width: 0,
-      height: SPACING.sm,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    bottom: SPACING.xxl,
+    left: SPACING.xxl,
+  },
+  navigateButtonContainer: {
+    position: 'absolute',
+    bottom: SPACING.xxl,
+    right: SPACING.xxl,
   },
 });
 

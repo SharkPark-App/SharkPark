@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ReliabilityModule } from '../reliability/reliability.module';
+import { AuthModule } from '../auth/auth.module';
 import { OccupancyEventsController } from './occupancy-events.controller';
 import { OccupancyEventsService } from './occupancy-events.service';
 import { OccupancyEventsScheduler } from './occupancy-events.scheduler';
@@ -10,6 +11,7 @@ import { OccupancyEventsScheduler } from './occupancy-events.scheduler';
   imports: [
     ScheduleModule.forRoot(),
     forwardRef(() => ReliabilityModule),
+    AuthModule,
   ],
   controllers: [OccupancyEventsController],
   providers: [OccupancyEventsService, OccupancyEventsScheduler],

@@ -2,7 +2,7 @@
 
 SharkPark is a real-time parking availability system built for California State University, Long Beach (CSULB). The app uses crowdsourced geofencing data from students' phones to estimate how full each campus parking lot is, giving drivers live occupancy information and short-term/long-term forecasts before they leave for campus.
 
-Parking is one of the biggest daily frustrations for commuter students. CSULB has over 30 parking lots spread across campus, and during peak hours drivers waste significant time circling lots that are already full. SharkPark solves this by turning every user's phone into an anonymous sensor. When a student's phone enters or exits a parking lot geofence, the app records that event (without storing any personal location data), and the backend aggregates these events into a live occupancy estimate for each lot.
+Parking is one of the biggest daily frustrations for commuter students. CSULB has 28 parking lots spread across campus, and during peak hours drivers waste significant time circling lots that are already full. SharkPark solves this by turning every user's phone into an anonymous sensor. When a student's phone enters or exits a parking lot geofence, the app records that event (without storing any personal location data), and the backend aggregates these events into a live occupancy estimate for each lot.
 
 ## Table of Contents
 
