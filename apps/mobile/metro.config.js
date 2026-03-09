@@ -11,6 +11,7 @@ const config = {
   watchFolders: [
     path.resolve(__dirname, '../../node_modules'),
     path.resolve(__dirname, './node_modules'),
+    path.resolve(__dirname, '../../packages'),
   ],
   resolver: {
     nodeModulesPaths: [

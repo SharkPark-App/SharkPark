@@ -138,10 +138,17 @@ export class ParkingValidator {
 
   /**
    * Generate a privacy-preserving device hash
-   * Uses the same algorithm as the server for consistency
+   * Uses a simple hash function compatible with React Native
    */
   static generateDeviceHash(userId: string, salt: string = 'parking_device_salt'): string {
-    const crypto = require('crypto');
-    return crypto.createHash('sha256').update(`${userId}_${salt}`).digest('hex');
+    // Simple hash function for React Native compatibility
+    const str = `${userId}_${salt}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(16);
   }
 }
