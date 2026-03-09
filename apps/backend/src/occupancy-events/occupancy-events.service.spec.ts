@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OccupancyEventsService } from './occupancy-events.service';
 import { PrismaService } from '../database/database.module';
 import { ReliabilityService } from '../reliability/reliability.service';
+import { ReliabilityComputationService } from '../reliability/reliability-computation.service';
 
 describe('OccupancyEventsService', () => {
   let service: OccupancyEventsService;
@@ -14,6 +15,10 @@ describe('OccupancyEventsService', () => {
   };
   let mockReliabilityService: {
     computeReliabilitySummary: jest.Mock;
+  };
+  let mockReliabilityComputationService: {
+    computeReliability: jest.Mock;
+    gatherReliabilityInput: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -35,11 +40,23 @@ describe('OccupancyEventsService', () => {
       }),
     };
 
+    mockReliabilityComputationService = {
+      computeReliability: jest.fn().mockReturnValue(50),
+      gatherReliabilityInput: jest.fn().mockResolvedValue({
+        penetrationRate: 0.8,
+        eventCount: 10,
+        lastEventAge: 5,
+        snapshotConsistency: 0.9,
+        isCampusOpen: true,
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OccupancyEventsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ReliabilityService, useValue: mockReliabilityService },
+        { provide: ReliabilityComputationService, useValue: mockReliabilityComputationService },
       ],
     }).compile();
 

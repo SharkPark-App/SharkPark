@@ -11,7 +11,7 @@ import {
   UseGuards
 } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { UserResponse } from './interfaces/user.interface';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { AuthGuard } from '@nestjs/passport';
 
 /**
@@ -83,7 +83,7 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async updateNotifications(
     @Param('userId') userId: string,
-    @Body() preferences: Partial<UserResponse['notification_preferences']>,
+    @Body() preferences: UpdateNotificationPreferencesDto,
   ) {
     const user = await this.usersService.updateNotificationPreferences(
       userId,

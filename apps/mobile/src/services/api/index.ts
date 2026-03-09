@@ -19,6 +19,7 @@ export type {
   OccupancyHistoryRecord,
   GetLotsParams,
   GetHistoryParams,
+  LotRecommendation,
 } from './lots';
 
 // Import for default export

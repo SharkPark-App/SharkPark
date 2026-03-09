@@ -1,4 +1,4 @@
-import { Injectable, Logger, InternalServerErrorException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, Logger, InternalServerErrorException, NotFoundException, forwardRef, Inject } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
 import type { OccupancyEvent, EventType } from '@prisma/client';
 import { CreateOccupancyEventDto } from './dto/create-occupancy-event.dto';
@@ -9,7 +9,7 @@ import type {
 } from './interfaces/occupancy-event.interface';
 import { hashDeviceId, generateEventId } from './utils/privacy.util';
 import { ReliabilityService } from '../reliability/reliability.service';
-import type { ReliabilityInput } from '../reliability/interfaces';
+import { ReliabilityComputationService } from '../reliability/reliability-computation.service';
 
 /** Service for anonymous occupancy events - handles storage, deduplication, and real-time updates */
 @Injectable()
@@ -19,6 +19,7 @@ export class OccupancyEventsService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => ReliabilityService)) private readonly reliabilityService: ReliabilityService,
+    @Inject(forwardRef(() => ReliabilityComputationService)) private readonly reliabilityComputationService: ReliabilityComputationService,
   ) {}
 
   /**
@@ -31,8 +32,14 @@ export class OccupancyEventsService {
     const eventId = generateEventId();
     const now = new Date().toISOString();
 
+    // Find the lot's internal ID (single lookup, reused for deduplication + transaction)
+    const lot = await this.prisma.lot.findFirst({ where: { lot_id: dto.lot_id } });
+    if (!lot) {
+      throw new NotFoundException(`Lot ${dto.lot_id} not found`);
+    }
+
     // Check for duplicate event (same device, same lot, same event type)
-    const isDuplicate = await this.checkDuplicate(dto.lot_id, deviceHash, dto.event_type);
+    const isDuplicate = await this.checkDuplicate(lot.id, deviceHash, dto.event_type);
 
     if (isDuplicate) {
       this.logger.warn(
@@ -208,8 +215,8 @@ export class OccupancyEventsService {
         const available = Math.max(0, capacity - occupancy);
         const occupancyRate = capacity > 0 ? occupancy / capacity : 0;
 
-        // Compute confidence using ReliabilityService
-        const reliabilityInput = await this.gatherReliabilityInput(lot.lot_id, lot);
+        // Compute confidence using ReliabilityComputationService (single source of truth)
+        const reliabilityInput = await this.reliabilityComputationService.gatherReliabilityInput(lot.lot_id, lot);
         const reliabilityScore = this.reliabilityService.computeReliabilitySummary(
           lot.lot_id,
           reliabilityInput,
@@ -268,18 +275,16 @@ export class OccupancyEventsService {
 
   /**
    * Checks if this event is a duplicate (same event type as last event from this device).
+   * Accepts the lot's internal (cuid) ID directly to avoid redundant DB lookups.
    */
   private async checkDuplicate(
-    lotId: string,
+    lotInternalId: string,
     deviceHash: string,
     eventType: 'ENTER' | 'EXIT',
   ): Promise<boolean> {
     try {
-      const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
-      if (!lot) return false;
-
       const deviceState = await this.prisma.deviceState.findUnique({
-        where: { device_hash_lot_id: { device_hash: deviceHash, lot_id: lot.id } },
+        where: { device_hash_lot_id: { device_hash: deviceHash, lot_id: lotInternalId } },
       });
 
       if (!deviceState) {
@@ -288,46 +293,8 @@ export class OccupancyEventsService {
 
       return deviceState.last_event_type === eventType;
     } catch (error) {
-      this.logger.warn(`Failed to check duplicate for lot ${lotId}, proceeding anyway`, error);
+      this.logger.warn(`Failed to check duplicate for lot ${lotInternalId}, proceeding anyway`, error);
       return false;
     }
-  }
-
-  /**
-   * Gathers input data required for reliability computation.
-   */
-  private async gatherReliabilityInput(
-    lotId: string,
-    lot: { id: string; penetration_rate: number; [key: string]: unknown },
-  ): Promise<ReliabilityInput> {
-    const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-
-    // Get events from the last hour
-    const recentEvents = await this.prisma.occupancyEvent.findMany({
-      where: {
-        lot_id: lot.id,
-        timestamp: { gte: oneHourAgo, lte: now },
-      },
-      orderBy: { timestamp: 'asc' },
-    });
-
-    // Calculate minutes since last event
-    let minutesSinceLastEvent = 60;
-    if (recentEvents.length > 0) {
-      const lastEventTime = recentEvents[recentEvents.length - 1].timestamp;
-      minutesSinceLastEvent = (now.getTime() - lastEventTime.getTime()) / 60000;
-    }
-
-    // Count unique devices
-    const uniqueDevices = new Set(recentEvents.map((e) => e.device_hash));
-
-    return {
-      penetrationRate: lot.penetration_rate || 0,
-      minutesSinceLastEvent: Math.min(120, minutesSinceLastEvent),
-      eventsInLastHour: recentEvents.length,
-      uniqueDevicesInLastHour: uniqueDevices.size,
-      historicalAccuracy: null,
-    };
   }
 }

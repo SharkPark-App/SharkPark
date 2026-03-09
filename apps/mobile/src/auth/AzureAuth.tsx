@@ -40,7 +40,13 @@ const config = {
   issuer: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/v2.0`,
   clientId: AZURE_CONFIG.CLIENT_ID,
   redirectUrl: REDIRECT_URL,
-  scopes: ['openid', 'profile', 'email', 'offline_access'],
+  scopes: [
+    'openid',
+    'profile',
+    'email',
+    'offline_access',
+    `api://${AZURE_CONFIG.CLIENT_ID}/access_as_user`
+  ],
   serviceConfiguration: {
     authorizationEndpoint: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/oauth2/v2.0/authorize`,
     tokenEndpoint: `https://login.microsoftonline.com/${AZURE_CONFIG.TENANT_ID}/oauth2/v2.0/token`,
@@ -72,19 +78,21 @@ export interface AuthResult {
   refreshToken?: string;
   accessTokenExpirationDate: string;
   tokenType: string;
+  userId: string;
 }
 
 // =============================================================================
 // Internal Helpers
 // =============================================================================
 
-/** Convert react-native-app-auth result to our AuthResult format */
-const toAuthResult = (result: AuthorizeResult | RefreshResult): AuthResult => ({
+/** Convert react-native-app-auth result to our AuthResult format (exempts email from latter) */
+const toAuthResult = (result: AuthorizeResult | RefreshResult, userEmail: string): AuthResult => ({
   accessToken: result.accessToken,
   idToken: result.idToken,
   refreshToken: result.refreshToken ?? undefined,
   accessTokenExpirationDate: result.accessTokenExpirationDate,
   tokenType: result.tokenType,
+  userId: userEmail
 });
 
 // =============================================================================
@@ -125,8 +133,7 @@ export const loginWithAzure = async (): Promise<AuthResult> => {
     // Sync user with backend (triggers findOrCreateUser)
     await syncUserWithBackend(result.idToken, userEmail);
 
-    return toAuthResult(result);
-
+    return toAuthResult(result, userEmail);
   } catch (error) {
     if (__DEV__) {
       console.error('[AzureAuth] Login failed:', error);
@@ -280,7 +287,10 @@ export const loadAuth = async (): Promise<AuthResult | null> => {
 
     const authState: AuthResult = JSON.parse(credentials.password);
     const expirationDate = new Date(authState.accessTokenExpirationDate);
+    const userEmail: string = authState.userId;
     const now = new Date();
+
+    log('[AzureAuth] Logging in as user:', userEmail);
 
     // Token is still valid (with buffer for proactive refresh)
     if (now.getTime() < expirationDate.getTime() - TOKEN_REFRESH_BUFFER_MS) {
@@ -299,7 +309,7 @@ export const loadAuth = async (): Promise<AuthResult | null> => {
 
         log('[AzureAuth] Token refresh successful');
 
-        const newAuthState = toAuthResult(refreshResult);
+        const newAuthState = toAuthResult(refreshResult, userEmail);
         await saveAuth(newAuthState);
         return newAuthState;
 
