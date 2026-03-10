@@ -153,6 +153,9 @@ importers:
       '@react-native-community/geolocation':
         specifier: ^3.4.0
         version: 3.4.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)
+      '@react-native-community/netinfo':
+        specifier: ^12.0.1
+        version: 12.0.1(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)
       '@react-navigation/bottom-tabs':
         specifier: ^7.8.12
         version: 7.12.0(@react-navigation/native@7.1.28(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1))(react-native-safe-area-context@5.6.2(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1))(react-native-screens@4.23.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1))(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)
@@ -162,6 +165,9 @@ importers:
       '@react-navigation/stack':
         specifier: ^7.6.12
         version: 7.7.1(4fa8214cfd0d0a854ed38735242bb424)
+      '@sharkpark/parking-validation':
+        specifier: workspace:*
+        version: link:../../packages/parking-validation
       jwt-decode:
         specifier: ^4.0.0
         version: 4.0.0
@@ -174,6 +180,9 @@ importers:
       react-native-app-auth:
         specifier: ^8.1.0
         version: 8.1.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))
+      react-native-device-info:
+        specifier: ^15.0.2
+        version: 15.0.2(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))
       react-native-gesture-handler:
         specifier: ^2.29.1
         version: 2.30.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)
@@ -243,6 +252,16 @@ importers:
         version: 19.1.1(react@19.1.1)
       typescript:
         specifier: ^5.8.3
+        version: 5.9.3
+
+  packages/parking-validation:
+    dependencies:
+      '@prisma/client':
+        specifier: ^5.7.1
+        version: 5.22.0(prisma@7.4.0(@types/react@19.2.13)(react-dom@19.2.4(react@19.1.1))(react@19.1.1)(typescript@5.9.3))
+    devDependencies:
+      typescript:
+        specifier: ^5.3.3
         version: 5.9.3
 
   packages/types: {}
@@ -1356,6 +1375,15 @@ packages:
   '@prisma/client-runtime-utils@7.4.0':
     resolution: {integrity: sha512-jTmWAOBGBSCT8n7SMbpjCpHjELgcDW9GNP/CeK6CeqjUFlEL6dn8Cl81t/NBDjJdXDm85XDJmc+PEQqqQee3xw==}
 
+  '@prisma/client@5.22.0':
+    resolution: {integrity: sha512-M0SVXfyHnQREBKxCgyo7sffrKttwE6R8PMq330MIUF0pTwjUhLbW84pFDlf06B27XyCR++VtjugEnIHdr07SVA==}
+    engines: {node: '>=16.13'}
+    peerDependencies:
+      prisma: '*'
+    peerDependenciesMeta:
+      prisma:
+        optional: true
+
   '@prisma/client@7.4.0':
     resolution: {integrity: sha512-Sc+ncr7+ph1hMf1LQfn6UyEXDEamCd5pXMsx8Q3SBH0NGX+zjqs3eaABt9hXwbcK9l7f8UyK8ldxOWA2LyPynQ==}
     engines: {node: ^20.19 || ^22.12 || >=24.0}
@@ -1457,6 +1485,12 @@ packages:
     peerDependencies:
       react: '*'
       react-native: '*'
+
+  '@react-native-community/netinfo@12.0.1':
+    resolution: {integrity: sha512-P/3caXIvfYSJG8AWJVefukg+ZGRPs+M4Lp3pNJtgcTYoJxCjWrKQGNnCkj/Cz//zWa/avGed0i/wzm0T8vV2IQ==}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.59'
 
   '@react-native/assets-registry@0.82.1':
     resolution: {integrity: sha512-B1SRwpntaAcckiatxbjzylvNK562Ayza05gdJCjDQHTiDafa1OABmyB5LHt7qWDOpNkaluD+w11vHF7pBmTpzQ==}
@@ -3050,7 +3084,7 @@ packages:
 
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
-    deprecated: Glob versions prior to v9 are no longer supported
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   globals@14.0.0:
     resolution: {integrity: sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ==}
@@ -4367,6 +4401,11 @@ packages:
 
   react-native-base64@0.0.2:
     resolution: {integrity: sha512-Fu/J1a2y0X22EJDWqJR2oEa1fpP4gTFjYxk8ElJdt1Yak3HOXmFJ7EohLVHU2DaQkgmKfw8qb7u/48gpzveRbg==}
+
+  react-native-device-info@15.0.2:
+    resolution: {integrity: sha512-dd71eXG2l3Cwp66IvKNadMTB8fhU3PEjyVddI97sYan+D4bgIAUmgGDhbSOFvHcGavksb2U17kiQYaDiK2WK2g==}
+    peerDependencies:
+      react-native: '*'
 
   react-native-gesture-handler@2.30.0:
     resolution: {integrity: sha512-5YsnKHGa0X9C8lb5oCnKm0fLUPM6CRduvUUw2Bav4RIj/C3HcFh4RIUnF8wgG6JQWCL1//gRx4v+LVWgcIQdGA==}
@@ -6699,6 +6738,10 @@ snapshots:
 
   '@prisma/client-runtime-utils@7.4.0': {}
 
+  '@prisma/client@5.22.0(prisma@7.4.0(@types/react@19.2.13)(react-dom@19.2.4(react@19.1.1))(react@19.1.1)(typescript@5.9.3))':
+    optionalDependencies:
+      prisma: 7.4.0(@types/react@19.2.13)(react-dom@19.2.4(react@19.1.1))(react@19.1.1)(typescript@5.9.3)
+
   '@prisma/client@7.4.0(prisma@7.4.0(@types/react@19.2.13)(react-dom@19.2.4(react@19.1.1))(react@19.1.1)(typescript@5.9.3))(typescript@5.9.3)':
     dependencies:
       '@prisma/client-runtime-utils': 7.4.0
@@ -6911,6 +6954,11 @@ snapshots:
       - utf-8-validate
 
   '@react-native-community/geolocation@3.4.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)':
+    dependencies:
+      react: 19.1.1
+      react-native: 0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1)
+
+  '@react-native-community/netinfo@12.0.1(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)':
     dependencies:
       react: 19.1.1
       react-native: 0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1)
@@ -10487,6 +10535,10 @@ snapshots:
       react-native-base64: 0.0.2
 
   react-native-base64@0.0.2: {}
+
+  react-native-device-info@15.0.2(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1)):
+    dependencies:
+      react-native: 0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1)
 
   react-native-gesture-handler@2.30.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1):
     dependencies:

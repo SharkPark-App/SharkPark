@@ -6,6 +6,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { SectionCard } from '../components/SectionCard';
 import { Header } from '../components';
 import { GeofencingTestButton } from '../components/GeofencingTestButton';
+import ParkingValidationDebug from '../components/ParkingValidationDebug';
 import useLocationService from '../hooks/useLocationService';
 import { useSimpleGeofencing } from '../context/SimpleGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
@@ -195,6 +196,13 @@ const ProfileScreen: React.FC = () => {
             )}
           </View>
         </SectionCard>
+
+        {/* Parking Validation Debug - Development Only */}
+        {__DEV__ && (
+          <SectionCard title="Parking Validation Debug">
+            <ParkingValidationDebug />
+          </SectionCard>
+        )}
 
         {/* Appearance Settings */}
         <SectionCard title="Appearance">
