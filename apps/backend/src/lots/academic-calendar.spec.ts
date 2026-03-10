@@ -187,19 +187,18 @@ describe('Academic Calendar', () => {
     // ── Summer session ──
 
     describe('Summer 2026', () => {
-      it('starts the day after May intersession ends', () => {
-        const expected = new Date(
-          year2025.mayIntersession.semesterEnd.getTime() + 86_400_000,
-        );
+      it('starts on the last Tuesday of May', () => {
+        // Last Tuesday of May 2026 is May 26
+        const expected = new Date('2026-05-26T00:00:00Z');
         expect(year2025.summer.classesStart.getTime()).toBe(expected.getTime());
       });
 
-      it('lasts about 10 weeks', () => {
+      it('lasts about 12 weeks', () => {
         const { classesStart, classesEnd } = year2025.summer;
         const days = Math.round(
           (classesEnd.getTime() - classesStart.getTime()) / 86_400_000,
         );
-        expect(days).toBe(69);
+        expect(days).toBe(83);
       });
 
       it('includes Juneteenth if in session', () => {

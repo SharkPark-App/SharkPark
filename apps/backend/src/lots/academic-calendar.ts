@@ -73,7 +73,7 @@ export const COMMUTER_MAP: Record<SemesterCategory, number> = {
 const IN_SEMESTER_BREAK_FRACTION = 0.10;
 
 const INTERSESSION_KEYS = new Set<SemesterKey>(['winter', 'mayIntersession', 'summer']);
-const SEMESTER_ORDER: SemesterKey[] = ['fall', 'winter', 'spring', 'mayIntersession', 'summer'];
+const SEMESTER_ORDER: SemesterKey[] = ['fall', 'winter', 'spring', 'summer', 'mayIntersession'];
 const SEMESTER_CATEGORY_MAP: Record<SemesterKey, SemesterCategory> = {
   fall: 'fall',
   spring: 'spring',
@@ -255,9 +255,12 @@ function generateMayIntersession(spring: SemesterInfo): SemesterInfo {
   };
 }
 
-function generateSummer(may: SemesterInfo, year: number): SemesterInfo {
-  const start = addDays(may.semesterEnd, 1);
-  const end = addDays(start, 69); // ~10 weeks
+function generateSummer(year: number): SemesterInfo {
+  // 12-week session starting last Tuesday of May (~May 26)
+  // This overlaps the last 2 weeks of may-intersession, but summer is prioritized
+  // in lookups (SEMESTER_ORDER) to correctly estimate 8K commuters instead of 3K
+  const start = lastWeekday(year, 5, 2); // Tuesday = 2 in UTC day convention
+  const end = addDays(start, 83); // 12 weeks
 
   const juneteenth = observe(utc(year, 6, 19));
   const independenceDay = observe(utc(year, 7, 4));
@@ -293,7 +296,7 @@ export function generateAcademicYear(startYear: number): AcademicYear {
   const spring = generateSpring(nextYear);
   const winter = generateWinter(nextYear);
   const mayIntersession = generateMayIntersession(spring);
-  const summer = generateSummer(mayIntersession, nextYear);
+  const summer = generateSummer(nextYear);
 
   const year: AcademicYear = { fall, spring, winter, mayIntersession, summer };
   cache.set(startYear, year);
