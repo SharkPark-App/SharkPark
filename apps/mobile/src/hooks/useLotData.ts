@@ -1,8 +1,13 @@
 /**
  * Custom hook for managing lot data and API calls
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { lotsApi, ParkingLotResponse, OccupancyHistoryRecord, ApiError } from '../services/api';
+
+/** How often to re-fetch lot data (ms) */
+const LOT_DETAIL_POLL_MS = 60_000;  // 60 seconds
+const LOTS_LIST_POLL_MS  = 30_000;  // 30 seconds
 
 interface UseLotDataReturn {
   lot: ParkingLotResponse | null;
@@ -73,13 +78,31 @@ export function useLotData(lotId: string): UseLotDataReturn {
     }
   }, [lotId]);
 
-  // Initial data load
+  // Initial data load + polling
   useEffect(() => {
-    if (lotId) {
+    if (!lotId) return;
+
+    refreshLot();
+    refreshHistory();
+
+    const interval = setInterval(() => {
       refreshLot();
-      refreshHistory();
-    }
+    }, LOT_DETAIL_POLL_MS);
+
+    return () => clearInterval(interval);
   }, [lotId, refreshLot, refreshHistory]);
+
+  // Re-fetch when the app returns to the foreground
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && next === 'active') {
+        refreshLot();
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
+  }, [refreshLot]);
 
   return {
     lot,
@@ -127,8 +150,27 @@ export function useLotsList(filters?: {
     }
   }, [filters]);
 
+  // Initial fetch + polling
   useEffect(() => {
     refreshLots();
+
+    const interval = setInterval(() => {
+      refreshLots();
+    }, LOTS_LIST_POLL_MS);
+
+    return () => clearInterval(interval);
+  }, [refreshLots]);
+
+  // Re-fetch when the app returns to the foreground
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && next === 'active') {
+        refreshLots();
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
   }, [refreshLots]);
 
   return {

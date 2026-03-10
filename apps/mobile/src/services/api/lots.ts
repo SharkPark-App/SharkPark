@@ -46,6 +46,14 @@ export interface ParkingLotResponse extends ParkingLot {
   available: number;
   occupancy_rate: number;
   fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
+  /** Estimated true occupancy (scaled up from raw device count) */
+  estimated_occupancy: number;
+  /** Estimated available spots (capacity - estimated_occupancy) */
+  estimated_available: number;
+  /** Raw device count (current_occupancy before scaling) */
+  raw_occupancy: number;
+  /** Effective penetration rate used for estimation (0.01–1.0) */
+  effective_penetration_rate: number;
 }
 
 export interface OccupancySummary {

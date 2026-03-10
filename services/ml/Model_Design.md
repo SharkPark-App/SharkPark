@@ -72,9 +72,13 @@ CREATE TABLE occupancy_snapshots (
   reliability_score FLOAT,
   is_cold_start     BOOLEAN,
 
-  -- ML feature columns (populated at write time)
-  semester          TEXT,                  -- "fall", "spring", "summer", "break"
-  academic_period   TEXT,                  -- "early", "regular", "midterm", "finals", "break"
+  -- Penetration rate estimation columns
+  estimated_occupancy    INT,              -- Scaled-up occupancy estimate
+  penetration_rate_used  FLOAT,            -- Effective penetration rate at snapshot time
+
+  -- ML feature columns (populated at write time by academic-calendar.ts)
+  semester          TEXT,                  -- fall | spring | summer | session | break
+  academic_period   TEXT,                  -- early | regular | midterms | late | dead_week | finals | break
   week_of_semester  INT,
   is_campus_open    BOOLEAN DEFAULT TRUE
 );
@@ -123,8 +127,8 @@ The ML pipeline also reads from these operational tables:
 | `lots` | Lot metadata & capacity | `lot_id`, `capacity`, `current_occupancy`, `lot_type`, `penetration_rate`, `confidence` |
 | `campus_events` + `event_impacts` | Event-aware features | `event_type` (ATHLETIC \| ACADEMIC \| PERFORMANCE \| OTHER), `expected_attendance`, `impact_level`, `expected_increase_percent` |
 | `weather` | Weather features | `temperature_f`, `humidity_percent`, `wind_speed_mph`, `precipitation_probability`, `is_raining` |
-| `academic_calendar` | Period classification | `semester` (FALL \| SPRING \| SUMMER \| SESSION \| BREAK), `period_type` (EARLY \| REGULAR \| MIDTERMS \| LATE \| DEAD_WEEK \| FINALS), `start_date`, `end_date` |
-| `campus_closures` | `is_campus_open` flag | `date`, `reason` |
+| `academic_calendar` | Period classification | `semester`, `period_type`, `week_of_semester` — provided by `academic_calendar.py` |
+| `campus_closures` | `is_campus_open` flag | `is_campus_open(date)` — provided by `academic_calendar.py` |
 
 ## Model Rationale
 

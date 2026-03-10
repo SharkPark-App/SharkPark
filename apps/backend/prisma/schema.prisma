@@ -22,8 +22,6 @@ model School {
   lots             Lot[]
   users            User[]
   campus_events    CampusEvent[]
-  academic_periods AcademicCalendar[]
-  campus_closures  CampusClosure[]
   weather          Weather[]
 
   @@map("schools")
@@ -140,9 +138,13 @@ model OccupancySnapshot {
   reliability_score Float?
   is_cold_start     Boolean?
 
-  // ML feature columns
-  semester          String?         // "FALL", "SPRING", "SUMMER", "SESSION", "BREAK"
-  academic_period   String?         // "EARLY", "REGULAR", "MIDTERMS", "LATE", "DEAD_WEEK", "FINALS", "BREAK"
+  // Penetration rate estimation columns
+  estimated_occupancy    Int?     // Scaled-up occupancy estimate
+  penetration_rate_used  Float?   // Effective penetration rate at snapshot time
+
+  // ML feature columns (populated at write time by academic-calendar.ts)
+  semester          String?         // "fall", "spring", "summer", "session", "break"
+  academic_period   String?         // "early", "regular", "midterms", "late", "dead_week", "finals", "break"
   week_of_semester  Int?
   is_campus_open    Boolean         @default(true)
 
@@ -197,30 +199,6 @@ model EventImpact {
 
   @@unique([event_id, lot_id])
   @@map("event_impacts")
-}
-
-model AcademicCalendar {
-  id          String   @id @default(cuid())
-  school_id   String
-  period_name String   // "Fall 2025", "Spring 2026"
-  period_type String   // "FALL", "SPRING", "SUMMER", "SESSION", "BREAK"
-  start_date  DateTime
-  end_date    DateTime
-
-  school School @relation(fields: [school_id], references: [id])
-
-  @@map("academic_calendar")
-}
-
-model CampusClosure {
-  id        String   @id @default(cuid())
-  school_id String
-  reason    String
-  date      DateTime
-
-  school School @relation(fields: [school_id], references: [id])
-
-  @@map("campus_closures")
 }
 
 model Weather {

@@ -10,6 +10,14 @@ export interface ParkingLotResponse extends PrismaLot {
   available: number;
   occupancy_rate: number;
   fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
+  /** Scaled-up occupancy estimate based on penetration rate */
+  estimated_occupancy: number;
+  /** Spots available based on estimated occupancy */
+  estimated_available: number;
+  /** The raw device count before scaling (same as current_occupancy) */
+  raw_occupancy: number;
+  /** Effective penetration rate used for this estimate (0.01–1.0) */
+  effective_penetration_rate: number;
 }
 
 export interface GetLotsQueryParams {

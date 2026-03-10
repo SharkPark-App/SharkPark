@@ -81,7 +81,7 @@ const parkingLots: LotSeed[] = [
   // ===== STUDENT LOTS (G LOTS) =====
   {
     lot_id: 'G1', lot_name: 'Lot G1', display_name: 'Lot G1 - East Campus', lot_number: 'G1',
-    lot_type: LotType.STUDENT, capacity: 231, current_occupancy: 182,
+    lot_type: LotType.STUDENT, capacity: 231, current_occupancy: 27,
     location_description: 'East Campus - Near Japanese Garden',
     building_proximity: ['ECS', 'Japanese Garden', 'East Walkway'],
     center_lat: 33.7838, center_lng: -118.1089, geofence_radius: 50,
@@ -95,7 +95,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G2', lot_name: 'Lot G2', display_name: 'Lot G2 - Walter Pyramid', lot_number: 'G2',
-    lot_type: LotType.STUDENT, capacity: 419, current_occupancy: 307,
+    lot_type: LotType.STUDENT, capacity: 419, current_occupancy: 55,
     location_description: 'East Campus - Walter Pyramid',
     building_proximity: ['Walter Pyramid', 'Athletics', 'Tennis Courts'],
     center_lat: 33.7825, center_lng: -118.1098, geofence_radius: 70,
@@ -110,7 +110,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G3', lot_name: 'Lot G3', display_name: 'Lot G3 - East Campus', lot_number: 'G3',
-    lot_type: LotType.STUDENT, capacity: 230, current_occupancy: 176,
+    lot_type: LotType.STUDENT, capacity: 230, current_occupancy: 21,
     location_description: 'East Campus',
     building_proximity: ['East Campus Buildings'],
     center_lat: 33.7830, center_lng: -118.1075, geofence_radius: 60,
@@ -124,7 +124,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G4', lot_name: 'Lot G4', display_name: 'Lot G4 - Central Campus', lot_number: 'G4',
-    lot_type: LotType.STUDENT, capacity: 463, current_occupancy: 331,
+    lot_type: LotType.STUDENT, capacity: 463, current_occupancy: 66,
     location_description: 'Central Campus',
     building_proximity: ['USU', 'Library', 'Admin Building'],
     center_lat: 33.7819, center_lng: -118.1134, geofence_radius: 80,
@@ -139,7 +139,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G5', lot_name: 'Lot G5', display_name: 'Lot G5 - West Campus', lot_number: 'G5',
-    lot_type: LotType.STUDENT, capacity: 120, current_occupancy: 82,
+    lot_type: LotType.STUDENT, capacity: 120, current_occupancy: 8,
     location_description: 'West Campus',
     building_proximity: ['West Campus Buildings'],
     center_lat: 33.7805, center_lng: -118.1165, geofence_radius: 55,
@@ -153,7 +153,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G7', lot_name: 'Lot G7', display_name: 'Lot G7 - Engineering', lot_number: 'G7',
-    lot_type: LotType.STUDENT, capacity: 751, current_occupancy: 613,
+    lot_type: LotType.STUDENT, capacity: 751, current_occupancy: 98,
     location_description: 'East Campus - Engineering Complex',
     building_proximity: ['Engineering', 'Computer Science', 'CEAC'],
     center_lat: 33.7842, center_lng: -118.1115, geofence_radius: 65,
@@ -168,7 +168,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G8', lot_name: 'Lot G8', display_name: 'Lot G8 - Student Health', lot_number: 'G8',
-    lot_type: LotType.STUDENT, capacity: 720, current_occupancy: 548,
+    lot_type: LotType.STUDENT, capacity: 720, current_occupancy: 77,
     location_description: 'West Campus - Student Health Center',
     building_proximity: ['Student Health', 'Recreation Center'],
     center_lat: 33.7812, center_lng: -118.1145, geofence_radius: 60,
@@ -182,7 +182,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G9', lot_name: 'Lot G9', display_name: 'Lot G9 - Library', lot_number: 'G9',
-    lot_type: LotType.STUDENT, capacity: 405, current_occupancy: 347,
+    lot_type: LotType.STUDENT, capacity: 405, current_occupancy: 66,
     location_description: 'West Campus - University Library',
     building_proximity: ['Library', 'Academic Buildings'],
     center_lat: 33.7817, center_lng: -118.1152, geofence_radius: 70,
@@ -197,7 +197,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G10', lot_name: 'Lot G10', display_name: 'Lot G10 - South Campus', lot_number: 'G10',
-    lot_type: LotType.STUDENT, capacity: 19, current_occupancy: 15,
+    lot_type: LotType.STUDENT, capacity: 19, current_occupancy: 2,
     location_description: 'South Campus', building_proximity: ['South Campus Buildings'],
     center_lat: 33.7798, center_lng: -118.1120, geofence_radius: 55,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
@@ -210,7 +210,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G11', lot_name: 'Lot G11', display_name: 'Lot G11 - Palo Verde', lot_number: 'G11',
-    lot_type: LotType.STUDENT, capacity: 319, current_occupancy: 229,
+    lot_type: LotType.STUDENT, capacity: 319, current_occupancy: 21,
     location_description: 'East Campus - Palo Verde',
     building_proximity: ['Palo Verde', 'Student Housing'],
     center_lat: 33.7845, center_lng: -118.1070, geofence_radius: 50,
@@ -224,7 +224,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G12', lot_name: 'Lot G12', display_name: 'Lot G12 - North Campus', lot_number: 'G12',
-    lot_type: LotType.STUDENT, capacity: 628, current_occupancy: 455,
+    lot_type: LotType.STUDENT, capacity: 628, current_occupancy: 36,
     location_description: 'North Campus',
     building_proximity: ['North Campus Buildings'],
     center_lat: 33.7855, center_lng: -118.1130, geofence_radius: 45,
@@ -238,7 +238,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G14', lot_name: 'Lot G14', display_name: 'Lot G14 - Beachside', lot_number: 'G14',
-    lot_type: LotType.STUDENT, capacity: 262, current_occupancy: 197,
+    lot_type: LotType.STUDENT, capacity: 262, current_occupancy: 26,
     location_description: 'West Campus - Near PCH',
     building_proximity: ['Beach Access', 'West Gate'],
     center_lat: 33.7790, center_lng: -118.1175, geofence_radius: 60,
@@ -254,7 +254,7 @@ const parkingLots: LotSeed[] = [
   // ===== EMPLOYEE LOTS =====
   {
     lot_id: 'E1', lot_name: 'Lot E1', display_name: 'Lot E1 - Faculty/Staff', lot_number: 'E1',
-    lot_type: LotType.EMPLOYEE, capacity: 440, current_occupancy: 359,
+    lot_type: LotType.EMPLOYEE, capacity: 440, current_occupancy: 79,
     location_description: 'Central Campus - Admin Area',
     building_proximity: ['Administration', 'Faculty Offices'],
     center_lat: 33.7822, center_lng: -118.1128, geofence_radius: 40,
@@ -268,7 +268,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E2', lot_name: 'Lot E2', display_name: 'Lot E2 - Faculty/Staff', lot_number: 'E2',
-    lot_type: LotType.EMPLOYEE, capacity: 269, current_occupancy: 221,
+    lot_type: LotType.EMPLOYEE, capacity: 269, current_occupancy: 55,
     location_description: 'East Campus - Faculty',
     building_proximity: ['Engineering Faculty', 'Science Faculty'],
     center_lat: 33.7835, center_lng: -118.1105, geofence_radius: 35,
@@ -282,7 +282,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E3', lot_name: 'Lot E3', display_name: 'Lot E3 - Faculty/Staff', lot_number: 'E3',
-    lot_type: LotType.EMPLOYEE, capacity: 65, current_occupancy: 49,
+    lot_type: LotType.EMPLOYEE, capacity: 65, current_occupancy: 10,
     location_description: 'West Campus - Faculty',
     building_proximity: ['Liberal Arts', 'Education'],
     center_lat: 33.7810, center_lng: -118.1155, geofence_radius: 45,
@@ -296,7 +296,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E4', lot_name: 'Lot E4', display_name: 'Lot E4 - Faculty/Staff', lot_number: 'E4',
-    lot_type: LotType.EMPLOYEE, capacity: 81, current_occupancy: 67,
+    lot_type: LotType.EMPLOYEE, capacity: 81, current_occupancy: 20,
     location_description: 'Central Campus - Faculty',
     building_proximity: ['Admin Building', 'President Office'],
     center_lat: 33.7820, center_lng: -118.1140, geofence_radius: 60,
@@ -311,7 +311,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E5', lot_name: 'Lot E5', display_name: 'Lot E5 - Faculty/Staff', lot_number: 'E5',
-    lot_type: LotType.EMPLOYEE, capacity: 66, current_occupancy: 54,
+    lot_type: LotType.EMPLOYEE, capacity: 66, current_occupancy: 15,
     location_description: 'North Campus - Faculty',
     building_proximity: ['Science Buildings', 'Research Labs'],
     center_lat: 33.7850, center_lng: -118.1125, geofence_radius: 30,
@@ -325,7 +325,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E6', lot_name: 'Lot E6', display_name: 'Lot E6 - Faculty/Staff', lot_number: 'E6',
-    lot_type: LotType.EMPLOYEE, capacity: 240, current_occupancy: 194,
+    lot_type: LotType.EMPLOYEE, capacity: 240, current_occupancy: 35,
     location_description: 'Central Campus - Faculty',
     building_proximity: ['Music', 'Theatre Arts'],
     center_lat: 33.7815, center_lng: -118.1138, geofence_radius: 40,
@@ -339,7 +339,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E7', lot_name: 'Lot E7', display_name: 'Lot E7 - Faculty/Staff', lot_number: 'E7',
-    lot_type: LotType.EMPLOYEE, capacity: 91, current_occupancy: 70,
+    lot_type: LotType.EMPLOYEE, capacity: 91, current_occupancy: 11,
     location_description: 'South Campus - Faculty',
     building_proximity: ['South Campus Faculty Offices'],
     center_lat: 33.7795, center_lng: -118.1135, geofence_radius: 30,
@@ -354,7 +354,7 @@ const parkingLots: LotSeed[] = [
   // ===== ADDITIONAL STUDENT LOTS =====
   {
     lot_id: 'G6', lot_name: 'Lot G6', display_name: 'Lot G6 - South Campus', lot_number: 'G6',
-    lot_type: LotType.STUDENT, capacity: 793, current_occupancy: 599,
+    lot_type: LotType.STUDENT, capacity: 793, current_occupancy: 66,
     location_description: 'South Campus',
     building_proximity: ['Kinesiology', 'Gymnasium'],
     center_lat: 33.7800, center_lng: -118.1110, geofence_radius: 55,
@@ -368,7 +368,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'G13', lot_name: 'Lot G13', display_name: 'Lot G13 - Upper Campus', lot_number: 'G13',
-    lot_type: LotType.STUDENT, capacity: 304, current_occupancy: 226,
+    lot_type: LotType.STUDENT, capacity: 304, current_occupancy: 18,
     location_description: 'Upper Campus',
     building_proximity: ['Upper Campus Buildings'],
     center_lat: 33.7860, center_lng: -118.1100, geofence_radius: 50,
@@ -382,7 +382,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E8', lot_name: 'Lot E8', display_name: 'Lot E8 - Faculty/Staff', lot_number: 'E8',
-    lot_type: LotType.EMPLOYEE, capacity: 380, current_occupancy: 285,
+    lot_type: LotType.EMPLOYEE, capacity: 380, current_occupancy: 57,
     location_description: 'North Campus - Faculty',
     building_proximity: ['Research Park'],
     center_lat: 33.7858, center_lng: -118.1115, geofence_radius: 25,
@@ -396,7 +396,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E9', lot_name: 'Lot E9', display_name: 'Lot E9 - Faculty/Staff', lot_number: 'E9',
-    lot_type: LotType.EMPLOYEE, capacity: 167, current_occupancy: 138,
+    lot_type: LotType.EMPLOYEE, capacity: 167, current_occupancy: 4,
     location_description: 'North Campus - Faculty',
     building_proximity: ['Faculty Offices'],
     center_lat: 33.7841, center_lng: -118.1153, geofence_radius: 32,
@@ -410,7 +410,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E10', lot_name: 'Lot E10', display_name: 'Lot E10 - Faculty/Staff', lot_number: 'E10',
-    lot_type: LotType.EMPLOYEE, capacity: 183, current_occupancy: 118,
+    lot_type: LotType.EMPLOYEE, capacity: 183, current_occupancy: 5,
     location_description: 'South Campus - Faculty',
     building_proximity: ['Faculty Offices'],
     center_lat: 33.7825, center_lng: -118.1135, geofence_radius: 35,
@@ -424,7 +424,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'E11', lot_name: 'Lot E11', display_name: 'Lot E11 - Faculty/Staff', lot_number: 'E11',
-    lot_type: LotType.EMPLOYEE, capacity: 98, current_occupancy: 80,
+    lot_type: LotType.EMPLOYEE, capacity: 98, current_occupancy: 4,
     location_description: 'Central Campus - Faculty',
     building_proximity: ['Faculty Offices', 'Admin Building'],
     center_lat: 33.7835, center_lng: -118.1140, geofence_radius: 40,
@@ -439,7 +439,7 @@ const parkingLots: LotSeed[] = [
   // ===== NAMED LOTS =====
   {
     lot_id: 'PVN', lot_name: 'Palo Verde North', display_name: 'Palo Verde North - North Campus', lot_number: 'PVN',
-    lot_type: LotType.STUDENT, capacity: 1400, current_occupancy: 910,
+    lot_type: LotType.STUDENT, capacity: 1400, current_occupancy: 91,
     location_description: 'North Campus - Palo Verde Structure',
     building_proximity: ['Palo Verde North', 'Recreation Center'],
     center_lat: 33.7850, center_lng: -118.1170, geofence_radius: 50,
@@ -454,7 +454,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'PVS', lot_name: 'Palo Verde South', display_name: 'Palo Verde South - South Campus', lot_number: 'PVS',
-    lot_type: LotType.STUDENT, capacity: 1410, current_occupancy: 914,
+    lot_type: LotType.STUDENT, capacity: 1410, current_occupancy: 82,
     location_description: 'South Campus - Palo Verde Structure',
     building_proximity: ['Palo Verde South', 'Recreation Center'],
     center_lat: 33.7820, center_lng: -118.1175, geofence_radius: 48,
@@ -469,7 +469,7 @@ const parkingLots: LotSeed[] = [
   },
   {
     lot_id: 'PYR', lot_name: 'Pyramid Parking Structure', display_name: 'Pyramid Structure - Event Parking', lot_number: 'PYR',
-    lot_type: LotType.STUDENT, capacity: 3000, current_occupancy: 2373,
+    lot_type: LotType.STUDENT, capacity: 3000, current_occupancy: 380,
     location_description: 'East Campus - Near Walter Pyramid',
     building_proximity: ['Walter Pyramid', 'Athletics', 'Sports Facilities'],
     center_lat: 33.7825, center_lng: -118.1095, geofence_radius: 65,
@@ -607,8 +607,6 @@ async function main() {
   await prisma.predictionLongTerm.deleteMany();
   await prisma.campusEvent.deleteMany();
   await prisma.weather.deleteMany();
-  await prisma.academicCalendar.deleteMany();
-  await prisma.campusClosure.deleteMany();
   await prisma.user.deleteMany();
   await prisma.lot.deleteMany();
   await prisma.school.deleteMany();
@@ -806,70 +804,70 @@ async function main() {
   }
   console.log(`[seed] Seeded ${snapshotRows.length} historical occupancy snapshots\n`);
 
-  // 8. Seed Occupancy Events (last 24 hours)
+  // 8. Seed Occupancy Events (last 2 hours, all lots)
+  // Generate ~1,500 unique device hashes so countCampusDevices returns a
+  // realistic number and the scaling cap doesn't bottleneck at 2×.
+  console.log('[seed] Generating unique device hashes...');
+  const TOTAL_CAMPUS_DEVICES = 1500;
+  const allDeviceHashes: string[] = [];
+  for (let i = 0; i < TOTAL_CAMPUS_DEVICES; i++) {
+    // Deterministic hex hashes: pad index and repeat to 64 chars
+    const hex = i.toString(16).padStart(4, '0');
+    allDeviceHashes.push(hex.repeat(16));
+  }
+
   console.log('[seed] Seeding occupancy events...');
-  const sampleDeviceHashes = [
-    '5de210df8a7e4b2c9f1a3d5e7b9c1d3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3c5d',
-    '7f3a1b5c9d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f4',
-    '9e5c3a1d7f2b8e4a0c6d2f8a4b0e6c2d8f4a0b6c2e8d4f0a6b2c8e4d0f6a2b8',
-    'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
-    'b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4',
-  ];
   const eventRows: {
     lot_id: string; event_type: EventType; device_hash: string; timestamp: Date;
   }[] = [];
-
-  for (let hourOffset = 0; hourOffset < 24; hourOffset++) {
-    const eventTime = new Date(now.getTime() - hourOffset * 60 * 60 * 1000);
-    const hour = eventTime.getHours();
-    if (hour < 6 || hour >= 22) continue;
-
-    for (const lotId of sampleLotIds) {
-      const lotDbId = lotMap.get(lotId);
-      if (!lotDbId) continue;
-
-      const numEvents = Math.floor(Math.random() * 4) + 2;
-      for (let i = 0; i < numEvents; i++) {
-        const deviceHash = sampleDeviceHashes[Math.floor(Math.random() * sampleDeviceHashes.length)];
-        const eventType = Math.random() > 0.5 ? EventType.ENTER : EventType.EXIT;
-        const minuteOffset = Math.floor(Math.random() * 60);
-        const eventTimestamp = new Date(eventTime.getTime() - minuteOffset * 60 * 1000);
-
-        eventRows.push({
-          lot_id: lotDbId,
-          event_type: eventType,
-          device_hash: deviceHash,
-          timestamp: eventTimestamp,
-        });
-      }
-    }
-  }
-
-  // Batch insert
-  await prisma.occupancyEvent.createMany({ data: eventRows });
-  console.log(`[seed] Seeded ${eventRows.length} occupancy events\n`);
-
-  // 9. Seed Device State (deduplication records)
-  console.log('[seed] Seeding device state records...');
   const deviceStateRows: {
     device_hash: string; lot_id: string; last_event_type: EventType; updated_at: Date;
   }[] = [];
 
-  for (const deviceHash of sampleDeviceHashes) {
-    for (const lotId of sampleLotIds.slice(0, 2)) {
-      const lotDbId = lotMap.get(lotId);
-      if (!lotDbId) continue;
+  // Distribute devices across lots proportional to each lot's current_occupancy.
+  // Each lot's current_occupancy is already the raw device count, so we use that
+  // as the number of unique devices that should have recent events in that lot.
+  let hashCursor = 0;
+  for (const lot of parkingLots) {
+    const lotDbId = lotMap.get(lot.lot_id);
+    if (!lotDbId) continue;
 
+    const numDevices = lot.current_occupancy;
+    for (let d = 0; d < numDevices && hashCursor < allDeviceHashes.length; d++) {
+      const deviceHash = allDeviceHashes[hashCursor++];
+
+      // Create an ENTER event within the last 90 minutes (inside the 2-hour window)
+      const minutesAgo = Math.floor(Math.random() * 90);
+      const eventTimestamp = new Date(now.getTime() - minutesAgo * 60 * 1000);
+
+      eventRows.push({
+        lot_id: lotDbId,
+        event_type: EventType.ENTER,
+        device_hash: deviceHash,
+        timestamp: eventTimestamp,
+      });
+
+      // Track device state for deduplication
       deviceStateRows.push({
         device_hash: deviceHash,
         lot_id: lotDbId,
-        last_event_type: Math.random() > 0.5 ? EventType.ENTER : EventType.EXIT,
-        updated_at: new Date(now.getTime() - Math.floor(Math.random() * 60) * 60 * 1000),
+        last_event_type: EventType.ENTER,
+        updated_at: eventTimestamp,
       });
     }
   }
 
-  await prisma.deviceState.createMany({ data: deviceStateRows });
+  // Batch insert events in chunks of 500
+  for (let i = 0; i < eventRows.length; i += 500) {
+    await prisma.occupancyEvent.createMany({ data: eventRows.slice(i, i + 500) });
+  }
+  console.log(`[seed] Seeded ${eventRows.length} occupancy events (${hashCursor} unique devices)\n`);
+
+  // 9. Seed Device State (deduplication records)
+  console.log('[seed] Seeding device state records...');
+  for (let i = 0; i < deviceStateRows.length; i += 500) {
+    await prisma.deviceState.createMany({ data: deviceStateRows.slice(i, i + 500) });
+  }
   console.log(`[seed] Seeded ${deviceStateRows.length} device state records\n`);
 
   // 10. Verify

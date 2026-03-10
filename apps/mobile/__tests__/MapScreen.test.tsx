@@ -148,6 +148,10 @@ const mockApiLots = [
     occupancy_rate: 0.45,
     available: 110,
     fill_status: 'AVAILABLE',
+    estimated_occupancy: 90,
+    estimated_available: 110,
+    raw_occupancy: 90,
+    effective_penetration_rate: 1,
   },
   {
     lot_id: 'G2',
@@ -157,6 +161,10 @@ const mockApiLots = [
     occupancy_rate: 0.70,
     available: 90,
     fill_status: 'FILLING',
+    estimated_occupancy: 210,
+    estimated_available: 90,
+    raw_occupancy: 210,
+    effective_penetration_rate: 1,
   },
 ];
 
