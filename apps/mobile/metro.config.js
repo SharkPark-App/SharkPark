@@ -18,6 +18,10 @@ const config = {
       path.resolve(__dirname, './node_modules'),
       path.resolve(__dirname, '../../node_modules'),
     ],
+    extraNodeModules: {
+      '@sharkpark/parking-validation': path.resolve(__dirname, '../../packages/parking-validation'),
+    },
+    unstable_enableSymlinks: true,
     disableHierarchicalLookup: false,
   },
   server: {
