@@ -796,8 +796,8 @@ def main():
     parser.add_argument(
         "--output",
         "-o",
-        default="data/synthetic_occupancy_snapshot.parquet",
-        help="Output file path (default: data/synthetic_occupancy_snapshot.parquet)",
+        default=None,
+        help="Output file path (default: data/synthetic_{semester}.parquet)",
     )
     parser.add_argument(
         "--max-records-per-lot",
@@ -908,7 +908,7 @@ def main():
     else:  # Generation mode: generate and save samples
         df = generate_all_data(lots, cfg, args.max_records_per_lot)
 
-        output = args.output
+        output = args.output or f"data/synthetic_{args.semester}.parquet"
         if not output.endswith(".parquet"):
             output += ".parquet"
 

@@ -83,6 +83,20 @@ class TestTrain:
         assert "cold_start_weight" in params
         assert "synthetic_rows" in params
 
+    def test_train_multi_file_glob(self, synthetic_df, tmp_path):
+        """Training with a glob pattern should concatenate multiple parquets."""
+        # Split synthetic data into two "semester" files
+        half = len(synthetic_df) // 2
+        synthetic_df.iloc[:half].to_parquet(tmp_path / "synthetic_fall-2025.parquet", index=False)
+        synthetic_df.iloc[half:].to_parquet(tmp_path / "synthetic_spring-2026.parquet", index=False)
+
+        run_id = train(str(tmp_path / "synthetic_*.parquet"))
+
+        assert run_id is not None
+        client = mlflow.tracking.MlflowClient()
+        run = client.get_run(run_id)
+        assert "mae" in run.data.metrics
+
     def test_train_missing_file_raises(self, tmp_path):
         """Training with a non-existent file should raise FileNotFoundError."""
         with pytest.raises(FileNotFoundError):

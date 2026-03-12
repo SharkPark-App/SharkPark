@@ -7,6 +7,7 @@ trains the XGBoost model, and logs the run (params + metrics) to MLflow.
 Usage:
     python scripts/train.py
     python scripts/train.py --data-path data/custom.parquet
+    python scripts/train.py --data-path "data/synthetic_*.parquet"   # multiple semesters
     python scripts/train.py --include-real
     python scripts/train.py --include-real --synthetic-weight 0.3
 
@@ -15,6 +16,7 @@ Note: Currently short-term only. When long-term is implemented, add a
 """
 
 import argparse
+import glob
 import logging
 import tempfile
 from pathlib import Path
@@ -40,7 +42,7 @@ def train(
     Train a short-term model and log to MLflow.
 
     Args:
-        data_path: Path to parquet file with synthetic occupancy snapshot data.
+        data_path: Path or glob pattern for parquet file(s) with synthetic data.
         include_real: If True, also load real data from PostgreSQL.
         real_start_date: Inclusive lower bound for real data query (ISO date string).
         real_end_date: Exclusive upper bound for real data query (ISO date string).
@@ -50,21 +52,28 @@ def train(
     Returns:
         MLflow run ID.
     """
-    # Load synthetic data
-    path = Path(data_path)
-    if not path.exists():
+    # Load synthetic data (supports glob patterns for multiple parquets)
+    paths = sorted(glob.glob(data_path))
+    if not paths:
+        # No glob match — treat as literal path for a clear error message
+        path = Path(data_path)
         raise FileNotFoundError(
             f"Data file not found: {path}\n"
             "Run 'python -m src.data.synthetic' first to generate synthetic data."
         )
 
-    logger.info("Loading synthetic data from %s...", path)
-    df_synthetic = pd.read_parquet(path)
+    frames = []
+    for p in paths:
+        logger.info("Loading synthetic data from %s...", p)
+        frames.append(pd.read_parquet(p))
+    df_synthetic = pd.concat(frames, ignore_index=True)
 
     logger.info(
-        "  Synthetic: %s rows, %s lots",
+        "  Synthetic: %s rows, %s lots (%s file%s)",
         f"{len(df_synthetic):,}",
         df_synthetic["lot_id"].nunique(),
+        len(paths),
+        "s" if len(paths) > 1 else "",
     )
 
     # Mix real + synthetic data: real data replaces synthetic for overlapping dates
@@ -83,9 +92,9 @@ def train(
         if not df_real.empty:
             df_real["_source"] = "real"
 
-            # Drop synthetic rows for (lot_id, timestamp) pairs where real data exists
-            df_real["timestamp"] = pd.to_datetime(df_real["timestamp"])
-            df_synthetic["timestamp"] = pd.to_datetime(df_synthetic["timestamp"])
+            # Normalize timestamps: strip timezone so real (tz-aware) and synthetic (naive) can merge
+            df_real["timestamp"] = pd.to_datetime(df_real["timestamp"], utc=True).dt.tz_localize(None)
+            df_synthetic["timestamp"] = pd.to_datetime(df_synthetic["timestamp"]).dt.tz_localize(None)
 
             # Round to 15-min intervals to match on snapshot slots
             df_real["_slot"] = df_real["timestamp"].dt.floor("15min")
@@ -138,7 +147,7 @@ def train(
         "train_size": result["train_size"],
         "test_size": result["test_size"],
         "split_date": result["split_date"],
-        "data_path": str(path),
+        "data_path": data_path,
         "include_real": include_real,
         "synthetic_weight": synthetic_weight,
         "cold_start_weight": cold_start_weight,
@@ -166,8 +175,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train short-term occupancy model")
     parser.add_argument(
         "--data-path",
-        default="data/synthetic_occupancy_snapshot.parquet",
-        help="Path to parquet data file (default: data/synthetic_occupancy_snapshot.parquet)",
+        default="data/synthetic_*.parquet",
+        help="Path or glob pattern for parquet data file(s) (default: data/synthetic_*.parquet)",
     )
     parser.add_argument(
         "--include-real",

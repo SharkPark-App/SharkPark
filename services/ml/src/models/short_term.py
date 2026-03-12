@@ -460,7 +460,7 @@ class ShortTermModel:
         if is_cold is None:
             is_cold = pd.Series(False, index=train_features.index)
         else:
-            is_cold = is_cold.fillna(False)
+            is_cold = is_cold.fillna(False).astype(bool)
 
         # Synthetic data marked as cold; mutually exclusive groups
         is_real_cold = ~is_synthetic & is_cold  # real data from cold-start lots

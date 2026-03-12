@@ -110,7 +110,9 @@ def fetch_recent_snapshots(lookback_hours: int = 2) -> pd.DataFrame:
         if df.empty:
             raise RuntimeError(
                 f"No snapshots found in the last {lookback_hours} hours. "
-                "Is the backend scheduler running?"
+                "Is the backend scheduler running?\n"
+                "For local dev, use --data-path to load from a parquet file instead:\n"
+                "  python -m scripts.predict --data-path data/synthetic_fall-2025.parquet --start-of-day"
             )
 
         df["lot_id"] = df["lot_id"].map(reverse_map)
