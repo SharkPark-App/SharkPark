@@ -7,6 +7,7 @@ updating in one place.
 
 import random
 
+import mlflow
 import numpy as np
 import pandas as pd
 import pytest
@@ -59,8 +60,8 @@ def sample_lots_minimal():
 def sample_snapshot_df():
     """A small, valid snapshot DataFrame matching the expected schema.
 
-    Columns: lot_id, timestamp, occupancy, occupancy_rate, confidence,
-             semester, academic_period, week_of_semester, is_campus_open.
+    Columns: lot_id, timestamp, occupancy, available, occupancy_rate,
+             confidence, semester, academic_period, week_of_semester, is_campus_open.
     """
     return pd.DataFrame(
         {
@@ -106,3 +107,30 @@ def synthetic_df(sample_lots_minimal, fall_2025_cfg_module):
     random.seed(42)
     np.random.seed(42)
     return generate_all_data(sample_lots_minimal, fall_2025_cfg_module, max_per_lot=200)
+
+
+# =============================================================================
+# MLflow isolation
+# =============================================================================
+
+
+@pytest.fixture()
+def isolated_mlflow(tmp_path):
+    """Isolate MLflow tracking to a temp directory."""
+    tracking_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    mlflow.set_tracking_uri(tracking_uri)
+    yield
+    mlflow.set_tracking_uri(None)
+
+
+# =============================================================================
+# Parquet data file
+# =============================================================================
+
+
+@pytest.fixture()
+def data_parquet(synthetic_df, tmp_path):
+    """Write synthetic data to a temporary parquet file."""
+    path = tmp_path / "test_data.parquet"
+    synthetic_df.to_parquet(path, index=False)
+    return str(path)

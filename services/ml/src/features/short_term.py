@@ -91,8 +91,9 @@ def prepare_training_features(
 
     Args:
         df: Raw OccupancySnapshot DataFrame with columns:
-            lot_id, timestamp, occupancy, occupancy_rate,
-            semester, academic_period, week_of_semester, is_campus_open.
+            lot_id, timestamp, occupancy, available, occupancy_rate,
+            confidence, semester, academic_period, week_of_semester,
+            is_campus_open.
         min_confidence: Accepted confidence levels. Defaults to
             ("HIGH", "MEDIUM") for training quality. Pass None to
             skip confidence filtering.
@@ -121,6 +122,8 @@ def prepare_training_features(
         return _empty_training_df()
 
     # Vectorised cross-join: expand each snapshot to all future prediction hours
+    # Carry through weight-related metadata columns if present
+    _weight_cols = [c for c in ("_source", "is_cold_start") if c in df.columns]
     feature_cols = [
         "lot_id",
         "hour",
@@ -136,7 +139,7 @@ def prepare_training_features(
         "occupancy_rate_lag_4",
         "momentum",
         "date",
-    ]
+    ] + _weight_cols
     hours_df = pd.DataFrame({"target_hour": PREDICTION_HOURS})
     expanded = df[feature_cols].merge(hours_df, how="cross")
 
@@ -215,8 +218,8 @@ def prepare_inference_features(
     Args:
         recent_snapshots: Recent OccupancySnapshot data (last ~1 hour
             per lot is sufficient). Must include lot_id, timestamp,
-            occupancy, occupancy_rate, semester, academic_period,
-            week_of_semester, is_campus_open.
+            occupancy, available, occupancy_rate, confidence, semester,
+            academic_period, week_of_semester, is_campus_open.
         lot_ids: List of lot IDs to generate predictions for.
         prediction_time: "Now" — when the prediction is being made.
             Defaults to datetime.now() if None.
@@ -278,6 +281,7 @@ def prepare_inference_features(
                     "momentum": row.get("momentum", 0.0),
                     "target_hour": target_hour,
                     "hours_ahead": hours_ahead,
+                    "is_cold_start": row.get("is_cold_start", False),
                 }
             )
 

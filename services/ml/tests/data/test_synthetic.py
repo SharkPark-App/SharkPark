@@ -154,7 +154,7 @@ class TestGenerateAllData:
             "academic_period",
             "week_of_semester",
             "is_campus_open",
-            "source",
+            "_source",
         }
         assert expected_cols == set(df.columns)
 
@@ -176,9 +176,9 @@ class TestGenerateAllData:
         assert (df["occupancy_rate"] <= 1.0).all()
 
     def test_source_column_is_synthetic(self, sample_lots, fall_2025_cfg):
-        """Every generated row must be tagged source='synthetic'"""
+        """Every generated row must be tagged _source='synthetic'"""
         df = generate_all_data(sample_lots, fall_2025_cfg, max_per_lot=50)
-        assert (df["source"] == "synthetic").all()
+        assert (df["_source"] == "synthetic").all()
 
     def test_spring_semester_generates_data(self, sample_lots):
         """Verify that a non-default semester produces valid data."""

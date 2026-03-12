@@ -1,0 +1,213 @@
+"""
+Training entrypoint for SharkPark short-term model.
+
+Loads synthetic data from parquet (and optionally real data from PostgreSQL),
+trains the XGBoost model, and logs the run (params + metrics) to MLflow.
+
+Usage:
+    python scripts/train.py
+    python scripts/train.py --data-path data/custom.parquet
+    python scripts/train.py --include-real
+    python scripts/train.py --include-real --synthetic-weight 0.3
+
+Note: Currently short-term only. When long-term is implemented, add a
+--model-type flag to select features, model class, and baselines.
+"""
+
+import argparse
+import logging
+import tempfile
+from pathlib import Path
+from typing import Optional
+
+import pandas as pd
+
+from src.evaluation.metrics import compute_metrics
+from src.models.short_term import ShortTermModel
+
+logger = logging.getLogger(__name__)
+
+
+def train(
+    data_path: str,
+    include_real: bool = False,
+    real_start_date: Optional[str] = None,
+    real_end_date: Optional[str] = None,
+    synthetic_weight: float = 0.5,
+    cold_start_weight: float = 0.7,
+) -> str:
+    """
+    Train a short-term model and log to MLflow.
+
+    Args:
+        data_path: Path to parquet file with synthetic occupancy snapshot data.
+        include_real: If True, also load real data from PostgreSQL.
+        real_start_date: Inclusive lower bound for real data query (ISO date string).
+        real_end_date: Exclusive upper bound for real data query (ISO date string).
+        synthetic_weight: Group weight for synthetic rows (0.0-1.0). Default: 0.5.
+        cold_start_weight: Group weight for real cold-start rows (0.0-1.0). Default: 0.7.
+
+    Returns:
+        MLflow run ID.
+    """
+    # Load synthetic data
+    path = Path(data_path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Data file not found: {path}\n"
+            "Run 'python -m src.data.synthetic' first to generate synthetic data."
+        )
+
+    logger.info("Loading synthetic data from %s...", path)
+    df_synthetic = pd.read_parquet(path)
+
+    logger.info(
+        "  Synthetic: %s rows, %s lots",
+        f"{len(df_synthetic):,}",
+        df_synthetic["lot_id"].nunique(),
+    )
+
+    # Mix real + synthetic data: real data replaces synthetic for overlapping dates
+    df = df_synthetic
+    if include_real:
+        from src.data.db import load_real_snapshots
+
+        logger.info("Loading real data from PostgreSQL...")
+        df_real = load_real_snapshots(
+            start_date=real_start_date, end_date=real_end_date
+        )
+        logger.info(
+            "  Real: %s rows, %s lots", f"{len(df_real):,}", df_real["lot_id"].nunique()
+        )
+
+        if not df_real.empty:
+            df_real["_source"] = "real"
+
+            # Drop synthetic rows for (lot_id, timestamp) pairs where real data exists
+            df_real["timestamp"] = pd.to_datetime(df_real["timestamp"])
+            df_synthetic["timestamp"] = pd.to_datetime(df_synthetic["timestamp"])
+
+            # Round to 15-min intervals to match on snapshot slots
+            df_real["_slot"] = df_real["timestamp"].dt.floor("15min")
+            df_synthetic["_slot"] = df_synthetic["timestamp"].dt.floor("15min")
+
+            real_keys = set(zip(df_real["lot_id"], df_real["_slot"]))
+            mask = ~pd.Series(
+                list(zip(df_synthetic["lot_id"], df_synthetic["_slot"]))
+            ).apply(lambda x: x in real_keys)
+
+            df_synthetic_filtered = df_synthetic.loc[mask.values].drop(
+                columns=["_slot"]
+            )
+            df_real = df_real.drop(columns=["_slot"])
+
+            dropped = len(df_synthetic) - len(df_synthetic_filtered)
+            if dropped:
+                logger.info(
+                    "  Dropped %s synthetic rows replaced by real data", f"{dropped:,}"
+                )
+
+            df = pd.concat([df_real, df_synthetic_filtered], ignore_index=True)
+            logger.info("  Combined: %s rows", f"{len(df):,}")
+        else:
+            logger.info("  No real data found — using synthetic only.")
+
+    logger.info("Training on %s rows, %s lots", f"{len(df):,}", df["lot_id"].nunique())
+
+    # Train model
+    model = ShortTermModel()
+    logger.info("Training model...")
+    result = model.train(
+        df,
+        synthetic_weight=synthetic_weight,
+        cold_start_weight=cold_start_weight,
+    )
+
+    logger.info("Train size: %s", f"{result['train_size']:,}")
+    logger.info("Test size:  %s", f"{result['test_size']:,}")
+    logger.info("Split date: %s", result["split_date"])
+
+    # Compute metrics on test set
+    if "test_predictions" not in result:
+        raise ValueError("No test predictions — not enough data for temporal split.")
+    metrics = compute_metrics(result["test_actuals"], result["test_predictions"])
+
+    # TODO: Make hyperparameters configurable via CLI args or config file.
+    params = {
+        **model.hyperparams,
+        "train_size": result["train_size"],
+        "test_size": result["test_size"],
+        "split_date": result["split_date"],
+        "data_path": str(path),
+        "include_real": include_real,
+        "synthetic_weight": synthetic_weight,
+        "cold_start_weight": cold_start_weight,
+        "synthetic_rows": len(df_synthetic),
+    }
+
+    # Log the combined (real + synthetic) dataframe as the artifact
+    with tempfile.TemporaryDirectory() as tmp:
+        combined_path = Path(tmp) / "training_data.parquet"
+        df.to_parquet(combined_path)
+        run_id = model.save_mlflow(metrics, params, data_path=str(combined_path))
+
+    # Display mlflow run id and metrics
+    logger.info("\nMLflow run ID: %s", run_id)
+    logger.info("MAE:  %.4f", metrics["mae"])
+    logger.info("RMSE: %.4f", metrics["rmse"])
+    logger.info("MAPE: %.1f%%", metrics["mape"])
+    print(f"\nNext step:\n  python -m scripts.evaluate --run-id {run_id}")
+
+    return run_id
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    parser = argparse.ArgumentParser(description="Train short-term occupancy model")
+    parser.add_argument(
+        "--data-path",
+        default="data/synthetic_occupancy_snapshot.parquet",
+        help="Path to parquet data file (default: data/synthetic_occupancy_snapshot.parquet)",
+    )
+    parser.add_argument(
+        "--include-real",
+        action="store_true",
+        default=False,
+        help="Include real occupancy data from PostgreSQL alongside synthetic data.",
+    )
+    parser.add_argument(
+        "--real-start-date",
+        default=None,
+        metavar="DATE",
+        help="Start date for real data query (ISO format: YYYY-MM-DD). Default: no lower bound.",
+    )
+    parser.add_argument(
+        "--real-end-date",
+        default=None,
+        metavar="DATE",
+        help="End date for real data query (ISO format: YYYY-MM-DD). Default: no upper bound.",
+    )
+    parser.add_argument(
+        "--synthetic-weight",
+        type=float,
+        default=0.5,
+        metavar="W",
+        help="Sample weight for synthetic rows (0.0-1.0). Default: 0.5.",
+    )
+    parser.add_argument(
+        "--cold-start-weight",
+        type=float,
+        default=0.7,
+        metavar="W",
+        help="Sample weight for real cold-start rows (0.0-1.0). Default: 0.7.",
+    )
+    args = parser.parse_args()
+
+    train(
+        data_path=args.data_path,
+        include_real=args.include_real,
+        real_start_date=args.real_start_date,
+        real_end_date=args.real_end_date,
+        synthetic_weight=args.synthetic_weight,
+        cold_start_weight=args.cold_start_weight,
+    )
