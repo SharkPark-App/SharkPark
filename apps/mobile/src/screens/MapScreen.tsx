@@ -37,6 +37,7 @@ const InteractiveLot: React.FC<{
   colors: ThemeColors;
 }> = ({ lot, onPress, colors }) => {
   const occupancyColor = getOccupancyColor(lot.occupancy);
+  const isSingleWord = !lot.name.trim().includes(' ');
   
   return (
     <TouchableOpacity
@@ -53,7 +54,14 @@ const InteractiveLot: React.FC<{
       onPress={() => onPress(lot)}
       activeOpacity={0.7}
     >
-      <Text style={[styles.lotText, { color: colors.white }]}>{lot.name}</Text>
+      <Text
+        style={[
+          styles.lotText,
+          { color: colors.white }
+        ]}
+        adjustsFontSizeToFit={true}
+        numberOfLines={isSingleWord ? 1 : 3}
+      >{lot.name}</Text>
     </TouchableOpacity>
   );
 };

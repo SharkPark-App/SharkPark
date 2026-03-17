@@ -8,20 +8,24 @@ interface HeaderProps {
   logo?: ImageSourcePropType; // Image source - can be require() or URI
   title?: string; // Optional title text to display instead of logo
   onBack?: () => void; // Optional back navigation function
+  rightElement?: React.ReactNode; // Optional right-side element (e.g. button)
 }
 
-const Header: React.FC<HeaderProps> = React.memo(({ logo, title, onBack }) => {
+const Header: React.FC<HeaderProps> = React.memo(({ logo, title, onBack, rightElement }) => {
   // Always call hooks in the same order
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.primary }]}>
-      {onBack && (
+      {/* Placeholder to balance the rightElement for centered content */}
+      {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={[styles.backIcon, { color: colors.black }]}>←</Text>
         </TouchableOpacity>
-      )}
+      ) : rightElement ? (
+        <View style={styles.placeholder} />
+      ) : null}
       
       <View style={styles.centerContent}>
         {title ? (
@@ -42,7 +46,13 @@ const Header: React.FC<HeaderProps> = React.memo(({ logo, title, onBack }) => {
       </View>
       
       {/* Placeholder to balance the back button for centered content */}
-      {onBack && <View style={styles.placeholder} />}
+      {rightElement ? (
+        <View style={styles.rightAction}>
+          {rightElement}
+        </View>
+      ) : onBack ? (
+        <View style={styles.placeholder} />
+      ) : null}
     </View>
   );
 });
@@ -98,6 +108,12 @@ const styles = StyleSheet.create({
     width: 44, // Match back button width for balance
     height: 44, // Match back button height for balance
   },
+  rightAction: {
+    width: 66, // Slight offset to pull button away from edge
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
 });
 
 export default Header;
