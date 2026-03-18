@@ -16,7 +16,7 @@ import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
 import { lotsApi } from '../services/api';
 import { TEST_CONSTANTS, MESSAGE_CONSTANTS } from '../constants/geofencing';
-import { ValidationAnalysis } from '@sharkpark/parking-validation';
+import { ValidationAnalysis } from '../validation';
 
 interface EnhancedGeofencingContextType {
   isGeofencingActive: boolean;

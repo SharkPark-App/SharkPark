@@ -1,5 +1,5 @@
 import parkingValidationService from '../src/services/parkingValidationService';
-import { ParkingValidator } from '@sharkpark/parking-validation';
+import { ParkingValidator } from '../src/validation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GeofenceEvent } from '../src/types/location';
 
@@ -12,7 +12,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 // Mock the parking validation package
-jest.mock('@sharkpark/parking-validation', () => ({
+jest.mock('../src/validation', () => ({
   ParkingValidator: {
     analyzeEventPatterns: jest.fn(),
     calculateConfidenceScore: jest.fn(),

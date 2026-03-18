@@ -10,7 +10,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ParkingValidator, ValidationEvent, ValidationAnalysis } from '@sharkpark/parking-validation';
+import { ParkingValidator, ValidationEvent, ValidationAnalysis } from '../validation';
 import { GeofenceEvent } from '../types/location';
 import BehavioralDataCollector, { BehavioralMetrics } from './behavioralDataCollector';
 

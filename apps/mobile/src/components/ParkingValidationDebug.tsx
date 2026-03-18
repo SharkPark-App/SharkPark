@@ -12,7 +12,7 @@ import parkingValidationService from '../services/parkingValidationService';
 import { useBehavioralDataCollection } from '../services/behavioralDataCollector';
 import type { BehavioralMetrics } from '../services/behavioralDataCollector';
 import locationService from '../services/locationService';
-import { ValidationStatus } from '@sharkpark/parking-validation';
+import { ValidationStatus } from '../validation';
 
 export const ParkingValidationDebug: React.FC = () => {
   const { currentLotId, currentValidationStatus, debugInfo } = useEnhancedGeofencing();

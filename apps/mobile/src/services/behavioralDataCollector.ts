@@ -11,7 +11,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import Geolocation from '@react-native-community/geolocation';
 import NetInfo from '@react-native-community/netinfo';
 import DeviceInfo from 'react-native-device-info';
-import { ValidationEvent } from '@sharkpark/parking-validation';
+import { ValidationEvent } from '../validation';
 
 export interface BehavioralMetrics {
   speed_mph: number | null;

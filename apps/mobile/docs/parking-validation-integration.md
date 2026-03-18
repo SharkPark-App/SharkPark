@@ -20,7 +20,7 @@ The parking validation system performs behavioral analysis on the mobile device 
 - Manages parking sessions and behavioral data collection
 - Integrates with geofencing events (ENTER/EXIT)
 - Collects behavioral events (speed changes, stationary periods, movement patterns)
-- Analyzes patterns using the `@sharkpark/parking-validation` package
+- Analyzes patterns using the local validation module
 - Persists sessions locally for crash recovery
 
 #### 2. EnhancedGeofencingProvider (`src/context/EnhancedGeofencingProvider.tsx`)
@@ -137,9 +137,13 @@ The system works automatically with existing geofencing:
 
 To integrate parking validation into your geofencing workflow:
 
-1. **Add the Package Dependency** (✅ Already done):
-   ```json
-   "@sharkpark/parking-validation": "workspace:*"
+1. **Local Validation Module** (Already available):
+   The validation logic is now included directly in the mobile app at:
+   ```
+   src/validation/
+   ├── index.ts      # Main exports
+   ├── types.ts      # Type definitions
+   └── validator.ts  # Core validation logic
    ```
 
 2. **Import and Use Enhanced Provider**:

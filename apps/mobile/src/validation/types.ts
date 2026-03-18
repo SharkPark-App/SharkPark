@@ -7,7 +7,7 @@ export interface ValidationEvent {
   accuracy_meters: number | null;
   confidence_score: number;
   bluetooth_state: BluetoothState | null;
-  raw_data: any;
+  raw_data: unknown;
 }
 
 export type ValidationEventType = 

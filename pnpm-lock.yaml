@@ -165,9 +165,6 @@ importers:
       '@react-navigation/stack':
         specifier: ^7.6.12
         version: 7.7.1(4fa8214cfd0d0a854ed38735242bb424)
-      '@sharkpark/parking-validation':
-        specifier: workspace:*
-        version: link:../../packages/parking-validation
       jwt-decode:
         specifier: ^4.0.0
         version: 4.0.0
@@ -252,16 +249,6 @@ importers:
         version: 19.1.1(react@19.1.1)
       typescript:
         specifier: ^5.8.3
-        version: 5.9.3
-
-  packages/parking-validation:
-    dependencies:
-      '@prisma/client':
-        specifier: ^5.7.1
-        version: 5.22.0(prisma@7.4.0(@types/react@19.2.13)(react-dom@19.2.4(react@19.1.1))(react@19.1.1)(typescript@5.9.3))
-    devDependencies:
-      typescript:
-        specifier: ^5.3.3
         version: 5.9.3
 
   packages/types: {}
@@ -1374,15 +1361,6 @@ packages:
 
   '@prisma/client-runtime-utils@7.4.0':
     resolution: {integrity: sha512-jTmWAOBGBSCT8n7SMbpjCpHjELgcDW9GNP/CeK6CeqjUFlEL6dn8Cl81t/NBDjJdXDm85XDJmc+PEQqqQee3xw==}
-
-  '@prisma/client@5.22.0':
-    resolution: {integrity: sha512-M0SVXfyHnQREBKxCgyo7sffrKttwE6R8PMq330MIUF0pTwjUhLbW84pFDlf06B27XyCR++VtjugEnIHdr07SVA==}
-    engines: {node: '>=16.13'}
-    peerDependencies:
-      prisma: '*'
-    peerDependenciesMeta:
-      prisma:
-        optional: true
 
   '@prisma/client@7.4.0':
     resolution: {integrity: sha512-Sc+ncr7+ph1hMf1LQfn6UyEXDEamCd5pXMsx8Q3SBH0NGX+zjqs3eaABt9hXwbcK9l7f8UyK8ldxOWA2LyPynQ==}
@@ -6737,10 +6715,6 @@ snapshots:
       - pg-native
 
   '@prisma/client-runtime-utils@7.4.0': {}
-
-  '@prisma/client@5.22.0(prisma@7.4.0(@types/react@19.2.13)(react-dom@19.2.4(react@19.1.1))(react@19.1.1)(typescript@5.9.3))':
-    optionalDependencies:
-      prisma: 7.4.0(@types/react@19.2.13)(react-dom@19.2.4(react@19.1.1))(react@19.1.1)(typescript@5.9.3)
 
   '@prisma/client@7.4.0(prisma@7.4.0(@types/react@19.2.13)(react-dom@19.2.4(react@19.1.1))(react@19.1.1)(typescript@5.9.3))(typescript@5.9.3)':
     dependencies:
