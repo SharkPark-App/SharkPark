@@ -17,6 +17,7 @@ import parkingValidationService from '../services/parkingValidationService';
 import { lotsApi } from '../services/api';
 import { TEST_CONSTANTS, MESSAGE_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
+import { createGeofenceRegionsFromLots } from '../utils/geofenceUtils';
 
 interface EnhancedGeofencingContextType {
   isGeofencingActive: boolean;
@@ -261,27 +262,51 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     
     parkingValidationService.onValidationComplete(validationListener);
 
-    // Start GPS tracking with single test geofence
+    // Start GPS tracking and set up geofences from real parking lot data
     locationService.startLocationTracking()
-      .then(() => {
-        const testGeofenceRegions = [
-          {
-            id: TEST_CONSTANTS.TEST_LOT_ID,
-            name: TEST_CONSTANTS.TEST_LOT_NAME,
-            geometry: {
-              type: 'circle' as const,
-              center: {
-                latitude: TEST_CONSTANTS.CSULB_CENTER.latitude,
-                longitude: TEST_CONSTANTS.CSULB_CENTER.longitude,
-              },
-              radius: TEST_CONSTANTS.TEST_RADIUS,
-            },
-            notifyOnEntry: true,
-            notifyOnExit: true
+      .then(async () => {
+        try {
+          console.log('[EnhancedGeofencing] Fetching real parking lot data for geofencing...');
+          
+          // Fetch all parking lots from API
+          const allLots = await lotsApi.getAllLots();
+          
+          // Convert to geofence regions
+          const realGeofenceRegions = createGeofenceRegionsFromLots(allLots);
+          
+          if (realGeofenceRegions.length > 0) {
+            await locationService.addGeofenceRegions(realGeofenceRegions);
+            console.log(`[EnhancedGeofencing] Successfully set up ${realGeofenceRegions.length} real parking lot geofences:`, 
+              realGeofenceRegions.map(r => r.name).join(', '));
+          } else {
+            throw new Error('No valid parking lot geofences found');
           }
-        ];
+          
+        } catch (error) {
+          console.warn('[EnhancedGeofencing] Failed to load real parking lot data, falling back to test geofence:', error);
+          
+          // Fallback to single test geofence for development/testing
+          const testGeofenceRegions = [
+            {
+              id: TEST_CONSTANTS.TEST_LOT_ID,
+              name: TEST_CONSTANTS.TEST_LOT_NAME,
+              geometry: {
+                type: 'circle' as const,
+                center: {
+                  latitude: TEST_CONSTANTS.CSULB_CENTER.latitude,
+                  longitude: TEST_CONSTANTS.CSULB_CENTER.longitude,
+                },
+                radius: TEST_CONSTANTS.TEST_RADIUS,
+              },
+              notifyOnEntry: true,
+              notifyOnExit: true
+            }
+          ];
+          
+          await locationService.addGeofenceRegions(testGeofenceRegions);
+          console.log('[EnhancedGeofencing] Using test geofence as fallback');
+        }
         
-        locationService.addGeofenceRegions(testGeofenceRegions);
         console.log('[EnhancedGeofencing] Geofencing with parking validation initialized');
       })
       .catch((error) => {
