@@ -30,7 +30,7 @@ import locationService from '../src/services/locationService';
 import { GeofenceRegion } from '../src/types/location';
 
 // Get access to mocked functions
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+ 
 const mockGeolocation = require('@react-native-community/geolocation');
 
 describe('LocationService', () => {

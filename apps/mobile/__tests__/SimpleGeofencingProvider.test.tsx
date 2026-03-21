@@ -2,7 +2,7 @@
  * SimpleGeofencingProvider Integration Test
  * Tests the actual component that handles database updates
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 // Mock React Native modules first
 jest.mock('@react-native-community/geolocation', () => ({

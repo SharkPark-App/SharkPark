@@ -1,12 +1,14 @@
 /**
- * Enhanced Geofencing Provider with Parking Validation
- * Integrates client-side behavioral analysis into the geofencing workflow
+ * Enhanced Geofencing Provider with Parking Validation and Leave Detection
+ * Integrates client-side behavioral analysis and leave intent detection into the geofencing workflow
  * 
  * This provider:
  * - Maintains all existing geofencing functionality
  * - Adds parking validation to geofence events
+ * - Detects leave intent using behavioral patterns (walking to car, Bluetooth reconnect, speed increase)
  * - Collects behavioral data during parking sessions
- * - Includes validation results in occupancy events sent to backend
+ * - Includes validation and leave detection results in occupancy events sent to backend
+ * - Provides real-time occupancy updates for improved user experience
  */
 
 import React, { createContext, useContext, useEffect, useCallback, ReactNode, useRef } from 'react';
@@ -14,6 +16,7 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
+import leaveDetectionService, { LeaveIntentAnalysis } from '../services/leaveDetectionService';
 import { lotsApi } from '../services/api';
 import { TEST_CONSTANTS, MESSAGE_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
@@ -23,9 +26,12 @@ interface EnhancedGeofencingContextType {
   isGeofencingActive: boolean;
   currentLotId: string | null;
   currentValidationStatus: ValidationAnalysis | null;
+  currentLeaveIntent: LeaveIntentAnalysis | null;
   debugInfo: {
     activeSessions: number;
     isCollectingData: boolean;
+    activeLeaveMonitoring: number;
+    isMonitoringLeave: boolean;
   };
 }
 
@@ -37,6 +43,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   const currentZones = useRef<Set<string>>(new Set());
   const currentLotId = useRef<string | null>(null);
   const currentValidationStatus = useRef<ValidationAnalysis | null>(null);
+  const currentLeaveIntent = useRef<LeaveIntentAnalysis | null>(null);
   const lastLocationUpdate = useRef<{ speed?: number; accuracy?: number } | null>(null);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const dataCollectionInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -45,7 +52,8 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   const sendValidatedOccupancyEvent = useCallback(async (
     lotId: string, 
     eventType: 'ENTER' | 'EXIT', 
-    validationAnalysis?: ValidationAnalysis | null
+    validationAnalysis?: ValidationAnalysis | null,
+    leaveIntentAnalysis?: LeaveIntentAnalysis | null
   ) => {
     try {
       console.log(`[EnhancedGeofencing] Sending ${eventType} event for ${lotId}`, {
@@ -72,6 +80,16 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
             time_span_minutes: validationAnalysis.metadata.time_span_minutes,
             analysis_timestamp: validationAnalysis.metadata.analysis_timestamp
           }
+        }),
+        // Enhanced with leave intent detection
+        ...(leaveIntentAnalysis && {
+          leave_intent: {
+            intent_probability: leaveIntentAnalysis.intent_probability,
+            confidence_level: leaveIntentAnalysis.confidence_level,
+            estimated_leave_time: leaveIntentAnalysis.estimated_leave_time,
+            signal_count: leaveIntentAnalysis.analysis_metadata.signal_count,
+            session_duration: leaveIntentAnalysis.analysis_metadata.session_duration_minutes
+          }
         })
       };
 
@@ -95,7 +113,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
         Alert.alert(
           'Entered Parking Lot',
-          `Welcome to ${event.regionId}!\n\nWe're now tracking your parking behavior to improve occupancy accuracy. All analysis happens on your device - your location is never stored.`,
+          `Welcome to ${event.regionId}!\n\nWe're now monitoring your parking behavior and will detect when you're ready to leave. This helps provide real-time availability to other users.`,
           [{ text: 'OK' }]
         );
 
@@ -103,6 +121,34 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         try {
           const sessionId = await parkingValidationService.startParkingSession(event);
           console.log(`[EnhancedGeofencing] Started validation session: ${sessionId}`);
+          
+          // Start leave detection monitoring
+          const leaveSessionId = await leaveDetectionService.startLeaveMonitoring(event, {
+            onLeaveIntentDetected: async (analysis: LeaveIntentAnalysis, lotId: string) => {
+              console.log(`[EnhancedGeofencing] Leave intent detected for ${lotId}:`, analysis);
+              currentLeaveIntent.current = analysis;
+              
+              // Send real-time occupancy update with leave intent
+              await sendValidatedOccupancyEvent(lotId, 'ENTER', null, analysis);
+              
+              // Show user notification for high confidence leave intent
+              if (analysis.confidence_level === 'HIGH') {
+                Alert.alert(
+                  'Preparing to Leave?',
+                  `We detected you might be leaving ${lotId} soon. This helps us update availability for other users in real-time.`,
+                  [{ text: 'OK' }]
+                );
+              }
+            },
+            onLeaveConfirmed: (sessionId: string, lotId: string) => {
+              console.log(`[EnhancedGeofencing] Leave confirmed for session ${sessionId} in ${lotId}`);
+            },
+            onError: (error: string) => {
+              console.error('[EnhancedGeofencing] Leave detection error:', error);
+            }
+          });
+          
+          console.log(`[EnhancedGeofencing] Started leave monitoring session: ${leaveSessionId}`);
           
           // Start location data collection for behavioral analysis
           startLocationDataCollection();
@@ -119,32 +165,41 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         currentZones.current.delete(event.regionId);
         currentLotId.current = null;
         
-        // Complete parking validation and get analysis
+        // Complete parking validation and leave detection
         try {
           const analysis = await parkingValidationService.completeParkingSession(event);
           currentValidationStatus.current = analysis;
+
+          // Complete leave detection
+          const leaveAnalysis = await leaveDetectionService.completeLeaveMonitoring(event);
+          currentLeaveIntent.current = null; // Clear current intent since user left
 
           let alertMessage = `Thanks for using ${event.regionId}!`;
           if (analysis) {
             switch (analysis.status) {
               case 'PARKED':
-                alertMessage += `\n\nOur analysis shows you parked here (${Math.round(analysis.confidenceScore * 100)}% confidence). This helps us provide accurate availability data!`;
+                alertMessage += `\n\nOur analysis shows you parked here (${Math.round(analysis.confidenceScore * 100)}% confidence).`;
                 break;
               case 'DROVE_THROUGH':
-                alertMessage += `\n\nIt looks like you drove through without parking. Thanks for helping us maintain accurate lot data!`;
+                alertMessage += `\n\nIt looks like you drove through without parking.`;
                 break;
               case 'SEARCHING':
-                alertMessage += `\n\nWe detected you were searching for parking. This helps us understand lot usage patterns.`;
+                alertMessage += `\n\nWe detected you were searching for parking.`;
                 break;
               default:
-                alertMessage += `\n\nYour parking behavior analysis is complete.`;
+                alertMessage += `\n\nYour parking session analysis is complete.`;
             }
+          }
+
+          // Add leave detection information
+          if (leaveAnalysis && leaveAnalysis.intent_probability > 0.5) {
+            alertMessage += `\n\nWe detected your leave intent ${Math.round(leaveAnalysis.intent_probability * 100)}% confidence, helping provide real-time updates to other users!`;
           }
 
           Alert.alert('Left Parking Lot', alertMessage, [{ text: 'OK' }]);
 
-          // Send enhanced occupancy event with validation results
-          await sendValidatedOccupancyEvent(event.regionId, 'EXIT', analysis);
+          // Send enhanced occupancy event with both validation and leave data
+          await sendValidatedOccupancyEvent(event.regionId, 'EXIT', analysis, leaveAnalysis);
           
           // Stop location data collection
           stopLocationDataCollection();
@@ -330,7 +385,13 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     isGeofencingActive: true,
     currentLotId: currentLotId.current,
     currentValidationStatus: currentValidationStatus.current,
-    debugInfo: parkingValidationService.getDebugInfo()
+    currentLeaveIntent: currentLeaveIntent.current,
+    debugInfo: {
+      ...parkingValidationService.getDebugInfo(),
+      ...leaveDetectionService.getDebugInfo(),
+      activeLeaveMonitoring: leaveDetectionService.getDebugInfo().activeSessions,
+      isMonitoringLeave: leaveDetectionService.getDebugInfo().isMonitoring
+    }
   };
 
   return (
@@ -347,9 +408,12 @@ export const useEnhancedGeofencing = (): EnhancedGeofencingContextType => {
       isGeofencingActive: false,
       currentLotId: null,
       currentValidationStatus: null,
+      currentLeaveIntent: null,
       debugInfo: {
         activeSessions: 0,
-        isCollectingData: false
+        isCollectingData: false,
+        activeLeaveMonitoring: 0,
+        isMonitoringLeave: false
       }
     };
   }
