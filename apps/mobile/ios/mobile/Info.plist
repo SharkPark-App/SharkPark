@@ -72,5 +72,9 @@
 	<array>
 		<string>Ionicons.ttf</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>SharkPark uses Bluetooth state to improve parking detection accuracy by monitoring car connectivity patterns. This helps validate when you've actually parked your car.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>SharkPark monitors Bluetooth connectivity to enhance parking validation accuracy.</string>
 </dict>
 </plist>

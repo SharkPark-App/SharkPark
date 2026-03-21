@@ -1791,6 +1791,8 @@ PODS:
   - react-native-app-auth (8.1.0):
     - AppAuth (>= 1.7.6)
     - React-Core
+  - react-native-bluetooth-status (1.5.1):
+    - React
   - react-native-geolocation (3.4.0):
     - boost
     - DoubleConversion
@@ -2874,6 +2876,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../../../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-app-auth (from `../../../node_modules/react-native-app-auth`)
+  - react-native-bluetooth-status (from `../../../node_modules/react-native-bluetooth-status`)
   - "react-native-geolocation (from `../../../node_modules/@react-native-community/geolocation`)"
   - "react-native-netinfo (from `../../../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../../../node_modules/react-native-safe-area-context`)
@@ -3009,6 +3012,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-app-auth:
     :path: "../../../node_modules/react-native-app-auth"
+  react-native-bluetooth-status:
+    :path: "../../../node_modules/react-native-bluetooth-status"
   react-native-geolocation:
     :path: "../../../node_modules/@react-native-community/geolocation"
   react-native-netinfo:
@@ -3141,6 +3146,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 7e7ca4c53288117e7e0406e9eaa804bf259b4b30
   React-microtasksnativemodule: 885bebe5c5f25035e1fd0920776078840a0e3a76
   react-native-app-auth: 9b0a0e3ca279c3426a451e2607c8483808b8ed4a
+  react-native-bluetooth-status: 306a9e5311c377813ea68066dd81b66165b3026f
   react-native-geolocation: c43df081568b7568b4d68240a03263037b2eb90f
   react-native-netinfo: cd30f7af707b4ac085374cc4896fe605d9aab51f
   react-native-safe-area-context: 54d812805f3c4e08a4580ad086cbde1d8780c2e4

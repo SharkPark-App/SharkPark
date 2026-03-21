@@ -1,9 +1,9 @@
 /**
  * Behavioral Data Collector Service
  * Collects real sensor data for parking validation including:
- * - User speed from location updates
- * - Device connectivity (Bluetooth, WiFi)
- * - Device information
+ * - User speed from GPS location updates
+ * - Device connectivity (Bluetooth state, WiFi)
+ * - Device information (battery, model, etc.)
  * - Motion patterns
  */
 
@@ -11,6 +11,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import Geolocation from '@react-native-community/geolocation';
 import NetInfo from '@react-native-community/netinfo';
 import DeviceInfo from 'react-native-device-info';
+import BluetoothStatus from 'react-native-bluetooth-status';
 import { ValidationEvent } from '../validation';
 
 export interface BehavioralMetrics {
@@ -197,23 +198,24 @@ class BehavioralDataCollector {
 
   /**
    * Get current Bluetooth state
-   * Note: For now returns UNKNOWN since bluetooth state detection is complex
-   * This could be enhanced with platform-specific native modules
+   * Uses react-native-bluetooth-status to detect actual Bluetooth state
    */
   private async getBluetoothState(): Promise<ValidationEvent['bluetooth_state']> {
     try {
-      // For now, we'll return UNKNOWN since we removed the problematic bluetooth library
-      // In a real implementation, you could use:
-      // - Platform-specific native modules
-      // - Check for paired devices
-      // - Use permissions to infer bluetooth capability
+      // Get actual Bluetooth state from the device
+      const isBluetoothEnabled = await BluetoothStatus.state();
       
-      // Implementation placeholder - actual bluetooth detection would go here
+      if (isBluetoothEnabled) {
+        return 'CONNECTED'; // Bluetooth is enabled/available
+      } else {
+        return 'DISCONNECTED'; // Bluetooth is disabled
+      }
     } catch (error) {
       console.warn('[BehavioralDataCollector] Failed to get Bluetooth state:', error);
+      
+      // If we can't determine the state, return UNKNOWN (null)
+      return null;
     }
-    // Always return null (UNKNOWN) for now
-    return null;
   }
 
   /**
