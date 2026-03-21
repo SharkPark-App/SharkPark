@@ -67,16 +67,14 @@ class BehavioralDataCollector {
     this.isCollecting = true;
 
     try {
-      // Start location tracking for speed and movement
-      this.startLocationTracking();
-
+      // Note: Location tracking is handled externally via updateLocation()
+      // This avoids conflicts with the main LocationService
+      
       // Start periodic data collection (every 30 seconds)
+      // Wait for location data to be provided via updateLocation() before collecting metrics
       this.collectionInterval = setInterval(() => {
         this.collectAndSendMetrics();
       }, 30000);
-
-      // Collect initial metrics
-      await this.collectAndSendMetrics();
 
     } catch (error) {
       this.callbacks?.onError(`Failed to start data collection: ${error}`);
@@ -101,6 +99,28 @@ class BehavioralDataCollector {
 
     this.callbacks = null;
     this.lastLocation = null;
+  }
+
+  /**
+   * Update location data externally (to avoid multiple location trackers)
+   */
+  updateLocation(locationData: {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    speed: number | null;
+    altitude?: number | null;
+    heading?: number | null;
+  }): void {
+    this.lastLocation = {
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+      accuracy: locationData.accuracy,
+      speed: locationData.speed,
+      altitude: locationData.altitude || null,
+      heading: locationData.heading || null,
+      timestamp: Date.now()
+    };
   }
 
   /**
@@ -202,14 +222,40 @@ class BehavioralDataCollector {
    */
   private async getBluetoothState(): Promise<ValidationEvent['bluetooth_state']> {
     try {
-      // Get actual Bluetooth state from the device
-      const isBluetoothEnabled = await BluetoothStatus.state();
-      
-      if (isBluetoothEnabled) {
-        return 'CONNECTED'; // Bluetooth is enabled/available
-      } else {
-        return 'DISCONNECTED'; // Bluetooth is disabled
+      // Check if BluetoothStatus is available
+      if (!BluetoothStatus || typeof BluetoothStatus.state !== 'function') {
+        console.warn('[BehavioralDataCollector] BluetoothStatus API not available');
+        return null;
       }
+
+      // Get actual Bluetooth state from the device
+      const bluetoothState = await BluetoothStatus.state();
+      
+      // Check if bluetoothState is null/undefined
+      if (bluetoothState === null || bluetoothState === undefined) {
+        console.warn('[BehavioralDataCollector] BluetoothStatus.state() returned null/undefined');
+        return null;
+      }
+      
+      // Handle different possible return formats
+      if (typeof bluetoothState === 'boolean') {
+        return bluetoothState ? 'CONNECTED' : 'DISCONNECTED';
+      } else if (bluetoothState && typeof bluetoothState === 'object') {
+        // If it returns an object, check for common state properties
+        const stateObj = bluetoothState as Record<string, unknown>; // Handle unknown object structure safely
+        const state = stateObj.state || stateObj.enabled || stateObj.status;
+        if (typeof state === 'boolean') {
+          return state ? 'CONNECTED' : 'DISCONNECTED';
+        } else if (typeof state === 'string') {
+          return state.toLowerCase().includes('on') || state.toLowerCase().includes('enabled') 
+            ? 'CONNECTED' : 'DISCONNECTED';
+        }
+      }
+      
+      // If we can't determine the state
+      console.warn('[BehavioralDataCollector] Bluetooth state returned unexpected format:', bluetoothState);
+      return null; // UNKNOWN state
+      
     } catch (error) {
       console.warn('[BehavioralDataCollector] Failed to get Bluetooth state:', error);
       

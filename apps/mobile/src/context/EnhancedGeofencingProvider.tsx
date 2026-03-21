@@ -264,20 +264,89 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     });
   }, []);
 
-  // Mock location updates for demonstration (in real app, this would come from location service)
+  // Real location updates from LocationService
   useEffect(() => {
-    const mockLocationUpdates = setInterval(() => {
-      // Simulate varying speed and accuracy for behavioral analysis
-      const mockSpeed = Math.random() < 0.3 ? 0 : Math.random() * 20; // 30% chance of being stationary
-      const mockAccuracy = 5 + Math.random() * 20; // 5-25 meter accuracy
-      
-      lastLocationUpdate.current = {
-        speed: mockSpeed,
-        accuracy: mockAccuracy
-      };
-    }, 2000); // Every 2 seconds
+    let locationInterval: ReturnType<typeof setInterval> | null = null;
+    let isTrackingStarted = false;
+    
+    // Set up real location tracking using LocationService
+    const startLocationUpdates = async () => {
+      try {
+        // Start the location service tracking
+        const started = await locationService.startLocationTracking();
+        if (!started) {
+          console.warn('[EnhancedGeofencing] Failed to start location tracking');
+          return;
+        }
+        
+        isTrackingStarted = true;
+        
+        // Set up periodic location updates for the geofencing provider
+        locationInterval = setInterval(async () => {
+          try {
+            const position = await locationService.getCurrentPosition();
+            if (position && position.coords) {
+              const { latitude, longitude, speed, accuracy, altitude, heading } = position.coords;
+              
+              // Convert speed from m/s to mph if available
+              const speedMph = speed !== null && speed !== undefined ? speed * 2.237 : undefined;
+              
+              lastLocationUpdate.current = {
+                speed: speedMph,
+                accuracy: accuracy
+              };
 
-    return () => clearInterval(mockLocationUpdates);
+              // Feed location data to parking validation service for behavioral analysis
+              parkingValidationService.updateLocation({
+                latitude,
+                longitude,
+                accuracy: accuracy || 0,
+                speed: speed || null,
+                altitude: altitude || null,
+                heading: heading || null
+              });
+
+              // Also feed location data to leave detection service
+              leaveDetectionService.updateLocation({
+                latitude,
+                longitude,
+                accuracy: accuracy || 0,
+                speed: speed || null,
+                altitude: altitude || null,
+                heading: heading || null
+              });
+
+              // Debug: Log location data to see what we're getting
+              if (__DEV__) {
+                console.log('[EnhancedGeofencing] Location update:', {
+                  speed: speed,
+                  speedMph: speedMph,
+                  accuracy,
+                  latitude: latitude.toFixed(6),
+                  longitude: longitude.toFixed(6)
+                });
+              }
+            }
+          } catch (error) {
+            console.warn('[EnhancedGeofencing] Failed to get current position:', error);
+          }
+        }, 5000); // Update every 5 seconds
+        
+      } catch (error) {
+        console.error('[EnhancedGeofencing] Error starting location updates:', error);
+      }
+    };
+
+    startLocationUpdates();
+
+    return () => {
+      if (locationInterval) {
+        clearInterval(locationInterval);
+      }
+      if (isTrackingStarted) {
+        locationService.stopLocationTracking();
+      }
+    };
   }, []);
 
   // App state monitoring for behavioral context

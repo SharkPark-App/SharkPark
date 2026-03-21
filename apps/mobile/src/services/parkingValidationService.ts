@@ -416,6 +416,22 @@ class ParkingValidationService {
       sessions: sessionInfo
     };
   }
+
+  /**
+   * Update location data for behavioral analysis
+   * This should be called from the main location tracking service to avoid conflicts
+   */
+  updateLocation(locationData: {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    speed: number | null;
+    altitude?: number | null;
+    heading?: number | null;
+  }): void {
+    // Pass location data to behavioral collector for speed and movement analysis
+    this.behavioralCollector.updateLocation(locationData);
+  }
 }
 
 // Export singleton instance
