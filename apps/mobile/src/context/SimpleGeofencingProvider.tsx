@@ -8,6 +8,7 @@ import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
 import { lotsApi } from '../services/api';
 import { TEST_CONSTANTS, MESSAGE_CONSTANTS } from '../constants/geofencing';
+import { createGeofenceRegionsFromLots } from '../utils/geofenceUtils';
 
 interface SimpleGeofencingContextType {
   isGeofencingActive: boolean;
@@ -81,26 +82,48 @@ export const SimpleGeofencingProvider: React.FC<{ children: ReactNode }> = ({ ch
 
     // START GPS TRACKING - This enables real geofencing!
     locationService.startLocationTracking()
-      .then(() => {
-        // Add ONE test geofence region for clean testing
-        const testGeofenceRegions = [
-          {
-            id: TEST_CONSTANTS.TEST_LOT_ID,
-            name: TEST_CONSTANTS.TEST_LOT_NAME,
-            geometry: {
-              type: 'circle' as const,
-              center: {
-                latitude: TEST_CONSTANTS.CSULB_CENTER.latitude,
-                longitude: TEST_CONSTANTS.CSULB_CENTER.longitude,
-              },
-              radius: TEST_CONSTANTS.TEST_RADIUS,
-            },
-            notifyOnEntry: true,
-            notifyOnExit: true
+      .then(async () => {
+        try {
+          console.log('[SimpleGeofencingProvider] Fetching real parking lot data for geofencing...');
+          
+          // Fetch all parking lots from API
+          const allLots = await lotsApi.getAllLots();
+          
+          // Convert to geofence regions
+          const realGeofenceRegions = createGeofenceRegionsFromLots(allLots);
+          
+          if (realGeofenceRegions.length > 0) {
+            await locationService.addGeofenceRegions(realGeofenceRegions);
+            console.log(`[SimpleGeofencingProvider] Successfully set up ${realGeofenceRegions.length} real parking lot geofences:`, 
+              realGeofenceRegions.map(r => r.name).join(', '));
+          } else {
+            throw new Error('No valid parking lot geofences found');
           }
-        ];
-        
-        locationService.addGeofenceRegions(testGeofenceRegions);
+          
+        } catch (error) {
+          console.warn('[SimpleGeofencingProvider] Failed to load real parking lot data, falling back to test geofence:', error);
+          
+          // Fallback to single test geofence for development/testing
+          const testGeofenceRegions = [
+            {
+              id: TEST_CONSTANTS.TEST_LOT_ID,
+              name: TEST_CONSTANTS.TEST_LOT_NAME,
+              geometry: {
+                type: 'circle' as const,
+                center: {
+                  latitude: TEST_CONSTANTS.CSULB_CENTER.latitude,
+                  longitude: TEST_CONSTANTS.CSULB_CENTER.longitude,
+                },
+                radius: TEST_CONSTANTS.TEST_RADIUS,
+              },
+              notifyOnEntry: true,
+              notifyOnExit: true
+            }
+          ];
+          
+          await locationService.addGeofenceRegions(testGeofenceRegions);
+          console.log('[SimpleGeofencingProvider] Using test geofence as fallback');
+        }
       })
       .catch((error) => {
         console.error('[SimpleGeofencingProvider] Failed to start GPS tracking:', error);
