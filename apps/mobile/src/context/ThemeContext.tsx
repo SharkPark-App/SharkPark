@@ -14,6 +14,7 @@ export type ThemeColors = {
   lightGray: string;
   darkGray: string;
   mediumGray: string;
+  mediumLightGray: string;
   borderGray: string;
   toggleGray: string;
   warningLight: string;
@@ -54,6 +55,7 @@ const createThemeColors = (isDark: boolean): ThemeColors => {
       gray: COLORS.toggleGray, // Use existing toggle gray
       darkGray: COLORS.lightGray, // Use existing light gray
       mediumGray: COLORS.gray, // Use existing gray
+      mediumLightGray: COLORS.gray, // Use existing gray for dark theme
       borderGray: COLORS.mediumGray, // Use existing medium gray
       borderLight: COLORS.mediumGray, // Use existing medium gray
       toggleGray: COLORS.mediumGray, // Use existing medium gray
@@ -86,6 +88,7 @@ const createThemeColors = (isDark: boolean): ThemeColors => {
     lightGray: COLORS.lightGray,
     darkGray: COLORS.darkGray,
     mediumGray: COLORS.mediumGray,
+    mediumLightGray: COLORS.mediumLightGray,
     borderGray: COLORS.borderGray,
     toggleGray: COLORS.toggleGray,
     warningLight: COLORS.warningLight,

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { Text } from '../components/CustomText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SectionCard } from '../components/SectionCard';
@@ -55,9 +56,9 @@ const ProfileScreen: React.FC = () => {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Open Settings', onPress: () => {
-          // In a real app, you'd open device settings
-          // Open device settings for location permissions
-          // Could use: Linking.openSettings();
+            // In a real app, you'd open device settings
+            // Open device settings for location permissions
+            // Could use: Linking.openSettings();
         }},
       ]
     );
@@ -66,14 +67,14 @@ const ProfileScreen: React.FC = () => {
   // Simple toggle component for notifications
   const ToggleSwitch = ({ value }: { value: boolean }) => (
     <View style={[
-      styles.toggleContainer, 
+        styles.toggleContainer,
       { backgroundColor: value ? colors.primary : colors.toggleGray }
     ]}>
       <View style={[
-        styles.toggleThumb, 
-        { 
-          backgroundColor: colors.white,
-          shadowColor: colors.shadowDark,
+          styles.toggleThumb,
+          {
+            backgroundColor: colors.white,
+            shadowColor: colors.shadowDark,
           transform: [{ translateX: value ? 20 : 0 }] 
         }
       ]} />
@@ -85,13 +86,13 @@ const ProfileScreen: React.FC = () => {
       'Logout',
       'Are you sure you want to logout?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Logout',
-          style: 'destructive',
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'Logout',
+        style: 'destructive',
           onPress: () => {logout()},
         },
       ]
@@ -108,155 +109,155 @@ const ProfileScreen: React.FC = () => {
       {/* Scrollable Content */}
       <SafeAreaView style={styles.scrollView}>
         <ScrollView contentContainerStyle={styles.content}>
-        {/* Notification Settings */}
-        <SectionCard title="Notifications">
-          <View style={styles.settingsList}>
-            <View style={styles.settingItem}>
-              <View style={styles.settingText}>
+          {/* Notification Settings */}
+          <SectionCard title="Notifications">
+            <View style={styles.settingsList}>
+              <View style={styles.settingItem}>
+                <View style={styles.settingText}>
                 <Text style={[styles.settingLabel, { color: colors.black }]}>High Occupancy Alerts</Text>
                 <Text style={[styles.settingDescription, { color: colors.gray }]}>Get notified when lots reach 80% capacity</Text>
-              </View>
-              <TouchableOpacity
+                </View>
+                <TouchableOpacity
                 onPress={() => setNotifications(prev => ({ ...prev, highOccupancy: !prev.highOccupancy }))}
-              >
-                <ToggleSwitch value={notifications.highOccupancy} />
-              </TouchableOpacity>
-            </View>
+                >
+                  <ToggleSwitch value={notifications.highOccupancy} />
+                </TouchableOpacity>
+              </View>
 
             <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
 
-            <View style={styles.settingItem}>
-              <View style={styles.settingText}>
+              <View style={styles.settingItem}>
+                <View style={styles.settingText}>
                 <Text style={[styles.settingLabel, { color: colors.black }]}>Favorite Lot Updates</Text>
                 <Text style={[styles.settingDescription, { color: colors.gray }]}>Receive updates on favorited parking lots</Text>
-              </View>
-              <TouchableOpacity
+                </View>
+                <TouchableOpacity
                 onPress={() => setNotifications(prev => ({ ...prev, favoriteLots: !prev.favoriteLots }))}
-              >
-                <ToggleSwitch value={notifications.favoriteLots} />
-              </TouchableOpacity>
-            </View>
+                >
+                  <ToggleSwitch value={notifications.favoriteLots} />
+                </TouchableOpacity>
+              </View>
 
             <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
 
-            <View style={styles.settingItem}>
-              <View style={styles.settingText}>
+              <View style={styles.settingItem}>
+                <View style={styles.settingText}>
                 <Text style={[styles.settingLabel, { color: colors.black }]}>Incident Alerts</Text>
                 <Text style={[styles.settingDescription, { color: colors.gray }]}>Get notified about parking lot incidents</Text>
-              </View>
-              <TouchableOpacity
+                </View>
+                <TouchableOpacity
                 onPress={() => setNotifications(prev => ({ ...prev, incidents: !prev.incidents }))}
-              >
-                <ToggleSwitch value={notifications.incidents} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </SectionCard>
-
-        {/* Location & Privacy Settings */}
-        <SectionCard title="Smart Parking Detection">
-          <View style={styles.settingsList}>
-            <View style={styles.settingItem}>
-              <View style={styles.settingText}>
-                <Text style={[styles.settingLabel, { color: colors.black }]}>
-                  <Icon name="location-outline" size={16} color={colors.primary} /> Background Geofencing
-                </Text>
-                <Text style={[styles.settingDescription, { color: colors.gray }]}>
-                  Automatically detects when you enter or leave parking lots
-                </Text>
+                >
+                  <ToggleSwitch value={notifications.incidents} />
+                </TouchableOpacity>
               </View>
-              <View style={styles.statusBadge}>
+            </View>
+          </SectionCard>
+
+          {/* Location & Privacy Settings */}
+          <SectionCard title="Smart Parking Detection">
+            <View style={styles.settingsList}>
+              <View style={styles.settingItem}>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingLabel, { color: colors.black }]}>
+                  <Icon name="location-outline" size={16} color={colors.primary} /> Background Geofencing
+                  </Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>
+                    Automatically detects when you enter or leave parking lots
+                  </Text>
+                </View>
+                <View style={styles.statusBadge}>
                 <Text style={[styles.statusBadgeText, { 
-                  color: isGeofencingActive ? '#10b981' : colors.gray,
+                        color: isGeofencingActive ? '#10b981' : colors.gray,
                   backgroundColor: isGeofencingActive ? '#ecfdf5' : colors.lightGray,
                 }]}>
-                  {getGeofencingStatusText()}
-                </Text>
+                    {getGeofencingStatusText()}
+                  </Text>
+                </View>
               </View>
-            </View>
 
-            {!permissionStatus?.granted && (
-              <TouchableOpacity 
+              {!permissionStatus?.granted && (
+                <TouchableOpacity
                 style={[styles.settingsButton, { backgroundColor: colors.primary }]}
-                onPress={openLocationSettings}
-              >
-                <Text style={styles.settingsButtonText}>
-                  Grant Location Access
-                </Text>
-              </TouchableOpacity>
-            )}
+                  onPress={openLocationSettings}
+                >
+                  <Text style={styles.settingsButtonText}>
+                    Grant Location Access
+                  </Text>
+                </TouchableOpacity>
+              )}
 
-            {currentLotId && (
+              {currentLotId && (
               <View style={[styles.statusInfo, { backgroundColor: '#ecfdf5', borderColor: '#10b981' }]}>
-                <Text style={[styles.statusText, { color: '#059669' }]}>
-                  📍 Currently in parking lot
-                </Text>
-              </View>
-            )}
-          </View>
-        </SectionCard>
+                  <Text style={[styles.statusText, { color: '#059669' }]}>
+                    📍 Currently in parking lot
+                  </Text>
+                </View>
+              )}
+            </View>
+          </SectionCard>
 
-        {/* Appearance Settings */}
-        <SectionCard title="Appearance">
-          <View style={styles.themeList}>
-            <TouchableOpacity
-              onPress={() => setThemeMode('light')}
-              style={[
-                styles.themeButton, 
-                { borderColor: colors.borderGray },
+          {/* Appearance Settings */}
+          <SectionCard title="Appearance">
+            <View style={styles.themeList}>
+              <TouchableOpacity
+                onPress={() => setThemeMode('light')}
+                style={[
+                  styles.themeButton,
+                  { borderColor: colors.borderGray },
                 themeMode === 'light' && { borderColor: colors.primary, backgroundColor: colors.yellowLight }
-              ]}
-            >
-              <Text style={[styles.themeLabel, { color: colors.black }]}>
-                Light Mode
-              </Text>
+                ]}
+              >
+                <Text style={[styles.themeLabel, { color: colors.black }]}>
+                  Light Mode
+                </Text>
               {themeMode === 'light' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} />}
-            </TouchableOpacity>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => setThemeMode('dark')}
-              style={[
-                styles.themeButton, 
-                { borderColor: colors.borderGray },
+              <TouchableOpacity
+                onPress={() => setThemeMode('dark')}
+                style={[
+                  styles.themeButton,
+                  { borderColor: colors.borderGray },
                 themeMode === 'dark' && { borderColor: colors.primary, backgroundColor: colors.yellowLight }
-              ]}
-            >
-              <Text style={[styles.themeLabel, { color: colors.black }]}>
-                Dark Mode
-              </Text>
+                ]}
+              >
+                <Text style={[styles.themeLabel, { color: colors.black }]}>
+                  Dark Mode
+                </Text>
               {themeMode === 'dark' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} />}
-            </TouchableOpacity>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => setThemeMode('system')}
-              style={[
-                styles.themeButton, 
-                { borderColor: colors.borderGray },
+              <TouchableOpacity
+                onPress={() => setThemeMode('system')}
+                style={[
+                  styles.themeButton,
+                  { borderColor: colors.borderGray },
                 themeMode === 'system' && { borderColor: colors.primary, backgroundColor: colors.yellowLight }
-              ]}
-            >
-              <Text style={[styles.themeLabel, { color: colors.black }]}>
-                System Settings
-              </Text>
+                ]}
+              >
+                <Text style={[styles.themeLabel, { color: colors.black }]}>
+                  System Settings
+                </Text>
               {themeMode === 'system' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} />}
-            </TouchableOpacity>
-          </View>
-        </SectionCard>
+              </TouchableOpacity>
+            </View>
+          </SectionCard>
 
-        {/* Logout Button */}
-        <TouchableOpacity 
-          style={[
-            styles.logoutButton, 
+          {/* Logout Button */}
+          <TouchableOpacity
+            style={[
+              styles.logoutButton,
             { backgroundColor: colors.errorLight, borderColor: colors.errorBorder }
-          ]} 
-          onPress={handleLogout}
-        >
-          <Icon name="log-out-outline" size={20} color={colors.errorText} />
+            ]}
+            onPress={handleLogout}
+          >
+            <Icon name="log-out-outline" size={20} color={colors.errorText} />
           <Text style={[styles.logoutButtonText, { color: colors.errorText }]}>Logout</Text>
-        </TouchableOpacity>
+          </TouchableOpacity>
 
-        {/* Development Test Button */}
-        <GeofencingTestButton />
+          {/* Development Test Button */}
+          <GeofencingTestButton />
         
         </ScrollView>
       </SafeAreaView>
@@ -357,7 +358,7 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginLeft: SPACING.md,
   },
   statusBadge: {
@@ -369,7 +370,7 @@ const styles = StyleSheet.create({
   },
   statusBadgeText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     textAlign: 'center',
   },
   settingsButton: {
@@ -380,7 +381,7 @@ const styles = StyleSheet.create({
   settingsButtonText: {
     color: 'white',
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     textAlign: 'center',
   },
 });

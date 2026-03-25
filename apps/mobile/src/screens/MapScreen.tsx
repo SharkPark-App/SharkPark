@@ -5,9 +5,9 @@ import {
   Image,
   Dimensions,
   TouchableOpacity,
-  Text,
   ImageSourcePropType,
 } from 'react-native';
+import { Text } from '../components/CustomText';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -29,6 +29,8 @@ const { width: screenWidth } = Dimensions.get('window');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const campusMapImage = require('../assets/images/CSULB_map_transparent_unlabeled.webp') as ImageSourcePropType;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const logo = require('../assets/images/SharkParkV4.webp') as ImageSourcePropType;
 
 // Interactive lot component
 const InteractiveLot: React.FC<{
@@ -219,8 +221,8 @@ const MapScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: colors.backgroundLight }]}>
       {/* Header */}
-      <Header 
-        title="Map View"
+      <Header
+        logo={logo}
       />
 
       <View style={{ flex: 1, overflow: 'hidden' }}>
@@ -316,7 +318,7 @@ const styles = StyleSheet.create({
   },
   lotText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     textAlign: 'center',
   },
   fab: {

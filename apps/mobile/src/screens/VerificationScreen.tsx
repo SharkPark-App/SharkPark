@@ -1,14 +1,14 @@
 import React, { useState, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Text } from '../components/CustomText';
+import { TextInput } from '../components/CustomTextInput';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
 
@@ -23,7 +23,7 @@ export function VerificationScreen({ email, onBack, onVerificationSuccess }: Ver
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
-  const inputRefs = useRef<(TextInput | null)[]>([]);
+  const inputRefs = useRef<(React.ComponentRef<typeof TextInput> | null)[]>([]);
 
   const handleCodeChange = (text: string, index: number) => {
     const newCode = [...code];
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: TYPOGRAPHY.fontSize.xxxl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     marginBottom: SPACING.sm,
   },
   subtitle: {
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   },
   emailText: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
 
   // Code Input Section
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
     borderRadius: SPACING.sm,
     textAlign: 'center',
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
   verifyButton: {
     paddingVertical: SPACING.lg,
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   },
   verifyButtonText: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
 
   // Actions Section
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
   },
   resendText: {
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   backButton: {
     paddingVertical: SPACING.sm,

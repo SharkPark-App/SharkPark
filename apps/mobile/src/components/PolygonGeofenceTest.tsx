@@ -7,12 +7,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
   Alert,
 } from 'react-native';
+import { Text } from './CustomText';
 import { ACCESSIBILITY_CONSTANTS, TEST_CONSTANTS, UI_CONSTANTS } from '../constants/geofencing';
 import locationService from '../services/locationService';
 import { GeofenceRegion } from '../types/location';
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     marginBottom: SPACING.sm,
     textAlign: 'center',
   },
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginBottom: SPACING.md,
   },
   button: {
@@ -286,13 +286,13 @@ const styles = StyleSheet.create({
     color: 'white',
     textAlign: 'center',
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   infoButtonText: {
     color: 'white',
     textAlign: 'center',
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   geofenceCard: {
     backgroundColor: 'white',
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   },
   geofenceName: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginBottom: SPACING.xs,
   },
   geofenceDetails: {
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
   actionButtonText: {
     color: 'white',
     fontSize: TYPOGRAPHY.fontSize.sm,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     textAlign: 'center',
   },
   resultsContainer: {
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
   },
   explanationTitle: {
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginBottom: SPACING.xs,
   },
   explanationText: {

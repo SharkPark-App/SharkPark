@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import {
-  View, Text, Modal,
+  View, Modal,
   TouchableOpacity, ScrollView,
   StyleSheet, Pressable,
 } from 'react-native';
+import { Text } from '../CustomText';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 
 interface LotFilterModalProps {
@@ -53,7 +54,6 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
     { id: 'E9', label: 'E9', category: 'employee' },
     { id: 'E10', label: 'E10', category: 'employee' },
     { id: 'E11', label: 'E11', category: 'employee' },
-    { id: 'E12', label: 'E12', category: 'employee' },
   ];
 
   const allLots = [...generalLots, ...employeeLots];
@@ -232,13 +232,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: COLORS.textPrimary,
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   sectionTitleEmployee: {
     color: COLORS.mediumGray,
     fontSize: TYPOGRAPHY.fontSize.xl,
     marginBottom: SPACING.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   closeButton: {
     padding: SPACING.sm,
@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
   closeIcon: {
     color: COLORS.mediumGray,
     fontSize: SPACING.xxl,
-    fontWeight: TYPOGRAPHY.fontWeight.light,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
   },
   grid: {
     flexDirection: 'row',
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   checkmark: {
     color: COLORS.white,
     fontSize: 20,
-    fontWeight: 'bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
   },
   lotLabel: {
     color: COLORS.textPrimary,
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   clearButtonText: {
     color: COLORS.textPrimary,
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   applyButton: {
     flex: 1,
@@ -318,6 +318,6 @@ const styles = StyleSheet.create({
   applyButtonText: {
     color: COLORS.white,
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
 });

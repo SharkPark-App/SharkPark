@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import {
-  View, Text, Modal,
-  TouchableOpacity, TextInput,
+  View, Modal,
+  TouchableOpacity,
   ScrollView, StyleSheet,
 } from 'react-native';
-import { COLORS } from '../../constants/theme';
+import { Text } from '../CustomText';
+import { TextInput } from '../CustomTextInput';
+import { COLORS, TYPOGRAPHY } from '../../constants/theme';
 
 
 interface ReportModalProps {
@@ -94,7 +96,7 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
           </View>
 
           {/* Modal Content */}
-          <ScrollView style={styles.content}>
+          <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
             {/* Incident Type Selection */}
             <View style={styles.section}>
               <Text style={styles.label}>Select Incident Type</Text>
@@ -206,7 +208,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.textPrimary,
   },
   subtitle: {
@@ -226,7 +228,10 @@ const styles = StyleSheet.create({
   // Modal content
   content: {
     paddingHorizontal: 24,
+  },
+  contentContainer: {
     paddingVertical: 24,
+    paddingBottom: 48,
   },
   section: {
     marginBottom: 24,
@@ -235,7 +240,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.textPrimary,
     marginBottom: 12,
-    fontWeight: '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   required: {
     color: COLORS.error,
@@ -277,7 +282,7 @@ const styles = StyleSheet.create({
   typeLabel: {
     fontSize: 16,
     color: COLORS.textPrimary,
-    fontWeight: '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   typeDescription: {
     fontSize: 14,
@@ -334,6 +339,6 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: COLORS.white,
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
 });

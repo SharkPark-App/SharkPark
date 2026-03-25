@@ -68,9 +68,10 @@ jest.mock('../src/hooks/useLotData', () => ({
 }));
 
 jest.mock('../src/components', () => ({
-  Header: ({ title }: { title: string }) => {
+  Header: ({ title, logo }: { title?: string; logo?: unknown }) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Text } = require('react-native');
+    const { Text, Image } = require('react-native');
+    if (logo) return <Image testID="header-logo" source={logo} />;
     return <Text>{title}</Text>;
   },
 }));
@@ -185,13 +186,13 @@ describe('MapScreen', () => {
       expect(tree!.toJSON()).toBeTruthy();
     });
 
-    it('renders the header with "Map View" title', () => {
+    it('renders the header with logo', () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
       ReactTestRenderer.act(() => {
         tree = ReactTestRenderer.create(<MapScreen />);
       });
       const json = JSON.stringify(tree!.toJSON());
-      expect(json).toContain('Map View');
+      expect(json).toContain('header-logo');
     });
 
     it('renders parking lot circles from mock data when API has no data', () => {

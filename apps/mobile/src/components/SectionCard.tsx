@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle } from 'react-native';
+import { Text } from './CustomText';
 import { ReactNode } from 'react';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
@@ -40,7 +41,7 @@ const styles = StyleSheet.create({
   
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginBottom: SPACING.lg,
   },
 });

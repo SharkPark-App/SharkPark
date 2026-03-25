@@ -1,7 +1,9 @@
 /** ReliabilityMeter - Visual indicator for occupancy data confidence level */
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ViewStyle, TextStyle } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ViewStyle, TextStyle } from 'react-native';
+import { Text } from './CustomText';
 import { ConfidenceLevel, CONFIDENCE_COLORS, CONFIDENCE_LABELS } from '../types/reliability';
+import { TYPOGRAPHY } from '../constants/theme';
 
 export interface ReliabilityMeterProps {
   confidence: ConfidenceLevel;
@@ -179,7 +181,7 @@ const styles = StyleSheet.create({
     gap: 8,
   } as ViewStyle,
   icon: {
-    fontWeight: '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
   } as TextStyle,
   icon_small: {
     fontSize: 10,
@@ -191,7 +193,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   } as TextStyle,
   text: {
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   } as TextStyle,
   text_small: {
     fontSize: 10,
@@ -224,7 +226,7 @@ const styles = StyleSheet.create({
   } as ViewStyle,
   coldStartText: {
     fontSize: 10,
-    fontWeight: 'bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: '#FFFFFF',
   } as TextStyle,
   barContainer: {
@@ -242,12 +244,12 @@ const styles = StyleSheet.create({
   } as ViewStyle,
   barLabel: {
     fontSize: 11,
-    fontWeight: '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     marginBottom: 4,
   } as TextStyle,
   barScore: {
     fontSize: 10,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginTop: 2,
     textAlign: 'right',
   } as TextStyle,

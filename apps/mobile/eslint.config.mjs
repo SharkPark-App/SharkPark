@@ -31,7 +31,20 @@ export default [
       ...js.configs.recommended.rules,
       ...ts.configs.recommended.rules,
       "@typescript-eslint/no-unused-expressions": "off",
-      "no-undef": "off"
+      "no-undef": "off",
+      "no-restricted-imports": ["error", {
+        paths: [{
+          name: "react-native",
+          importNames: ["Text", "TextInput"],
+          message: "Import Text from '@/components/CustomText' and TextInput from '@/components/CustomTextInput' instead."
+        }]
+      }]
+    }
+  },
+  {
+    files: ["**/CustomText.tsx", "**/CustomTextInput.tsx"],
+    rules: {
+      "no-restricted-imports": "off"
     }
   },
   {

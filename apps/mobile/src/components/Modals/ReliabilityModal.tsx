@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, Modal, TouchableOpacity,
+  View, Modal, TouchableOpacity,
   StyleSheet, Animated, Dimensions,
 } from 'react-native';
+import { Text } from '../CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { COLORS, TYPOGRAPHY, SPACING } from '../../constants/theme';
 import { ReliabilityBar } from '../ReliabilityMeter';
@@ -181,7 +182,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
   },
   scoreSection: {
     marginBottom: SPACING.xl,
@@ -202,7 +203,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginBottom: SPACING.md,
   },
   factorsList: {
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
   },
   factorName: {
     fontSize: TYPOGRAPHY.fontSize.sm,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   factorWeight: {
     fontSize: TYPOGRAPHY.fontSize.xs,
@@ -252,7 +253,7 @@ const styles = StyleSheet.create({
   },
   explanationText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     textAlign: 'center',
   },
 });

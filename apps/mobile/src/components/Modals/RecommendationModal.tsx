@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
-  View, Text, Modal,
+  View, Modal,
   TouchableOpacity, ScrollView,
   StyleSheet, Pressable,
   ActivityIndicator,
   Animated,
 } from 'react-native';
+import { Text } from '../CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { useLotsList } from '../../hooks/useLotData';
@@ -371,7 +372,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.textPrimary,
   },
   backButton: {
@@ -414,7 +415,7 @@ const styles = StyleSheet.create({
   },
   lotName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.textPrimary,
     flex: 1,
     flexShrink: 1,
@@ -427,7 +428,7 @@ const styles = StyleSheet.create({
   },
   pctBadgeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.white,
   },
   occupancyText: {
@@ -465,7 +466,7 @@ const styles = StyleSheet.create({
   altButtonText: {
     fontSize: 11,
     color: COLORS.secondary,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginTop: 2,
   },
   arrow: {
@@ -489,7 +490,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.darkGray,
     marginTop: SPACING.lg,
     marginBottom: SPACING.xs,

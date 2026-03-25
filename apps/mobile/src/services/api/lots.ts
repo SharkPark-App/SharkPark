@@ -102,9 +102,9 @@ export interface GetLotsParams {
 
 export interface GetHistoryParams {
   // YYYY-MM-DD format
-  date?: string; 
+  date?: string;
   // Max 200
-  limit?: number; 
+  limit?: number;
 }
 
 export interface LotRecommendation extends ParkingLotResponse {
@@ -120,7 +120,7 @@ class LotsApiService {
   async getAllLots(params?: GetLotsParams): Promise<ParkingLotResponse[]> {
     const queryString = params ? this.buildQueryString(params) : '';
     const endpoint = `${API_CONFIG.ENDPOINTS.LOTS}${queryString}`;
-    
+
     const response = await apiService.get<ParkingLotResponse[]>(endpoint);
     return response.data;
   }
@@ -146,12 +146,12 @@ class LotsApiService {
    * Get historical occupancy data for a specific lot
    */
   async getLotHistory(
-    lotId: string, 
+    lotId: string,
     params?: GetHistoryParams
   ): Promise<OccupancyHistoryRecord[]> {
     const queryString = params ? this.buildQueryString(params) : '';
     const endpoint = `${API_CONFIG.ENDPOINTS.LOT_HISTORY(lotId)}${queryString}`;
-    
+
     const response = await apiService.get<OccupancyHistoryRecord[]>(endpoint);
     return response.data;
   }
@@ -186,8 +186,9 @@ class LotsApiService {
   }
 
   /**
-   * Generate forecast data for short-term predictions
-   * This creates mock forecast data similar to what's in ShortTermForecastScreen
+   * Generate forecast data for short-term predictions.
+   * TODO: Replace with real ML predictions from the backend.
+   * Currently uses a hardcoded campus occupancy curve for development.
    */
   generateForecast(lot: ParkingLotResponse): Array<{
     time: string;
@@ -197,42 +198,36 @@ class LotsApiService {
     accuracy: number;
   }> {
     const forecast = [];
-    const currentOccupancyRate = lot.occupancy_rate;
-    
-    // Generate hourly forecast for next 20 hours
-    for (let i = 0; i < 20; i++) {
-      const hour = (new Date().getHours() + i) % 24;
-      
-      // Simple prediction model - adjust based on time of day
-      let predictedRate = currentOccupancyRate;
-      
-      // Peak hours: 8-10 AM and 5-7 PM
-      if ((hour >= 8 && hour <= 10) || (hour >= 17 && hour <= 19)) {
-        predictedRate = Math.min(0.95, currentOccupancyRate * 1.2);
-      }
-      // Low hours: 10 PM - 6 AM
-      else if (hour >= 22 || hour <= 6) {
-        predictedRate = currentOccupancyRate * 0.3;
-      }
-      // Regular hours: moderate adjustments
-      else {
-        predictedRate = currentOccupancyRate * (0.8 + Math.random() * 0.4);
-      }
+    const now = new Date();
 
-      const occupancyPercent = Math.round(predictedRate * 100);
-      const confidenceMargin = lot.confidence === 'HIGH' ? 3 : 
-                              lot.confidence === 'MEDIUM' ? 5 : 8;
-      
+    // Typical campus occupancy curve
+    const campusCurve: Record<number, number> = {
+      7: 15, 8: 40, 9: 70, 10: 85, 11: 90, 12: 80,
+      13: 75, 14: 70, 15: 60, 16: 50, 17: 55, 18: 45,
+      19: 30, 20: 20, 21: 10};
+
+    // Generate hourly forecast for prediction hours 7 AM – 9 PM
+    for (let hour = 7; hour <= 21; hour++) {
+      const occupancyPercent = campusCurve[hour] ?? 50;
+      const confidenceMargin =
+        lot.confidence === 'HIGH' ? 3 : lot.confidence === 'MEDIUM' ? 5 : 8;
+
+      const targetTime = new Date(now);
+      targetTime.setHours(hour, 0, 0, 0);
+
       forecast.push({
-        time: hour.toString(),
+        time: targetTime.toISOString(),
         occupancy: occupancyPercent,
         lowerBound: Math.max(0, occupancyPercent - confidenceMargin),
         upperBound: Math.min(100, occupancyPercent + confidenceMargin),
-        accuracy: lot.confidence === 'HIGH' ? 95 : 
-                 lot.confidence === 'MEDIUM' ? 85 : 70,
+        accuracy:
+          lot.confidence === 'HIGH'
+            ? 95
+            : lot.confidence === 'MEDIUM'
+              ? 85 : 70,
       });
     }
-    
+
     return forecast;
   }
 
@@ -247,7 +242,7 @@ class LotsApiService {
     timestamp?: string;
   }): Promise<{ event_id: string; deduplicated: boolean }> {
     const deviceId = await this.getAnonymousDeviceId();
-    
+
     const payload = {
       lot_id: event.lotId,
       event_type: event.eventType,
@@ -267,11 +262,11 @@ class LotsApiService {
     try {
       // Try to get existing ID from AsyncStorage
       const existingId = await AsyncStorage.getItem('@sharkpark_anonymous_device_id');
-      
+
       if (existingId) {
         return existingId;
       }
-      
+
       // Generate a new random UUID
       const newId = this.generateUUID();
       await AsyncStorage.setItem('@sharkpark_anonymous_device_id', newId);
@@ -299,13 +294,13 @@ class LotsApiService {
 
   private buildQueryString(params: GetLotsParams | GetHistoryParams): string {
     const query = new URLSearchParams();
-    
+
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
         query.append(key, String(value));
       }
     });
-    
+
     const queryString = query.toString();
     return queryString ? `?${queryString}` : '';
   }
