@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   View, Text, Modal,
   TouchableOpacity, ScrollView,
   StyleSheet, Pressable,
 } from 'react-native';
-import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 
 interface LotFilterModalProps {
   isOpen: boolean;
@@ -20,7 +21,10 @@ interface LotOption {
 }
 
 export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }: LotFilterModalProps) {  
+  const { colors, spacing, typography } = useTheme();
   const [tempSelected, setTempSelected] = useState<string[]>(selectedLots);
+
+  const styles = useMemo(() => getStyles(colors, spacing, typography), [colors, spacing, typography]);
 
   const generalLots: LotOption[] = [
     { id: 'G1', label: 'G1', category: 'general' },
@@ -192,13 +196,17 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
 }
 
 // Filter Modal Specific Style
-const styles = StyleSheet.create({
+const getStyles = (
+  colors: ThemeColors, 
+  spacing: typeof SPACING, 
+  typography: typeof TYPOGRAPHY
+) => StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: SPACING.xl,
+    padding: spacing.xl,
   },
   backdropPress: {
     position: 'absolute',
@@ -208,116 +216,116 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   modal: {
-    backgroundColor: COLORS.white,
-    borderRadius: SPACING.xl,
+    backgroundColor: colors.white,
+    borderRadius: spacing.xl,
     width: '100%',
     maxWidth: 448,
     maxHeight: '85%',
     overflow: 'hidden',
   },
   content: {
-    paddingHorizontal: SPACING.xxl,
+    paddingHorizontal: spacing.xxl,
     paddingTop: 20,
-    paddingBottom: SPACING.xl,
+    paddingBottom: spacing.xl,
   },
   section: {
-    marginBottom: SPACING.xxl,
+    marginBottom: spacing.xxl,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: SPACING.xl,
+    marginBottom: spacing.xl,
   },
   sectionTitle: {
-    color: COLORS.textPrimary,
-    fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.medium,
   },
   sectionTitleEmployee: {
-    color: COLORS.mediumGray,
-    fontSize: TYPOGRAPHY.fontSize.xl,
-    marginBottom: SPACING.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    color: colors.mediumGray,
+    fontSize: typography.fontSize.xl,
+    marginBottom: spacing.xl,
+    fontWeight: typography.fontWeight.medium,
   },
   closeButton: {
-    padding: SPACING.sm,
-    borderRadius: SPACING.md,
+    padding: spacing.sm,
+    borderRadius: spacing.md,
   },
   closeIcon: {
-    color: COLORS.mediumGray,
-    fontSize: SPACING.xxl,
-    fontWeight: TYPOGRAPHY.fontWeight.light,
+    color: colors.mediumGray,
+    fontSize: spacing.xxl,
+    fontWeight: typography.fontWeight.light,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: SPACING.lg,
+    gap: spacing.lg,
   },
   lotButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.md,
+    gap: spacing.md,
     width: '30%',
   },
   checkbox: {
     width: 28,
     height: 28,
-    borderRadius: SPACING.sm,
-    borderWidth: SPACING.xs,
-    borderColor: COLORS.borderGray,
+    borderRadius: spacing.sm,
+    borderWidth: spacing.xs,
+    borderColor: colors.borderGray,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxSelected: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   checkmark: {
-    color: COLORS.white,
+    color: colors.white,
     fontSize: 20,
     fontWeight: 'bold',
   },
   lotLabel: {
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
     fontSize: 14,
     flex: 1,
   },
   divider: {
     borderTopWidth: 1,
-    borderTopColor: COLORS.borderGray,
-    marginVertical: SPACING.xxl,
+    borderTopColor: colors.borderGray,
+    marginVertical: spacing.xxl,
   },
   footer: {
     flexDirection: 'row',
-    gap: SPACING.lg,
-    paddingHorizontal: SPACING.xxl,
-    paddingVertical: SPACING.xl,
+    gap: spacing.lg,
+    paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.xl,
     borderTopWidth: 1,
-    borderTopColor: COLORS.borderGray,
+    borderTopColor: colors.borderGray,
   },
   clearButton: {
     flex: 1,
-    paddingVertical: SPACING.lg,
-    backgroundColor: COLORS.lightGray,
-    borderRadius: SPACING.md,
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.lightGray,
+    borderRadius: spacing.md,
     alignItems: 'center',
   },
   clearButtonText: {
-    color: COLORS.textPrimary,
-    fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.medium,
   },
   applyButton: {
     flex: 1,
-    paddingVertical: SPACING.lg,
-    backgroundColor: COLORS.primary,
-    borderRadius: SPACING.md,
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.primary,
+    borderRadius: spacing.md,
     alignItems: 'center',
   },
   applyButtonText: {
-    color: COLORS.white,
-    fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    color: colors.white,
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.semibold,
   },
 });
