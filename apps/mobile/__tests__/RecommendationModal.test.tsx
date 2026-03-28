@@ -25,6 +25,38 @@ jest.mock('../src/hooks/useLotData', () => ({
   useLotsList: () => mockUseLotsList(),
 }));
 
+jest.mock('../src/context/ThemeContext', () => ({
+  useTheme: () => ({
+    colors: {
+      white: '#ffffff',
+      borderGray: '#e5e7eb',
+      textPrimary: '#111827',
+      mediumGray: '#4b5563',
+      darkGray: '#374151',
+      lightGray: '#f3f4f6',
+      primary: '#EBA91B',
+      secondary: '#1e40af',
+    },
+    spacing: {
+      xl: 16,
+      md: 8,
+      lg: 12,
+      xxl: 24,
+      xs: 2,
+    },
+    typography: {
+      fontSize: {
+        xl: 16,
+        md: 14,
+        lg: 15,
+      },
+      fontWeight: {
+        semibold: '600' as const,
+      },
+    },
+  }),
+}));
+
 // ────────────────────── Helpers ──────────────────────
 
 /** Walk up from a node to find the nearest ancestor with onPress */
