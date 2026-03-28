@@ -62,7 +62,7 @@
       </intent>
       <intent>
         <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="yandexmaps://maps.yandex." />
+        <data android:scheme="yandexmaps" />
       </intent>
       <intent>
         <action android:name="android.intent.action.VIEW" />

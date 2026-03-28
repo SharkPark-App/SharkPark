@@ -6,6 +6,7 @@ import {
 import { getApps } from 'react-native-map-link';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { Alert } from 'react-native';
 
 interface MapApp {
   id: string;
@@ -99,8 +100,19 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
               <TouchableOpacity 
                 style={styles.appItem} 
                 onPress={async () => {
-                  await item.open(); 
-                  handleClose();
+                  try {
+                    await item.open();
+                  } catch (error) {
+                    console.error(`[MapSelectModal] Failed to open map app (${item.name}):`, error);
+                    
+                    Alert.alert(
+                      'Map Open Error',
+                      'The app could not be opened. Please try again.',
+                      [{ text: 'OK', style: 'cancel' }]
+                    );
+                  } finally {
+                    handleClose();
+                  }
                 }}
               >
                 <View style={styles.mapIcon}>

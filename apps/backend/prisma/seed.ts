@@ -442,7 +442,7 @@ const parkingLots: LotSeed[] = [
     lot_type: LotType.STUDENT, capacity: 1400, current_occupancy: 91,
     location_description: 'North Campus - Palo Verde Structure',
     building_proximity: ['Palo Verde North', 'Recreation Center'],
-    center_lat: 33.7850, center_lng: -118.1170, geofence_radius: 50,
+    center_lat: 33.7874, center_lng: -118.1094, geofence_radius: 50,
     permit_types: ['Gold', 'Green', 'Resident'], daily_permit_allowed: false,
     hours_weekday: { open: '00:00', close: '23:59' },
     hours_saturday: { open: '00:00', close: '23:59' },
