@@ -35,8 +35,8 @@ export class OccupancyEventsService {
    * Includes deduplication logic to prevent ENTER→ENTER or EXIT→EXIT.
    */
   async create(dto: CreateOccupancyEventDto): Promise<CreateEventResponse> {
-    // Use client-provided hash if available, otherwise generate one
-    const deviceHash = dto.device_hash || hashDeviceId(dto.device_id);
+    // hash server-side
+    const deviceHash = hashDeviceId(dto.device_id);
     const eventId = generateEventId();
     const now = new Date().toISOString();
 

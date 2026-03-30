@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsISO8601, IsNotEmpty, MaxLength, MinLength, IsOptional } from 'class-validator';
+import { IsString, IsEnum, IsISO8601, IsNotEmpty, MaxLength, MinLength } from 'class-validator';
 
 /** DTO for creating an anonymous occupancy event from geofencing. */
 export class CreateOccupancyEventDto {
@@ -20,11 +20,4 @@ export class CreateOccupancyEventDto {
   /** ISO8601 timestamp when event occurred on device */
   @IsISO8601({ strict: true })
   timestamp!: string;
-
-  /** Pre-hashed device ID if client wants to handle hashing */
-  @IsOptional()
-  @IsString()
-  @MinLength(32)
-  @MaxLength(128)
-  device_hash?: string;
 }
