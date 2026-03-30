@@ -28,6 +28,12 @@ jest.mock('../src/services/behavioralDataCollector', () => ({
     stopCollection: jest.fn(),
     getCurrentMetrics: jest.fn(),
   })),
+  sharedBehavioralCollector: {
+    startCollection: jest.fn(),
+    stopCollection: jest.fn(),
+    getCurrentMetrics: jest.fn(),
+    updateLocation: jest.fn(),
+  },
 }));
 
 describe('ParkingValidationService', () => {
@@ -257,7 +263,7 @@ describe('ParkingValidationService', () => {
       
       (ParkingValidator.analyzeEventPatterns as jest.Mock).mockReturnValue(mockPreliminaryAnalysis);
       
-      const status = parkingValidationService.getCurrentValidationStatus('test-lot-1');
+      const status = await parkingValidationService.getCurrentValidationStatus('test-lot-1');
       
       expect(status).toEqual(mockPreliminaryAnalysis);
       expect(ParkingValidator.analyzeEventPatterns).toHaveBeenCalledWith(
@@ -266,8 +272,8 @@ describe('ParkingValidationService', () => {
       );
     });
 
-    it('should return null for non-existent sessions', () => {
-      const status = parkingValidationService.getCurrentValidationStatus('non-existent-lot');
+    it('should return null for non-existent sessions', async () => {
+      const status = await parkingValidationService.getCurrentValidationStatus('non-existent-lot');
       expect(status).toBeNull();
     });
 
@@ -275,7 +281,7 @@ describe('ParkingValidationService', () => {
       await parkingValidationService.startParkingSession(mockGeofenceEvent);
       
       // Only has GEOFENCE_ENTER event (1 event < 3 minimum)
-      const status = parkingValidationService.getCurrentValidationStatus('test-lot-1');
+      const status = await parkingValidationService.getCurrentValidationStatus('test-lot-1');
       
       expect(status).toBeNull();
     });
@@ -345,7 +351,7 @@ describe('ParkingValidationService', () => {
         throw new Error('Analysis error');
       });
       
-      const status = parkingValidationService.getCurrentValidationStatus('test-lot-1');
+      const status = await parkingValidationService.getCurrentValidationStatus('test-lot-1');
       expect(status).toBeNull();
     });
   });
