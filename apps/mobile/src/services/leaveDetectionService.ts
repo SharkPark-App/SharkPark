@@ -10,7 +10,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BehavioralDataCollector, { BehavioralMetrics } from './behavioralDataCollector';
+import { BehavioralMetrics, sharedBehavioralCollector } from './behavioralDataCollector';
 import { GeofenceEvent } from '../types/location';
 
 export interface LeaveIntentSignal {
@@ -61,10 +61,11 @@ interface LeaveDetectionCallbacks {
 
 class LeaveDetectionService {
   private activeSessions = new Map<string, LeaveSession>();
-  private behavioralCollector = new BehavioralDataCollector();
+  private behavioralCollector = sharedBehavioralCollector;
   private isMonitoring = false;
   private callbacks: LeaveDetectionCallbacks | null = null;
-  
+  private initPromise: Promise<void>;
+
   // Leave detection thresholds
   private readonly INTENT_PROBABILITY_THRESHOLD = 0.6;
   private readonly HIGH_CONFIDENCE_THRESHOLD = 0.8;
@@ -73,17 +74,18 @@ class LeaveDetectionService {
   private readonly MIN_MONITORING_TIME = 5; // minutes before considering leave intent
 
   constructor() {
-    this.loadPersistedSessions();
+    this.initPromise = this.loadPersistedSessions();
   }
 
   /**
    * Start monitoring for leave intent when user parks
    */
   async startLeaveMonitoring(
-    geofenceEvent: GeofenceEvent, 
+    geofenceEvent: GeofenceEvent,
     callbacks: LeaveDetectionCallbacks,
     parkedLocation?: { latitude: number; longitude: number; accuracy: number }
   ): Promise<string> {
+    await this.initPromise;
     if (geofenceEvent.eventType !== 'ENTER') {
       return '';
     }
@@ -106,7 +108,7 @@ class LeaveDetectionService {
     // Start behavioral data collection for leave detection
     this.startDataCollection(sessionId);
 
-    console.log(`[LeaveDetection] Started monitoring session ${sessionId} for lot ${geofenceEvent.regionId}`);
+    if (__DEV__) console.log(`[LeaveDetection] Started monitoring session ${sessionId} for lot ${geofenceEvent.regionId}`);
     return sessionId;
   }
 
@@ -114,26 +116,26 @@ class LeaveDetectionService {
    * Stop monitoring and complete leave detection
    */
   async completeLeaveMonitoring(geofenceEvent: GeofenceEvent): Promise<LeaveIntentAnalysis | null> {
+    await this.initPromise;
     if (geofenceEvent.eventType !== 'EXIT') {
       return null;
     }
 
     const session = this.findActiveSessionByLotId(geofenceEvent.regionId);
     if (!session) {
-      console.log(`[LeaveDetection] No active session found for lot ${geofenceEvent.regionId}`);
+      if (__DEV__) console.log(`[LeaveDetection] No active session found for lot ${geofenceEvent.regionId}`);
       return null;
     }
 
-    // Stop data collection
     this.isMonitoring = false;
-    this.behavioralCollector.stopCollection();
+    this.behavioralCollector.stopCollection('leaveDetection');
     session.status = 'COMPLETED';
 
     // Final analysis
     const finalAnalysis = this.analyzeLeaveIntent(session);
     session.lastAnalysis = finalAnalysis;
 
-    console.log(`[LeaveDetection] Session ${session.sessionId} completed:`, {
+    if (__DEV__) console.log(`[LeaveDetection] Session ${session.sessionId} completed:`, {
       intent_probability: finalAnalysis.intent_probability,
       confidence_level: finalAnalysis.confidence_level,
       signal_count: finalAnalysis.primary_signals.length
@@ -152,7 +154,8 @@ class LeaveDetectionService {
   /**
    * Get current leave intent analysis for a lot
    */
-  getCurrentLeaveIntent(lotId: string): LeaveIntentAnalysis | null {
+  async getCurrentLeaveIntent(lotId: string): Promise<LeaveIntentAnalysis | null> {
+    await this.initPromise;
     const session = this.findActiveSessionByLotId(lotId);
     if (!session || session.signals.length < 2) {
       return null; // Need minimum signals for analysis
@@ -172,10 +175,10 @@ class LeaveDetectionService {
         this.processBehavioralMetrics(sessionId, metrics);
       },
       onError: (error: string) => {
-        console.error('[LeaveDetection] Behavioral data collection error:', error);
+        if (__DEV__) console.error('[LeaveDetection] Behavioral data collection error:', error);
         this.callbacks?.onError(error);
       }
-    });
+    }, 'leaveDetection');
   }
 
   private processBehavioralMetrics(sessionId: string, metrics: BehavioralMetrics): void {
@@ -284,7 +287,7 @@ class LeaveDetectionService {
     // Persist updated session
     this.persistSession(session);
 
-    console.log(`[LeaveDetection] Added ${signals.length} signals. Intent probability: ${Math.round(analysis.intent_probability * 100)}%`);
+    if (__DEV__) console.log(`[LeaveDetection] Added ${signals.length} signals. Intent probability: ${Math.round(analysis.intent_probability * 100)}%`);
   }
 
   private analyzeLeaveIntent(session: LeaveSession): LeaveIntentAnalysis {
@@ -402,7 +405,7 @@ class LeaveDetectionService {
   }
 
   private generateSessionId(): string {
-    return `leave-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `leave-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
 
   // --- Persistence Methods ---
@@ -421,7 +424,7 @@ class LeaveDetectionService {
         })
       );
     } catch (error) {
-      console.error('[LeaveDetection] Failed to persist session:', error);
+      if (__DEV__) console.error('[LeaveDetection] Failed to persist session:', error);
     }
   }
 
@@ -429,7 +432,7 @@ class LeaveDetectionService {
     try {
       await AsyncStorage.removeItem(`leave_session_${sessionId}`);
     } catch (error) {
-      console.error('[LeaveDetection] Failed to remove persisted session:', error);
+      if (__DEV__) console.error('[LeaveDetection] Failed to remove persisted session:', error);
     }
   }
 
@@ -462,9 +465,9 @@ class LeaveDetectionService {
         }
       }
       
-      console.log(`[LeaveDetection] Restored ${this.activeSessions.size} active sessions`);
+      if (__DEV__) console.log(`[LeaveDetection] Restored ${this.activeSessions.size} active sessions`);
     } catch (error) {
-      console.error('[LeaveDetection] Failed to load persisted sessions:', error);
+      if (__DEV__) console.error('[LeaveDetection] Failed to load persisted sessions:', error);
     }
   }
 

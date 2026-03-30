@@ -55,50 +55,52 @@ interface DataCollectionCallbacks {
 class BehavioralDataCollector {
   private locationWatchId: number | null = null;
   private lastLocation: LocationData | null = null;
-  private callbacks: DataCollectionCallbacks | null = null;
   private isCollecting = false;
   private collectionInterval: ReturnType<typeof setInterval> | null = null;
 
+  // Multiple subscribers can register callbacks independently.
+  // Using a Map keyed by a caller-supplied id so each service can
+  // start/stop independently without affecting the other.
+  private subscribers = new Map<string, DataCollectionCallbacks>();
+
   /**
-   * Start collecting behavioral data
+   * Register a subscriber and begin the shared collection interval if not already running.
+   * @param subscriberId  A stable string identifying the caller (e.g. 'parkingValidation')
    */
-  async startCollection(callbacks: DataCollectionCallbacks): Promise<void> {
-    this.callbacks = callbacks;
+  async startCollection(callbacks: DataCollectionCallbacks, subscriberId = 'default'): Promise<void> {
+    this.subscribers.set(subscriberId, callbacks);
     this.isCollecting = true;
 
-    try {
-      // Note: Location tracking is handled externally via updateLocation()
-      // This avoids conflicts with the main LocationService
-      
-      // Start periodic data collection (every 30 seconds)
-      // Wait for location data to be provided via updateLocation() before collecting metrics
+    // Start the shared interval only once
+    if (!this.collectionInterval) {
       this.collectionInterval = setInterval(() => {
         this.collectAndSendMetrics();
       }, 30000);
-
-    } catch (error) {
-      this.callbacks?.onError(`Failed to start data collection: ${error}`);
     }
   }
 
   /**
-   * Stop collecting behavioral data
+   * Unregister a subscriber. Stops the shared interval only when no subscribers remain.
+   * @param subscriberId  Must match the id used in startCollection
    */
-  stopCollection(): void {
-    this.isCollecting = false;
-    
-    if (this.locationWatchId) {
-      Geolocation.clearWatch(this.locationWatchId);
-      this.locationWatchId = null;
-    }
+  stopCollection(subscriberId = 'default'): void {
+    this.subscribers.delete(subscriberId);
 
-    if (this.collectionInterval) {
-      clearInterval(this.collectionInterval);
-      this.collectionInterval = null;
-    }
+    if (this.subscribers.size === 0) {
+      this.isCollecting = false;
 
-    this.callbacks = null;
-    this.lastLocation = null;
+      if (this.locationWatchId) {
+        Geolocation.clearWatch(this.locationWatchId);
+        this.locationWatchId = null;
+      }
+
+      if (this.collectionInterval) {
+        clearInterval(this.collectionInterval);
+        this.collectionInterval = null;
+      }
+
+      this.lastLocation = null;
+    }
   }
 
   /**
@@ -117,8 +119,8 @@ class BehavioralDataCollector {
       longitude: locationData.longitude,
       accuracy: locationData.accuracy,
       speed: locationData.speed,
-      altitude: locationData.altitude || null,
-      heading: locationData.heading || null,
+      altitude: locationData.altitude ?? null,
+      heading: locationData.heading ?? null,
       timestamp: Date.now()
     };
   }
@@ -142,7 +144,7 @@ class BehavioralDataCollector {
         this.lastLocation = locationData;
       },
       (error) => {
-        this.callbacks?.onError(`Location tracking error: ${error.message}`);
+        this.subscribers.forEach(cb => cb.onError(`Location tracking error: ${error.message}`));
       },
       {
         enableHighAccuracy: true,
@@ -153,11 +155,8 @@ class BehavioralDataCollector {
     );
   }
 
-  /**
-   * Collect all metrics and send to callback
-   */
   private async collectAndSendMetrics(): Promise<void> {
-    if (!this.isCollecting || !this.callbacks) {
+    if (!this.isCollecting || this.subscribers.size === 0) {
       return;
     }
 
@@ -181,13 +180,11 @@ class BehavioralDataCollector {
         DeviceInfo.getBatteryLevel().catch(() => null)
       ]);
 
-      // Calculate speed from location data
       const speedMph = this.calculateSpeed();
 
-      // Build metrics object
       const metrics: BehavioralMetrics = {
         speed_mph: speedMph,
-        accuracy_meters: this.lastLocation?.accuracy || null,
+        accuracy_meters: this.lastLocation?.accuracy ?? null,
         bluetooth_state: bluetoothState,
         wifi_connected: networkState.type === 'wifi' && networkState.isConnected === true,
         network_type: networkState.type,
@@ -200,19 +197,19 @@ class BehavioralDataCollector {
         },
         raw_data: {
           timestamp: new Date().toISOString(),
-          location_accuracy: this.lastLocation?.accuracy || null,
-          altitude: this.lastLocation?.altitude || null,
-          heading: this.lastLocation?.heading || null,
+          location_accuracy: this.lastLocation?.accuracy ?? null,
+          altitude: this.lastLocation?.altitude ?? null,
+          heading: this.lastLocation?.heading ?? null,
           wifi_ssid: networkState.type === 'wifi' ? networkState.details?.ssid || undefined : undefined,
           cellular_carrier: networkState.type === 'cellular' ? networkState.details?.carrier || undefined : undefined
         }
       };
 
-      // Send metrics to callback
-      this.callbacks.onMetricsCollected(metrics);
+      // Fan out to all subscribers
+      this.subscribers.forEach(cb => cb.onMetricsCollected(metrics));
 
     } catch (error) {
-      this.callbacks?.onError(`Failed to collect metrics: ${error}`);
+      this.subscribers.forEach(cb => cb.onError(`Failed to collect metrics: ${error}`));
     }
   }
 
@@ -224,7 +221,7 @@ class BehavioralDataCollector {
     try {
       // Check if BluetoothStatus is available
       if (!BluetoothStatus || typeof BluetoothStatus.state !== 'function') {
-        console.warn('[BehavioralDataCollector] BluetoothStatus API not available');
+        if (__DEV__) console.warn('[BehavioralDataCollector] BluetoothStatus API not available');
         return null;
       }
 
@@ -233,7 +230,7 @@ class BehavioralDataCollector {
       
       // Check if bluetoothState is null/undefined
       if (bluetoothState === null || bluetoothState === undefined) {
-        console.warn('[BehavioralDataCollector] BluetoothStatus.state() returned null/undefined');
+        if (__DEV__) console.warn('[BehavioralDataCollector] BluetoothStatus.state() returned null/undefined');
         return null;
       }
       
@@ -253,11 +250,11 @@ class BehavioralDataCollector {
       }
       
       // If we can't determine the state
-      console.warn('[BehavioralDataCollector] Bluetooth state returned unexpected format:', bluetoothState);
+      if (__DEV__) console.warn('[BehavioralDataCollector] Bluetooth state returned unexpected format:', bluetoothState);
       return null; // UNKNOWN state
       
     } catch (error) {
-      console.warn('[BehavioralDataCollector] Failed to get Bluetooth state:', error);
+      if (__DEV__) console.warn('[BehavioralDataCollector] Failed to get Bluetooth state:', error);
       
       // If we can't determine the state, return UNKNOWN (null)
       return null;
@@ -283,19 +280,17 @@ class BehavioralDataCollector {
   async getCurrentMetrics(): Promise<BehavioralMetrics | null> {
     try {
       return new Promise((resolve) => {
-        const originalCallback = this.callbacks;
-        
-        this.callbacks = {
-          onMetricsCollected: (metrics) => {
-            this.callbacks = originalCallback;
+        const tempId = '__getCurrentMetrics__';
+        this.subscribers.set(tempId, {
+          onMetricsCollected: (metrics: BehavioralMetrics) => {
+            this.subscribers.delete(tempId);
             resolve(metrics);
           },
           onError: () => {
-            this.callbacks = originalCallback;
+            this.subscribers.delete(tempId);
             resolve(null);
           }
-        };
-
+        });
         this.collectAndSendMetrics();
       });
     } catch {
@@ -340,5 +335,9 @@ export const useBehavioralDataCollection = () => {
     getCurrentMetrics
   };
 };
+
+// Shared singleton instance — both parkingValidationService and leaveDetectionService
+// must use this so GPS/sensor data is collected and processed only once.
+export const sharedBehavioralCollector = new BehavioralDataCollector();
 
 export default BehavioralDataCollector;

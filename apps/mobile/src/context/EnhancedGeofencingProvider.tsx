@@ -3,8 +3,6 @@
  * Integrates client-side behavioral analysis and leave intent detection into the geofencing workflow
  * 
  * This provider:
- * - Maintains all existing geofencing fu              // Feed location to leave detection service
-              leaveDetectionService.updateLocation({tionality
  * - Adds parking validation to geofence events
  * - Detects leave intent using behavioral patterns (walking to car, Bluetooth reconnect, speed increase)
  * - Collects behavioral data during parking sessions
@@ -12,7 +10,7 @@
  * - Provides real-time occupancy updates for improved user experience
  */
 
-import React, { createContext, useContext, useEffect, useCallback, ReactNode, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, ReactNode, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
 import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
@@ -49,6 +47,13 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   const lastLocationUpdate = useRef<{ speed?: number; accuracy?: number } | null>(null);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const dataCollectionInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Stable refs that always point to the latest callback.
+  // The setup effect captures these refs (not the callbacks themselves), so it
+  // never needs to re-run because a callback identity changed.
+  const handleGeofenceEventRef = useRef<(event: GeofenceEvent) => void>(() => {});
+  const startLocationDataCollectionRef = useRef<() => void>(() => {});
+  const stopLocationDataCollectionRef = useRef<() => void>(() => {});
 
   // Enhanced occupancy event with validation data
   const sendValidatedOccupancyEvent = useCallback(async (
@@ -103,7 +108,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
               if (__DEV__) console.error('[EnhancedGeofencing] Leave detection error:', error);
             }
           });
-          startLocationDataCollection();
+          startLocationDataCollectionRef.current();
         } catch (error) {
           if (__DEV__) console.error('[EnhancedGeofencing] Failed to start parking validation:', error);
         }
@@ -145,7 +150,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           }
 
           await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
-          stopLocationDataCollection();
+          stopLocationDataCollectionRef.current();
         } catch (error) {
           if (__DEV__) console.error('[EnhancedGeofencing] Failed to complete parking validation:', error);
           await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
@@ -153,6 +158,10 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       }
     }
   }, [sendValidatedOccupancyEvent]);
+
+  // Keep ref in sync so the setup effect can call the latest version without
+  // being listed as a dependency (which would cause it to re-fire on every render).
+  useLayoutEffect(() => { handleGeofenceEventRef.current = handleGeofenceEvent; });
 
   // Location data collection for behavioral analysis
   const startLocationDataCollection = useCallback(() => {
@@ -168,12 +177,16 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     dataCollectionInterval.current = locationUpdateInterval;
   }, []);
 
+  useLayoutEffect(() => { startLocationDataCollectionRef.current = startLocationDataCollection; });
+
   const stopLocationDataCollection = useCallback(() => {
     if (dataCollectionInterval.current) {
       clearInterval(dataCollectionInterval.current);
       dataCollectionInterval.current = null;
     }
   }, []);
+
+  useLayoutEffect(() => { stopLocationDataCollectionRef.current = stopLocationDataCollection; });
 
   const recordBehavioralEvents = useCallback(() => {
     if (!lastLocationUpdate.current) return;
@@ -237,20 +250,20 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
               parkingValidationService.updateLocation({
                 latitude,
                 longitude,
-                accuracy: accuracy || 0,
-                speed: speed || null,
-                altitude: altitude || null,
-                heading: heading || null
+                accuracy: accuracy ?? 0,
+                speed: speed ?? null,
+                altitude: altitude ?? null,
+                heading: heading ?? null
               });
 
               // Also feed location data to leave detection service
               leaveDetectionService.updateLocation({
                 latitude,
                 longitude,
-                accuracy: accuracy || 0,
-                speed: speed || null,
-                altitude: altitude || null,
-                heading: heading || null
+                accuracy: accuracy ?? 0,
+                speed: speed ?? null,
+                altitude: altitude ?? null,
+                heading: heading ?? null
               });
             }
           } catch (error) {
@@ -297,18 +310,19 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
   // Set up geofencing and validation
   useEffect(() => {
-    // Set up geofence event listener
+    // Wrap refs in stable lambdas — these closures never change identity, so
+    // the effect is guaranteed to run exactly once on mount.
     const geofenceListener = (event: GeofenceEvent) => {
-      handleGeofenceEvent(event);
+      handleGeofenceEventRef.current(event);
     };
-    
+
     locationService.setOnGeofenceEvent(geofenceListener);
 
     // Set up validation completion listener
     const validationListener = (analysis: ValidationAnalysis) => {
       setCurrentValidationStatus(analysis);
     };
-    
+
     parkingValidationService.onValidationComplete(validationListener);
 
     // Set up geofences from real parking lot data.
@@ -352,9 +366,9 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     return () => {
       locationService.removeOnGeofenceEvent(geofenceListener);
       parkingValidationService.removeValidationListener(validationListener);
-      stopLocationDataCollection();
+      stopLocationDataCollectionRef.current();
     };
-  }, [handleGeofenceEvent, startLocationDataCollection, stopLocationDataCollection]);
+  }, []); // stable: all mutable state is accessed through refs
 
   const contextValue: EnhancedGeofencingContextType = {
     isGeofencingActive: true,

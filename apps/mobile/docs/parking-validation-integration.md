@@ -99,11 +99,6 @@ The enhanced occupancy events now include validation data:
 }
 ```
 
-The backend's `shouldCountTowardOccupancy()` method can now filter out:
-- `DROVE_THROUGH` events (confidence > 0.7)
-- `SEARCHING` events (confidence > 0.7) 
-- Low confidence events (confidence < 0.7)
-
 ## Usage Instructions
 
 ### For Development/Testing
@@ -156,7 +151,7 @@ To integrate parking validation into your geofencing workflow:
    </EnhancedGeofencingProvider>
    ```
 
-3. **Backend Updates**: The backend already supports the enhanced occupancy events through the enhanced `OccupancyEvent` model and `shouldCountTowardOccupancy()` filtering logic.
+3. **Backend Updates**: The backend already supports the enhanced occupancy events through the enhanced `OccupancyEvent` model. All events are counted as-is; occupancy accuracy is improved by the client-side classification reducing the volume of drive-through events ever sent.
 
 ## Benefits
 

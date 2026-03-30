@@ -16,7 +16,7 @@ jest.mock('../src/validation', () => ({
   ParkingValidator: {
     analyzeEventPatterns: jest.fn(),
     calculateConfidenceScore: jest.fn(),
-    generateDeviceHash: jest.fn(),
+    generateLocalTestHash: jest.fn(),
   },
 }));
 

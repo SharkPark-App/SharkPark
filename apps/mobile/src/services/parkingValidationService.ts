@@ -12,7 +12,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ParkingValidator, ValidationEvent, ValidationAnalysis } from '../validation';
 import { GeofenceEvent } from '../types/location';
-import BehavioralDataCollector, { BehavioralMetrics } from './behavioralDataCollector';
+import { BehavioralMetrics, sharedBehavioralCollector } from './behavioralDataCollector';
 
 interface ParkingSession {
   sessionId: string;
@@ -31,19 +31,21 @@ class ParkingValidationService {
   private activeSessions = new Map<string, ParkingSession>();
   private eventBuffer: ValidationEventWithMetadata[] = [];
   private isCollectingData = false;
-  private behavioralCollector = new BehavioralDataCollector();
-  
+  private behavioralCollector = sharedBehavioralCollector;
+  private initPromise: Promise<void>;
+
   // Event listeners
   private validationCompleteListeners: ((analysis: ValidationAnalysis, lotId: string) => void)[] = [];
-  
+
   constructor() {
-    this.loadPersistedSessions();
+    this.initPromise = this.loadPersistedSessions();
   }
 
   /**
    * Start collecting behavioral data when user enters a parking lot
    */
   async startParkingSession(geofenceEvent: GeofenceEvent): Promise<string> {
+    await this.initPromise;
     if (geofenceEvent.eventType !== 'ENTER') {
       return '';
     }
@@ -63,7 +65,7 @@ class ParkingValidationService {
     // Start collecting location and movement data
     this.startDataCollection(sessionId, geofenceEvent.regionId);
     
-    console.log(`[ParkingValidation] Started session ${sessionId} for lot ${geofenceEvent.regionId}`);
+    if (__DEV__) console.log(`[ParkingValidation] Started session ${sessionId} for lot ${geofenceEvent.regionId}`);
     
     // Persist session
     await this.persistSession(session);
@@ -75,13 +77,14 @@ class ParkingValidationService {
    * Complete parking session and analyze behavioral patterns
    */
   async completeParkingSession(geofenceEvent: GeofenceEvent): Promise<ValidationAnalysis | null> {
+    await this.initPromise;
     if (geofenceEvent.eventType !== 'EXIT') {
       return null;
     }
 
     const activeSession = this.findActiveSessionByLotId(geofenceEvent.regionId);
     if (!activeSession) {
-      console.log(`[ParkingValidation] No active session found for lot ${geofenceEvent.regionId}`);
+      if (__DEV__) console.log(`[ParkingValidation] No active session found for lot ${geofenceEvent.regionId}`);
       return null;
     }
 
@@ -89,15 +92,14 @@ class ParkingValidationService {
     const exitEvent = this.createValidationEvent('GEOFENCE_EXIT', activeSession.sessionId, geofenceEvent.regionId);
     activeSession.events.push(exitEvent);
     
-    // Stop data collection
     this.isCollectingData = false;
-    this.behavioralCollector.stopCollection();
+    this.behavioralCollector.stopCollection('parkingValidation');
     activeSession.status = 'COMPLETED';
     
     // Analyze the behavioral patterns
     const analysis = ParkingValidator.analyzeEventPatterns(activeSession.events, true);
     
-    console.log(`[ParkingValidation] Session ${activeSession.sessionId} analysis:`, {
+    if (__DEV__) console.log(`[ParkingValidation] Session ${activeSession.sessionId} analysis:`, {
       status: analysis.status,
       confidence: analysis.confidenceScore,
       contributesToOccupancy: analysis.contributesToOccupancy,
@@ -150,7 +152,8 @@ class ParkingValidationService {
   /**
    * Get current validation status for a parking session (optional real-time analysis)
    */
-  getCurrentValidationStatus(lotId: string): ValidationAnalysis | null {
+  async getCurrentValidationStatus(lotId: string): Promise<ValidationAnalysis | null> {
+    await this.initPromise;
     const session = this.findActiveSessionByLotId(lotId);
     if (!session || session.events.length < 3) {
       return null; // Need minimum events for analysis
@@ -161,7 +164,7 @@ class ParkingValidationService {
       const preliminaryAnalysis = ParkingValidator.analyzeEventPatterns(session.events, false);
       return preliminaryAnalysis;
     } catch (error) {
-      console.error('[ParkingValidation] Error during preliminary analysis:', error);
+      if (__DEV__) console.error('[ParkingValidation] Error during preliminary analysis:', error);
       return null;
     }
   }
@@ -191,13 +194,12 @@ class ParkingValidationService {
     // Start real behavioral data collection
     this.behavioralCollector.startCollection({
       onMetricsCollected: (metrics: BehavioralMetrics) => {
-        // Convert behavioral metrics to validation events
         this.processBehavioralMetrics(sessionId, lotId, metrics);
       },
       onError: (error: string) => {
-        console.error('[ParkingValidation] Behavioral data collection error:', error);
+        if (__DEV__) console.error('[ParkingValidation] Behavioral data collection error:', error);
       }
-    });
+    }, 'parkingValidation');
 
     // Initial geofence entry event
     const entryEvent = this.createValidationEvent('GEOFENCE_ENTER', sessionId, lotId);
@@ -276,7 +278,7 @@ class ParkingValidationService {
     // Persist the updated session
     this.persistSession(session);
 
-    console.log(`[ParkingValidation] Added ${events.length} real behavioral events to session ${sessionId}`);
+    if (__DEV__) console.log(`[ParkingValidation] Added ${events.length} real behavioral events to session ${sessionId}`);
   }
 
   private createValidationEvent(
@@ -291,13 +293,13 @@ class ParkingValidationService {
     } = {}
   ): ValidationEvent {
     return {
-      id: `${sessionId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `${sessionId}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       event_type: eventType,
       timestamp: new Date(),
-      speed_mph: metadata.speed_mph || null,
-      accuracy_meters: metadata.accuracy_meters || null,
+      speed_mph: metadata.speed_mph ?? null,
+      accuracy_meters: metadata.accuracy_meters ?? null,
       confidence_score: this.calculateEventConfidence(eventType, metadata),
-      bluetooth_state: metadata.bluetooth_state || null,
+      bluetooth_state: metadata.bluetooth_state ?? null,
       raw_data: metadata.raw_data || {}
     };
   }
@@ -330,7 +332,7 @@ class ParkingValidationService {
   }
 
   private generateSessionId(): string {
-    return `parking-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `parking-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
 
   private notifyValidationComplete(analysis: ValidationAnalysis, lotId: string): void {
@@ -338,7 +340,7 @@ class ParkingValidationService {
       try {
         listener(analysis, lotId);
       } catch (error) {
-        console.error('[ParkingValidation] Error in validation listener:', error);
+        if (__DEV__) console.error('[ParkingValidation] Error in validation listener:', error);
       }
     });
   }
@@ -350,7 +352,7 @@ class ParkingValidationService {
       const key = `parking_session_${session.sessionId}`;
       await AsyncStorage.setItem(key, JSON.stringify(session));
     } catch (error) {
-      console.error('[ParkingValidation] Failed to persist session:', error);
+      if (__DEV__) console.error('[ParkingValidation] Failed to persist session:', error);
     }
   }
 
@@ -359,7 +361,7 @@ class ParkingValidationService {
       const key = `parking_session_${sessionId}`;
       await AsyncStorage.removeItem(key);
     } catch (error) {
-      console.error('[ParkingValidation] Failed to remove persisted session:', error);
+      if (__DEV__) console.error('[ParkingValidation] Failed to remove persisted session:', error);
     }
   }
 
@@ -389,9 +391,9 @@ class ParkingValidationService {
         }
       }
       
-      console.log(`[ParkingValidation] Restored ${this.activeSessions.size} active sessions`);
+      if (__DEV__) console.log(`[ParkingValidation] Restored ${this.activeSessions.size} active sessions`);
     } catch (error) {
-      console.error('[ParkingValidation] Failed to load persisted sessions:', error);
+      if (__DEV__) console.error('[ParkingValidation] Failed to load persisted sessions:', error);
     }
   }
 
