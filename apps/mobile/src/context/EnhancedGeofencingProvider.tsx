@@ -94,7 +94,9 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           await leaveDetectionService.startLeaveMonitoring(event, {
             onLeaveIntentDetected: async (analysis: LeaveIntentAnalysis, lotId: string) => {
               setCurrentLeaveIntent(analysis);
-              await sendValidatedOccupancyEvent(lotId, 'ENTER');
+              // NOTE: Do NOT send an occupancy event here. Leave intent is a predictive
+              // signal only — the authoritative EXIT event is sent when the user actually
+              // leaves the geofence (see the EXIT branch below).
               if (analysis.confidence_level === 'HIGH' && __DEV__) {
                 Alert.alert(
                   '[DEV] Preparing to Leave?',
