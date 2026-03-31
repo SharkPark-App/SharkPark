@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Text } from './CustomText';
 import { BarChart } from 'react-native-gifted-charts';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
 interface HourData {
@@ -14,17 +14,20 @@ interface HourData {
 
 interface HourlyChartProps {
   data: HourData[];
+  name?: string;
 }
 
-export function HourlyChart({data}: HourlyChartProps) {
+export function HourlyChart({data, name}: HourlyChartProps) {
   const { colors } = useTheme();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const chartHeight = Math.round(screenHeight * 0.2);
 
   // Calculate bar dimensions to fill the available container width  
   const chartWidth = screenWidth - SPACING.lg * 2 - SPACING.md * 2 - 20; // 20 for internal padding
   const barCount = data.length || 1;
   const barSpacing = 3;
-  const barWidth = Math.floor((chartWidth - barSpacing * barCount) / barCount);  
+  const initialSpacing = 6;
+  const barWidth = Math.floor((chartWidth - barSpacing * barCount - initialSpacing) / barCount);
 
   /** Extracts the hour from an ISO 8601 timestamp*/
   const parseHour = (time: string): number => {
@@ -35,7 +38,7 @@ export function HourlyChart({data}: HourlyChartProps) {
   /** Converts an ISO 8601 timestamp to a label (e.g. "5p", "12a") */
   const formatTime = (time: string): string => {
     const h = parseHour(time);
-    if (h < 0) return time;
+    if (h < 0) return '';
     if (h === 0) return '12a';
     if (h < 12) return `${h}a`;
     if (h === 12) return '12p';
@@ -111,7 +114,7 @@ export function HourlyChart({data}: HourlyChartProps) {
           shadowColor: colors.shadowDark
         }
       ]}>
-      <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>Occupancy Forecast</Text>
+      <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>{name ?? 'Parking Occupancy Outlook'}</Text>
 
       {/* Status Tooltip*/}
       {selectedData && (
@@ -162,7 +165,7 @@ export function HourlyChart({data}: HourlyChartProps) {
       {/* Chart -- shows empty or bar chart */}
       <View style={{ marginTop: SPACING.sm }}>
         {data.length === 0 ? (
-          <View style={{ height: 200, justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ height: chartHeight, justifyContent: 'center', alignItems: 'center' }}>
             <Text style={{ color: colors.gray, textAlign: 'center' }}>
               No forecast data available
             </Text>
@@ -172,10 +175,11 @@ export function HourlyChart({data}: HourlyChartProps) {
             data={barData}
             barWidth={barWidth}
             spacing={barSpacing}
-            initialSpacing={0}
+            initialSpacing={initialSpacing}
             barBorderTopLeftRadius={4}
             barBorderTopRightRadius={4}
             noOfSections={4}
+            height={chartHeight}
             maxValue={100}
             disableScroll
             xAxisLabelTextStyle={{
@@ -201,15 +205,12 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.lg,
     marginBottom: SPACING.xxxl,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    ...SHADOWS.card,
   },
   chartTitle: {
     paddingHorizontal: SPACING.xl,
     paddingTop: SPACING.md,
-    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontSize: TYPOGRAPHY.fontSize.md,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
 });

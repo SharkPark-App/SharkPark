@@ -17,7 +17,7 @@ import { ACCESSIBILITY_CONSTANTS, TEST_CONSTANTS, UI_CONSTANTS } from '../consta
 import locationService from '../services/locationService';
 import { GeofenceRegion } from '../types/location';
 import { createTestPolygonGeofences, isPointInPolygon, calculatePolygonCenter, calculatePolygonArea } from '../utils/geofenceUtils';
-import { SPACING, TYPOGRAPHY } from '../constants/theme';
+import { SPACING, TYPOGRAPHY, SHADOWS } from '../constants/theme';
 
 export const PolygonGeofenceTest: React.FC = () => {
   const [isTestingPolygons, setIsTestingPolygons] = useState(false);
@@ -299,11 +299,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     borderRadius: 8,
     marginBottom: SPACING.sm,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...SHADOWS.card,
   },
   geofenceName: {
     fontSize: TYPOGRAPHY.fontSize.lg,

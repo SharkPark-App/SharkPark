@@ -18,7 +18,7 @@ import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
-import { TYPOGRAPHY, SPACING, MAP } from '../constants/theme';
+import { TYPOGRAPHY, SPACING, SHADOWS, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -327,13 +327,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: {
-      width: 0,
-      height: SPACING.sm,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    ...SHADOWS.fab,
   },
   filterButton: {
     position: 'absolute',

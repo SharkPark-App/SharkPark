@@ -71,6 +71,30 @@ export const TYPOGRAPHY = {
   },
 } as const;
 
+export const SHADOWS = {
+  card: {
+    shadowColor: COLORS.shadowDark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  cardSubtle: {
+    shadowColor: COLORS.shadowDark,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  fab: {
+    shadowColor: COLORS.shadowDark,
+    shadowOffset: { width: 0, height: SPACING.sm },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+} as const;
+
 export const MAP = {
   // The original map image size in pixels (square dimensions)
   IMAGE_SIZE: 1098,

@@ -12,7 +12,7 @@ export interface Event {
   date: Date;
   location: string;
   affectedLots: string[];
-  description: string;
+  description?: string;
   impact: 'high' | 'medium' | 'low';
 }
 

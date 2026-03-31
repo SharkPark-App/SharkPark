@@ -1,7 +1,7 @@
 import { View, StyleSheet, ViewStyle } from 'react-native';
 import { Text } from './CustomText';
 import { ReactNode } from 'react';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
 interface SectionCardProps {
@@ -32,10 +32,7 @@ const styles = StyleSheet.create({
   section: {
     borderRadius: SPACING.lg,
     padding: SPACING.xxxl,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    ...SHADOWS.card,
     marginBottom: SPACING.xxxl,
   },
   

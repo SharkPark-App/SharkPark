@@ -11,7 +11,7 @@ import { Text } from '../components/CustomText';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
-import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { Header, ReliabilityMeter } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
@@ -21,6 +21,8 @@ import useFavorites from '../hooks/useFavorites';
 import {getOccupancyColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
 import { LotAmenities } from '../components/LotAmenities';
+import { EventBanner } from '../components/EventBanner';
+import { upcomingEvents } from '../data/mockEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
 import type { MapStackScreenProps } from '../types/navigation';
@@ -102,20 +104,11 @@ export function ShortTermForecastScreen() {
     );
   }
 
-  const getTodayEvents = () => {
-    const events = [];
-
-    events.push({
-      name: 'Beach Volleyball Tournament',
-      time: '14:00',
-      location: 'Beach Courts',
-      impact: 'Increased traffic in G-lots',
-    });
-
-    return events.sort((a, b) => a.time.localeCompare(b.time));
-  };
-
-  const todayEvents = getTodayEvents();
+  const today = new Date().toDateString();
+  const todayEvents = upcomingEvents.filter(e =>
+    e.date.toDateString() === today &&
+    (e.affectedLots.includes('all') || e.affectedLots.includes(lotId))
+  );
 
   // Try to (un-)favorite a lot dependent on current isFavorite status
   const toggleFavorite = async () => {
@@ -143,26 +136,7 @@ export function ShortTermForecastScreen() {
 
       <ScrollView style={styles.scrollView}>
         {/* Event Notifications */}
-        {todayEvents.length > 0 && (
-          <View style={styles.eventsContainer}>
-            {todayEvents.map((event, index) => (
-              <View key={index} style={styles.eventCard}>
-                <View style={styles.eventIcon}>
-                  <Icon
-                    name="calendar-outline"
-                    size={TYPOGRAPHY.fontSize.xl}
-                    color={COLORS.textPrimary}
-                  />
-                </View>
-                <View style={styles.eventContent}>
-                  <Text style={styles.eventName}>{event.name}</Text>
-                  <Text style={styles.eventDetails}>{event.time} • {event.location}</Text>
-                  <Text style={styles.eventImpact}>{event.impact}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
+        <EventBanner events={todayEvents} />
 
         {/* Title Card w/ Lot Name and Occupancy */}
         <View style={[styles.lotHeaderCard, { backgroundColor: colors.white }]}>
@@ -273,53 +247,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Event Card
-  eventsContainer: {
-    padding: SPACING.lg,
-    gap: SPACING.md,
-  },
-
-  eventCard: {
-    backgroundColor: COLORS.warningLight,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.warningBorder,
-    borderRadius: SPACING.md,
-    padding: SPACING.lg,
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-
-  eventIcon: {
-    marginTop: 2,
-    marginRight: 5,
-  },
-
-  eventIconText: {
-    fontSize: TYPOGRAPHY.fontSize.xl,
-  },
-
-  eventContent: {
-    flex: 1,
-  },
-
-  eventName: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningText,
-    fontFamily: TYPOGRAPHY.fontFamily.semibold,
-  },
-
-  eventDetails: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningTextSecondary,
-    marginTop: SPACING.xs,
-  },
-
-  eventImpact: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningTextSecondary,
-    marginTop: SPACING.xs,
-  },
-
   favoriteButton: {
     width: SPACING.xxxxl,
     height: SPACING.xxxxl,
@@ -333,11 +260,7 @@ const styles = StyleSheet.create({
     padding: SPACING.xxxl,
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.lg,
-    shadowColor: COLORS.shadowDark,
-    shadowOffset: { width: 0, height: SPACING.xs },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: SPACING.sm,
+    ...SHADOWS.card,
     alignItems: 'center',
     gap: SPACING.sm,
   },
@@ -376,11 +299,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 3,
-    shadowColor: COLORS.shadowDark,
-    shadowOffset: { width: 0, height: SPACING.xs },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    ...SHADOWS.fab,
   },
   fabNavigate: {
     position: 'absolute',
@@ -392,11 +311,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 3,
-    shadowColor: COLORS.shadowDark,
-    shadowOffset: { width: 0, height: SPACING.xs },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    ...SHADOWS.fab,
   },
   fabIcon: {
     fontSize: TYPOGRAPHY.fontSize.xxl,
