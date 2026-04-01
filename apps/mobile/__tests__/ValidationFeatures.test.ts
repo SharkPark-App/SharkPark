@@ -222,13 +222,13 @@ describe('Parking Validation Features', () => {
     });
   });
 
-  describe('Privacy-preserving device hashing', () => {
-    it('should generate consistent device hashes', () => {
+  describe('Local test hash (DJB2, not cryptographically secure)', () => {
+    it('should generate consistent hashes', () => {
       const userId = 'user123';
       const salt = 'test_salt';
 
-      const hash1 = ParkingValidator.generateDeviceHash(userId, salt);
-      const hash2 = ParkingValidator.generateDeviceHash(userId, salt);
+      const hash1 = ParkingValidator.generateLocalTestHash(userId, salt);
+      const hash2 = ParkingValidator.generateLocalTestHash(userId, salt);
 
       expect(hash1).toBe(hash2);
       expect(hash1).toMatch(/^[0-9a-f]+$/); // Should be hexadecimal string
@@ -237,8 +237,8 @@ describe('Parking Validation Features', () => {
     it('should generate different hashes for different users', () => {
       const salt = 'test_salt';
       
-      const hash1 = ParkingValidator.generateDeviceHash('user1', salt);
-      const hash2 = ParkingValidator.generateDeviceHash('user2', salt);
+      const hash1 = ParkingValidator.generateLocalTestHash('user1', salt);
+      const hash2 = ParkingValidator.generateLocalTestHash('user2', salt);
 
       expect(hash1).not.toBe(hash2);
     });
@@ -246,8 +246,8 @@ describe('Parking Validation Features', () => {
     it('should generate different hashes with different salts', () => {
       const userId = 'user123';
       
-      const hash1 = ParkingValidator.generateDeviceHash(userId, 'salt1');
-      const hash2 = ParkingValidator.generateDeviceHash(userId, 'salt2');
+      const hash1 = ParkingValidator.generateLocalTestHash(userId, 'salt1');
+      const hash2 = ParkingValidator.generateLocalTestHash(userId, 'salt2');
 
       expect(hash1).not.toBe(hash2);
     });

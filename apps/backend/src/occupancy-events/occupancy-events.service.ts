@@ -35,8 +35,8 @@ export class OccupancyEventsService {
    * Includes deduplication logic to prevent ENTER→ENTER or EXIT→EXIT.
    */
   async create(dto: CreateOccupancyEventDto): Promise<CreateEventResponse> {
-    // Use client-provided hash if available, otherwise generate one
-    const deviceHash = dto.device_hash || hashDeviceId(dto.device_id);
+    // hash server-side
+    const deviceHash = hashDeviceId(dto.device_id);
     const eventId = generateEventId();
     const now = new Date().toISOString();
 
@@ -65,20 +65,17 @@ export class OccupancyEventsService {
     try {
       // Use a transaction for atomicity: store event + update occupancy + update device state
       await this.prisma.$transaction(async (tx) => {
-        // Store the event with validation metadata (for logging/debugging only)
+        // Store the basic occupancy event
         await tx.occupancyEvent.create({
           data: {
             lot_id: lot.id,
             event_type: dto.event_type as EventType,
             device_hash: deviceHash,
             timestamp: new Date(dto.timestamp),
-            validation_status: dto.validation_status || null,
-            confidence_score: dto.confidence_score || null,
-            analysis_metadata: dto.analysis_metadata ? JSON.parse(JSON.stringify(dto.analysis_metadata)) : undefined,
           },
         });
 
-        // Update lot occupancy atomically - trust client validation
+        // Update lot occupancy atomically
         const increment = dto.event_type === 'ENTER' ? 1 : -1;
         if (dto.event_type === 'EXIT' && lot.current_occupancy <= 0) {
           this.logger.warn(`Cannot decrement occupancy below 0 for lot ${dto.lot_id}`);
@@ -98,7 +95,7 @@ export class OccupancyEventsService {
       });
 
       this.logger.log(
-        `Recorded ${dto.event_type} event for lot ${dto.lot_id} (validation: ${dto.validation_status || 'none'}) (device: ${deviceHash.substring(0, 8)}...)`
+        `Recorded ${dto.event_type} event for lot ${dto.lot_id} (device: ${deviceHash.substring(0, 8)}...)`
       );
 
       return {

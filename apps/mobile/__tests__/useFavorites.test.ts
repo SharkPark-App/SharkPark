@@ -1,7 +1,7 @@
 /**
  * Tests for useFavorite hooks
  */
-/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 import { renderHook, act, waitFor } from '@testing-library/react-native';
 import { useFavorites } from '../src/hooks/useFavorites';
 import { useAuth } from '../src/context/AuthContext';

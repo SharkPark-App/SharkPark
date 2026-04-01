@@ -12,7 +12,7 @@ import { MainTabNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext'
 import { LoginScreen } from './src/screens';
-import { SimpleGeofencingProvider } from './src/context/SimpleGeofencingProvider';
+import { EnhancedGeofencingProvider } from './src/context/EnhancedGeofencingProvider';
 function AppContent() {
   const { isDark, colors } = useTheme();
   const { isAuthenticated, isLoading } = useAuth();
@@ -71,9 +71,9 @@ function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <AuthProvider>
-          <SimpleGeofencingProvider>
+          <EnhancedGeofencingProvider>
             <AppContent />
-          </SimpleGeofencingProvider>
+          </EnhancedGeofencingProvider>
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
