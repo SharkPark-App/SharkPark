@@ -1,10 +1,18 @@
 /**
  * @jest-environment node
+ *
+ * Tests for BehavioralDataCollector.
+ *
+ * The service no longer starts its own Geolocation.watchPosition — location is
+ * fed externally via updateLocation().  Metrics are emitted either:
+ *   (a) on the 30-second interval (advanced with jest.useFakeTimers), or
+ *   (b) immediately when getCurrentMetrics() is called.
  */
 
-import BehavioralDataCollector, { BehavioralMetrics } from '../behavioralDataCollector';
+import BehavioralDataCollector from '../behavioralDataCollector';
 
-// Mock the native modules
+// ─── Native module mocks ─────────────────────────────────────────────────────
+
 jest.mock('@react-native-community/geolocation', () => ({
   watchPosition: jest.fn(),
   clearWatch: jest.fn(),
@@ -22,53 +30,53 @@ jest.mock('react-native-device-info', () => ({
   getBatteryLevel: jest.fn(),
 }));
 
-// Mock react-native-bluetooth-status with proper NativeEventEmitter handling
+// react-native-bluetooth-status creates a NativeEventEmitter in its module
+// body which requires a non-null native module — provide a minimal mock so
+// the import does not throw in a Node test environment.
 jest.mock('react-native-bluetooth-status', () => ({
   state: jest.fn(),
 }));
 
-// Mock React Native core
 jest.mock('react-native', () => ({
   NativeEventEmitter: jest.fn(() => ({
     addListener: jest.fn(),
     removeListener: jest.fn(),
   })),
   NativeModules: {},
-  Platform: {
-    OS: 'ios',
-  },
+  Platform: { OS: 'ios' },
 }));
 
-import Geolocation from '@react-native-community/geolocation';
+// ─── Imports after mocks ──────────────────────────────────────────────────────
+
 import NetInfo from '@react-native-community/netinfo';
 import DeviceInfo from 'react-native-device-info';
 import BluetoothStatus from 'react-native-bluetooth-status';
 
-// Helper function for async delays
-const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const makeLocation = (overrides: Partial<Parameters<BehavioralDataCollector['updateLocation']>[0]> = {}) => ({
+  latitude: 33.7838,
+  longitude: -118.1134,
+  accuracy: 10,
+  speed: 2.5,
+  altitude: 50,
+  heading: 90,
+  ...overrides,
+});
+
+// ─── Test suite ───────────────────────────────────────────────────────────────
 
 describe('BehavioralDataCollector', () => {
   let collector: BehavioralDataCollector;
-  let mockCallbacks: {
-    onMetricsCollected: jest.Mock;
-    onError: jest.Mock;
-  };
 
   beforeEach(() => {
-    collector = new BehavioralDataCollector();
-    mockCallbacks = {
-      onMetricsCollected: jest.fn(),
-      onError: jest.fn(),
-    };
-
-    // Reset all mocks
     jest.clearAllMocks();
+    collector = new BehavioralDataCollector();
 
-    // Setup default mock implementations
     (NetInfo.fetch as jest.Mock).mockResolvedValue({
       type: 'wifi',
       isConnected: true,
-      details: { ssid: 'TestNetwork' }
+      details: { ssid: 'TestNetwork' },
     });
 
     (DeviceInfo.getBrand as jest.Mock).mockResolvedValue('Apple');
@@ -82,206 +90,216 @@ describe('BehavioralDataCollector', () => {
     collector.stopCollection();
   });
 
+  // ── Bluetooth state ───────────────────────────────────────────────────────
+
   describe('Bluetooth State Detection', () => {
-    it('should return CONNECTED when Bluetooth is enabled', async () => {
-      // Mock Bluetooth as enabled
+    it('returns CONNECTED when Bluetooth is enabled', async () => {
       (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
-
-      await collector.startCollection(mockCallbacks);
-
-      // Wait a bit for the async operations
-      await delay(100);
-
-      expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
-      const metrics: BehavioralMetrics = mockCallbacks.onMetricsCollected.mock.calls[0][0];
-      expect(metrics.bluetooth_state).toBe('CONNECTED');
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics).not.toBeNull();
+      expect(metrics!.bluetooth_state).toBe('CONNECTED');
     });
 
-    it('should return DISCONNECTED when Bluetooth is disabled', async () => {
-      // Mock Bluetooth as disabled
+    it('returns DISCONNECTED when Bluetooth is disabled', async () => {
       (BluetoothStatus.state as jest.Mock).mockResolvedValue(false);
-
-      await collector.startCollection(mockCallbacks);
-
-      // Wait a bit for the async operations
-      await delay(100);
-
-      expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
-      const metrics: BehavioralMetrics = mockCallbacks.onMetricsCollected.mock.calls[0][0];
-      expect(metrics.bluetooth_state).toBe('DISCONNECTED');
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics).not.toBeNull();
+      expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
     });
 
-    it('should return null when Bluetooth state check fails', async () => {
-      // Mock Bluetooth state check failure
+    it('returns null bluetooth_state when Bluetooth state check throws', async () => {
       (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('Bluetooth access denied'));
-
-      await collector.startCollection(mockCallbacks);
-
-      // Wait a bit for the async operations
-      await delay(100);
-
-      expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
-      const metrics: BehavioralMetrics = mockCallbacks.onMetricsCollected.mock.calls[0][0];
-      expect(metrics.bluetooth_state).toBe(null);
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics).not.toBeNull();
+      expect(metrics!.bluetooth_state).toBeNull();
     });
   });
+
+  // ── Complete metrics shape ────────────────────────────────────────────────
 
   describe('Complete Data Collection', () => {
-    it('should collect all behavioral metrics successfully', async () => {
-      // Setup mocks
+    it('collects all behavioral metrics in a single getCurrentMetrics call', async () => {
       (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
-      (Geolocation.watchPosition as jest.Mock).mockImplementation((success) => {
-        // Simulate GPS data with speed
-        setTimeout(() => success({
-          coords: {
-            latitude: 37.7749,
-            longitude: -122.4194,
-            accuracy: 10,
-            speed: 5, // 5 m/s = ~11.18 mph
-            altitude: 100,
-            heading: 90
-          },
-          timestamp: Date.now()
-        }), 50);
-        return 1; // mock watch ID
-      });
-
-      await collector.startCollection(mockCallbacks);
-
-      // Wait for location and metrics collection
-      await delay(200);
-
-      expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
-      const metrics: BehavioralMetrics = mockCallbacks.onMetricsCollected.mock.calls[0][0];
-
-      // Verify all metrics are collected
-      expect(metrics.bluetooth_state).toBe('CONNECTED');
-      expect(metrics.wifi_connected).toBe(true);
-      expect(metrics.network_type).toBe('wifi');
-      expect(metrics.speed_mph).toBeCloseTo(11.18, 1); // 5 m/s converted to mph
-      expect(metrics.accuracy_meters).toBe(10);
-      expect(metrics.device_info.brand).toBe('Apple');
-      expect(metrics.device_info.model).toBe('iPhone');
-      expect(metrics.device_info.system_version).toBe('17.0');
-      expect(metrics.device_info.app_version).toBe('1.0.0');
-      expect(metrics.device_info.battery_level).toBe(0.85);
-      expect(metrics.raw_data.wifi_ssid).toBe('TestNetwork');
-      expect(typeof metrics.raw_data.timestamp).toBe('string');
-    });
-
-    it('should handle cellular network data', async () => {
-      // Mock cellular network
-      (NetInfo.fetch as jest.Mock).mockResolvedValue({
-        type: 'cellular',
-        isConnected: true,
-        details: { carrier: 'Verizon' }
-      });
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(false);
-
-      await collector.startCollection(mockCallbacks);
-      await delay(100);
-
-      expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
-      const metrics: BehavioralMetrics = mockCallbacks.onMetricsCollected.mock.calls[0][0];
-
-      expect(metrics.wifi_connected).toBe(false);
-      expect(metrics.network_type).toBe('cellular');
-      expect(metrics.raw_data.cellular_carrier).toBe('Verizon');
-      expect(metrics.raw_data.wifi_ssid).toBeUndefined();
-    });
-  });
-
-  describe('Speed Calculation', () => {
-    it('should convert GPS speed from m/s to mph correctly', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
-      
-      // Mock GPS with different speeds
-      const testSpeeds = [
-        { input: 0, expected: 0 },      // 0 m/s = 0 mph
-        { input: 2.5, expected: 5.59 }, // 2.5 m/s ≈ 5.59 mph
-        { input: 13.4, expected: 30 },  // 13.4 m/s ≈ 30 mph
-        { input: null, expected: null }  // No speed data
-      ];
-
-      for (const testSpeed of testSpeeds) {
-        (Geolocation.watchPosition as jest.Mock).mockImplementation((success) => {
-          setTimeout(() => success({
-            coords: {
-              latitude: 37.7749,
-              longitude: -122.4194,
-              accuracy: 10,
-              speed: testSpeed.input,
-              altitude: 100,
-              heading: 90
-            },
-            timestamp: Date.now()
-          }), 10);
-          return 1;
-        });
-
-        await collector.startCollection(mockCallbacks);
-        await delay(100);
-
-        const metrics: BehavioralMetrics = mockCallbacks.onMetricsCollected.mock.calls[0][0];
-        
-        if (testSpeed.expected === null) {
-          expect(metrics.speed_mph).toBeNull();
-        } else {
-          expect(metrics.speed_mph).toBeCloseTo(testSpeed.expected, 1);
-        }
-
-        collector.stopCollection();
-        jest.clearAllMocks();
-      }
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('should call onError when data collection fails', async () => {
-      // Mock all services to fail
-      (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('Bluetooth error'));
-      (NetInfo.fetch as jest.Mock).mockRejectedValue(new Error('Network error'));
-      (DeviceInfo.getBrand as jest.Mock).mockRejectedValue(new Error('Device error'));
-
-      await collector.startCollection(mockCallbacks);
-      await delay(100);
-
-      expect(mockCallbacks.onError).toHaveBeenCalled();
-      expect(mockCallbacks.onError.mock.calls[0][0]).toContain('Failed to collect metrics');
-    });
-
-    it('should handle location tracking errors', async () => {
-      (Geolocation.watchPosition as jest.Mock).mockImplementation((success, error) => {
-        setTimeout(() => error({ message: 'Location access denied' }), 10);
-        return 1;
-      });
-
-      await collector.startCollection(mockCallbacks);
-      await delay(100);
-
-      expect(mockCallbacks.onError).toHaveBeenCalled();
-      expect(mockCallbacks.onError.mock.calls[0][0]).toContain('Location tracking error');
-    });
-  });
-
-  describe('getCurrentMetrics', () => {
-    it('should return metrics without starting collection', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      collector.updateLocation(makeLocation({ speed: 5 }));
 
       const metrics = await collector.getCurrentMetrics();
 
       expect(metrics).not.toBeNull();
-      expect(metrics?.bluetooth_state).toBe('CONNECTED');
-      expect(metrics?.device_info.brand).toBe('Apple');
+      expect(metrics!.bluetooth_state).toBe('CONNECTED');
+      expect(metrics!.wifi_connected).toBe(true);
+      expect(metrics!.network_type).toBe('wifi');
+      expect(metrics!.speed_mph).toBeCloseTo(11.18, 1);
+      expect(metrics!.accuracy_meters).toBe(10);
+      expect(metrics!.device_info.brand).toBe('Apple');
+      expect(metrics!.device_info.model).toBe('iPhone');
+      expect(metrics!.device_info.system_version).toBe('17.0');
+      expect(metrics!.device_info.app_version).toBe('1.0.0');
+      expect(metrics!.device_info.battery_level).toBe(0.85);
+      expect(metrics!.raw_data.wifi_ssid).toBe('TestNetwork');
+      expect(typeof metrics!.raw_data.timestamp).toBe('string');
     });
 
-    it('should return null when getCurrentMetrics fails', async () => {
-      // Make all services fail
-      (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('Failed'));
-      (NetInfo.fetch as jest.Mock).mockRejectedValue(new Error('Failed'));
+    it('handles cellular network data correctly', async () => {
+      (NetInfo.fetch as jest.Mock).mockResolvedValue({
+        type: 'cellular',
+        isConnected: true,
+        details: { carrier: 'Verizon' },
+      });
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(false);
 
       const metrics = await collector.getCurrentMetrics();
+
+      expect(metrics).not.toBeNull();
+      expect(metrics!.wifi_connected).toBe(false);
+      expect(metrics!.network_type).toBe('cellular');
+      expect(metrics!.raw_data.cellular_carrier).toBe('Verizon');
+      expect(metrics!.raw_data.wifi_ssid).toBeUndefined();
+    });
+  });
+
+  // ── Speed calculation ─────────────────────────────────────────────────────
+
+  describe('Speed Calculation', () => {
+    it.each([
+      { input: 0,    expected: 0     },
+      { input: 2.5,  expected: 5.59  },
+      { input: 13.4, expected: 29.98 },
+    ])('converts $input m/s to ~$expected mph', async ({ input, expected }) => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      collector.updateLocation(makeLocation({ speed: input }));
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.speed_mph).toBeCloseTo(expected, 1);
+    });
+
+    it('returns null speed when no location has been fed', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.speed_mph).toBeNull();
+    });
+
+    it('returns null speed when location speed field is null', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      collector.updateLocation(makeLocation({ speed: null }));
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.speed_mph).toBeNull();
+    });
+  });
+
+  // ── Error handling ────────────────────────────────────────────────────────
+
+  describe('Error Handling', () => {
+    it('getCurrentMetrics returns null when all data services fail', async () => {
+      (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('BT error'));
+      (NetInfo.fetch as jest.Mock).mockRejectedValue(new Error('Network error'));
+      (DeviceInfo.getBrand as jest.Mock).mockRejectedValue(new Error('Device error'));
+      const metrics = await collector.getCurrentMetrics();
       expect(metrics).toBeNull();
+    });
+
+    it('subscriber onError is called on interval collection failure', async () => {
+      jest.useFakeTimers();
+      const onMetricsCollected = jest.fn();
+      const onError = jest.fn();
+
+      (NetInfo.fetch as jest.Mock).mockRejectedValue(new Error('Network error'));
+      (DeviceInfo.getBrand as jest.Mock).mockRejectedValue(new Error('Device error'));
+
+      await collector.startCollection({ onMetricsCollected, onError });
+      jest.advanceTimersByTime(30000);
+      // Flush the Promise.all microtask chain (needs multiple ticks)
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining('Failed to collect metrics'));
+      jest.useRealTimers();
+    });
+  });
+
+  // ── getCurrentMetrics ─────────────────────────────────────────────────────
+
+  describe('getCurrentMetrics', () => {
+    it('returns metrics without starting a subscription', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      collector.updateLocation(makeLocation());
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics).not.toBeNull();
+      expect(metrics!.bluetooth_state).toBe('CONNECTED');
+      expect(metrics!.device_info.brand).toBe('Apple');
+    });
+
+    it('returns null when all services reject', async () => {
+      (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('Failed'));
+      (NetInfo.fetch as jest.Mock).mockRejectedValue(new Error('Failed'));
+      (DeviceInfo.getBrand as jest.Mock).mockRejectedValue(new Error('Failed'));
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics).toBeNull();
+    });
+  });
+
+  // ── Subscriber fan-out ────────────────────────────────────────────────────
+
+  describe('Subscriber management', () => {
+    it('fans out to multiple subscribers on the interval tick', async () => {
+      jest.useFakeTimers();
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+
+      const cb1 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
+      const cb2 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
+
+      await collector.startCollection(cb1, 'sub-a');
+      await collector.startCollection(cb2, 'sub-b');
+
+      jest.advanceTimersByTime(30000);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(cb1.onMetricsCollected).toHaveBeenCalled();
+      expect(cb2.onMetricsCollected).toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('stops the interval only when the last subscriber is removed', async () => {
+      jest.useFakeTimers();
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+
+      const cb1 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
+      const cb2 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
+
+      await collector.startCollection(cb1, 'sub-a');
+      await collector.startCollection(cb2, 'sub-b');
+
+      collector.stopCollection('sub-a');
+      jest.advanceTimersByTime(30000);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(cb2.onMetricsCollected).toHaveBeenCalled();
+      expect(cb1.onMetricsCollected).not.toHaveBeenCalled();
+
+      collector.stopCollection('sub-b');
+      cb2.onMetricsCollected.mockClear();
+      jest.advanceTimersByTime(30000);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(cb2.onMetricsCollected).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+  });
+
+  // ── updateLocation ────────────────────────────────────────────────────────
+
+  describe('updateLocation', () => {
+    it('updates the location used for the next metrics snapshot', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      collector.updateLocation(makeLocation({ speed: 10, accuracy: 3 }));
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.speed_mph).toBeCloseTo(10 * 2.237, 1);
+      expect(metrics!.accuracy_meters).toBe(3);
     });
   });
 });

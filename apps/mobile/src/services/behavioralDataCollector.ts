@@ -156,7 +156,7 @@ class BehavioralDataCollector {
   }
 
   private async collectAndSendMetrics(): Promise<void> {
-    if (!this.isCollecting || this.subscribers.size === 0) {
+    if (this.subscribers.size === 0) {
       return;
     }
 
