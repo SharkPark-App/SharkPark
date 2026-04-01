@@ -238,13 +238,18 @@ class BehavioralDataCollector {
       if (typeof bluetoothState === 'boolean') {
         return bluetoothState ? 'CONNECTED' : 'DISCONNECTED';
       } else if (bluetoothState && typeof bluetoothState === 'object') {
-        // If it returns an object, check for common state properties
+        // If it returns an object, check for common state properties.
+        // Use 'in' checks rather than || chaining so that a boolean false
+        // value is not accidentally skipped by short-circuit evaluation.
         const stateObj = bluetoothState as Record<string, unknown>; // Handle unknown object structure safely
-        const state = stateObj.state || stateObj.enabled || stateObj.status;
-        if (typeof state === 'boolean') {
-          return state ? 'CONNECTED' : 'DISCONNECTED';
-        } else if (typeof state === 'string') {
-          return state.toLowerCase().includes('on') || state.toLowerCase().includes('enabled') 
+        const rawState =
+          'state' in stateObj ? stateObj.state :
+          'enabled' in stateObj ? stateObj.enabled :
+          'status' in stateObj ? stateObj.status : undefined;
+        if (typeof rawState === 'boolean') {
+          return rawState ? 'CONNECTED' : 'DISCONNECTED';
+        } else if (typeof rawState === 'string') {
+          return rawState.toLowerCase().includes('on') || rawState.toLowerCase().includes('enabled')
             ? 'CONNECTED' : 'DISCONNECTED';
         }
       }

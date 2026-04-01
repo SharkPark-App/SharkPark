@@ -91,27 +91,118 @@ describe('BehavioralDataCollector', () => {
   });
 
   // ── Bluetooth state ───────────────────────────────────────────────────────
+  //
+  // NOTE: BluetoothStatus.state() is mocked at the module boundary because
+  // react-native-bluetooth-status requires a native bridge unavailable in a
+  // Node test environment.  The actual getBluetoothState() branching logic
+  // (boolean, object variants, null/undefined, error) runs for real — only
+  // the underlying native call is replaced.
 
   describe('Bluetooth State Detection', () => {
-    it('returns CONNECTED when Bluetooth is enabled', async () => {
+    // ── Boolean responses (primary path on iOS/Android) ───────────────────
+
+    it('returns CONNECTED when BluetoothStatus.state() resolves true', async () => {
       (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
       const metrics = await collector.getCurrentMetrics();
       expect(metrics).not.toBeNull();
       expect(metrics!.bluetooth_state).toBe('CONNECTED');
     });
 
-    it('returns DISCONNECTED when Bluetooth is disabled', async () => {
+    it('returns DISCONNECTED when BluetoothStatus.state() resolves false', async () => {
       (BluetoothStatus.state as jest.Mock).mockResolvedValue(false);
       const metrics = await collector.getCurrentMetrics();
       expect(metrics).not.toBeNull();
       expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
     });
 
-    it('returns null bluetooth_state when Bluetooth state check throws', async () => {
+    // ── Null / undefined responses ────────────────────────────────────────
+
+    it('returns null bluetooth_state when BluetoothStatus.state() resolves null', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(null);
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics).not.toBeNull();
+      expect(metrics!.bluetooth_state).toBeNull();
+    });
+
+    it('returns null bluetooth_state when BluetoothStatus.state() resolves undefined', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue(undefined);
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics).not.toBeNull();
+      expect(metrics!.bluetooth_state).toBeNull();
+    });
+
+    // ── Object responses (some Android implementations return an object) ──
+
+    it('returns CONNECTED when state object has { state: true }', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: true });
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBe('CONNECTED');
+    });
+
+    it('returns DISCONNECTED when state object has { state: false }', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: false });
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
+    });
+
+    it('returns CONNECTED when state object has { enabled: true }', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ enabled: true });
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBe('CONNECTED');
+    });
+
+    it('returns DISCONNECTED when state object has { enabled: false }', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ enabled: false });
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
+    });
+
+    it('returns CONNECTED when state object has { state: "on" }', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: 'on' });
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBe('CONNECTED');
+    });
+
+    it('returns CONNECTED when state object has { state: "enabled" }', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: 'enabled' });
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBe('CONNECTED');
+    });
+
+    it('returns DISCONNECTED when state object has { state: "off" }', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: 'off' });
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
+    });
+
+    // ── Unexpected / unrecognised format ──────────────────────────────────
+
+    it('returns null bluetooth_state for an unrecognised object format', async () => {
+      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ unknown: 'value' });
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBeNull();
+    });
+
+    // ── Error / unavailable ───────────────────────────────────────────────
+
+    it('returns null bluetooth_state when BluetoothStatus.state() throws', async () => {
       (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('Bluetooth access denied'));
       const metrics = await collector.getCurrentMetrics();
       expect(metrics).not.toBeNull();
       expect(metrics!.bluetooth_state).toBeNull();
+    });
+
+    it('returns null bluetooth_state when BluetoothStatus.state is not a function', async () => {
+      // Simulate a platform where the native module exposes the object but
+      // not the state() method (e.g. older library version).
+      const original = BluetoothStatus.state;
+      (BluetoothStatus as unknown as Record<string, unknown>).state = undefined;
+
+      const metrics = await collector.getCurrentMetrics();
+      expect(metrics!.bluetooth_state).toBeNull();
+
+      // Restore
+      (BluetoothStatus as unknown as Record<string, unknown>).state = original;
     });
   });
 
