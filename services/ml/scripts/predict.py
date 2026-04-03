@@ -150,11 +150,14 @@ def _load_production_model() -> tuple[ShortTermModel, str]:
         version_info = client.get_model_version_by_alias(
             SHORT_TERM_MODEL_NAME, "production"
         )
-    except mlflow.exceptions.MlflowException:
-        raise RuntimeError(
-            f"No production model found for '{SHORT_TERM_MODEL_NAME}'. "
-            "Run train.py and promote.py first."
-        )
+    except mlflow.exceptions.MlflowException as e:
+        if e.error_code == "RESOURCE_DOES_NOT_EXIST":
+            raise RuntimeError(
+                f"No production model found for '{SHORT_TERM_MODEL_NAME}'. "
+                "Run train.py and promote.py first."
+            )
+        logger.error("MLflow error while loading production model (error_code=%s): %s", e.error_code, e)
+        raise
 
     version = version_info.version
     run_id = version_info.run_id

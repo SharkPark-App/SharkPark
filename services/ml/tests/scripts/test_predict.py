@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+import mlflow
 import numpy as np
 import pandas as pd
 import pytest
@@ -134,6 +135,32 @@ class TestBuildPredictionDf:
 
         assert (result["confidence_lower"] <= result["predicted_occupancy"]).all()
         assert (result["predicted_occupancy"] <= result["confidence_upper"]).all()
+
+
+class TestPredictErrorPaths:
+    """Verify predict.py error handling for MLflow failures."""
+
+    def test_no_production_model_raises(self):
+        """Missing production model should raise RuntimeError with a clear message."""
+        exc = mlflow.exceptions.MlflowException(
+            "", error_code=mlflow.exceptions.RESOURCE_DOES_NOT_EXIST
+        )
+        with patch(
+            "mlflow.tracking.MlflowClient.get_model_version_by_alias", side_effect=exc
+        ):
+            with pytest.raises(RuntimeError, match="Run train.py and promote.py first"):
+                predict()
+
+    def test_mlflow_system_error_raises(self):
+        """MLflow system errors should propagate, not surface as a misleading RuntimeError."""
+        exc = mlflow.exceptions.MlflowException(
+            "auth failure", error_code=mlflow.exceptions.UNAUTHENTICATED
+        )
+        with patch(
+            "mlflow.tracking.MlflowClient.get_model_version_by_alias", side_effect=exc
+        ):
+            with pytest.raises(mlflow.exceptions.MlflowException, match="auth failure"):
+                predict()
 
 
 class TestPredictEndToEnd:

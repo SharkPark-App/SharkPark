@@ -93,6 +93,7 @@ def compute_data_coverage(
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df["_dow"] = df["timestamp"].dt.dayofweek
     df["_hour"] = df["timestamp"].dt.hour
+    df = df[df["_hour"].between(7, 21)]
 
     # Count observations per (lot_id, day_of_week, hour)
     counts = df.groupby(["lot_id", "_dow", "_hour"]).size()

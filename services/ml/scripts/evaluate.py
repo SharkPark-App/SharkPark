@@ -159,9 +159,12 @@ def _evaluate_production_on_test(test_features: pd.DataFrame) -> dict | None:
         actuals = test_features["target_occupancy_rate"].values
         return compute_metrics(actuals, prod_preds)
 
-    except mlflow.exceptions.MlflowException:
-        logger.info("No production model registered — first deployment.")
-        return None
+    except mlflow.exceptions.MlflowException as e:
+        if e.error_code == "RESOURCE_DOES_NOT_EXIST":
+            logger.info("No production model registered — first deployment.")
+            return None
+        logger.error("MLflow error while loading production model (error_code=%s): %s", e.error_code, e)
+        raise
 
 
 if __name__ == "__main__":

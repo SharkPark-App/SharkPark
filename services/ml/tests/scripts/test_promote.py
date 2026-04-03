@@ -11,6 +11,8 @@ Run from services/ml/:
     python -m pytest tests/scripts/test_promote.py -v
 """
 
+from unittest.mock import patch
+
 import mlflow
 import pytest
 
@@ -58,6 +60,17 @@ class TestPromote:
         """Promotion with a non-existent run ID should return None."""
         result = promote("nonexistent_run_id_12345")
         assert result is None
+
+    def test_promote_mlflow_system_error_raises(self):
+        """MLflow system errors should propagate, not return None."""
+        exc = mlflow.exceptions.MlflowException(
+            "internal error", error_code=mlflow.exceptions.INTERNAL_ERROR
+        )
+        with patch("mlflow.tracking.MlflowClient.get_run", side_effect=exc):
+            with pytest.raises(
+                mlflow.exceptions.MlflowException, match="internal error"
+            ):
+                promote("any-run-id")
 
     def test_promote_replaces_previous_production(self, data_parquet):
         """Promoting a second model should move the production alias."""

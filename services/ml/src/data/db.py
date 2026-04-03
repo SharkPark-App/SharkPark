@@ -101,11 +101,11 @@ def fetch_recent_snapshots(lookback_hours: int = 2) -> pd.DataFrame:
                    confidence, is_cold_start, academic_period,
                    week_of_semester, is_campus_open, semester
             FROM occupancy_snapshots
-            WHERE timestamp >= NOW() - INTERVAL :hours
+            WHERE timestamp >= NOW() - make_interval(hours => :lookback_hours)
             ORDER BY timestamp
         """)
 
-        df = pd.read_sql(query, conn, params={"hours": f"{lookback_hours} hours"})
+        df = pd.read_sql(query, conn, params={"lookback_hours": lookback_hours})
 
         if df.empty:
             raise RuntimeError(
@@ -115,7 +115,14 @@ def fetch_recent_snapshots(lookback_hours: int = 2) -> pd.DataFrame:
                 "  python -m scripts.predict --data-path data/synthetic_fall-2025.parquet --start-of-day"
             )
 
+        raw_lot_ids = df["lot_id"].copy()
         df["lot_id"] = df["lot_id"].map(reverse_map)
+        unknown_mask = df["lot_id"].isna()
+        if unknown_mask.any():
+            unknown_ids = raw_lot_ids[unknown_mask].unique().tolist()
+            raise RuntimeError(
+                f"Snapshot rows contain lot IDs not found in lot_id_map: {unknown_ids}"
+            )
         return df
 
 
@@ -184,7 +191,14 @@ def load_real_snapshots(
             return df
 
         # Map CUID lot_ids back to human-readable names
+        raw_lot_ids = df["lot_id"].copy()
         df["lot_id"] = df["lot_id"].map(reverse_map)
+        unknown_mask = df["lot_id"].isna()
+        if unknown_mask.any():
+            unknown_ids = raw_lot_ids[unknown_mask].unique().tolist()
+            raise RuntimeError(
+                f"Snapshot rows contain lot IDs not found in lot_id_map: {unknown_ids}"
+            )
         return df
 
 

@@ -38,9 +38,12 @@ def promote(run_id: str, export_s3: bool = False) -> str | None:
     # Verify the run exists
     try:
         run = client.get_run(run_id)
-    except mlflow.exceptions.MlflowException:
-        logger.error("Run '%s' not found. Check the run ID and try again.", run_id)
-        return None
+    except mlflow.exceptions.MlflowException as e:
+        if e.error_code == "RESOURCE_DOES_NOT_EXIST":
+            logger.error("Run '%s' not found. Check the run ID and try again.", run_id)
+            return None
+        logger.error("MLflow error while fetching run '%s' (error_code=%s): %s", run_id, e.error_code, e)
+        raise
 
     artifact_uri = run.info.artifact_uri
     model_uri = f"{artifact_uri}/model"

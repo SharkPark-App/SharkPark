@@ -124,3 +124,19 @@ class TestEvaluateErrorPaths:
         """Nonexistent data path should raise FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="Data file not found"):
             evaluate("fake-run-id", "/nonexistent/path/data.parquet")
+
+    def test_mlflow_system_error_raises(self, workflow_env):
+        """MLflow system errors during production model lookup should propagate."""
+        data_path = workflow_env["data_path"]
+        run_id = train(data_path)
+
+        exc = mlflow.exceptions.MlflowException(
+            "internal error", error_code=mlflow.exceptions.INTERNAL_ERROR
+        )
+        with patch(
+            "mlflow.tracking.MlflowClient.get_model_version_by_alias", side_effect=exc
+        ):
+            with pytest.raises(
+                mlflow.exceptions.MlflowException, match="internal error"
+            ):
+                evaluate(run_id, data_path)
