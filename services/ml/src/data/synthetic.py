@@ -291,6 +291,8 @@ def fetch_lots() -> list[LotInfo]:
                       (default: from config.DATABASE_URL)
     """
     db_url = os.environ.get("DATABASE_URL", DATABASE_URL)
+    if not db_url:
+        raise RuntimeError("DATABASE_URL environment variable is required but not set.")
 
     try:
         conn = psycopg2.connect(db_url)

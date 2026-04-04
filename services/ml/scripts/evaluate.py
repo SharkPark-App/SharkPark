@@ -104,6 +104,7 @@ def evaluate(run_id: str, data_path: str | None = None) -> dict:
         test_features=test_features,
         raw_df=df,
         production_metrics=production_metrics,
+        total_lots=df["lot_id"].nunique(),
     )
 
     logger.info("")
@@ -163,7 +164,11 @@ def _evaluate_production_on_test(test_features: pd.DataFrame) -> dict | None:
         if e.error_code == "RESOURCE_DOES_NOT_EXIST":
             logger.info("No production model registered — first deployment.")
             return None
-        logger.error("MLflow error while loading production model (error_code=%s): %s", e.error_code, e)
+        logger.error(
+            "MLflow error while loading production model (error_code=%s): %s",
+            e.error_code,
+            e,
+        )
         raise
 
 

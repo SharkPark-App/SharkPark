@@ -9,8 +9,6 @@ Run from services/ml/:
     python -m pytest tests/evaluation/test_compare.py -v
 """
 
-from unittest.mock import patch
-
 import pytest
 
 import numpy as np
@@ -173,45 +171,44 @@ def test_data():
     return test_features, raw_df
 
 
-@patch("src.evaluation.compare.get_total_lot_count", return_value=1)
 class TestCompareModels:
     """Verify full comparison pipeline."""
 
-    def test_first_deployment_promotes(self, _mock_lots, test_data):
+    def test_first_deployment_promotes(self, test_data):
         """No production model — should promote."""
         test_features, raw_df = test_data
         candidate = {"mae": 0.05, "rmse": 0.06, "mape": 10.0}
 
         result = compare_models(
-            candidate, test_features, raw_df, production_metrics=None
+            candidate, test_features, raw_df, production_metrics=None, total_lots=1
         )
 
         assert result["should_promote"] is True
         assert "first deployment" in result["promotion_reason"].lower()
 
-    def test_candidate_beats_production(self, _mock_lots, test_data):
+    def test_candidate_beats_production(self, test_data):
         """Candidate significantly better than production — should promote."""
         test_features, raw_df = test_data
         candidate = {"mae": 0.05, "rmse": 0.06, "mape": 10.0}
         production = {"mae": 0.10, "rmse": 0.12, "mape": 18.0}
 
-        result = compare_models(candidate, test_features, raw_df, production)
+        result = compare_models(candidate, test_features, raw_df, production, total_lots=1)
 
         assert result["should_promote"] is True
         assert "MAE improved" in result["promotion_reason"]
 
-    def test_candidate_not_enough_improvement(self, _mock_lots, test_data):
+    def test_candidate_not_enough_improvement(self, test_data):
         """Candidate only marginally better — should NOT promote."""
         test_features, raw_df = test_data
         candidate = {"mae": 0.049, "rmse": 0.06, "mape": 10.0}
         production = {"mae": 0.050, "rmse": 0.06, "mape": 10.0}
 
-        result = compare_models(candidate, test_features, raw_df, production)
+        result = compare_models(candidate, test_features, raw_df, production, total_lots=1)
 
         assert result["should_promote"] is False
         assert "Not promoted" in result["promotion_reason"]
 
-    def test_directional_accuracy_promotion(self, _mock_lots, test_data):
+    def test_directional_accuracy_promotion(self, test_data):
         """Directional accuracy improvement triggers promotion."""
         test_features, raw_df = test_data
         candidate = {
@@ -227,28 +224,28 @@ class TestCompareModels:
             "directional_accuracy": 74.0,
         }
 
-        result = compare_models(candidate, test_features, raw_df, production)
+        result = compare_models(candidate, test_features, raw_df, production, total_lots=1)
 
         assert result["should_promote"] is True
         assert "Directional accuracy" in result["promotion_reason"]
 
-    def test_results_include_baselines(self, _mock_lots, test_data):
+    def test_results_include_baselines(self, test_data):
         """Results dict should include Candidate, Persistence, MajorityClass."""
         test_features, raw_df = test_data
         candidate = {"mae": 0.05, "rmse": 0.06, "mape": 10.0}
 
-        result = compare_models(candidate, test_features, raw_df)
+        result = compare_models(candidate, test_features, raw_df, total_lots=1)
 
         assert "Candidate" in result["results"]
         assert "Persistence" in result["results"]
         assert "MajorityClass" in result["results"]
 
-    def test_results_include_production_when_provided(self, _mock_lots, test_data):
+    def test_results_include_production_when_provided(self, test_data):
         """Production metrics should appear in results when given."""
         test_features, raw_df = test_data
         candidate = {"mae": 0.05, "rmse": 0.06, "mape": 10.0}
         production = {"mae": 0.10, "rmse": 0.12, "mape": 18.0}
 
-        result = compare_models(candidate, test_features, raw_df, production)
+        result = compare_models(candidate, test_features, raw_df, production, total_lots=1)
 
         assert "Production" in result["results"]

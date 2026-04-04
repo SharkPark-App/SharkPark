@@ -159,7 +159,7 @@ python -m scripts.promote --run-id <mlflow-run-id> --model-type long-term   # (p
 python -m scripts.promote --run-id <mlflow-run-id> --export-s3
 ```
 
-Registers the model in MLflow as `short-term-production` (or `long-term-production` when implemented) and transitions it to the Production stage.
+Registers the model in MLflow as `short-term-production` (or `long-term-production` when implemented) and sets the production alias.
 
 -----
 ### 4. Predict (batch inference)

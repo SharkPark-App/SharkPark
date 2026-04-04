@@ -7,6 +7,10 @@ Academic calendar logic lives in academic_calendar.py.
 
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 __all__ = [
     "DATABASE_URL",
     "SHORT_TERM_MODEL_NAME",
@@ -20,10 +24,7 @@ __all__ = [
 
 SHORT_TERM_MODEL_NAME = "short-term-production"
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://sharkpark:sharkpark@localhost:5433/sharkpark",
-)
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # =============================================================================
 # Operating Hours

@@ -94,11 +94,7 @@ def predict(
     # (works with both --data-path parquet and live DB, no extra query needed).
     # Falls back to 200 in _build_prediction_df if a lot_id is missing.
     lot_capacities = (
-        df.groupby("lot_id")
-        .apply(
-            lambda g: (g["occupancy"] + g["available"]).median(), include_groups=False
-        )
-        .to_dict()
+        (df["occupancy"] + df["available"]).groupby(df["lot_id"]).median().to_dict()
     )
 
     # Build output matching predictions_short_term schema
@@ -156,7 +152,11 @@ def _load_production_model() -> tuple[ShortTermModel, str]:
                 f"No production model found for '{SHORT_TERM_MODEL_NAME}'. "
                 "Run train.py and promote.py first."
             )
-        logger.error("MLflow error while loading production model (error_code=%s): %s", e.error_code, e)
+        logger.error(
+            "MLflow error while loading production model (error_code=%s): %s",
+            e.error_code,
+            e,
+        )
         raise
 
     version = version_info.version

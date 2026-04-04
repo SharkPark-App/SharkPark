@@ -29,8 +29,11 @@ __all__ = [
 
 
 def _get_db_url() -> str:
-    """Return the database URL from env or config."""
-    return os.environ.get("DATABASE_URL", DATABASE_URL)
+    """Return the database URL, raise if not configured."""
+    url = os.environ.get("DATABASE_URL", DATABASE_URL)
+    if not url:
+        raise RuntimeError("DATABASE_URL environment variable is required but not set.")
+    return url
 
 
 def get_engine():

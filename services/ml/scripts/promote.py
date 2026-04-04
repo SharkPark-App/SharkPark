@@ -2,7 +2,7 @@
 Promotion entrypoint for SharkPark short-term model.
 
 Registers a candidate model in the MLflow Model Registry as
-"short-term-production" and transitions it to the Production stage.
+"short-term-production" and sets the production alias.
 
 Usage:
     python scripts/promote.py --run-id <mlflow-run-id>
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def promote(run_id: str, export_s3: bool = False) -> str | None:
     """
-    Register a model version and promote it to Production.
+    Register a model version and set the production alias.
 
     Args:
         run_id: MLflow run ID of the model to promote.

@@ -40,13 +40,12 @@ def workflow_env(synthetic_df, tmp_path, isolated_mlflow):
 # =============================================================================
 
 
-@patch("src.evaluation.compare.get_total_lot_count", return_value=2)
 class TestFullWorkflow:
     """Verify the complete train → evaluate → promote → predict pipeline."""
 
     @patch("src.data.db.write_predictions", return_value=0)
     def test_train_evaluate_promote_predict(
-        self, mock_write, mock_lot_count, workflow_env
+        self, mock_write, workflow_env
     ):
         """Full workflow should complete without errors."""
         data_path = workflow_env["data_path"]
@@ -87,7 +86,7 @@ class TestFullWorkflow:
         assert "confidence_lower" in predictions.columns
         assert "confidence_upper" in predictions.columns
 
-    def test_evaluate_first_deployment(self, mock_lot_count, workflow_env):
+    def test_evaluate_first_deployment(self, workflow_env):
         """First deployment (no production model) should recommend promotion."""
         data_path = workflow_env["data_path"]
 
@@ -100,7 +99,7 @@ class TestFullWorkflow:
             comparison["promotion_reason"] == "No production model — first deployment"
         )
 
-    def test_evaluate_do_not_promote(self, mock_lot_count, workflow_env):
+    def test_evaluate_do_not_promote(self, workflow_env):
         """Candidate that doesn't improve enough should not be promoted."""
         data_path = workflow_env["data_path"]
 

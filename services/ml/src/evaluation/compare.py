@@ -186,6 +186,7 @@ def compare_against_baselines(
     candidate_metrics: dict,
     test_features: pd.DataFrame,
     raw_df: pd.DataFrame,
+    total_lots: int | None = None,
 ) -> dict:
     """
     Compare candidate model against baseline models.
@@ -208,7 +209,8 @@ def compare_against_baselines(
     """
     results = {"Candidate": candidate_metrics}
 
-    total_lots = get_total_lot_count()
+    if total_lots is None:
+        total_lots = get_total_lot_count()
 
     # Check basic coverage (≥2 observations per combo)
     basic_coverage = compute_data_coverage(
@@ -255,6 +257,7 @@ def compare_models(
     test_features: pd.DataFrame,
     raw_df: pd.DataFrame,
     production_metrics: dict | None = None,
+    total_lots: int | None = None,
 ) -> dict:
     """
     Run full model comparison: candidate vs baselines vs production.
@@ -272,7 +275,7 @@ def compare_models(
             - promotion_reason: str or None
     """
     # Compare candidate metrics w/ baseline
-    results = compare_against_baselines(candidate_metrics, test_features, raw_df)
+    results = compare_against_baselines(candidate_metrics, test_features, raw_df, total_lots=total_lots)
 
     # Include production metrics
     if production_metrics is not None:

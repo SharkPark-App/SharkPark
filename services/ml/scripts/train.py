@@ -35,8 +35,8 @@ def train(
     include_real: bool = False,
     real_start_date: Optional[str] = None,
     real_end_date: Optional[str] = None,
-    synthetic_weight: float = 0.5,
-    cold_start_weight: float = 0.7,
+    synthetic_weight: float = 1.0,
+    cold_start_weight: float = 1.0,
 ) -> str:
     """
     Train a short-term model and log to MLflow.
@@ -46,8 +46,8 @@ def train(
         include_real: If True, also load real data from PostgreSQL.
         real_start_date: Inclusive lower bound for real data query (ISO date string).
         real_end_date: Exclusive upper bound for real data query (ISO date string).
-        synthetic_weight: Group weight for synthetic rows (0.0-1.0). Default: 0.5.
-        cold_start_weight: Group weight for real cold-start rows (0.0-1.0). Default: 0.7.
+        synthetic_weight: Group weight for synthetic rows (0.0-1.0). Default: 1.0 (uniform).
+        cold_start_weight: Group weight for real cold-start rows (0.0-1.0). Default: 1.0 (uniform).
 
     Returns:
         MLflow run ID.
@@ -100,13 +100,11 @@ def train(
             df_real["_slot"] = df_real["timestamp"].dt.floor("15min")
             df_synthetic["_slot"] = df_synthetic["timestamp"].dt.floor("15min")
 
-            real_keys = set(zip(df_real["lot_id"], df_real["_slot"]))
-            mask = ~pd.Series(
-                list(zip(df_synthetic["lot_id"], df_synthetic["_slot"]))
-            ).apply(lambda x: x in real_keys)
-
-            df_synthetic_filtered = df_synthetic.loc[mask.values].drop(
-                columns=["_slot"]
+            real_keys = df_real[["lot_id", "_slot"]].drop_duplicates()
+            df_synthetic_filtered = (
+                df_synthetic.merge(real_keys, on=["lot_id", "_slot"], how="left", indicator=True)
+                .query('_merge == "left_only"')
+                .drop(columns=["_merge", "_slot"])
             )
             df_real = df_real.drop(columns=["_slot"])
 
@@ -199,16 +197,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--synthetic-weight",
         type=float,
-        default=0.5,
+        default=1.0,
         metavar="W",
-        help="Sample weight for synthetic rows (0.0-1.0). Default: 0.5.",
+        help="Sample weight for synthetic rows (0.0-1.0). Default: 1.0 (uniform).",
     )
     parser.add_argument(
         "--cold-start-weight",
         type=float,
-        default=0.7,
+        default=1.0,
         metavar="W",
-        help="Sample weight for real cold-start rows (0.0-1.0). Default: 0.7.",
+        help="Sample weight for real cold-start rows (0.0-1.0). Default: 1.0 (uniform).",
     )
     args = parser.parse_args()
 
