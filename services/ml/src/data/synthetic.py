@@ -22,7 +22,7 @@ Output Schema (matches Aurora occupancy_snapshots + local-only fields):
     - academic_period: str     # "early", "regular", "midterms", "late", "dead_week", "finals", "break"
     - week_of_semester: int    # 0-16
     - is_campus_open: bool     # Whether campus is open
-    - source: str              # "synthetic" (generator-only; absent in real data,
+    - _source: str             # "synthetic" (generator-only; absent in real data,
                                #  used at training time to apply sample weights)
 
 
@@ -55,6 +55,7 @@ Patterns Modeled:
 
 import os
 import random
+import sys
 from datetime import date, datetime, timedelta
 from typing import Literal
 from dataclasses import dataclass
@@ -290,6 +291,8 @@ def fetch_lots() -> list[LotInfo]:
                       (default: from config.DATABASE_URL)
     """
     db_url = os.environ.get("DATABASE_URL", DATABASE_URL)
+    if not db_url:
+        raise RuntimeError("DATABASE_URL environment variable is required but not set.")
 
     try:
         conn = psycopg2.connect(db_url)
@@ -312,8 +315,8 @@ def fetch_lots() -> list[LotInfo]:
             for row in rows
         ]
 
-    except psycopg2.OperationalError as exc:
-        raise RuntimeError(f"Could not connect to Aurora at {db_url}: {exc}") from exc
+    except psycopg2.OperationalError:
+        raise RuntimeError(f"Could not connect to Aurora at {db_url}")
     except psycopg2.Error as exc:
         raise RuntimeError(f"Aurora query failed: {exc}") from exc
 
@@ -589,7 +592,7 @@ def generate_snapshot(
             "academic_period": academic_period,
             "week_of_semester": week_of_sem,
             "is_campus_open": campus_open,
-            "source": "synthetic",
+            "_source": "synthetic",
         }
 
     hour = timestamp.hour
@@ -638,7 +641,7 @@ def generate_snapshot(
         "academic_period": academic_period,
         "week_of_semester": week_of_sem,
         "is_campus_open": campus_open,
-        "source": "synthetic",
+        "_source": "synthetic",
     }
 
 
@@ -795,8 +798,8 @@ def main():
     parser.add_argument(
         "--output",
         "-o",
-        default="data/synthetic_occupancy_snapshot.parquet",
-        help="Output file path (default: data/synthetic_occupancy_snapshot.parquet)",
+        default=None,
+        help="Output file path (default: data/synthetic_{semester}.parquet)",
     )
     parser.add_argument(
         "--max-records-per-lot",
@@ -841,7 +844,14 @@ def main():
 
     # Fetch lot metadata from Aurora
     print("Fetching lot metadata from Aurora...")
-    lots = fetch_lots()
+    try:
+        lots = fetch_lots()
+    except RuntimeError as exc:
+        sys.exit(
+            f"ERROR: {exc}\n"
+            "       Is your PostgreSQL/Aurora container running? "
+            "Try: docker compose up -d aurora"
+        )
     print(f"Found {len(lots)} lots\n")
 
     if args.preview:
@@ -866,8 +876,12 @@ def main():
                 snapshot = generate_snapshot(
                     student_lot.lot_id, ts, student_lot.capacity, "student", 1.05, cfg
                 )
+                ts_parsed = datetime.fromisoformat(
+                    snapshot["timestamp"].replace("Z", "+00:00")
+                )
                 print(
-                    f"  {snapshot['timestamp']}: {snapshot['occupancy_rate']:.2%} "
+                    f"  {ts_parsed:%Y-%m-%d %H:%M} ({ts_parsed:%A}): "
+                    f"{snapshot['occupancy_rate']:.2%} "
                     f"({snapshot['occupancy']}/{student_lot.capacity})"
                 )
 
@@ -884,15 +898,19 @@ def main():
                     1.02,
                     cfg,
                 )
+                ts_parsed = datetime.fromisoformat(
+                    snapshot["timestamp"].replace("Z", "+00:00")
+                )
                 print(
-                    f"  {snapshot['timestamp']}: {snapshot['occupancy_rate']:.2%} "
+                    f"  {ts_parsed:%Y-%m-%d %H:%M} ({ts_parsed:%A}): "
+                    f"{snapshot['occupancy_rate']:.2%} "
                     f"({snapshot['occupancy']}/{employee_lot.capacity})"
                 )
 
     else:  # Generation mode: generate and save samples
         df = generate_all_data(lots, cfg, args.max_records_per_lot)
 
-        output = args.output
+        output = args.output or f"data/synthetic_{args.semester}.parquet"
         if not output.endswith(".parquet"):
             output += ".parquet"
 
@@ -903,7 +921,12 @@ def main():
         # Print summary statistics
         print("\n=== SUMMARY STATISTICS ===")
         print(f"Total records: {len(df):,}")
-        print(f"Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+        ts_col = pd.to_datetime(df["timestamp"])
+        ts_min, ts_max = ts_col.min(), ts_col.max()
+        span = ts_max - ts_min
+        print(
+            f"Date range: {ts_min:%Y-%m-%d %H:%M} to {ts_max:%Y-%m-%d %H:%M} ({span.days} days, {ts_col.dt.date.nunique()} unique dates)"
+        )
         print(f"Lots: {df['lot_id'].nunique()}")
         print("\nOccupancy rate distribution:")
         print(df["occupancy_rate"].describe())
