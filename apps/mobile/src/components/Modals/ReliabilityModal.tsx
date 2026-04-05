@@ -1,12 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, Modal, TouchableOpacity,
   StyleSheet, Animated, Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { COLORS, TYPOGRAPHY, SPACING } from '../../constants/theme';
 import { ReliabilityBar } from '../ReliabilityMeter';
-import { useTheme } from '../../context/ThemeContext';
+import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { CONFIDENCE_COLORS, CONFIDENCE_LABELS } from '../../types/reliability';
 import type { ReliabilityScore } from '../../types/reliability';
 
@@ -34,8 +34,10 @@ function getFactorColor(normalizedValue: number): string {
 }
 
 export function ReliabilityModal({ isOpen, onClose, reliability }: ReliabilityModalProps) {
-  const { colors } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const slideAnim = useRef(new Animated.Value(Dimensions.get('window').height)).current;
+
+  const styles = useMemo(() => getStyles(colors, spacing, typography), [colors, spacing, typography]);
 
   useEffect(() => {
     if (isOpen) {
@@ -102,7 +104,7 @@ export function ReliabilityModal({ isOpen, onClose, reliability }: ReliabilityMo
                   />
                   {reliability.isColdStart && (
                     <View style={styles.coldStartWarning}>
-                      <Icon name="information-circle" size={16} color={COLORS.warningBorder} />
+                      <Icon name="information-circle" size={16} color={colors.warningBorder} />
                       <Text style={styles.coldStartWarningText}>
                         Limited data available - accuracy may vary
                       </Text>
@@ -160,53 +162,57 @@ export function ReliabilityModal({ isOpen, onClose, reliability }: ReliabilityMo
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (
+  colors: ThemeColors, 
+  spacing: typeof SPACING, 
+  typography: typeof TYPOGRAPHY
+) => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    borderTopLeftRadius: SPACING.xl,
-    borderTopRightRadius: SPACING.xl,
-    padding: SPACING.xl,
-    paddingBottom: SPACING.xxxl + SPACING.xl,
+    borderTopLeftRadius: spacing.xl,
+    borderTopRightRadius: spacing.xl,
+    padding: spacing.xl,
+    paddingBottom: spacing.xxxl + spacing.xl,
     maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.lg,
+    marginBottom: spacing.lg,
   },
   modalTitle: {
-    fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
   },
   scoreSection: {
-    marginBottom: SPACING.xl,
+    marginBottom: spacing.xl,
   },
   coldStartWarning: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.xs,
-    marginTop: SPACING.md,
-    padding: SPACING.md,
-    backgroundColor: COLORS.warningLight,
-    borderRadius: SPACING.sm,
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.warningLight,
+    borderRadius: spacing.sm,
   },
   coldStartWarningText: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningText,
+    fontSize: typography.fontSize.sm,
+    color: colors.warningText,
     flex: 1,
   },
   sectionTitle: {
-    fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
-    marginBottom: SPACING.md,
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.md,
   },
   factorsList: {
-    gap: SPACING.md,
+    gap: spacing.md,
   },
   factorRow: {
     flexDirection: 'row',
@@ -217,17 +223,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   factorName: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
   },
   factorWeight: {
-    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontSize: typography.fontSize.xs,
   },
   factorScore: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: spacing.sm,
   },
   factorBarBg: {
     flex: 1,
@@ -241,18 +247,18 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   factorValue: {
-    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontSize: typography.fontSize.xs,
     width: 32,
     textAlign: 'right',
   },
   explanationBox: {
-    marginTop: SPACING.xl,
-    padding: SPACING.lg,
-    borderRadius: SPACING.md,
+    marginTop: spacing.xl,
+    padding: spacing.lg,
+    borderRadius: spacing.md,
   },
   explanationText: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
     textAlign: 'center',
   },
 });
