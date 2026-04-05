@@ -49,10 +49,6 @@ NUMERIC_FEATURES = [
     "occupancy_rate_lag_3",
     "occupancy_rate_lag_4",
     "momentum",
-    "sin_hour",
-    "cos_hour",
-    "sin_day",
-    "cos_day",
     "target_hour",
     "hours_ahead",
 ]

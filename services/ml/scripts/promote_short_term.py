@@ -5,11 +5,9 @@ Registers a candidate model in the MLflow Model Registry as
 "short-term-production" and sets the production alias.
 
 Usage:
-    python scripts/promote.py --run-id <mlflow-run-id>
-    python scripts/promote.py --run-id <mlflow-run-id> --export-s3
+    python scripts/promote_short_term.py --run-id <mlflow-run-id>
+    python scripts/promote_short_term.py --run-id <mlflow-run-id> --export-s3
 
-Note: Currently short-term only. When long-term is implemented, add a
---model-type flag to select features, model class, and baselines.
 """
 
 import argparse
@@ -86,9 +84,9 @@ def promote(run_id: str, export_s3: bool = False) -> str | None:
         )
 
     print("\nNext step:")
-    print("  python -m scripts.predict")
-    print("  python -m scripts.predict --start-of-day    # all hours (dev)")
-    print("  python -m scripts.predict --write-local      # also write to local file")
+    print("  python -m scripts.predict_short_term")
+    print("  python -m scripts.predict_short_term --start-of-day    # all hours (dev)")
+    print("  python -m scripts.predict_short_term --write-local      # also write to local file")
 
     return version
 

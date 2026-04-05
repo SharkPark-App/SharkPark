@@ -7,7 +7,7 @@ than seasonal patterns for short horizons.
 Features:
     - Lag features: occupancy_rate at t-15min, t-30min, t-45min, t-60min
     - Momentum: rate of change (current - lag_1)
-    - Time context: cyclical hour/day encodings, academic period
+    - Time context: raw hour/day_of_week integers, academic period
     - Target: occupancy_rate at each future prediction hour
 """
 
@@ -19,11 +19,7 @@ import pandas as pd
 from src.config import PREDICTION_HOURS, SNAPSHOT_INTERVAL_MINUTES
 
 from .base import (
-    validate_snapshot_data,
-    extract_time_components,
-    add_hour_encoding,
-    add_day_encoding,
-    normalize_timestamps,
+    prepare_base_features,
 )
 
 __all__ = [
@@ -100,12 +96,10 @@ def prepare_training_features(
     Returns:
         DataFrame with columns: lot_id, hour, day_of_week, semester,
         academic_period, week_of_semester, is_campus_open, occupancy_rate,
-        occupancy_rate_lag_1..4, momentum, sin_hour, cos_hour,
-        sin_day, cos_day, target_hour, hours_ahead, target_occupancy_rate.
+        occupancy_rate_lag_1..4, momentum, target_hour, hours_ahead,
+        target_occupancy_rate.
     """
-    df = validate_snapshot_data(df, min_confidence=min_confidence)
-    df = normalize_timestamps(df)
-    df = extract_time_components(df, "timestamp")
+    df = prepare_base_features(df, min_confidence=min_confidence)
 
     # Filter to operating hours
     df = df[df["hour"].isin(PREDICTION_HOURS)]
@@ -160,16 +154,12 @@ def prepare_training_features(
 
     # Drop the intermediate date column used for the actuals join
     features = expanded.drop(columns=["date"])
-    features = add_hour_encoding(features)
-    features = add_day_encoding(features)
 
     return features
 
 
 def _empty_training_df() -> pd.DataFrame:
     """Return an empty DataFrame with the expected training schema."""
-    # Raw hour/day is better for tree-based models; encoded better for linear/neural (LSTM)
-    # Keep both for experimentation flexibility
     return pd.DataFrame(
         columns=[
             "lot_id",
@@ -188,10 +178,6 @@ def _empty_training_df() -> pd.DataFrame:
             "target_hour",
             "hours_ahead",
             "target_occupancy_rate",
-            "sin_hour",
-            "cos_hour",
-            "sin_day",
-            "cos_day",
         ]
     )
 
@@ -229,15 +215,12 @@ def prepare_inference_features(
     Returns:
         DataFrame with columns: lot_id, hour, day_of_week, semester,
         academic_period, week_of_semester, is_campus_open, occupancy_rate,
-        occupancy_rate_lag_1..4, momentum, sin_hour, cos_hour,
-        sin_day, cos_day, target_hour, hours_ahead.
+        occupancy_rate_lag_1..4, momentum, target_hour, hours_ahead.
     """
     if prediction_time is None:
         prediction_time = datetime.now()
 
-    df = validate_snapshot_data(recent_snapshots, min_confidence=min_confidence)
-    df = normalize_timestamps(df)
-    df = extract_time_components(df, "timestamp")
+    df = prepare_base_features(recent_snapshots, min_confidence=min_confidence)
 
     # Filter to requested lots
     df = df[df["lot_id"].isin(lot_ids)]
@@ -286,9 +269,6 @@ def prepare_inference_features(
         result[col] = result[col].fillna(result["occupancy_rate"])
     result["momentum"] = result["momentum"].fillna(0.0)
 
-    result = add_hour_encoding(result)
-    result = add_day_encoding(result)
-
     return result
 
 
@@ -311,9 +291,5 @@ def _empty_inference_df() -> pd.DataFrame:
             "momentum",
             "target_hour",
             "hours_ahead",
-            "sin_hour",
-            "cos_hour",
-            "sin_day",
-            "cos_day",
         ]
     )

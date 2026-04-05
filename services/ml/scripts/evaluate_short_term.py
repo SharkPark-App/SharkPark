@@ -8,19 +8,16 @@ Both candidate and production models are evaluated on the same test set
 (derived from the candidate's data) for a fair comparison.
 
 Usage:
-    python scripts/evaluate.py --run-id <mlflow-run-id>
-    python scripts/evaluate.py --run-id <mlflow-run-id> --data-path data/custom.parquet
+    python scripts/evaluate_short_term.py --run-id <mlflow-run-id>
+    python scripts/evaluate_short_term.py --run-id <mlflow-run-id> --data-path data/custom.parquet
 
 By default, downloads the training data artifact from the MLflow run.
 Use --data-path to override with a different dataset.
 
-Note: Currently short-term only. When long-term is implemented, add a
---model-type flag to select features, model class, and baselines.
 """
 
 import argparse
 import logging
-import tempfile
 from datetime import timedelta
 from pathlib import Path
 
@@ -32,6 +29,7 @@ from src.evaluation.compare import compare_models
 from src.evaluation.metrics import compute_metrics
 from src.features.short_term import prepare_training_features
 from src.models.short_term import HOLDOUT_DAYS, ShortTermModel
+from src.utils.mlflow_utils import get_production_run_id, load_run_data
 
 logger = logging.getLogger(__name__)
 
@@ -67,16 +65,7 @@ def evaluate(run_id: str, data_path: str | None = None) -> dict:
         df = pd.read_parquet(path)
     else:
         logger.info("Downloading training data artifact from run...")
-        with tempfile.TemporaryDirectory() as tmp:
-            data_dir = mlflow.artifacts.download_artifacts(
-                run_id=run_id, artifact_path="data", dst_path=tmp
-            )
-            parquet_files = list(Path(data_dir).glob("*.parquet"))
-            if not parquet_files:
-                raise FileNotFoundError(
-                    "No data artifact found in run. Pass --data-path manually."
-                )
-            df = pd.read_parquet(parquet_files[0])
+        df = load_run_data(run_id)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
     # Reproduce the same temporal split used during training
@@ -111,7 +100,7 @@ def evaluate(run_id: str, data_path: str | None = None) -> dict:
     if comparison["should_promote"]:
         logger.info("PROMOTE: %s", comparison["promotion_reason"])
         print(
-            f"\nNext step (only if promotion is approved):\n  python -m scripts.promote --run-id {run_id}"
+            f"\nNext step (only if promotion is approved):\n  python -m scripts.promote_short_term --run-id {run_id}"
         )
     else:
         logger.info("DO NOT PROMOTE: Candidate does not meet promotion criteria.")
@@ -133,25 +122,13 @@ def _evaluate_production_on_test(test_features: pd.DataFrame) -> dict | None:
         or None if no production model is registered.
     """
     try:
-        client = mlflow.tracking.MlflowClient()
-        mv = client.get_model_version_by_alias(SHORT_TERM_MODEL_NAME, "production")
-
-        # Get the run that produced this model version
-        run_id = mv.run_id
-        if run_id is None:
-            # Fallback: parse run_id from the artifact URI
-            source = mv.source
-            parts = source.replace("\\", "/").split("/")
-            if "artifacts" in parts:
-                run_id = parts[parts.index("artifacts") - 1]
-
+        run_id = get_production_run_id(SHORT_TERM_MODEL_NAME)
         if not run_id:
             logger.warning(
                 "Could not determine production run ID — treating as first deployment."
             )
             return None
 
-        # Load production model and score it on the candidate's test set
         logger.info(
             "Re-evaluating production model (run %s) on candidate test set...", run_id
         )

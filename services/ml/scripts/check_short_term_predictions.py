@@ -2,10 +2,10 @@
 Quick helper to inspect predictions_short_term rows in the database.
 
 Usage (from services/ml/):
-    python -m scripts.check_predictions
-    python -m scripts.check_predictions --limit 20
-    python -m scripts.check_predictions --lot G1 --date 2026-03-31
-    python -m scripts.check_predictions --version v1.2.0
+    python -m scripts.check_short_term_predictions
+    python -m scripts.check_short_term_predictions --limit 20
+    python -m scripts.check_short_term_predictions --lot G1 --date 2026-03-31
+    python -m scripts.check_short_term_predictions --version v1.2.0
 """
 
 import argparse

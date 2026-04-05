@@ -5,14 +5,12 @@ Loads synthetic data from parquet (and optionally real data from PostgreSQL),
 trains the XGBoost model, and logs the run (params + metrics) to MLflow.
 
 Usage:
-    python scripts/train.py
-    python scripts/train.py --data-path data/custom.parquet
-    python scripts/train.py --data-path "data/synthetic_*.parquet"   # multiple semesters
-    python scripts/train.py --include-real
-    python scripts/train.py --include-real --synthetic-weight 0.3
+    python scripts/train_short_term.py
+    python scripts/train_short_term.py --data-path data/custom.parquet
+    python scripts/train_short_term.py --data-path "data/synthetic_*.parquet"   # multiple semesters
+    python scripts/train_short_term.py --include-real
+    python scripts/train_short_term.py --include-real --synthetic-weight 0.3
 
-Note: Currently short-term only. When long-term is implemented, add a
---model-type flag to select features, model class, and baselines.
 """
 
 import argparse
@@ -163,7 +161,7 @@ def train(
     logger.info("MAE:  %.4f", metrics["mae"])
     logger.info("RMSE: %.4f", metrics["rmse"])
     logger.info("MAPE: %.1f%%", metrics["mape"])
-    print(f"\nNext step:\n  python -m scripts.evaluate --run-id {run_id}")
+    print(f"\nNext step:\n  python -m scripts.evaluate_short_term --run-id {run_id}")
 
     return run_id
 

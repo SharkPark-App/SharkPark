@@ -24,7 +24,7 @@ __all__ = [
     "get_total_lot_count",
     "fetch_recent_snapshots",
     "load_real_snapshots",
-    "write_predictions",
+    "write_short_term_predictions",
 ]
 
 
@@ -115,7 +115,7 @@ def fetch_recent_snapshots(lookback_hours: int = 2) -> pd.DataFrame:
                 f"No snapshots found in the last {lookback_hours} hours. "
                 "Is the backend scheduler running?\n"
                 "For local dev, use --data-path to load from a parquet file instead:\n"
-                "  python -m scripts.predict --data-path data/synthetic_fall-2025.parquet --start-of-day"
+                "  python -m scripts.predict_short_term --data-path data/synthetic_fall-2025.parquet --start-of-day"
             )
 
         raw_lot_ids = df["lot_id"].copy()
@@ -205,7 +205,7 @@ def load_real_snapshots(
         return df
 
 
-def write_predictions(predictions_df: pd.DataFrame) -> int:
+def write_short_term_predictions(predictions_df: pd.DataFrame) -> int:
     """
     Write short-term predictions to the predictions_short_term table.
 

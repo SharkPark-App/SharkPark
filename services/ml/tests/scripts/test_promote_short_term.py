@@ -1,5 +1,5 @@
 """
-Tests for the promotion script (scripts/promote.py).
+Tests for the promotion script (scripts/promote_short_term.py).
 
 Covers:
     - Happy path: promote registers model and sets production alias
@@ -16,8 +16,8 @@ from unittest.mock import patch
 import mlflow
 import pytest
 
-from scripts.promote import promote
-from scripts.train import train
+from scripts.promote_short_term import promote
+from scripts.train_short_term import train
 from src.config import SHORT_TERM_MODEL_NAME
 
 
