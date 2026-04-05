@@ -172,20 +172,6 @@ class LotsApiService {
   }
 
   /**
-   * Convert UI lot format to API format for backward compatibility
-   */
-  convertToUIFormat(apiLot: ParkingLotResponse): import('../../types/ui').ParkingLotUI {
-    return {
-      id: apiLot.lot_id,
-      name: apiLot.display_name || apiLot.lot_name,
-      occupancy: Math.round(apiLot.occupancy_rate * 100),
-      category: apiLot.lot_type.toLowerCase() as 'general' | 'employee',
-      // Note: position will need to be mapped from coordinates or maintained separately
-      position: { x: 0, y: 0 }, // TODO: Map from lat/lng to UI coordinates
-    };
-  }
-
-  /**
    * Generate forecast data for short-term predictions
    * This creates mock forecast data similar to what's in ShortTermForecastScreen
    */

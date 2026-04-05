@@ -57,7 +57,6 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
     { id: 'E9', label: 'E9', category: 'employee' },
     { id: 'E10', label: 'E10', category: 'employee' },
     { id: 'E11', label: 'E11', category: 'employee' },
-    { id: 'E12', label: 'E12', category: 'employee' },
   ];
 
   const allLots = [...generalLots, ...employeeLots];
