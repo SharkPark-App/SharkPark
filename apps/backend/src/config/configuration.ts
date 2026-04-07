@@ -19,3 +19,9 @@ export const dbConfig = registerAs('db', () => ({
 export const privacyConfig = registerAs('privacy', () => ({
   deviceHashSalt: process.env.DEVICE_HASH_SALT || 'sharkpark-default-salt-2026',
 }));
+
+export const weatherConfig = registerAs('weather', () => ({
+  openWeatherApiKey: process.env.OPENWEATHER_API_KEY || '',
+  latitude: parseFloat(process.env.WEATHER_LAT || '33.7838'),
+  longitude: parseFloat(process.env.WEATHER_LON || '-118.1134'),
+}));
