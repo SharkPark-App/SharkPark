@@ -124,6 +124,7 @@ model OccupancyEvent {
 
   @@index([lot_id, timestamp], name: "idx_events_lot_time")
   @@index([device_hash, lot_id], name: "idx_events_device")
+  @@index([timestamp, device_hash], name: "idx_events_time_device")
   @@map("occupancy_events")
 }
 
