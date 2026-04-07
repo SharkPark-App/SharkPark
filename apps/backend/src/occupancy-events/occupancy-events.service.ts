@@ -203,48 +203,50 @@ export class OccupancyEventsService {
       const academicPeriod = periodType;
 
       let count = 0;
-      for (const lot of lots) {
+
+      // Gather reliability input for all lots in parallel (avoids N+1 DB calls)
+      const reliabilityInputs = await Promise.all(
+        lots.map((lot) => this.reliabilityComputationService.gatherReliabilityInput(lot.lot_id, lot)),
+      );
+
+      // Build snapshot data array
+      const snapshotData = lots.map((lot, i) => {
         const estimate = estimates.get(lot.id);
         const rawOccupancy = lot.current_occupancy || 0;
         const estimatedOccupancy = estimate ? estimate.estimatedOccupancy : rawOccupancy;
         const capacity = lot.capacity || 100;
 
-        // Snapshot stores raw occupancy/available/rate for ML consistency;
-        // estimated_occupancy is the separate scaled-up field
         const rawAvailable = Math.max(0, capacity - rawOccupancy);
         const rawOccupancyRate = capacity > 0 ? rawOccupancy / capacity : 0;
 
-        // Compute confidence using ReliabilityComputationService (single source of truth)
-        const reliabilityInput = await this.reliabilityComputationService.gatherReliabilityInput(lot.lot_id, lot);
         const reliabilityScore = this.reliabilityService.computeReliabilitySummary(
           lot.lot_id,
-          reliabilityInput,
+          reliabilityInputs[i],
         );
-        const confidence = reliabilityScore.confidence;
 
-        await this.prisma.occupancySnapshot.create({
-          data: {
-            lot_id: lot.id,
-            timestamp: now,
-            occupancy: rawOccupancy,
-            available: rawAvailable,
-            occupancy_rate: Math.round(rawOccupancyRate * 1000) / 1000,
-            confidence,
-            reliability_score: reliabilityScore.score,
-            is_cold_start: reliabilityScore.isColdStart,
-            semester,
-            academic_period: academicPeriod,
-            week_of_semester: weekOfSemester,
-            is_campus_open: estimate ? !estimate.isClosure : true,
-            estimated_occupancy: estimatedOccupancy,
-            penetration_rate_used: estimate
-              ? Math.round(estimate.effectiveRate * 10000) / 10000
-              : null,
-          },
-        });
+        return {
+          lot_id: lot.id,
+          timestamp: now,
+          occupancy: rawOccupancy,
+          available: rawAvailable,
+          occupancy_rate: Math.round(rawOccupancyRate * 1000) / 1000,
+          confidence: reliabilityScore.confidence,
+          reliability_score: reliabilityScore.score,
+          is_cold_start: reliabilityScore.isColdStart,
+          semester,
+          academic_period: academicPeriod,
+          week_of_semester: weekOfSemester,
+          is_campus_open: estimate ? !estimate.isClosure : true,
+          estimated_occupancy: estimatedOccupancy,
+          penetration_rate_used: estimate
+            ? Math.round(estimate.effectiveRate * 10000) / 10000
+            : null,
+        };
+      });
 
-        count++;
-      }
+      // Batch insert all snapshots in a single query
+      const result = await this.prisma.occupancySnapshot.createMany({ data: snapshotData });
+      count = result.count;
 
       this.logger.log(`Created ${count} occupancy snapshots at ${timestamp}`);
       return { count, timestamp };
