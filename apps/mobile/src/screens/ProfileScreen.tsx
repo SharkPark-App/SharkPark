@@ -5,8 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SectionCard } from '../components/SectionCard';
 import { Header } from '../components';
-import { GeofencingTestButton } from '../components/GeofencingTestButton';
-import ParkingValidationDebug from '../components/ParkingValidationDebug';
+// Dev-only components: loaded conditionally so Metro strips them from production bundles
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const GeofencingTestButton = __DEV__ ? require('../components/GeofencingTestButton').GeofencingTestButton : null;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ParkingValidationDebug = __DEV__ ? require('../components/ParkingValidationDebug').default : null;
 import useLocationService from '../hooks/useLocationService';
 import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
@@ -198,7 +201,7 @@ const ProfileScreen: React.FC = () => {
         </SectionCard>
 
         {/* Parking Validation Debug - Development Only */}
-        {__DEV__ && (
+        {__DEV__ && ParkingValidationDebug && (
           <SectionCard title="Parking Validation Debug">
             <ParkingValidationDebug />
           </SectionCard>
@@ -264,7 +267,7 @@ const ProfileScreen: React.FC = () => {
         </TouchableOpacity>
 
         {/* Development Test Button */}
-        <GeofencingTestButton />
+        {__DEV__ && GeofencingTestButton && <GeofencingTestButton />}
         
         </ScrollView>
       </SafeAreaView>
