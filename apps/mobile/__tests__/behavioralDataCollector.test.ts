@@ -19,9 +19,14 @@ jest.mock('react-native-device-info', () => ({
   getBatteryLevel: jest.fn(),
 }));
 
+jest.mock('react-native-bluetooth-status', () => ({
+  state: jest.fn(),
+}));
+
 import NetInfo from '@react-native-community/netinfo';
 import Geolocation from '@react-native-community/geolocation';
 import DeviceInfo from 'react-native-device-info';
+import BluetoothStatus from 'react-native-bluetooth-status';
 
 describe('BehavioralDataCollector', () => {
   let collector: BehavioralDataCollector;
@@ -49,6 +54,8 @@ describe('BehavioralDataCollector', () => {
     (mockDeviceInfo.getSystemVersion as jest.Mock).mockResolvedValue('15.0');
     (mockDeviceInfo.getVersion as jest.Mock).mockResolvedValue('1.0.0');
     (mockDeviceInfo.getBatteryLevel as jest.Mock).mockResolvedValue(0.85);
+
+    (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
 
     mockGeolocation.watchPosition.mockImplementation((success) => {
       // Immediately call success callback with location data  

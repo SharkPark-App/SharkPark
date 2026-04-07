@@ -131,8 +131,8 @@ describe('BehavioralDataCollector', () => {
       // Setup mocks
       (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
       (Geolocation.watchPosition as jest.Mock).mockImplementation((success) => {
-        // Simulate GPS data with speed
-        setTimeout(() => success({
+        // Call success synchronously so location data is available before metrics collection
+        success({
           coords: {
             latitude: 37.7749,
             longitude: -122.4194,
@@ -142,7 +142,7 @@ describe('BehavioralDataCollector', () => {
             heading: 90
           },
           timestamp: Date.now()
-        }), 50);
+        });
         return 1; // mock watch ID
       });
 
@@ -205,7 +205,8 @@ describe('BehavioralDataCollector', () => {
 
       for (const testSpeed of testSpeeds) {
         (Geolocation.watchPosition as jest.Mock).mockImplementation((success) => {
-          setTimeout(() => success({
+          // Call success synchronously so location data is available before metrics collection
+          success({
             coords: {
               latitude: 37.7749,
               longitude: -122.4194,
@@ -215,7 +216,7 @@ describe('BehavioralDataCollector', () => {
               heading: 90
             },
             timestamp: Date.now()
-          }), 10);
+          });
           return 1;
         });
 
