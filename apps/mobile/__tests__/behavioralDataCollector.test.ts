@@ -333,8 +333,7 @@ describe('BehavioralDataCollector', () => {
 
       // Advance to trigger the interval and flush the async promise chain
       jest.advanceTimersByTime(30000);
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushPromises();
 
       expect(mockCallbacks.onError).toHaveBeenCalledWith(
         expect.stringContaining('Failed to collect metrics')

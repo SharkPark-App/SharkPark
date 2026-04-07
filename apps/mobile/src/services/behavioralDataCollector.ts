@@ -161,49 +161,7 @@ class BehavioralDataCollector {
     }
 
     try {
-      // Collect all data in parallel
-      const [
-        bluetoothState,
-        networkState,
-        deviceBrand,
-        deviceModel,
-        systemVersion,
-        appVersion,
-        batteryLevel
-      ] = await Promise.all([
-        this.getBluetoothState(),
-        NetInfo.fetch(),
-        DeviceInfo.getBrand(),
-        DeviceInfo.getModel(),
-        DeviceInfo.getSystemVersion(),
-        DeviceInfo.getVersion(),
-        DeviceInfo.getBatteryLevel().catch(() => null)
-      ]);
-
-      const speedMph = this.calculateSpeed();
-
-      const metrics: BehavioralMetrics = {
-        speed_mph: speedMph,
-        accuracy_meters: this.lastLocation?.accuracy ?? null,
-        bluetooth_state: bluetoothState,
-        wifi_connected: networkState.type === 'wifi' && networkState.isConnected === true,
-        network_type: networkState.type,
-        device_info: {
-          brand: deviceBrand,
-          model: deviceModel,
-          system_version: systemVersion,
-          app_version: appVersion,
-          battery_level: batteryLevel || undefined
-        },
-        raw_data: {
-          timestamp: new Date().toISOString(),
-          location_accuracy: this.lastLocation?.accuracy ?? null,
-          altitude: this.lastLocation?.altitude ?? null,
-          heading: this.lastLocation?.heading ?? null,
-          wifi_ssid: networkState.type === 'wifi' ? networkState.details?.ssid || undefined : undefined,
-          cellular_carrier: networkState.type === 'cellular' ? networkState.details?.carrier || undefined : undefined
-        }
-      };
+      const metrics = await this.buildMetrics();
 
       // Fan out to all subscribers
       this.subscribers.forEach(cb => cb.onMetricsCollected(metrics));
@@ -211,6 +169,56 @@ class BehavioralDataCollector {
     } catch (error) {
       this.subscribers.forEach(cb => cb.onError(`Failed to collect metrics: ${error}`));
     }
+  }
+
+  /**
+   * Build a metrics snapshot from current sensor data
+   */
+  private async buildMetrics(): Promise<BehavioralMetrics> {
+    // Collect all data in parallel
+    const [
+      bluetoothState,
+      networkState,
+      deviceBrand,
+      deviceModel,
+      systemVersion,
+      appVersion,
+      batteryLevel
+    ] = await Promise.all([
+      this.getBluetoothState(),
+      NetInfo.fetch(),
+      DeviceInfo.getBrand(),
+      DeviceInfo.getModel(),
+      DeviceInfo.getSystemVersion(),
+      DeviceInfo.getVersion(),
+      DeviceInfo.getBatteryLevel().catch(() => null)
+    ]);
+
+    // Calculate speed from location data
+    const speedMph = this.calculateSpeed();
+
+    return {
+      speed_mph: speedMph,
+      accuracy_meters: this.lastLocation?.accuracy ?? null,
+      bluetooth_state: bluetoothState,
+      wifi_connected: networkState.type === 'wifi' && networkState.isConnected === true,
+      network_type: networkState.type,
+      device_info: {
+        brand: deviceBrand,
+        model: deviceModel,
+        system_version: systemVersion,
+        app_version: appVersion,
+        battery_level: batteryLevel || undefined
+      },
+      raw_data: {
+        timestamp: new Date().toISOString(),
+        location_accuracy: this.lastLocation?.accuracy ?? null,
+        altitude: this.lastLocation?.altitude ?? null,
+        heading: this.lastLocation?.heading ?? null,
+        wifi_ssid: networkState.type === 'wifi' ? networkState.details?.ssid || undefined : undefined,
+        cellular_carrier: networkState.type === 'cellular' ? networkState.details?.carrier || undefined : undefined
+      }
+    };
   }
 
   /**
@@ -284,20 +292,7 @@ class BehavioralDataCollector {
    */
   async getCurrentMetrics(): Promise<BehavioralMetrics | null> {
     try {
-      return new Promise((resolve) => {
-        const tempId = '__getCurrentMetrics__';
-        this.subscribers.set(tempId, {
-          onMetricsCollected: (metrics: BehavioralMetrics) => {
-            this.subscribers.delete(tempId);
-            resolve(metrics);
-          },
-          onError: () => {
-            this.subscribers.delete(tempId);
-            resolve(null);
-          }
-        });
-        this.collectAndSendMetrics();
-      });
+      return await this.buildMetrics();
     } catch {
       return null;
     }

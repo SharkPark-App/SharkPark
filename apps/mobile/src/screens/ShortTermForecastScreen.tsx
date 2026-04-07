@@ -14,6 +14,7 @@ import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
 import { Header, ReliabilityMeter } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
+import { MapSelectModal } from '../components/Modals/MapSelectModal';
 import { useReliability } from '../hooks/useReliability';
 import useFavorites from '../hooks/useFavorites';
 
@@ -45,6 +46,7 @@ export function ShortTermForecastScreen() {
   const onBack = () => navigation.goBack();
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isReliabilityModalOpen, setIsReliabilityModalOpen] = useState(false);
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
 
   // For favorites
   const { addFavorite, removeFavorite, favoriteLots } = useFavorites();
@@ -126,12 +128,15 @@ export function ShortTermForecastScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
-      {/* Top Banner & Favorite Button*/}
-      <View>
-        <Header title="Short-Term Forecast" onBack={onBack}/>
-        <FavoriteButton isFavorite={isFavorite} onToggle={toggleFavorite} />
-      </View>
+    <View style={[styles.container, { backgroundColor: colors.lightGray }]}>  
+      {/* Top Banner w/ Favorite Button */}
+      <Header 
+        title="Short-Term Forecast" 
+        onBack={onBack} 
+        rightElement={
+          <FavoriteButton isFavorite={isFavorite} onToggle={toggleFavorite} />
+        }
+      />
 
       <ScrollView style={styles.scrollView}>
         {/* Event Notifications */}
@@ -189,7 +194,7 @@ export function ShortTermForecastScreen() {
       {/* Navigate Button (bottom right, symmetric to report button) */}
       <TouchableOpacity
         style={styles.fabNavigate}
-        onPress={() => { /* TODO: Add navigation logic here */ }}
+        onPress={() => setIsMapModalOpen(true)}
         activeOpacity={0.8}
       >
         <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} />
@@ -208,6 +213,14 @@ export function ShortTermForecastScreen() {
         isOpen={isReliabilityModalOpen}
         onClose={() => setIsReliabilityModalOpen(false)}
         reliability={reliability}
+      />
+
+      <MapSelectModal 
+        isVisible={isMapModalOpen} 
+        onClose={() => setIsMapModalOpen(false)}
+        lat={lot.center_lat} 
+        lon={lot.center_lng} 
+        title={lot.lot_name} 
       />
     </View>
   );
@@ -302,10 +315,6 @@ const styles = StyleSheet.create({
   },
 
   favoriteButton: {
-    position: 'absolute',
-    top: '50%',
-    right: SPACING.xxxl,
-    marginTop: -8, // Offset so that button is centered
     padding: SPACING.xs,
   },
 
