@@ -23,7 +23,7 @@ export class OccupancyEventsController {
 
   /** Records an anonymous ENTER/EXIT event for a parking lot */
   @Post()
-  @Throttle({ default: { ttl: 10_000, limit: 6 } })
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.CREATED)
   async createEvent(@Body() createEventDto: CreateOccupancyEventDto) {
     const result = await this.occupancyEventsService.create(createEventDto);

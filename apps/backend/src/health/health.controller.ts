@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { HealthCheck, HealthCheckService, MemoryHealthIndicator } from '@nestjs/terminus';
+import { HealthCheckService, MemoryHealthIndicator } from '@nestjs/terminus';
 import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaHealthIndicator } from './prisma.health';
 
@@ -13,7 +13,6 @@ export class HealthController {
   ) {}
 
   @Get()
-  @HealthCheck()
   check() {
     return this.health.check([
       () => this.prismaHealth.isHealthy('database'),
