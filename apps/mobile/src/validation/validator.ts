@@ -1,6 +1,39 @@
 import { ValidationEvent, ValidationEventType, BluetoothState, EventPatternAnalysis, ValidationStatus } from './types';
 
 /**
+ * Tunable thresholds for parking behavior analysis.
+ * All values can be overridden per-lot by passing a partial object to analyzeEventPatterns.
+ */
+export interface AnalysisThresholds {
+  // Speed transition
+  speedDropSignificant: number;  // mph — speed drop above this → high parking confidence
+  speedDropMild: number;         // mph — speed drop above this → moderate confidence
+  speedIncreaseThrough: number;  // mph — net speed increase above this → driving-through
+
+  // Dwell time (minutes)
+  dwellLong: number;   // > this → strong parking signal
+  dwellMedium: number; // > this → mild parking signal
+  dwellShort: number;  // < this → drive-through signal
+
+  // Overall confidence classification
+  confidenceParked: number;     // above → PARKED
+  confidenceDroveThrough: number; // below → DROVE_THROUGH
+  confidencePreliminary: number;  // above → preliminary PARKED (non-final analysis)
+}
+
+export const DEFAULT_THRESHOLDS: AnalysisThresholds = {
+  speedDropSignificant: 10,
+  speedDropMild: 5,
+  speedIncreaseThrough: 5,
+  dwellLong: 5,
+  dwellMedium: 2,
+  dwellShort: 1,
+  confidenceParked: 0.7,
+  confidenceDroveThrough: 0.3,
+  confidencePreliminary: 0.6,
+};
+
+/**
  * Client-side parking behavior analysis algorithms
  * These algorithms analyze sensor data locally on the mobile device
  * to classify parking behavior without sending raw location data to server
@@ -68,32 +101,44 @@ export class ParkingValidator {
    * Analyze patterns in validation events to determine parking behavior
    * This is the core behavioral analysis algorithm that runs client-side
    */
-  static analyzeEventPatterns(events: ValidationEvent[], isFinalAnalysis = false): EventPatternAnalysis {
+  static analyzeEventPatterns(
+    events: ValidationEvent[],
+    isFinalAnalysis = false,
+    thresholds: AnalysisThresholds = DEFAULT_THRESHOLDS,
+  ): EventPatternAnalysis {
     const speeds = events.map(e => e.speed_mph).filter(s => s !== null) as number[];
-    const timeSpan = events.length > 0 ? 
-      (new Date(events[events.length - 1].timestamp).getTime() - new Date(events[0].timestamp).getTime()) / 1000 / 60 : 0; // minutes
+    const timeSpan = events.length > 0
+      ? (new Date(events[events.length - 1].timestamp).getTime() - new Date(events[0].timestamp).getTime()) / 1000 / 60
+      : 0; // minutes
 
-    // Speed transition analysis
+    // Speed transition analysis — compare first-half average vs second-half average
+    // so the full trajectory is considered, not just the endpoints.
     let speedTransitionScore = 0.5;
     if (speeds.length >= 2) {
-      const speedDrop = speeds[0] - speeds[speeds.length - 1];
-      if (speedDrop > 10) speedTransitionScore = 0.9; // Significant speed drop
-      else if (speedDrop > 5) speedTransitionScore = 0.7;
-      else if (speedDrop < -5) speedTransitionScore = 0.2; // Speed increased (driving through)
+      const mid = Math.floor(speeds.length / 2);
+      const firstHalf = speeds.slice(0, mid);
+      const secondHalf = speeds.slice(mid);
+      const firstAvg = firstHalf.reduce((sum, s) => sum + s, 0) / firstHalf.length;
+      const secondAvg = secondHalf.reduce((sum, s) => sum + s, 0) / secondHalf.length;
+      const speedDrop = firstAvg - secondAvg;
+
+      if (speedDrop > thresholds.speedDropSignificant) speedTransitionScore = 0.9; // Clear deceleration to stop
+      else if (speedDrop > thresholds.speedDropMild) speedTransitionScore = 0.7;
+      else if (speedDrop < -thresholds.speedIncreaseThrough) speedTransitionScore = 0.2; // Accelerating — driving through
     }
 
     // Dwell time analysis
     let dwellTimeScore = 0.5;
-    if (timeSpan > 5) dwellTimeScore = 0.8; // More than 5 minutes suggests parking
-    else if (timeSpan > 2) dwellTimeScore = 0.6;
-    else if (timeSpan < 1) dwellTimeScore = 0.2; // Very short time suggests drive-through
+    if (timeSpan > thresholds.dwellLong) dwellTimeScore = 0.8;
+    else if (timeSpan > thresholds.dwellMedium) dwellTimeScore = 0.6;
+    else if (timeSpan < thresholds.dwellShort) dwellTimeScore = 0.2; // Very short visit — likely drive-through
 
     // Movement pattern analysis
     const movementTypes = events.map(e => e.event_type);
     const hasWalking = movementTypes.includes('WALKING');
     const hasStationary = movementTypes.includes('STATIONARY');
     const hasDriving = movementTypes.includes('DRIVING');
-    
+
     let movementPatternScore = 0.5;
     if (hasWalking && hasStationary) movementPatternScore = 0.9;
     else if (hasStationary) movementPatternScore = 0.7;
@@ -104,7 +149,7 @@ export class ParkingValidator {
     let bluetoothScore = 0.5;
     if (bluetoothEvents.length > 0) {
       const hasDisconnect = bluetoothEvents.some(e => e.bluetooth_state === 'DISCONNECTED');
-      if (hasDisconnect) bluetoothScore = 0.8; // Bluetooth disconnect suggests leaving car
+      if (hasDisconnect) bluetoothScore = 0.8; // Disconnect from car audio → left vehicle
     }
 
     // Calculate overall confidence
@@ -112,10 +157,14 @@ export class ParkingValidator {
 
     // Determine status based on confidence and patterns
     let status: ValidationStatus = 'UNKNOWN';
-    if (overallConfidence > 0.7) status = 'PARKED';
-    else if (overallConfidence < 0.3) status = 'DROVE_THROUGH';
+    if (overallConfidence > thresholds.confidenceParked) status = 'PARKED';
+    else if (overallConfidence < thresholds.confidenceDroveThrough) status = 'DROVE_THROUGH';
     else if (!isFinalAnalysis) status = 'ANALYZING';
     else status = 'SEARCHING';
+
+    // Safe min/max via reduce — avoids RangeError from spread on large arrays
+    const speedMin = speeds.reduce((a, b) => (b < a ? b : a), speeds[0]);
+    const speedMax = speeds.reduce((a, b) => (b > a ? b : a), speeds[0]);
 
     return {
       status,
@@ -125,23 +174,26 @@ export class ParkingValidator {
       dwellTimeScore: Math.round(dwellTimeScore * 100) / 100,
       movementPatternScore: Math.round(movementPatternScore * 100) / 100,
       bluetoothScore: Math.round(bluetoothScore * 100) / 100,
-      preliminaryStatus: !isFinalAnalysis ? (overallConfidence > 0.6 ? 'PARKED' : 'ANALYZING') : status,
+      preliminaryStatus: !isFinalAnalysis ? (overallConfidence > thresholds.confidencePreliminary ? 'PARKED' : 'ANALYZING') : status,
       confidence: overallConfidence,
       metadata: {
         event_count: events.length,
         time_span_minutes: Math.round(timeSpan * 100) / 100,
-        speed_range: speeds.length > 0 ? [Math.min(...speeds), Math.max(...speeds)] : null,
+        speed_range: speeds.length > 0 ? [speedMin, speedMax] : null,
         analysis_timestamp: new Date().toISOString(),
       },
     };
   }
 
   /**
-   * Generate a privacy-preserving device hash
-   * Uses a simple hash function compatible with React Native
+   * @deprecated NOT cryptographically secure. Do NOT use for real device identification.
+   * Device hashing for occupancy events is handled server-side via SHA-256 in
+   * the backend's occupancy-events service. This function exists only for
+   * local unit tests that verify hash consistency/uniqueness properties.
+   *
+   * Uses DJB2 (32-bit) — fast and deterministic, but trivially reversible.
    */
-  static generateDeviceHash(userId: string, salt: string = 'parking_device_salt'): string {
-    // Simple hash function for React Native compatibility
+  static generateLocalTestHash(userId: string, salt: string = 'parking_device_salt'): string {
     const str = `${userId}_${salt}`;
     let hash = 0;
     for (let i = 0; i < str.length; i++) {

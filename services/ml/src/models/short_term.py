@@ -18,6 +18,8 @@ from pathlib import Path
 import joblib
 import mlflow
 import numpy as np
+
+from src.config import COLD_START_CI_MULTIPLIER
 import pandas as pd
 import xgboost as xgb
 
@@ -85,19 +87,42 @@ class ShortTermModel:
         self.model_upper: xgb.XGBRegressor | None = None
         self.category_mappings: dict[str, dict[str, int]] = {}
         self.feature_columns: list[str] = []
+        self.hyperparams: dict = {}
 
     # -----------------------------------------------------------------
     # Training
     # -----------------------------------------------------------------
 
-    def train(self, df: pd.DataFrame) -> dict:
+    # Default XGBoost hyperparameters
+    DEFAULT_HYPERPARAMS = {
+        "n_estimators": 200,
+        "max_depth": 6,
+        "learning_rate": 0.1,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "random_state": 42,
+    }
+
+    def train(
+        self,
+        df: pd.DataFrame,
+        synthetic_weight: float = 1.0,
+        cold_start_weight: float = 1.0,
+        hyperparams: dict | None = None,
+    ) -> dict:
         """
         Train the model on snapshot data.
 
         Args:
             df: Raw OccupancySnapshot DataFrame (output of synthetic.py).
-                Must include lot_id, timestamp, occupancy, occupancy_rate,
-                academic_period, week_of_semester, is_campus_open.
+                Must include lot_id, timestamp, occupancy, available,
+                occupancy_rate, confidence, semester, academic_period,
+                week_of_semester, is_campus_open, is_cold_start (bool),
+                _source ("synthetic"/"real").
+            synthetic_weight: Sample weight for synthetic rows (0.0-1.0).
+            cold_start_weight: Sample weight for real cold-start rows (0.0-1.0).
+            hyperparams: Optional dict of XGBoost hyperparameters. Merged with
+                DEFAULT_HYPERPARAMS (caller values take precedence).
 
         Returns:
             Dict with train_size, test_size, split_date, feature_columns,
@@ -109,10 +134,14 @@ class ShortTermModel:
         max_date = df["timestamp"].max()
         split_date = max_date - timedelta(days=HOLDOUT_DAYS)
 
+        has_source = "_source" in df.columns
+        use_weights = has_source and (
+            synthetic_weight != 1.0 or cold_start_weight != 1.0
+        )
+
         # Split train/test according to split date
-        df_sorted = df.sort_values("timestamp")
-        train_raw = df_sorted[df_sorted["timestamp"] <= split_date]
-        test_raw = df_sorted[df_sorted["timestamp"] > split_date]
+        train_raw = df[df["timestamp"] <= split_date]
+        test_raw = df[df["timestamp"] > split_date]
 
         train_features = prepare_training_features(train_raw)
         test_features = prepare_training_features(test_raw)
@@ -120,26 +149,30 @@ class ShortTermModel:
         if train_features.empty:
             raise ValueError("No training features after split — need more data.")
 
+        # Build volume-normalized sample weights from _source / is_cold_start
+        if use_weights:
+            sample_weight = self._build_sample_weights(
+                train_features,
+                synthetic_weight,
+                cold_start_weight,
+            )
+        else:
+            sample_weight = None
+
         # Encode categoricals
         self._fit_category_mappings(train_features)
         X_train, y_train = self._prepare_xy(train_features)
 
-        # Shared hyperparams for all three models
-        shared_params = dict(
-            n_estimators=200,
-            max_depth=6,
-            learning_rate=0.1,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            random_state=42,
-        )
+        # TODO: tune hyperparams with Optuna or similar once we have enough real data
+        shared_params = {**self.DEFAULT_HYPERPARAMS, **(hyperparams or {})}
+        self.hyperparams = shared_params.copy()
 
         # Median model (point predictions)
         self.model = xgb.XGBRegressor(
             objective="reg:squarederror",
             **shared_params,
         )
-        self.model.fit(X_train, y_train)
+        self.model.fit(X_train, y_train, sample_weight=sample_weight)
 
         # Quantile models for confidence intervals
         self.model_lower = xgb.XGBRegressor(
@@ -147,14 +180,14 @@ class ShortTermModel:
             quantile_alpha=0.1,
             **shared_params,
         )
-        self.model_lower.fit(X_train, y_train)
+        self.model_lower.fit(X_train, y_train, sample_weight=sample_weight)
 
         self.model_upper = xgb.XGBRegressor(
             objective="reg:quantileerror",
             quantile_alpha=0.9,
             **shared_params,
         )
-        self.model_upper.fit(X_train, y_train)
+        self.model_upper.fit(X_train, y_train, sample_weight=sample_weight)
 
         result = {
             "train_size": len(train_features),
@@ -208,8 +241,13 @@ class ShortTermModel:
         """
         Generate median, lower (10th percentile), and upper (90th percentile) predictions.
 
+        Cold-start lots (identified by ``is_cold_start`` column in *features_df*)
+        receive widened confidence intervals to reflect higher uncertainty.
+
         Args:
             features_df: DataFrame with the same feature columns used during training.
+                May include an ``is_cold_start`` boolean column (not used as a model
+                feature, only for interval widening).
 
         Returns:
             Tuple of (median, lower, upper) arrays, each clamped to [0, 1].
@@ -225,6 +263,19 @@ class ShortTermModel:
         # Enforce ordering: lower <= median <= upper
         lower = np.minimum(lower, median)
         upper = np.maximum(upper, median)
+
+        # Widen confidence intervals for cold-start lots
+        if "is_cold_start" in features_df.columns:
+            cold = features_df["is_cold_start"].values.astype(bool)
+            if cold.any():
+                m = COLD_START_CI_MULTIPLIER
+                spread_lower = median - lower
+                spread_upper = upper - median
+                lower[cold] = median[cold] - spread_lower[cold] * m
+                upper[cold] = median[cold] + spread_upper[cold] * m
+
+                lower = np.clip(lower, 0.0, 1.0)
+                upper = np.clip(upper, 0.0, 1.0)
 
         return median, lower, upper
 
@@ -302,13 +353,19 @@ class ShortTermModel:
     # MLflow integration
     # -----------------------------------------------------------------
 
-    def save_mlflow(self, metrics: dict, params: dict | None = None) -> str:
+    def save_mlflow(
+        self,
+        metrics: dict,
+        params: dict | None = None,
+        data_path: str | None = None,
+    ) -> str:
         """
         Log model, metrics, and params to an MLflow run.
 
         Args:
             metrics: Dict of metric name → value (e.g. {"mae": 0.05}).
             params: Optional dict of param name → value.
+            data_path: Optional path to training data file to log as artifact.
 
         Returns:
             MLflow run_id.
@@ -332,6 +389,14 @@ class ShortTermModel:
                 model_dir = Path(tmp) / "model"
                 self.save(str(model_dir))
                 mlflow.log_artifacts(str(model_dir), artifact_path="model")
+
+            # TODO: When training data outgrows MLflow artifact storage,
+            # switch to content-addressed S3 (key by data hash) and log
+            # only the hash as a param for deduplication across runs.
+            if data_path:
+                data_file = Path(data_path)
+                if data_file.exists():
+                    mlflow.log_artifact(str(data_file), artifact_path="data")
 
             return run.info.run_id
 
@@ -357,6 +422,74 @@ class ShortTermModel:
     # -----------------------------------------------------------------
     # Internal helpers
     # -----------------------------------------------------------------
+
+    @staticmethod
+    def _build_sample_weights(
+        train_features: pd.DataFrame,
+        synthetic_weight: float,
+        cold_start_weight: float,
+    ) -> np.ndarray:
+        """Build volume-normalized sample weights from source/cold-start metadata.
+
+        Groups rows into 3 mutually exclusive tiers — synthetic, real cold-start,
+        and real established — then normalizes per-row weights so each group's
+        total influence is proportional to its weight parameter, regardless of
+        row count.
+
+        Args:
+            train_features: Training DataFrame. May contain ``_source`` and
+                ``is_cold_start`` columns for group classification. If either
+                is missing, rows default to the unweighted group.
+            synthetic_weight: Desired influence ratio of synthetic data relative
+                to real data (e.g. 0.3 = 30% of real data's influence).
+            cold_start_weight: Desired influence ratio of real cold-start data
+                relative to real established data.
+
+        Returns:
+            NumPy array of per-row weights (one float per row in
+            train_features), passed to XGBoost's ``sample_weight``.
+        """
+        # Classify each feature row into a group
+        source = train_features.get("_source")
+        if source is None:  # return uniform weight
+            return np.ones(len(train_features))
+
+        is_synthetic = source == "synthetic"
+        is_cold = train_features.get("is_cold_start")
+
+        if is_cold is None:
+            is_cold = pd.Series(False, index=train_features.index)
+        else:
+            is_cold = is_cold.fillna(False).astype(bool)
+
+        # Synthetic data marked as cold; mutually exclusive groups
+        is_real_cold = ~is_synthetic & is_cold  # real data from cold-start lots
+        is_real_clean = ~is_synthetic & ~is_cold  # real data from established lots
+
+        # Count rows per group
+        n_synthetic = is_synthetic.sum()
+        n_real_cold = is_real_cold.sum()
+        n_real_clean = is_real_clean.sum()
+
+        # Pick reference group (highest-priority non-empty group)
+        if n_real_clean > 0:
+            ref_size = n_real_clean
+        elif n_real_cold > 0:
+            ref_size = n_real_cold
+        else:
+            # All synthetic — no weighting needed
+            return np.ones(len(train_features))
+
+        # Compute per-row weight so total_influence = weight * ref_size
+        weights = np.ones(len(train_features))
+        if n_synthetic > 0:
+            weights[is_synthetic.values] = synthetic_weight * ref_size / n_synthetic
+        if n_real_cold > 0:
+            weights[is_real_cold.values] = cold_start_weight * ref_size / n_real_cold
+        if n_real_clean > 0:
+            weights[is_real_clean.values] = 1.0 * ref_size / n_real_clean  # = 1.0
+
+        return weights
 
     def _fit_category_mappings(self, df: pd.DataFrame) -> None:
         """Build category → integer mappings from training data."""

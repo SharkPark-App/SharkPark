@@ -65,9 +65,16 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-// Mock SimpleGeofencingProvider
-jest.mock('../src/context/SimpleGeofencingProvider', () => ({
-  SimpleGeofencingProvider: ({ children }: { children: React.ReactNode }) => children,
+// Mock EnhancedGeofencingProvider — the provider App.tsx actually mounts
+jest.mock('../src/context/EnhancedGeofencingProvider', () => ({
+  EnhancedGeofencingProvider: ({ children }: { children: React.ReactNode }) => children,
+  useEnhancedGeofencing: () => ({
+    isGeofencingActive: false,
+    currentLotId: null,
+    currentValidationStatus: null,
+    currentLeaveIntent: null,
+    debugInfo: { activeSessions: 0, isCollectingData: false, activeLeaveMonitoring: 0, isMonitoringLeave: false },
+  }),
 }));
 
 test('renders correctly', async () => {

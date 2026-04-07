@@ -152,6 +152,21 @@ For now, we use one global model with lot as a categorical feature:
 
 Tree-based boosting handles limited/noisy data well and captures non-linear relationships (e.g., lots filling differently at different times) without extensive feature engineering.
 
+**Default Hyperparameters:**
+
+Shared across all three XGBoost models (median, 10th percentile, 90th percentile):
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| `n_estimators` | 200 | Number of boosting rounds |
+| `max_depth` | 6 | Maximum tree depth |
+| `learning_rate` | 0.1 | Step size shrinkage |
+| `subsample` | 0.8 | Row sampling per tree |
+| `colsample_bytree` | 0.8 | Feature sampling per tree |
+| `random_state` | 42 | Reproducibility seed |
+
+Currently hardcoded in `src/models/short_term.py`. These are reasonable defaults for tabular data of this size — tuning is deferred until real data is available to validate against.
+
 ### Long-Term Predictions: Two-Stage Hybrid
 
 Week-ahead predictions answer "what will parking look like next Thursday at 10am?" - per-lot hourly forecasts for planning the entire week.
@@ -220,6 +235,36 @@ Synthetic data includes a `source: "synthetic"` column that is **generator-only*
 
 
 
+
+### Tuning as Real Data Accumulates
+
+Several model parameters are currently hand-tuned heuristics that should be calibrated once sufficient real data is available:
+
+| Parameter | Current Value | How to Calibrate |
+|-----------|--------------|-----------------|
+| `COLD_START_CI_MULTIPLIER` | 1.5 | Compare CI coverage (% of actuals within 10th-90th band) for cold-start vs established lots. Adjust until both groups achieve ~80% coverage. |
+| `synthetic_weight` | 1.0 (default) | Sweep values (0.1–1.0) and compare test MAE. As real data grows, lower values should improve accuracy. |
+| `cold_start_weight` | 1.0 (default) | Similar sweep; lower if cold-start data is noisy enough to hurt generalization. |
+| `HOLDOUT_DAYS` | 14 | May need adjustment based on data volume — shorter holdout if data is scarce, longer if plentiful. |
+
+**General progression:**
+1. **Synthetic-only (now):** All defaults, no weighting needed. Baseline comparisons are synthetic-vs-synthetic (validates pipeline, not real accuracy).
+2. **Hybrid (early real data):** Lower `synthetic_weight` (e.g., 0.3–0.5) to prefer real patterns while keeping synthetic for coverage. Baseline comparisons become meaningful — persistence and historical average baselines should be computed on real data only.
+3. **Real-dominant (60+ days):** `synthetic_weight` near 0 or synthetic data dropped entirely; calibrate CI multiplier from observed error distributions. All baselines (persistence, historical average, same-day-last-week) are fully valid and the model must beat them to justify continued use.
+
+**Baseline validation gates:**
+
+Gates are based on **data coverage**, not calendar time. Coverage is measured as the percentage of `(lot_id, day_of_week, hour)` combinations that have at least N real (non-synthetic) observations. With 28 lots × 7 days × 15 hours = 2,940 total combinations:
+
+| Coverage | Baseline Comparisons | Rationale |
+|----------|---------------------|-----------|
+| < 30% of combos with ≥2 observations | Skip baseline comparison | Too sparse — historical average would be unreliable |
+| 30–60% with ≥2 observations | Persistence baseline only | Enough for "predict current stays the same" but not enough for historical patterns |
+| > 60% with ≥4 observations | All baselines (persistence, historical average, same-day-last-week) | Sufficient coverage for meaningful pattern-based comparisons |
+
+This approach is resilient to uneven rollouts (e.g., only 10 lots reporting), semester breaks, and sensor outages — it measures what the data actually covers rather than assuming consistent collection.
+
+**Why aggregate coverage instead of per-lot?** There's one global XGBoost trained on all lots with `lot_id` as a categorical feature, so promotion is "promote this model or don't" — there's no concept of "promote for lot G4 but not A1." Per-lot coverage would require per-lot baseline evaluation and independent promotion decisions, adding complexity that only makes sense with per-lot models (see "Short-Term Predictions" above). The sample weighting system (`synthetic_weight`, `cold_start_weight`) already addresses per-lot data quality at training time.
 
 ### Cold-Start Strategy
 
@@ -392,6 +437,9 @@ All data lives in a single PostgreSQL database (Aurora PostgreSQL Serverless v2 
 - Long-term predictions: ~2,744 records/day (28 lots × 7 days × 14 hours)
 
 ### Training Data Archive (S3)
+
+**Current approach:** Training data (parquet) is logged as an MLflow artifact with each run, so any past run's exact dataset can be downloaded via `mlflow.artifacts.download_artifacts(run_id=..., artifact_path="data")`. This is fine while data is small (single-digit MBs). Once data grows past ~100MB, switch to versioned S3 storage and log a hash or version reference instead of the full file.
+
 PostgreSQL retains data permanently, but archiving older data to S3 reduces database size and enables efficient batch queries for model training.
 
 | S3 Path                          | Source Table              | Retention | Purpose                              |
@@ -443,6 +491,8 @@ Models must beat these naive baselines to be considered useful:
 | Majority Class        | Always predict median occupancy                  | Long-term             |
 
 **Minimum improvement threshold:** New model must reduce MAE by ≥5% vs current production model OR improve day-ahead accuracy by ≥3%.
+
+> **Fair comparison:** The evaluation script (`evaluate.py`) re-evaluates the production model on the candidate's test set, so both models are always compared on identical data. This avoids data drift bias when retraining on newer data.
 
 
 ## Deployment Architecture

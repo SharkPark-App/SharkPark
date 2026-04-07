@@ -20,9 +20,7 @@ from src.features.base import (
     add_hour_encoding,
     add_day_encoding,
     extract_time_components,
-    bucket_hour,
     add_time_bucket,
-    bucket_occupancy_rate,
     add_activity_level,
     validate_snapshot_data,
     prepare_base_features,
@@ -136,30 +134,6 @@ class TestExtractTimeComponents:
 # =============================================================================
 
 
-class TestBucketHour:
-    """Verify hour-to-time-period bucketing."""
-
-    @pytest.mark.parametrize(
-        "hour,expected",
-        [
-            (5, "early_morning"),
-            (7, "early_morning"),
-            (8, "morning"),
-            (10, "morning"),
-            (11, "midday"),
-            (13, "midday"),
-            (14, "afternoon"),
-            (16, "afternoon"),
-            (17, "evening"),
-            (20, "evening"),
-            (21, "night"),
-            (3, "night"),
-        ],
-    )
-    def test_bucket_boundaries(self, hour, expected):
-        assert bucket_hour(hour) == expected
-
-
 class TestAddTimeBucket:
     """Verify DataFrame-level time bucketing."""
 
@@ -173,24 +147,6 @@ class TestAddTimeBucket:
 # =============================================================================
 # Occupancy Bucketing
 # =============================================================================
-
-
-class TestBucketOccupancyRate:
-    """Verify occupancy rate bucketing."""
-
-    @pytest.mark.parametrize(
-        "rate,expected",
-        [
-            (0.0, "LOW"),
-            (0.49, "LOW"),
-            (0.5, "MED"),
-            (0.74, "MED"),
-            (0.75, "HIGH"),
-            (1.0, "HIGH"),
-        ],
-    )
-    def test_bucket_boundaries(self, rate, expected):
-        assert bucket_occupancy_rate(rate) == expected
 
 
 class TestAddActivityLevel:

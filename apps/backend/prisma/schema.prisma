@@ -119,17 +119,11 @@ model OccupancyEvent {
   device_hash       String           // SHA-256 hash of device_id + salt
   timestamp         DateTime
   created_at        DateTime         @default(now())
-  
-  // Client-side validation fields (privacy-preserving)
-  validation_status ValidationStatus? // Client-calculated behavior classification
-  confidence_score  Float?            // Client-calculated confidence (0.0-1.0)
-  analysis_metadata Json?             // Client analysis details (no PII)
 
   lot Lot @relation(fields: [lot_id], references: [id])
 
   @@index([lot_id, timestamp], name: "idx_events_lot_time")
   @@index([device_hash, lot_id], name: "idx_events_device")
-  @@index([validation_status], name: "idx_events_validation")
   @@map("occupancy_events")
 }
 
@@ -295,12 +289,4 @@ enum ImpactLevel {
   LOW
   MEDIUM
   HIGH
-}
-
-enum ValidationStatus {
-  ANALYZING          // Session still being analyzed
-  PARKED            // Confirmed parking event  
-  DROVE_THROUGH     // Just drove through, no parking
-  SEARCHING         // Was searching for parking
-  UNKNOWN           // Cannot determine with confidence
 }

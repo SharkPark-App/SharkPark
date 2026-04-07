@@ -8,7 +8,7 @@ import { Header } from '../components';
 import { GeofencingTestButton } from '../components/GeofencingTestButton';
 import ParkingValidationDebug from '../components/ParkingValidationDebug';
 import useLocationService from '../hooks/useLocationService';
-import { useSimpleGeofencing } from '../context/SimpleGeofencingProvider';
+import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -26,8 +26,8 @@ const ProfileScreen: React.FC = () => {
     requestPermissions,
   } = useLocationService();
 
-  // Geofencing status from background provider
-  const { isGeofencingActive, currentLotId } = useSimpleGeofencing();
+  // Geofencing status from enhanced provider
+  const { isGeofencingActive, currentLotId, currentValidationStatus, currentLeaveIntent, debugInfo } = useEnhancedGeofencing();
 
   // Initialize permissions check
   useEffect(() => {

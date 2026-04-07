@@ -21,9 +21,7 @@ __all__ = [
     "add_hour_encoding",
     "add_day_encoding",
     "extract_time_components",
-    "bucket_hour",
     "add_time_bucket",
-    "bucket_occupancy_rate",
     "add_activity_level",
     "validate_snapshot_data",
     "prepare_base_features",
@@ -146,30 +144,6 @@ def extract_time_components(
 # =============================================================================
 
 
-def bucket_hour(hour: int) -> str:
-    """
-    Bucket hour into named time periods.
-
-    Args:
-        hour: Hour of day (0-23)
-
-    Returns:
-        Time period name: 'early_morning', 'morning', 'midday', 'afternoon', 'evening', 'night'
-    """
-    if 5 <= hour < 8:
-        return "early_morning"
-    elif 8 <= hour < 11:
-        return "morning"
-    elif 11 <= hour < 14:
-        return "midday"
-    elif 14 <= hour < 17:
-        return "afternoon"
-    elif 17 <= hour < 21:
-        return "evening"
-    else:
-        return "night"
-
-
 def add_time_bucket(df: pd.DataFrame, hour_col: str = "hour") -> pd.DataFrame:
     """
     Add time_bucket column based on hour.
@@ -182,42 +156,23 @@ def add_time_bucket(df: pd.DataFrame, hour_col: str = "hour") -> pd.DataFrame:
         DataFrame with time_bucket column added
     """
     df = df.copy()
-    df["time_bucket"] = df[hour_col].apply(bucket_hour)
+    df["time_bucket"] = np.select(
+        [
+            (df[hour_col] >= 5) & (df[hour_col] < 8),
+            (df[hour_col] >= 8) & (df[hour_col] < 11),
+            (df[hour_col] >= 11) & (df[hour_col] < 14),
+            (df[hour_col] >= 14) & (df[hour_col] < 17),
+            (df[hour_col] >= 17) & (df[hour_col] < 21),
+        ],
+        ["early_morning", "morning", "midday", "afternoon", "evening"],
+        default="night",
+    )
     return df
 
 
 # =============================================================================
 # Occupancy Bucketing
 # =============================================================================
-
-
-def bucket_occupancy_rate(rate: float) -> str:
-    """
-    Bucket occupancy rate into activity levels.
-
-    Matches fill_status logic from database schema:
-    - AVAILABLE: <60%
-    - FILLING: 60-80%
-    - NEARLY_FULL: 80-95%
-    - FULL: >=95%
-
-    For long-term predictions, we simplify to LOW/MED/HIGH:
-    - LOW: <50%
-    - MED: 50-75%
-    - HIGH: >=75%
-
-    Args:
-        rate: Occupancy rate (0.0 to 1.0)
-
-    Returns:
-        Activity level: 'LOW', 'MED', or 'HIGH'
-    """
-    if rate < 0.5:
-        return "LOW"
-    elif rate < 0.75:
-        return "MED"
-    else:
-        return "HIGH"
 
 
 def add_activity_level(
@@ -234,7 +189,11 @@ def add_activity_level(
         DataFrame with activity_level column added
     """
     df = df.copy()
-    df["activity_level"] = df[rate_col].apply(bucket_occupancy_rate)
+    df["activity_level"] = np.select(
+        [df[rate_col] < 0.5, df[rate_col] < 0.75],
+        ["LOW", "MED"],
+        default="HIGH",
+    )
     return df
 
 
