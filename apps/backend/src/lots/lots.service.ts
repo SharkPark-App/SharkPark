@@ -3,6 +3,7 @@ import { PrismaService } from '../database/database.module';
 import type { Lot, LotType } from '@prisma/client';
 import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
+import { OCCUPANCY_THRESHOLDS } from '../constants';
 
 /**
  * Service for parking lot data access and business logic.
@@ -191,7 +192,7 @@ export class LotsService {
   private static readonly MAX_DISTANCE_METERS = 2000;
 
   /** Occupancy rate threshold at which a lot is considered too full to recommend */
-  private static readonly FULL_THRESHOLD = 0.75;
+  private static readonly FULL_THRESHOLD = OCCUPANCY_THRESHOLDS.RECOMMENDATION_CUTOFF;
 
   /**
    * Recommends alternative lots when a preferred lot is full or nearly full.
@@ -329,11 +330,11 @@ export class LotsService {
     const occupancy_rate = lot.capacity > 0 ? estimatedOccupancy / lot.capacity : 0;
 
     let fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
-    if (occupancy_rate >= 0.95) {
+    if (occupancy_rate >= OCCUPANCY_THRESHOLDS.FULL) {
       fill_status = 'FULL';
-    } else if (occupancy_rate >= 0.75) {
+    } else if (occupancy_rate >= OCCUPANCY_THRESHOLDS.NEARLY_FULL) {
       fill_status = 'NEARLY_FULL';
-    } else if (occupancy_rate >= 0.50) {
+    } else if (occupancy_rate >= OCCUPANCY_THRESHOLDS.FILLING) {
       fill_status = 'FILLING';
     } else {
       fill_status = 'AVAILABLE';
