@@ -6,13 +6,20 @@ import {
   Patch,
   Param,
   Body,
+  Req,
   HttpCode,
   HttpStatus,
-  UseGuards
+  UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { AuthGuard } from '@nestjs/passport';
+import { Request } from 'express';
+
+interface AuthenticatedRequest extends Request {
+  user?: { email?: string };
+}
 
 /**
  * Handles user profile and favorites management.
@@ -22,14 +29,18 @@ import { AuthGuard } from '@nestjs/passport';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  /**
-   * AuthGuards affirm that a valid Azure AD user is calling these endpoints.
-   * These will need to be removed if user data is to be made accessible by anyone.
-   */
+  /** Verify the authenticated user matches the :userId param to prevent IDOR. */
+  private assertOwner(req: AuthenticatedRequest, userId: string): void {
+    if (req.user?.email !== userId) {
+      throw new ForbiddenException('You can only access your own resources');
+    }
+  }
+
   @UseGuards(AuthGuard('azure-ad'))
   @Get(':userId')
   @HttpCode(HttpStatus.OK)
-  async getUser(@Param('userId') userId: string) {
+  async getUser(@Req() req: AuthenticatedRequest, @Param('userId') userId: string) {
+    this.assertOwner(req, userId);
     const user = await this.usersService.findOne(userId);
     return {
       success: true,
@@ -40,7 +51,8 @@ export class UsersController {
   @UseGuards(AuthGuard('azure-ad'))
   @Get(':userId/favorites')
   @HttpCode(HttpStatus.OK)
-  async getFavorites(@Param('userId') userId: string) {
+  async getFavorites(@Req() req: AuthenticatedRequest, @Param('userId') userId: string) {
+    this.assertOwner(req, userId);
     const favorites = await this.usersService.getFavorites(userId);
     return {
       success: true,
@@ -54,9 +66,11 @@ export class UsersController {
   @Post(':userId/favorites/:lotId')
   @HttpCode(HttpStatus.CREATED)
   async addFavorite(
+    @Req() req: AuthenticatedRequest,
     @Param('userId') userId: string,
     @Param('lotId') lotId: string,
   ) {
+    this.assertOwner(req, userId);
     await this.usersService.addFavorite(userId, lotId);
     return {
       success: true,
@@ -68,9 +82,11 @@ export class UsersController {
   @Delete(':userId/favorites/:lotId')
   @HttpCode(HttpStatus.OK)
   async removeFavorite(
+    @Req() req: AuthenticatedRequest,
     @Param('userId') userId: string,
     @Param('lotId') lotId: string,
   ) {
+    this.assertOwner(req, userId);
     await this.usersService.removeFavorite(userId, lotId);
     return {
       success: true,
@@ -82,9 +98,11 @@ export class UsersController {
   @Patch(':userId/notifications')
   @HttpCode(HttpStatus.OK)
   async updateNotifications(
+    @Req() req: AuthenticatedRequest,
     @Param('userId') userId: string,
     @Body() preferences: UpdateNotificationPreferencesDto,
   ) {
+    this.assertOwner(req, userId);
     const user = await this.usersService.updateNotificationPreferences(
       userId,
       preferences,
