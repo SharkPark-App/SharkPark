@@ -46,25 +46,19 @@ export class OccupancyEventsService {
       throw new NotFoundException(`Lot ${dto.lot_id} not found`);
     }
 
-    // Check for duplicate event (same device, same lot, same event type)
-    const isDuplicate = await this.checkDuplicate(lot.id, deviceHash, dto.event_type);
-
-    if (isDuplicate) {
-      this.logger.warn(
-        `Duplicate ${dto.event_type} event ignored for lot ${dto.lot_id} from device ${deviceHash.substring(0, 8)}...`
-      );
-      return {
-        event_id: eventId,
-        lot_id: dto.lot_id,
-        event_type: dto.event_type,
-        recorded_at: now,
-        deduplicated: true,
-      };
-    }
-
     try {
-      // Use a transaction for atomicity: store event + update occupancy + update device state
-      await this.prisma.$transaction(async (tx) => {
+      // Perform dedup check + event recording inside a single transaction
+      // to prevent concurrent requests from the same device slipping through.
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Check for duplicate event inside the transaction
+        const deviceState = await tx.deviceState.findUnique({
+          where: { device_hash_lot_id: { device_hash: deviceHash, lot_id: lot.id } },
+        });
+
+        if (deviceState && deviceState.last_event_type === dto.event_type) {
+          return { deduplicated: true } as const;
+        }
+
         // Store the basic occupancy event
         await tx.occupancyEvent.create({
           data: {
@@ -75,14 +69,21 @@ export class OccupancyEventsService {
           },
         });
 
-        // Update lot occupancy atomically
-        const increment = dto.event_type === 'ENTER' ? 1 : -1;
-        if (dto.event_type === 'EXIT' && lot.current_occupancy <= 0) {
-          this.logger.warn(`Cannot decrement occupancy below 0 for lot ${dto.lot_id}`);
+        // Update lot occupancy atomically — re-read inside tx to avoid stale data
+        if (dto.event_type === 'EXIT') {
+          const currentLot = await tx.lot.findUniqueOrThrow({ where: { id: lot.id } });
+          if (currentLot.current_occupancy <= 0) {
+            this.logger.warn(`Cannot decrement occupancy below 0 for lot ${dto.lot_id}`);
+          } else {
+            await tx.lot.update({
+              where: { id: lot.id },
+              data: { current_occupancy: { increment: -1 } },
+            });
+          }
         } else {
           await tx.lot.update({
             where: { id: lot.id },
-            data: { current_occupancy: { increment } },
+            data: { current_occupancy: { increment: 1 } },
           });
         }
 
@@ -92,7 +93,22 @@ export class OccupancyEventsService {
           update: { last_event_type: dto.event_type as EventType, updated_at: new Date() },
           create: { device_hash: deviceHash, lot_id: lot.id, last_event_type: dto.event_type as EventType },
         });
+
+        return { deduplicated: false } as const;
       });
+
+      if (result.deduplicated) {
+        this.logger.warn(
+          `Duplicate ${dto.event_type} event ignored for lot ${dto.lot_id} from device ${deviceHash.substring(0, 8)}...`
+        );
+        return {
+          event_id: eventId,
+          lot_id: dto.lot_id,
+          event_type: dto.event_type,
+          recorded_at: now,
+          deduplicated: true,
+        };
+      }
 
       this.logger.log(
         `Recorded ${dto.event_type} event for lot ${dto.lot_id} (device: ${deviceHash.substring(0, 8)}...)`
@@ -260,31 +276,6 @@ export class OccupancyEventsService {
     } catch (error) {
       this.logger.error(`Failed to fetch snapshots for lot ${lotId} on ${date}`, error);
       throw new InternalServerErrorException(`Failed to fetch snapshots for lot ${lotId}`);
-    }
-  }
-
-  /**
-   * Checks if this event is a duplicate (same event type as last event from this device).
-   * Accepts the lot's internal (cuid) ID directly to avoid redundant DB lookups.
-   */
-  private async checkDuplicate(
-    lotInternalId: string,
-    deviceHash: string,
-    eventType: 'ENTER' | 'EXIT',
-  ): Promise<boolean> {
-    try {
-      const deviceState = await this.prisma.deviceState.findUnique({
-        where: { device_hash_lot_id: { device_hash: deviceHash, lot_id: lotInternalId } },
-      });
-
-      if (!deviceState) {
-        return false; // First event from this device for this lot
-      }
-
-      return deviceState.last_event_type === eventType;
-    } catch (error) {
-      this.logger.warn(`Failed to check duplicate for lot ${lotInternalId}, proceeding anyway`, error);
-      return false;
     }
   }
 }

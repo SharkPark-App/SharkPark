@@ -8,7 +8,7 @@ import { PenetrationEstimationService } from '../lots/penetration-estimation.ser
 describe('OccupancyEventsService', () => {
   let service: OccupancyEventsService;
   let prisma: {
-    lot: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+    lot: { findFirst: jest.Mock; findUniqueOrThrow: jest.Mock; findMany: jest.Mock; update: jest.Mock };
     occupancyEvent: { create: jest.Mock; findMany: jest.Mock };
     occupancySnapshot: { create: jest.Mock; findMany: jest.Mock };
     deviceState: { findUnique: jest.Mock; upsert: jest.Mock };
@@ -31,7 +31,7 @@ describe('OccupancyEventsService', () => {
 
   beforeEach(async () => {
     prisma = {
-      lot: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+      lot: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), findMany: jest.fn(), update: jest.fn() },
       occupancyEvent: { create: jest.fn(), findMany: jest.fn() },
       occupancySnapshot: { create: jest.fn(), findMany: jest.fn() },
       deviceState: { findUnique: jest.fn(), upsert: jest.fn() },
@@ -118,9 +118,7 @@ describe('OccupancyEventsService', () => {
       // No duplicate found
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(validDto);
 
@@ -134,10 +132,9 @@ describe('OccupancyEventsService', () => {
       const exitDto = { ...validDto, event_type: 'EXIT' as const };
 
       prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.lot.findUniqueOrThrow.mockResolvedValue(mockLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(exitDto);
 
@@ -153,27 +150,25 @@ describe('OccupancyEventsService', () => {
         lot_id: 'lot-uuid-1',
         last_event_type: 'ENTER',
       });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(validDto);
 
       expect(result.deduplicated).toBe(true);
-      // Transaction should NOT be called for duplicates
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      // Transaction IS called but dedup check inside returns early
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.occupancyEvent.create).not.toHaveBeenCalled();
     });
 
     it('should handle device hash consistently', async () => {
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result1 = await service.create(validDto);
 
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result2 = await service.create(validDto);
 
@@ -199,10 +194,9 @@ describe('OccupancyEventsService', () => {
       const exitDto = { ...validDto, event_type: 'EXIT' as const };
 
       prisma.lot.findFirst.mockResolvedValue(zeroLot);
+      prisma.lot.findUniqueOrThrow.mockResolvedValue(zeroLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(exitDto);
 
@@ -211,17 +205,11 @@ describe('OccupancyEventsService', () => {
       expect(prisma.lot.update).not.toHaveBeenCalled();
     });
 
-    it('should handle checkDuplicate failure gracefully (not duplicate)', async () => {
+    it('should throw InternalServerError when transaction fails', async () => {
       prisma.lot.findFirst.mockResolvedValue(mockLot);
-      prisma.deviceState.findUnique.mockRejectedValue(new Error('Redis down'));
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockRejectedValue(new Error('Connection lost'));
 
-      const result = await service.create(validDto);
-
-      // Should proceed as non-duplicate when checkDuplicate fails
-      expect(result.deduplicated).toBe(false);
+      await expect(service.create(validDto)).rejects.toThrow('Failed to record occupancy event');
     });
   });
 
