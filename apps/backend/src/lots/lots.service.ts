@@ -128,13 +128,31 @@ export class LotsService {
     employee_lots: { count: number; capacity: number; occupied: number };
   }> {
     try {
-      const lots = await this.findAll();
+      // Aggregate at the DB level — avoids fetching every lot row and transforming individually
+      const groups = await this.prisma.lot.groupBy({
+        by: ['lot_type'],
+        _count: { id: true },
+        _sum: { capacity: true, current_occupancy: true },
+      });
 
-      const studentLots = lots.filter(lot => lot.lot_type === 'STUDENT');
-      const employeeLots = lots.filter(lot => lot.lot_type === 'EMPLOYEE');
+      // Fetch all lots for penetration estimation (already batched in one call)
+      const lots = await this.prisma.lot.findMany();
+      const estimates = await this.penetrationService.estimateForAllLots(lots);
 
-      const totalCapacity = lots.reduce((sum, lot) => sum + lot.capacity, 0);
-      const totalOccupied = lots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0);
+      let studentEstimated = 0;
+      let employeeEstimated = 0;
+      for (const lot of lots) {
+        const est = estimates.get(lot.id);
+        const occ = est ? est.estimatedOccupancy : lot.current_occupancy;
+        if (lot.lot_type === 'STUDENT') studentEstimated += occ;
+        else employeeEstimated += occ;
+      }
+
+      const studentGroup = groups.find(g => g.lot_type === 'STUDENT');
+      const employeeGroup = groups.find(g => g.lot_type === 'EMPLOYEE');
+
+      const totalCapacity = (studentGroup?._sum.capacity ?? 0) + (employeeGroup?._sum.capacity ?? 0);
+      const totalOccupied = studentEstimated + employeeEstimated;
 
       return {
         total_lots: lots.length,
@@ -143,14 +161,14 @@ export class LotsService {
         total_available: totalCapacity - totalOccupied,
         overall_occupancy_rate: totalCapacity > 0 ? totalOccupied / totalCapacity : 0,
         student_lots: {
-          count: studentLots.length,
-          capacity: studentLots.reduce((sum, lot) => sum + lot.capacity, 0),
-          occupied: studentLots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0),
+          count: studentGroup?._count.id ?? 0,
+          capacity: studentGroup?._sum.capacity ?? 0,
+          occupied: studentEstimated,
         },
         employee_lots: {
-          count: employeeLots.length,
-          capacity: employeeLots.reduce((sum, lot) => sum + lot.capacity, 0),
-          occupied: employeeLots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0),
+          count: employeeGroup?._count.id ?? 0,
+          capacity: employeeGroup?._sum.capacity ?? 0,
+          occupied: employeeEstimated,
         },
       };
     } catch (error) {
