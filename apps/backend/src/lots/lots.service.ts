@@ -353,5 +353,85 @@ export class LotsService {
         : 1,
     };
   }
+
+  /**
+   * Fetches short-term ML predictions for a lot from predictions_short_term.
+   * Falls back to empty array if no predictions are available.
+   */
+  async getShortTermPredictions(lotId: string): Promise<{
+    lot_id: string;
+    predictions: Array<{
+      target_time: string;
+      predicted_occupancy: number;
+      confidence_lower: number;
+      confidence_upper: number;
+      model_version: string;
+    }>;
+  }> {
+    const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+    if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
+
+    const now = new Date();
+    const predictions = await this.prisma.predictionShortTerm.findMany({
+      where: {
+        lot_id: lot.id,
+        target_time: { gte: now },
+      },
+      orderBy: { target_time: 'asc' },
+      take: 20,
+    });
+
+    return {
+      lot_id: lotId,
+      predictions: predictions.map((p) => ({
+        target_time: p.target_time.toISOString(),
+        predicted_occupancy: p.predicted_occupancy,
+        confidence_lower: p.confidence_lower,
+        confidence_upper: p.confidence_upper,
+        model_version: p.model_version,
+      })),
+    };
+  }
+
+  /**
+   * Fetches long-term ML predictions for a lot from predictions_long_term.
+   */
+  async getLongTermPredictions(lotId: string, days = 7): Promise<{
+    lot_id: string;
+    predictions: Array<{
+      target_date: string;
+      target_hour: number;
+      predicted_occupancy: number;
+      confidence_lower: number;
+      confidence_upper: number;
+      model_version: string;
+    }>;
+  }> {
+    const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+    if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
+
+    const now = new Date();
+    const endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+    const predictions = await this.prisma.predictionLongTerm.findMany({
+      where: {
+        lot_id: lot.id,
+        target_date: { gte: now, lte: endDate },
+      },
+      orderBy: [{ target_date: 'asc' }, { target_hour: 'asc' }],
+    });
+
+    return {
+      lot_id: lotId,
+      predictions: predictions.map((p) => ({
+        target_date: p.target_date.toISOString().split('T')[0],
+        target_hour: p.target_hour,
+        predicted_occupancy: p.predicted_occupancy,
+        confidence_lower: p.confidence_lower,
+        confidence_upper: p.confidence_upper,
+        model_version: p.model_version,
+      })),
+    };
+  }
 }
 

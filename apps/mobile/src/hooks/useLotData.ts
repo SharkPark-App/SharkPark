@@ -48,8 +48,8 @@ export function useLotData(lotId: string): UseLotDataReturn {
       const lotData = await lotsApi.getLotDetails(lotId);
       setLot(lotData);
       
-      // Generate forecast based on lot data
-      const forecastData = lotsApi.generateForecast(lotData);
+      // Fetch ML predictions, falling back to local heuristic
+      const forecastData = await lotsApi.getForecast(lotData);
       setForecast(forecastData);
       
     } catch (err) {
