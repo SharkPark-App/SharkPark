@@ -8,11 +8,33 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
+import { NativeModules } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import NetInfo from '@react-native-community/netinfo';
 import DeviceInfo from 'react-native-device-info';
-import BluetoothStatus from 'react-native-bluetooth-status';
 import { ValidationEvent } from '../validation';
+
+// Lazy-load react-native-bluetooth-status only when the native module is
+// present. The library instantiates NativeEventEmitter at require-time,
+// which fatally crashes if the native module (RNBluetoothManager) isn't
+// linked (e.g. on iOS simulators).  Checking NativeModules first avoids
+// the require entirely.
+let _BluetoothStatus: typeof import('react-native-bluetooth-status').default | undefined;
+let _bluetoothChecked = false;
+function getBluetoothStatusModule() {
+  if (!_bluetoothChecked) {
+    _bluetoothChecked = true;
+    if (NativeModules.RNBluetoothManager) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        _BluetoothStatus = require('react-native-bluetooth-status').default;
+      } catch {
+        _BluetoothStatus = undefined;
+      }
+    }
+  }
+  return _BluetoothStatus;
+}
 
 export interface BehavioralMetrics {
   speed_mph: number | null;
@@ -227,6 +249,7 @@ class BehavioralDataCollector {
    */
   private async getBluetoothState(): Promise<ValidationEvent['bluetooth_state']> {
     try {
+      const BluetoothStatus = getBluetoothStatusModule();
       // Check if BluetoothStatus is available
       if (!BluetoothStatus || typeof BluetoothStatus.state !== 'function') {
         if (__DEV__) console.warn('[BehavioralDataCollector] BluetoothStatus API not available');
