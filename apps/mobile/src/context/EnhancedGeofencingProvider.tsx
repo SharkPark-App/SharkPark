@@ -20,6 +20,34 @@ import { lotsApi } from '../services/api';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createGeofenceRegionsFromLots } from '../utils/geofenceUtils';
+import { useAuth } from './AuthContext';
+
+/**
+ * Filters lots to ≤20 for OS geofence registration based on the user's CSULB
+ * email suffix:
+ *   @student.csulb.edu → STUDENT lots (G-lots)
+ *   @csulb.edu         → EMPLOYEE lots (E-lots)
+ *
+ * The map always shows all lots — this filter only affects which geofences
+ * are registered with the OS.
+ */
+export function filterLotsByUserType<T extends { lot_type: string }>(lots: T[], email: string): T[] {
+  const isStudent = email.endsWith('@student.csulb.edu');
+  const isEmployee = !isStudent && email.endsWith('@csulb.edu');
+
+  let filtered: T[];
+  if (isStudent) {
+    filtered = lots.filter(l => l.lot_type === 'STUDENT');
+  } else if (isEmployee) {
+    filtered = lots.filter(l => l.lot_type === 'EMPLOYEE');
+  } else {
+    // Fallback: no email match — register no geofences (all CSULB users must log in)
+    filtered = [];
+  }
+
+  // Safety cap: OS hard limit is 20 simultaneous geofences
+  return filtered.slice(0, 20);
+}
 
 interface EnhancedGeofencingContextType {
   isGeofencingActive: boolean;
@@ -38,6 +66,8 @@ const EnhancedGeofencingContext = createContext<EnhancedGeofencingContextType | 
 
 export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   
+  const { user } = useAuth();
+
   // Track current parking state
   const currentZones = useRef<Set<string>>(new Set());
   const [currentLotId, setCurrentLotId] = useState<string | null>(null);
@@ -333,12 +363,23 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     (async () => {
       try {
         const allLots = await lotsApi.getAllLots();
-        const realGeofenceRegions = createGeofenceRegionsFromLots(allLots);
+
+        // Filter to ≤20 lots based on the user's CSULB email suffix.
+        // The map always shows all lots — this only affects OS geofence registration.
+        const userEmail = user?.userId ?? '';
+        const lotsToFence = filterLotsByUserType(allLots, userEmail);
+
+        if (__DEV__) {
+          console.log(`[EnhancedGeofencing] User: ${userEmail}`);
+          console.log(`[EnhancedGeofencing] Registering ${lotsToFence.length}/${allLots.length} lots as geofences (${lotsToFence[0]?.lot_type ?? 'none'})`);
+        }
+
+        const realGeofenceRegions = createGeofenceRegionsFromLots(lotsToFence);
 
         if (realGeofenceRegions.length > 0) {
           await locationService.addGeofenceRegions(realGeofenceRegions);
         } else {
-          throw new Error('No valid parking lot geofences found');
+          throw new Error('No valid parking lot geofences found for this user type');
         }
       } catch (error) {
         if (__DEV__) console.warn('[EnhancedGeofencing] Failed to load real parking lot data, falling back to test geofence:', error);
