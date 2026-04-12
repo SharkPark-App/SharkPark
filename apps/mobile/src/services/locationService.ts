@@ -527,14 +527,23 @@ class LocationService {
   }
 
   /**
+   * Remove all registered geofence regions and reset current region state
+   */
+  clearGeofenceRegions() {
+    this.geofenceRegions.clear();
+    this.currentRegions.clear();
+  }
+
+  /**
    * Cleanup
    */
   destroy() {
     this.stopLocationTracking();
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
+      this.appStateSubscription = null;
     }
-    this.geofenceRegions.clear();
+    this.clearGeofenceRegions();
     this.onGeofenceEventListeners = [];
     this.onLocationError = null;
     this.onPermissionChange = null;
