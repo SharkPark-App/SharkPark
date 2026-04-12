@@ -17,7 +17,7 @@ export const dbConfig = registerAs('db', () => ({
 }));
 
 export const privacyConfig = registerAs('privacy', () => ({
-  deviceHashSalt: process.env.DEVICE_HASH_SALT || 'sharkpark-default-salt-2026',
+  deviceHashSalt: process.env.DEVICE_HASH_SALT || '',
 }));
 
 export const weatherConfig = registerAs('weather', () => ({
@@ -25,3 +25,37 @@ export const weatherConfig = registerAs('weather', () => ({
   latitude: parseFloat(process.env.WEATHER_LAT || '33.7838'),
   longitude: parseFloat(process.env.WEATHER_LON || '-118.1134'),
 }));
+
+/**
+ * Validates critical environment variables at startup.
+ * In production, missing required vars cause an immediate crash with a clear message.
+ * In development, logs warnings but allows startup with defaults.
+ */
+export function validateConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  const requiredInProduction = [
+    { key: 'DATABASE_URL', envVar: 'DATABASE_URL' },
+    { key: 'AZURE_CLIENT_ID', envVar: 'AZURE_CLIENT_ID' },
+    { key: 'AZURE_TENANT_ID', envVar: 'AZURE_TENANT_ID' },
+    { key: 'DEVICE_HASH_SALT', envVar: 'DEVICE_HASH_SALT' },
+  ];
+
+  const missing: string[] = [];
+  for (const { envVar } of requiredInProduction) {
+    if (!process.env[envVar]) {
+      missing.push(envVar);
+    }
+  }
+
+  if (missing.length > 0) {
+    const message = `Missing required environment variables: ${missing.join(', ')}`;
+    if (isProduction) {
+      throw new Error(message);
+    }
+    // In dev, allow startup — will use defaults / empty values
+    console.warn(`[Config] WARNING: ${message}`);
+  }
+
+  return config;
+}
