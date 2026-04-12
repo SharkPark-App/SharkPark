@@ -212,12 +212,46 @@ describe('LotsService', () => {
       expect(summary.total_occupied).toBe(80);
       expect(summary.total_available).toBe(100);
       expect(summary.overall_occupancy_rate).toBeCloseTo(80 / 180, 2);
-      expect(summary.student_lots.count).toBe(1);
-      expect(summary.student_lots.capacity).toBe(100);
-      expect(summary.student_lots.occupied).toBe(50);
-      expect(summary.employee_lots.count).toBe(1);
-      expect(summary.employee_lots.capacity).toBe(80);
-      expect(summary.employee_lots.occupied).toBe(30);
+      expect(summary.by_type.STUDENT.lots).toBe(1);
+      expect(summary.by_type.STUDENT.capacity).toBe(100);
+      expect(summary.by_type.STUDENT.occupied).toBe(50);
+      expect(summary.by_type.STUDENT.available).toBe(50);
+      expect(summary.by_type.EMPLOYEE.lots).toBe(1);
+      expect(summary.by_type.EMPLOYEE.capacity).toBe(80);
+      expect(summary.by_type.EMPLOYEE.occupied).toBe(30);
+      expect(summary.by_type.EMPLOYEE.available).toBe(50);
+      expect(summary.high_occupancy_lots).toBeDefined();
+      expect(summary.timestamp).toBeDefined();
+    });
+
+    it('should include high occupancy lots in summary', async () => {
+      const lots = [
+        {
+          id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
+          current_occupancy: 90, lot_type: 'STUDENT', permit_types: [],
+          daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+        },
+        {
+          id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
+          current_occupancy: 10, lot_type: 'EMPLOYEE', permit_types: [],
+          daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+        },
+      ];
+      prisma.lot.findMany.mockResolvedValue(lots);
+      prisma.lot.groupBy.mockResolvedValue([
+        { lot_type: 'STUDENT', _count: { id: 1 }, _sum: { capacity: 100, current_occupancy: 90 } },
+        { lot_type: 'EMPLOYEE', _count: { id: 1 }, _sum: { capacity: 80, current_occupancy: 10 } },
+      ]);
+
+      const summary = await service.getOccupancySummary();
+
+      // G1 at 90% should be in high_occupancy_lots (>= 75%)
+      expect(summary.high_occupancy_lots).toHaveLength(1);
+      expect(summary.high_occupancy_lots[0].lot_id).toBe('G1');
     });
 
     it('should return zero rate when total capacity is zero', async () => {

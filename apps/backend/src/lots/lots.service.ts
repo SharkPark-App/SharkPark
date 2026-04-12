@@ -129,8 +129,12 @@ export class LotsService {
     total_occupied: number;
     total_available: number;
     overall_occupancy_rate: number;
-    student_lots: { count: number; capacity: number; occupied: number };
-    employee_lots: { count: number; capacity: number; occupied: number };
+    by_type: {
+      STUDENT: { lots: number; capacity: number; occupied: number; available: number; occupancy_rate: number };
+      EMPLOYEE: { lots: number; capacity: number; occupied: number; available: number; occupancy_rate: number };
+    };
+    high_occupancy_lots: ParkingLotResponse[];
+    timestamp: string;
   }> {
     try {
       // Aggregate at the DB level — avoids fetching every lot row and transforming individually
@@ -146,35 +150,59 @@ export class LotsService {
 
       let studentEstimated = 0;
       let employeeEstimated = 0;
+      const responses: ParkingLotResponse[] = [];
+
       for (const lot of lots) {
         const est = estimates.get(lot.id);
         const occ = est ? est.estimatedOccupancy : lot.current_occupancy;
         if (lot.lot_type === 'STUDENT') studentEstimated += occ;
         else employeeEstimated += occ;
+        responses.push(this.transformToResponse(lot, est));
       }
 
       const studentGroup = groups.find(g => g.lot_type === 'STUDENT');
       const employeeGroup = groups.find(g => g.lot_type === 'EMPLOYEE');
 
-      const totalCapacity = (studentGroup?._sum.capacity ?? 0) + (employeeGroup?._sum.capacity ?? 0);
+      const studentCapacity = studentGroup?._sum.capacity ?? 0;
+      const employeeCapacity = employeeGroup?._sum.capacity ?? 0;
+      const totalCapacity = studentCapacity + employeeCapacity;
       const totalOccupied = studentEstimated + employeeEstimated;
+
+      // Lots at or above NEARLY_FULL threshold
+      const highOccupancyLots = responses
+        .filter(r => r.occupancy_rate >= OCCUPANCY_THRESHOLDS.NEARLY_FULL)
+        .sort((a, b) => b.occupancy_rate - a.occupancy_rate);
 
       return {
         total_lots: lots.length,
         total_capacity: totalCapacity,
         total_occupied: totalOccupied,
         total_available: totalCapacity - totalOccupied,
-        overall_occupancy_rate: totalCapacity > 0 ? totalOccupied / totalCapacity : 0,
-        student_lots: {
-          count: studentGroup?._count.id ?? 0,
-          capacity: studentGroup?._sum.capacity ?? 0,
-          occupied: studentEstimated,
+        overall_occupancy_rate: totalCapacity > 0
+          ? Math.round((totalOccupied / totalCapacity) * 1000) / 1000
+          : 0,
+        by_type: {
+          STUDENT: {
+            lots: studentGroup?._count.id ?? 0,
+            capacity: studentCapacity,
+            occupied: studentEstimated,
+            available: studentCapacity - studentEstimated,
+            occupancy_rate: studentCapacity > 0
+              ? Math.round((studentEstimated / studentCapacity) * 1000) / 1000
+              : 0,
+          },
+          EMPLOYEE: {
+            lots: employeeGroup?._count.id ?? 0,
+            capacity: employeeCapacity,
+            occupied: employeeEstimated,
+            available: employeeCapacity - employeeEstimated,
+            occupancy_rate: employeeCapacity > 0
+              ? Math.round((employeeEstimated / employeeCapacity) * 1000) / 1000
+              : 0,
+          },
         },
-        employee_lots: {
-          count: employeeGroup?._count.id ?? 0,
-          capacity: employeeGroup?._sum.capacity ?? 0,
-          occupied: employeeEstimated,
-        },
+        high_occupancy_lots: highOccupancyLots,
+        timestamp: new Date().toISOString(),
       };
     } catch (error) {
       this.logger.error('Failed to calculate occupancy summary', error);
