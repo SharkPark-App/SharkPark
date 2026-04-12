@@ -11,11 +11,13 @@ import {
 } from '@nestjs/common';
 import { LotsService } from './lots.service';
 import type { GetLotsQueryParams } from './interfaces/parking-lot.interface';
+import { Public } from '../auth/public.decorator';
 
 /**
  * Handles parking lot queries including filtering, individual lot details,
  * historical occupancy data, and campus-wide occupancy summaries.
  */
+@Public()
 @Controller('lots')
 export class LotsController {
   constructor(private readonly lotsService: LotsService) {}

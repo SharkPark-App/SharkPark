@@ -9,12 +9,10 @@ import {
   Req,
   HttpCode,
   HttpStatus,
-  UseGuards,
   ForbiddenException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
-import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 
 interface AuthenticatedRequest extends Request {
@@ -36,7 +34,6 @@ export class UsersController {
     }
   }
 
-  @UseGuards(AuthGuard('azure-ad'))
   @Get(':userId')
   @HttpCode(HttpStatus.OK)
   async getUser(@Req() req: AuthenticatedRequest, @Param('userId') userId: string) {
@@ -48,7 +45,6 @@ export class UsersController {
     };
   }
 
-  @UseGuards(AuthGuard('azure-ad'))
   @Get(':userId/favorites')
   @HttpCode(HttpStatus.OK)
   async getFavorites(@Req() req: AuthenticatedRequest, @Param('userId') userId: string) {
@@ -62,7 +58,6 @@ export class UsersController {
     };
   }
 
-  @UseGuards(AuthGuard('azure-ad'))
   @Post(':userId/favorites/:lotId')
   @HttpCode(HttpStatus.CREATED)
   async addFavorite(
@@ -78,7 +73,6 @@ export class UsersController {
     };
   }
 
-  @UseGuards(AuthGuard('azure-ad'))
   @Delete(':userId/favorites/:lotId')
   @HttpCode(HttpStatus.OK)
   async removeFavorite(
@@ -94,7 +88,6 @@ export class UsersController {
     };
   }
 
-  @UseGuards(AuthGuard('azure-ad'))
   @Patch(':userId/notifications')
   @HttpCode(HttpStatus.OK)
   async updateNotifications(
