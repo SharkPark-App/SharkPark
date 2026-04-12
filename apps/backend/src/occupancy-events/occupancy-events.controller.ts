@@ -113,6 +113,7 @@ export class OccupancyEventsController {
   }
 
   /** Manually trigger snapshot creation (normally called by scheduler) */
+  @Public()
   @Post('snapshots')
   @HttpCode(HttpStatus.CREATED)
   async createSnapshots() {

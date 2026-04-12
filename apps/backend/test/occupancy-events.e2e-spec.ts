@@ -4,7 +4,7 @@ import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
-import { AuthGuard } from '@nestjs/passport';
+import { AzureAdGuard } from '../src/auth/azure-ad.guard';
 
 /** Mock guard to bypass Azure AD auth in e2e tests */
 class MockAuthGuard implements CanActivate {
@@ -20,7 +20,7 @@ describe('OccupancyEventsController (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-    .overrideGuard(AuthGuard('azure-ad'))
+    .overrideGuard(AzureAdGuard)
     .useClass(MockAuthGuard)
     .compile();
 
