@@ -48,6 +48,10 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const dataCollectionInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Mutex: serialise geofence event processing so rapid ENTER/EXIT pairs
+  // cannot interleave (e.g. EXIT resolving before ENTER's startParkingSession).
+  const eventQueueRef = useRef<Promise<void>>(Promise.resolve());
+
   // Stable refs that always point to the latest callback.
   // The setup effect captures these refs (not the callbacks themselves), so it
   // never needs to re-run because a callback identity changed.
@@ -163,7 +167,18 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
   // Keep ref in sync so the setup effect can call the latest version without
   // being listed as a dependency (which would cause it to re-fire on every render).
-  useLayoutEffect(() => { handleGeofenceEventRef.current = handleGeofenceEvent; });
+  // The outer wrapper serialises calls through eventQueueRef so rapid ENTER/EXIT
+  // events are processed strictly in order.
+  useLayoutEffect(() => {
+    const inner = handleGeofenceEvent;
+    handleGeofenceEventRef.current = (event: GeofenceEvent) => {
+      eventQueueRef.current = eventQueueRef.current
+        .then(() => inner(event))
+        .catch((err) => {
+          if (__DEV__) console.error('[EnhancedGeofencing] Queued event error:', err);
+        });
+    };
+  });
 
   // Location data collection for behavioral analysis
   const startLocationDataCollection = useCallback(() => {
@@ -367,6 +382,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     // Cleanup
     return () => {
       locationService.removeOnGeofenceEvent(geofenceListener);
+      locationService.clearGeofenceRegions();
       parkingValidationService.removeValidationListener(validationListener);
       stopLocationDataCollectionRef.current();
     };
