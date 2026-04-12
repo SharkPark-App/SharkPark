@@ -3,6 +3,8 @@ import { PrismaService } from '../database/database.module';
 import type { Lot, LotType } from '@prisma/client';
 import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
+import { EventsService } from '../events/events.service';
+import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
 
 /**
@@ -16,6 +18,8 @@ export class LotsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly penetrationService: PenetrationEstimationService,
+    private readonly eventsService: EventsService,
+    private readonly weatherService: WeatherService,
   ) {}
 
   /**
@@ -356,7 +360,7 @@ export class LotsService {
 
   /**
    * Fetches short-term ML predictions for a lot from predictions_short_term.
-   * Falls back to empty array if no predictions are available.
+   * Includes active/upcoming event impacts and current weather context.
    */
   async getShortTermPredictions(lotId: string): Promise<{
     lot_id: string;
@@ -367,19 +371,39 @@ export class LotsService {
       confidence_upper: number;
       model_version: string;
     }>;
+    event_impacts: Array<{
+      event_name: string;
+      event_type: string;
+      start_time: string;
+      end_time: string;
+      impact_level: string;
+      expected_increase_percent: number;
+    }>;
+    weather: {
+      conditions: string;
+      temperature_f: number;
+      is_raining: boolean;
+      precipitation_probability: number;
+    } | null;
   }> {
     const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
     if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
 
     const now = new Date();
-    const predictions = await this.prisma.predictionShortTerm.findMany({
-      where: {
-        lot_id: lot.id,
-        target_time: { gte: now },
-      },
-      orderBy: { target_time: 'asc' },
-      take: 20,
-    });
+
+    // Fetch predictions, event impacts, and weather in parallel
+    const [predictions, eventImpacts, weather] = await Promise.all([
+      this.prisma.predictionShortTerm.findMany({
+        where: {
+          lot_id: lot.id,
+          target_time: { gte: now },
+        },
+        orderBy: { target_time: 'asc' },
+        take: 20,
+      }),
+      this.eventsService.getUpcomingImpactsForLot(lot.id, 6),
+      this.weatherService.getCurrent(),
+    ]);
 
     return {
       lot_id: lotId,
@@ -390,6 +414,22 @@ export class LotsService {
         confidence_upper: p.confidence_upper,
         model_version: p.model_version,
       })),
+      event_impacts: eventImpacts.map(({ event, impact }) => ({
+        event_name: event.event_name,
+        event_type: event.event_type,
+        start_time: event.start_time.toISOString(),
+        end_time: event.end_time.toISOString(),
+        impact_level: impact.impact_level,
+        expected_increase_percent: impact.expected_increase_percent,
+      })),
+      weather: weather
+        ? {
+            conditions: weather.conditions,
+            temperature_f: weather.temperature_f,
+            is_raining: weather.is_raining,
+            precipitation_probability: weather.precipitation_probability,
+          }
+        : null,
     };
   }
 

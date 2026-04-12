@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Param, Query, HttpCode, HttpStatus, ParseIntPipe } from '@nestjs/common';
 import { EventsService } from './events.service';
 
 /**
@@ -17,6 +17,28 @@ export class EventsController {
       success: true,
       count: events.length,
       data: events,
+    };
+  }
+
+  @Get('upcoming')
+  @HttpCode(HttpStatus.OK)
+  async getUpcomingEvents(
+    @Query('hours', new ParseIntPipe({ optional: true })) hours?: number,
+  ) {
+    const windowHours = hours && hours >= 1 && hours <= 168 ? hours : 24;
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + windowHours * 60 * 60 * 1000);
+
+    const events = await this.eventsService.findAll();
+    const upcoming = events.filter(
+      (e) => e.start_time <= windowEnd && e.end_time >= now,
+    );
+
+    return {
+      success: true,
+      count: upcoming.length,
+      window_hours: windowHours,
+      data: upcoming,
     };
   }
 

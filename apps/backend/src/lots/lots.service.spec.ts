@@ -3,16 +3,27 @@ import { NotFoundException, InternalServerErrorException } from '@nestjs/common'
 import { LotsService } from './lots.service';
 import { PrismaService } from '../database/database.module';
 import { PenetrationEstimationService } from './penetration-estimation.service';
+import { EventsService } from '../events/events.service';
+import { WeatherService } from '../weather/weather.service';
 
 describe('LotsService', () => {
   let service: LotsService;
   let prisma: {
     lot: { findMany: jest.Mock; findFirst: jest.Mock; groupBy: jest.Mock };
     occupancySnapshot: { findMany: jest.Mock };
+    predictionShortTerm: { findMany: jest.Mock };
+    predictionLongTerm: { findMany: jest.Mock };
   };
   let penetrationService: {
     estimateForAllLots: jest.Mock;
     estimateForLot: jest.Mock;
+  };
+  let eventsService: {
+    getUpcomingImpactsForLot: jest.Mock;
+    getActiveImpactsForLots: jest.Mock;
+  };
+  let weatherService: {
+    getCurrent: jest.Mock;
   };
 
   /** Helper: builds a default PenetrationEstimate from a lot's raw values */
@@ -29,6 +40,8 @@ describe('LotsService', () => {
     prisma = {
       lot: { findMany: jest.fn(), findFirst: jest.fn(), groupBy: jest.fn() },
       occupancySnapshot: { findMany: jest.fn() },
+      predictionShortTerm: { findMany: jest.fn().mockResolvedValue([]) },
+      predictionLongTerm: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     penetrationService = {
@@ -42,11 +55,22 @@ describe('LotsService', () => {
       estimateForLot: jest.fn().mockImplementation(async (lot: any) => makeEstimate(lot)),
     };
 
+    eventsService = {
+      getUpcomingImpactsForLot: jest.fn().mockResolvedValue([]),
+      getActiveImpactsForLots: jest.fn().mockResolvedValue(new Map()),
+    };
+
+    weatherService = {
+      getCurrent: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LotsService,
         { provide: PrismaService, useValue: prisma },
         { provide: PenetrationEstimationService, useValue: penetrationService },
+        { provide: EventsService, useValue: eventsService },
+        { provide: WeatherService, useValue: weatherService },
       ],
     }).compile();
 
@@ -518,6 +542,74 @@ describe('LotsService', () => {
       const results = await service.getRecommendations('G1');
 
       expect(results).toEqual([]);
+    });
+  });
+
+  describe('getShortTermPredictions', () => {
+    const mockLot = { id: 'uuid-1', lot_id: 'G1' };
+
+    it('should throw NotFoundException when lot not found', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
+      await expect(service.getShortTermPredictions('INVALID')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return predictions with event impacts and weather context', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.predictionShortTerm.findMany.mockResolvedValue([
+        {
+          target_time: new Date('2026-03-01T14:00:00Z'),
+          predicted_occupancy: 150,
+          confidence_lower: 130,
+          confidence_upper: 170,
+          model_version: 'v1.0',
+        },
+      ]);
+
+      const mockEvent = {
+        event_name: 'Basketball Game',
+        event_type: 'ATHLETIC',
+        start_time: new Date('2026-03-01T13:00:00Z'),
+        end_time: new Date('2026-03-01T16:00:00Z'),
+        location: 'Walter Pyramid',
+        expected_attendance: 5000,
+      };
+      const mockImpact = {
+        impact_level: 'HIGH',
+        expected_increase_percent: 30,
+      };
+      eventsService.getUpcomingImpactsForLot.mockResolvedValue([
+        { event: mockEvent, impact: mockImpact },
+      ]);
+
+      weatherService.getCurrent.mockResolvedValue({
+        conditions: 'Sunny',
+        temperature_f: 72,
+        is_raining: false,
+        precipitation_probability: 0,
+      });
+
+      const result = await service.getShortTermPredictions('G1');
+
+      expect(result.lot_id).toBe('G1');
+      expect(result.predictions).toHaveLength(1);
+      expect(result.event_impacts).toHaveLength(1);
+      expect(result.event_impacts[0].event_name).toBe('Basketball Game');
+      expect(result.event_impacts[0].expected_increase_percent).toBe(30);
+      expect(result.weather).toBeDefined();
+      expect(result.weather!.conditions).toBe('Sunny');
+    });
+
+    it('should return null weather when no weather data available', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.predictionShortTerm.findMany.mockResolvedValue([]);
+      eventsService.getUpcomingImpactsForLot.mockResolvedValue([]);
+      weatherService.getCurrent.mockResolvedValue(null);
+
+      const result = await service.getShortTermPredictions('G1');
+
+      expect(result.weather).toBeNull();
+      expect(result.event_impacts).toEqual([]);
+      expect(result.predictions).toEqual([]);
     });
   });
 });
