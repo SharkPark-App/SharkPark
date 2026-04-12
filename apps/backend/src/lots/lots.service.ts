@@ -247,12 +247,12 @@ export class LotsService {
       },
     });
 
-    // Batch-estimate penetration for all candidates
-    const estimates = await this.penetrationService.estimateForAllLots(candidates);
-
-    // Batch-fetch active event impacts for all candidate lots
+    // Batch-estimate penetration and fetch event impacts in parallel
     const candidateIds = candidates.map(c => c.id);
-    const eventImpacts = await this.eventsService.getActiveImpactsForLots(candidateIds);
+    const [estimates, eventImpacts] = await Promise.all([
+      this.penetrationService.estimateForAllLots(candidates),
+      this.eventsService.getActiveImpactsForLots(candidateIds),
+    ]);
 
     const W = LotsService.RECOMMENDATION_WEIGHTS;
 
