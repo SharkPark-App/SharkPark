@@ -131,12 +131,18 @@ export function useLotsList(filters?: {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Stabilise the filters reference so that callers passing an inline object
+  // literal don't cause the polling effect to reset on every render.
+  const filtersRef = useRef(filters);
+  const filtersKey = JSON.stringify(filters);
+  useEffect(() => { filtersRef.current = filters; }, [filtersKey]);
+
   const refreshLots = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       
-      const lotsData = await lotsApi.getAllLots(filters);
+      const lotsData = await lotsApi.getAllLots(filtersRef.current);
       setLots(lotsData);
       
     } catch (err) {
@@ -148,7 +154,7 @@ export function useLotsList(filters?: {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filtersKey]);
 
   // Initial fetch + polling
   useEffect(() => {
