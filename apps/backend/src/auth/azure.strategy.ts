@@ -4,9 +4,21 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import { UsersService } from '../users/users.service';
 
-// Azure AD Configuration - should match mobile app
-const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID || '9aea0ab1-4502-4868-a31b-0a8f333cec9c';
-const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID || 'd175679b-acd3-4644-be82-af041982977a';
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Azure AD Configuration — fail fast in production if env vars are missing
+const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID;
+const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID;
+
+if (isProduction && (!AZURE_CLIENT_ID || !AZURE_TENANT_ID)) {
+  throw new Error(
+    'AZURE_CLIENT_ID and AZURE_TENANT_ID environment variables are required in production',
+  );
+}
+
+// Development-only fallbacks (safe: these are public OAuth metadata, not secrets)
+const clientId = AZURE_CLIENT_ID || '9aea0ab1-4502-4868-a31b-0a8f333cec9c';
+const tenantId = AZURE_TENANT_ID || 'd175679b-acd3-4644-be82-af041982977a';
 
 export interface AzureJwtPayload {
   preferred_username?: string;
@@ -30,14 +42,14 @@ export class AzureADStrategy extends PassportStrategy(Strategy, 'azure-ad') {
         cache: true,
         rateLimit: true,
         jwksRequestsPerMinute: 5,
-        jwksUri: `https://login.microsoftonline.com/${AZURE_TENANT_ID}/discovery/v2.0/keys`,
+        jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
       }),
 
       // config for validation (same tenant/client IDs used for user auth)
       // Accept both id_token (audience = client_id) and access_token (audience = api://client_id)
       ignoreExpiration: false,
-      audience: [AZURE_CLIENT_ID, `api://${AZURE_CLIENT_ID}`],
-      issuer: `https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0`,
+      audience: [clientId, `api://${clientId}`],
+      issuer: `https://login.microsoftonline.com/${tenantId}/v2.0`,
       algorithms: ['RS256'],
     });
   }

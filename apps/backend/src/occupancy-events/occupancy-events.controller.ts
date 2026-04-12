@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { OccupancyEventsService } from './occupancy-events.service';
 import { CreateOccupancyEventDto } from './dto/create-occupancy-event.dto';
 
@@ -22,6 +23,7 @@ export class OccupancyEventsController {
 
   /** Records an anonymous ENTER/EXIT event for a parking lot */
   @Post()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.CREATED)
   async createEvent(@Body() createEventDto: CreateOccupancyEventDto) {
     const result = await this.occupancyEventsService.create(createEventDto);

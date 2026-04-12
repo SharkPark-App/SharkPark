@@ -1,6 +1,11 @@
 import { createHash } from 'crypto';
 
-// In production, load from environment variables
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction && !process.env.DEVICE_HASH_SALT) {
+  throw new Error('DEVICE_HASH_SALT environment variable is required in production');
+}
+
 const DEVICE_HASH_SALT = process.env.DEVICE_HASH_SALT || 'sharkpark-default-salt-2026';
 
 /** Hashes device ID with SHA-256 + salt for privacy-safe deduplication */

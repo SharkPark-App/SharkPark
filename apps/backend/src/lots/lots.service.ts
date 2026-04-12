@@ -3,6 +3,7 @@ import { PrismaService } from '../database/database.module';
 import type { Lot, LotType } from '@prisma/client';
 import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
+import { OCCUPANCY_THRESHOLDS } from '../constants';
 
 /**
  * Service for parking lot data access and business logic.
@@ -128,13 +129,31 @@ export class LotsService {
     employee_lots: { count: number; capacity: number; occupied: number };
   }> {
     try {
-      const lots = await this.findAll();
+      // Aggregate at the DB level — avoids fetching every lot row and transforming individually
+      const groups = await this.prisma.lot.groupBy({
+        by: ['lot_type'],
+        _count: { id: true },
+        _sum: { capacity: true, current_occupancy: true },
+      });
 
-      const studentLots = lots.filter(lot => lot.lot_type === 'STUDENT');
-      const employeeLots = lots.filter(lot => lot.lot_type === 'EMPLOYEE');
+      // Fetch all lots for penetration estimation (already batched in one call)
+      const lots = await this.prisma.lot.findMany();
+      const estimates = await this.penetrationService.estimateForAllLots(lots);
 
-      const totalCapacity = lots.reduce((sum, lot) => sum + lot.capacity, 0);
-      const totalOccupied = lots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0);
+      let studentEstimated = 0;
+      let employeeEstimated = 0;
+      for (const lot of lots) {
+        const est = estimates.get(lot.id);
+        const occ = est ? est.estimatedOccupancy : lot.current_occupancy;
+        if (lot.lot_type === 'STUDENT') studentEstimated += occ;
+        else employeeEstimated += occ;
+      }
+
+      const studentGroup = groups.find(g => g.lot_type === 'STUDENT');
+      const employeeGroup = groups.find(g => g.lot_type === 'EMPLOYEE');
+
+      const totalCapacity = (studentGroup?._sum.capacity ?? 0) + (employeeGroup?._sum.capacity ?? 0);
+      const totalOccupied = studentEstimated + employeeEstimated;
 
       return {
         total_lots: lots.length,
@@ -143,14 +162,14 @@ export class LotsService {
         total_available: totalCapacity - totalOccupied,
         overall_occupancy_rate: totalCapacity > 0 ? totalOccupied / totalCapacity : 0,
         student_lots: {
-          count: studentLots.length,
-          capacity: studentLots.reduce((sum, lot) => sum + lot.capacity, 0),
-          occupied: studentLots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0),
+          count: studentGroup?._count.id ?? 0,
+          capacity: studentGroup?._sum.capacity ?? 0,
+          occupied: studentEstimated,
         },
         employee_lots: {
-          count: employeeLots.length,
-          capacity: employeeLots.reduce((sum, lot) => sum + lot.capacity, 0),
-          occupied: employeeLots.reduce((sum, lot) => sum + lot.estimated_occupancy, 0),
+          count: employeeGroup?._count.id ?? 0,
+          capacity: employeeGroup?._sum.capacity ?? 0,
+          occupied: employeeEstimated,
         },
       };
     } catch (error) {
@@ -173,7 +192,7 @@ export class LotsService {
   private static readonly MAX_DISTANCE_METERS = 2000;
 
   /** Occupancy rate threshold at which a lot is considered too full to recommend */
-  private static readonly FULL_THRESHOLD = 0.75;
+  private static readonly FULL_THRESHOLD = OCCUPANCY_THRESHOLDS.RECOMMENDATION_CUTOFF;
 
   /**
    * Recommends alternative lots when a preferred lot is full or nearly full.
@@ -311,11 +330,11 @@ export class LotsService {
     const occupancy_rate = lot.capacity > 0 ? estimatedOccupancy / lot.capacity : 0;
 
     let fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
-    if (occupancy_rate >= 0.95) {
+    if (occupancy_rate >= OCCUPANCY_THRESHOLDS.FULL) {
       fill_status = 'FULL';
-    } else if (occupancy_rate >= 0.75) {
+    } else if (occupancy_rate >= OCCUPANCY_THRESHOLDS.NEARLY_FULL) {
       fill_status = 'NEARLY_FULL';
-    } else if (occupancy_rate >= 0.50) {
+    } else if (occupancy_rate >= OCCUPANCY_THRESHOLDS.FILLING) {
       fill_status = 'FILLING';
     } else {
       fill_status = 'AVAILABLE';
@@ -332,6 +351,86 @@ export class LotsService {
       effective_penetration_rate: estimate
         ? Math.round(estimate.effectiveRate * 10000) / 10000
         : 1,
+    };
+  }
+
+  /**
+   * Fetches short-term ML predictions for a lot from predictions_short_term.
+   * Falls back to empty array if no predictions are available.
+   */
+  async getShortTermPredictions(lotId: string): Promise<{
+    lot_id: string;
+    predictions: Array<{
+      target_time: string;
+      predicted_occupancy: number;
+      confidence_lower: number;
+      confidence_upper: number;
+      model_version: string;
+    }>;
+  }> {
+    const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+    if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
+
+    const now = new Date();
+    const predictions = await this.prisma.predictionShortTerm.findMany({
+      where: {
+        lot_id: lot.id,
+        target_time: { gte: now },
+      },
+      orderBy: { target_time: 'asc' },
+      take: 20,
+    });
+
+    return {
+      lot_id: lotId,
+      predictions: predictions.map((p) => ({
+        target_time: p.target_time.toISOString(),
+        predicted_occupancy: p.predicted_occupancy,
+        confidence_lower: p.confidence_lower,
+        confidence_upper: p.confidence_upper,
+        model_version: p.model_version,
+      })),
+    };
+  }
+
+  /**
+   * Fetches long-term ML predictions for a lot from predictions_long_term.
+   */
+  async getLongTermPredictions(lotId: string, days = 7): Promise<{
+    lot_id: string;
+    predictions: Array<{
+      target_date: string;
+      target_hour: number;
+      predicted_occupancy: number;
+      confidence_lower: number;
+      confidence_upper: number;
+      model_version: string;
+    }>;
+  }> {
+    const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+    if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
+
+    const now = new Date();
+    const endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+    const predictions = await this.prisma.predictionLongTerm.findMany({
+      where: {
+        lot_id: lot.id,
+        target_date: { gte: now, lte: endDate },
+      },
+      orderBy: [{ target_date: 'asc' }, { target_hour: 'asc' }],
+    });
+
+    return {
+      lot_id: lotId,
+      predictions: predictions.map((p) => ({
+        target_date: p.target_date.toISOString().split('T')[0],
+        target_hour: p.target_hour,
+        predicted_occupancy: p.predicted_occupancy,
+        confidence_lower: p.confidence_lower,
+        confidence_upper: p.confidence_upper,
+        model_version: p.model_version,
+      })),
     };
   }
 }

@@ -34,6 +34,10 @@ jest.mock('react-native-device-info', () => ({
 // body which requires a non-null native module — provide a minimal mock so
 // the import does not throw in a Node test environment.
 jest.mock('react-native-bluetooth-status', () => ({
+  __esModule: true,
+  default: {
+    state: jest.fn(),
+  },
   state: jest.fn(),
 }));
 
@@ -42,7 +46,9 @@ jest.mock('react-native', () => ({
     addListener: jest.fn(),
     removeListener: jest.fn(),
   })),
-  NativeModules: {},
+  NativeModules: {
+    RNBluetoothManager: {},
+  },
   Platform: { OS: 'ios' },
 }));
 

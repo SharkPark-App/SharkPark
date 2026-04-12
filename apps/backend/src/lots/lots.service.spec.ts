@@ -7,7 +7,7 @@ import { PenetrationEstimationService } from './penetration-estimation.service';
 describe('LotsService', () => {
   let service: LotsService;
   let prisma: {
-    lot: { findMany: jest.Mock; findFirst: jest.Mock };
+    lot: { findMany: jest.Mock; findFirst: jest.Mock; groupBy: jest.Mock };
     occupancySnapshot: { findMany: jest.Mock };
   };
   let penetrationService: {
@@ -27,7 +27,7 @@ describe('LotsService', () => {
 
   beforeEach(async () => {
     prisma = {
-      lot: { findMany: jest.fn(), findFirst: jest.fn() },
+      lot: { findMany: jest.fn(), findFirst: jest.fn(), groupBy: jest.fn() },
       occupancySnapshot: { findMany: jest.fn() },
     };
 
@@ -176,6 +176,10 @@ describe('LotsService', () => {
         },
       ];
       prisma.lot.findMany.mockResolvedValue(lots);
+      prisma.lot.groupBy.mockResolvedValue([
+        { lot_type: 'STUDENT', _count: { id: 1 }, _sum: { capacity: 100, current_occupancy: 50 } },
+        { lot_type: 'EMPLOYEE', _count: { id: 1 }, _sum: { capacity: 80, current_occupancy: 30 } },
+      ]);
 
       const summary = await service.getOccupancySummary();
 
@@ -194,13 +198,14 @@ describe('LotsService', () => {
 
     it('should return zero rate when total capacity is zero', async () => {
       prisma.lot.findMany.mockResolvedValue([]);
+      prisma.lot.groupBy.mockResolvedValue([]);
       const summary = await service.getOccupancySummary();
       expect(summary.total_lots).toBe(0);
       expect(summary.overall_occupancy_rate).toBe(0);
     });
 
     it('should throw InternalServerErrorException on error', async () => {
-      prisma.lot.findMany.mockRejectedValue(new Error('Boom'));
+      prisma.lot.groupBy.mockRejectedValue(new Error('Boom'));
       await expect(service.getOccupancySummary()).rejects.toThrow(InternalServerErrorException);
     });
   });

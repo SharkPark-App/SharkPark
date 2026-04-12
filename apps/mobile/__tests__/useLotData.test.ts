@@ -12,14 +12,14 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 const mockGetLotDetails = jest.fn();
 const mockGetLotHistory = jest.fn();
-const mockGenerateForecast = jest.fn();
+const mockGetForecast = jest.fn();
 const mockGetAllLots = jest.fn();
 
 jest.mock('../src/services/api', () => ({
   lotsApi: {
     getLotDetails: (...args: unknown[]) => mockGetLotDetails(...args),
     getLotHistory: (...args: unknown[]) => mockGetLotHistory(...args),
-    generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
+    getForecast: (...args: unknown[]) => mockGetForecast(...args),
     getAllLots: (...args: unknown[]) => mockGetAllLots(...args),
   },
   ApiError: class ApiError extends Error {
@@ -78,7 +78,7 @@ describe('useLotData', () => {
     appStateListeners.length = 0;
     mockGetLotDetails.mockResolvedValue(mockLot);
     mockGetLotHistory.mockResolvedValue([]);
-    mockGenerateForecast.mockReturnValue(mockForecast);
+    mockGetForecast.mockResolvedValue(mockForecast);
   });
 
   afterEach(() => {

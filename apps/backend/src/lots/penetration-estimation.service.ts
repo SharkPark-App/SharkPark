@@ -6,6 +6,7 @@ import {
   getExpectedCommuters as calendarGetExpectedCommuters,
   isCampusOpen as calendarIsCampusOpen,
 } from './academic-calendar';
+import { TtlCache } from '../common/ttl-cache';
 
 // ─── Types ─────────────────────────────────────────────────
 
@@ -93,6 +94,8 @@ const FLOOR_TIME_THRESHOLD = 0.10;
 @Injectable()
 export class PenetrationEstimationService {
   private readonly logger = new Logger(PenetrationEstimationService.name);
+  private readonly timezoneCache = new TtlCache<string>(5 * 60 * 1000); // 5 min
+  private readonly deviceCountCache = new TtlCache<number>(2 * 60 * 1000); // 2 min
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -260,11 +263,16 @@ export class PenetrationEstimationService {
    * Falls back to America/Los_Angeles if not found.
    */
   async getSchoolTimezone(schoolId: string): Promise<string> {
+    const cached = this.timezoneCache.get(schoolId);
+    if (cached !== undefined) return cached;
+
     const school = await this.prisma.school.findUnique({
       where: { id: schoolId },
       select: { timezone: true },
     });
-    return school?.timezone ?? 'America/Los_Angeles';
+    const tz = school?.timezone ?? 'America/Los_Angeles';
+    this.timezoneCache.set(schoolId, tz);
+    return tz;
   }
 
   /**
@@ -314,6 +322,10 @@ export class PenetrationEstimationService {
    * Uses raw SQL COUNT(DISTINCT) to avoid loading event rows into memory.
    */
   async countCampusDevices(schoolId: string, now: Date): Promise<number> {
+    const cacheKey = schoolId;
+    const cached = this.deviceCountCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
     const windowStart = new Date(now.getTime() - DEVICE_WINDOW_MS);
 
     const result = await this.prisma.$queryRaw<[{ count: bigint }]>(
@@ -327,7 +339,9 @@ export class PenetrationEstimationService {
       `,
     );
 
-    return Number(result[0]?.count ?? 0);
+    const count = Number(result[0]?.count ?? 0);
+    this.deviceCountCache.set(cacheKey, count);
+    return count;
   }
 
   /**

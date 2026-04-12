@@ -125,4 +125,30 @@ export class LotsController {
       data: history,
     };
   }
+
+  @Get(':id/predictions/short-term')
+  @HttpCode(HttpStatus.OK)
+  async getShortTermPredictions(@Param('id') id: string) {
+    const predictions = await this.lotsService.getShortTermPredictions(id.toUpperCase());
+
+    return {
+      success: true,
+      ...predictions,
+    };
+  }
+
+  @Get(':id/predictions/long-term')
+  @HttpCode(HttpStatus.OK)
+  async getLongTermPredictions(
+    @Param('id') id: string,
+    @Query('days', new ParseIntPipe({ optional: true })) days?: number,
+  ) {
+    const cappedDays = days && days >= 1 && days <= 14 ? days : 7;
+    const predictions = await this.lotsService.getLongTermPredictions(id.toUpperCase(), cappedDays);
+
+    return {
+      success: true,
+      ...predictions,
+    };
+  }
 }

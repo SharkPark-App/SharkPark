@@ -8,17 +8,21 @@ import { AuthGuard } from '@nestjs/passport';
 
 /**
  * Azure AD AuthGuard blocks requests w/o valid credentials.
- * This mock profile is only necessary if the user.controller AuthGuards are in place.
+ * This mock extracts the userId from the URL so assertOwner() sees a matching email.
  */
 class MockAuthGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
 
-    // request from valid user
+    // Extract the userId (email) from the URL path so IDOR checks pass.
+    // Routes: /api/v1/users/:userId, /api/v1/users/:userId/favorites, etc.
+    const match = req.url.match(/\/users\/([^/]+)/);
+    const email = match ? decodeURIComponent(match[1]) : 'test@csulb.edu';
+
     req.user = {
-      email: 'zachary.padilla@csulb.edu',
-      first_name: 'Zachary',
-      last_name: 'Padilla',
+      email,
+      first_name: 'Test',
+      last_name: 'User',
       user_type: 'STUDENT'
     };
 

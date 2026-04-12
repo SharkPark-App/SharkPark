@@ -11,7 +11,8 @@ import { createGeofenceRegionsFromLots, prioritizeGeofenceRegions } from '../uti
 import { lotsApi, ParkingLotResponse } from '../services/api';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { GeofenceEvent } from '../types/location';
-import GeofencingTestUtils from './GeofencingTestUtils';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const GeofencingTestUtils = __DEV__ ? require('./GeofencingTestUtils').default : null;
 import { 
   GEOFENCE_CONSTANTS, 
   MESSAGE_CONSTANTS, 
@@ -269,7 +270,7 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
       )}
 
       {/* Development Testing Tools */}
-      {__DEV__ && (
+      {__DEV__ && GeofencingTestUtils && (
         <View style={styles.devSection}>
           <GeofencingTestUtils />
         </View>

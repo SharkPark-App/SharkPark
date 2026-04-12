@@ -186,8 +186,60 @@ class LotsApiService {
   }
 
   /**
-   * Generate forecast data for short-term predictions
-   * This creates mock forecast data similar to what's in ShortTermForecastScreen
+   * Fetch short-term predictions from backend ML pipeline.
+   * Falls back to local heuristic if no predictions are available.
+   */
+  async getForecast(lot: ParkingLotResponse): Promise<Array<{
+    time: string;
+    occupancy: number;
+    lowerBound: number;
+    upperBound: number;
+    accuracy: number;
+  }>> {
+    try {
+      const endpoint = API_CONFIG.ENDPOINTS.LOT_PREDICTIONS_SHORT(lot.lot_id);
+      const response = await apiService.get<{
+        predictions: Array<{
+          target_time: string;
+          predicted_occupancy: number;
+          confidence_lower: number;
+          confidence_upper: number;
+        }>;
+      }>(endpoint);
+
+      const predictions = response.data.predictions;
+      if (predictions && predictions.length > 0) {
+        return predictions.map((p) => {
+          const hour = new Date(p.target_time).getHours();
+          const occupancyPercent = lot.capacity > 0
+            ? Math.round((p.predicted_occupancy / lot.capacity) * 100)
+            : p.predicted_occupancy;
+          const lower = lot.capacity > 0
+            ? Math.round((p.confidence_lower / lot.capacity) * 100)
+            : p.confidence_lower;
+          const upper = lot.capacity > 0
+            ? Math.round((p.confidence_upper / lot.capacity) * 100)
+            : p.confidence_upper;
+
+          return {
+            time: hour.toString(),
+            occupancy: Math.min(100, Math.max(0, occupancyPercent)),
+            lowerBound: Math.min(100, Math.max(0, lower)),
+            upperBound: Math.min(100, Math.max(0, upper)),
+            accuracy: lot.confidence === 'HIGH' ? 95 :
+                     lot.confidence === 'MEDIUM' ? 85 : 70,
+          };
+        });
+      }
+    } catch {
+      // Backend predictions unavailable — fall through to local heuristic
+    }
+
+    return this.generateForecast(lot);
+  }
+
+  /**
+   * Generate forecast data for short-term predictions (local fallback)
    */
   generateForecast(lot: ParkingLotResponse): Array<{
     time: string;
