@@ -54,9 +54,10 @@ const TIME_MULTIPLIERS: Record<string, number> = {
 /**
  * Activity-based scaling caps — when there are very few devices campus-wide,
  * we trust the raw numbers more and limit how much we scale up.
+ * Hard ceiling of 20× even at high activity prevents impossible occupancy values.
  */
 const SCALING_CAPS: { threshold: number; maxScaling: number }[] = [
-  { threshold: 500, maxScaling: Infinity }, // Full scaling
+  { threshold: 500, maxScaling: 20 },
   { threshold: 200, maxScaling: 10 },
   { threshold: 50,  maxScaling: 5 },
   { threshold: 0,   maxScaling: 2 },
