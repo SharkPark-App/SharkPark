@@ -12,7 +12,9 @@ describe('OccupancyEventsService', () => {
     occupancyEvent: { create: jest.Mock; findMany: jest.Mock };
     occupancySnapshot: { create: jest.Mock; createMany: jest.Mock; findMany: jest.Mock };
     deviceState: { findUnique: jest.Mock; upsert: jest.Mock };
+    weather: { findFirst: jest.Mock };
     $transaction: jest.Mock;
+    $executeRaw: jest.Mock;
   };
   let mockReliabilityService: {
     computeReliabilitySummary: jest.Mock;
@@ -35,7 +37,9 @@ describe('OccupancyEventsService', () => {
       occupancyEvent: { create: jest.fn(), findMany: jest.fn() },
       occupancySnapshot: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn() },
       deviceState: { findUnique: jest.fn(), upsert: jest.fn() },
+      weather: { findFirst: jest.fn() },
       $transaction: jest.fn(),
+      $executeRaw: jest.fn(),
     };
 
     mockReliabilityService = {
@@ -132,7 +136,6 @@ describe('OccupancyEventsService', () => {
       const exitDto = { ...validDto, event_type: 'EXIT' as const };
 
       prisma.lot.findFirst.mockResolvedValue(mockLot);
-      prisma.lot.findUniqueOrThrow.mockResolvedValue(mockLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
       prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
@@ -140,6 +143,8 @@ describe('OccupancyEventsService', () => {
 
       expect(result.event_type).toBe('EXIT');
       expect(result.deduplicated).toBe(false);
+      // Atomic decrement via raw SQL GREATEST(current_occupancy - 1, 0)
+      expect(prisma.$executeRaw).toHaveBeenCalled();
     });
 
     it('should return deduplicated=true when duplicate detected', async () => {
@@ -189,20 +194,21 @@ describe('OccupancyEventsService', () => {
       await expect(service.create(validDto)).rejects.toThrow('Lot G1 not found');
     });
 
-    it('should not decrement occupancy below 0 on EXIT', async () => {
+    it('should atomically prevent occupancy from going below 0 on EXIT', async () => {
       const zeroLot = { ...mockLot, current_occupancy: 0 };
       const exitDto = { ...validDto, event_type: 'EXIT' as const };
 
       prisma.lot.findFirst.mockResolvedValue(zeroLot);
-      prisma.lot.findUniqueOrThrow.mockResolvedValue(zeroLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
       prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(exitDto);
 
       expect(result.deduplicated).toBe(false);
-      // lot.update should NOT be called because occupancy is already 0
-      expect(prisma.lot.update).not.toHaveBeenCalled();
+      // Atomic GREATEST(current_occupancy - 1, 0) handles the floor in a single statement
+      expect(prisma.$executeRaw).toHaveBeenCalled();
+      // No separate read+conditional — the DB handles it atomically
+      expect(prisma.lot.findUniqueOrThrow).not.toHaveBeenCalled();
     });
 
     it('should throw InternalServerError when transaction fails', async () => {
@@ -297,6 +303,7 @@ describe('OccupancyEventsService', () => {
       prisma.lot.findMany.mockResolvedValue(mockLots);
       prisma.occupancyEvent.findMany.mockResolvedValue([]);
       prisma.occupancySnapshot.createMany.mockResolvedValue({ count: 2 });
+      prisma.weather.findFirst.mockResolvedValue({ id: 'weather-1' });
 
       const result = await service.createSnapshots();
 
@@ -318,6 +325,10 @@ describe('OccupancyEventsService', () => {
       expect(snapshotData[0].semester).toBeDefined();
       expect(snapshotData[0].academic_period).toBeDefined();
       expect(typeof snapshotData[0].week_of_semester).toBe('number');
+
+      // Weather context attached to each snapshot
+      expect(snapshotData[0].weather_id).toBe('weather-1');
+      expect(snapshotData[1].weather_id).toBe('weather-1');
     });
 
     it('should throw InternalServerErrorException on error', async () => {
