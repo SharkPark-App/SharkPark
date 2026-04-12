@@ -695,4 +695,72 @@ describe('LotsService', () => {
       expect(result.predictions).toEqual([]);
     });
   });
+
+  describe('getLongTermPredictions', () => {
+    const mockLotFull = {
+      id: 'uuid-1', lot_id: 'G1', capacity: 200, current_occupancy: 100,
+      lot_type: 'STUDENT', lot_name: 'Lot G1',
+    };
+
+    it('should throw NotFoundException when lot not found', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
+      await expect(service.getLongTermPredictions('INVALID')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return ML predictions when available', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([
+        {
+          target_date: new Date('2026-04-13'),
+          target_hour: 10,
+          predicted_occupancy: 150,
+          confidence_lower: 130,
+          confidence_upper: 170,
+          model_version: 'xgboost-v2',
+        },
+      ]);
+
+      const result = await service.getLongTermPredictions('G1', 7);
+
+      expect(result.source).toBe('ml');
+      expect(result.predictions).toHaveLength(1);
+      expect(result.predictions[0].model_version).toBe('xgboost-v2');
+    });
+
+    it('should fall back to heuristic when no ML predictions exist', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([]);
+
+      const result = await service.getLongTermPredictions('G1', 1);
+
+      expect(result.source).toBe('heuristic');
+      expect(result.predictions.length).toBeGreaterThan(0);
+      expect(result.predictions[0].model_version).toBe('heuristic-v1');
+    });
+
+    it('should generate heuristic predictions for campus hours only', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([]);
+
+      const result = await service.getLongTermPredictions('G1', 1);
+
+      // Campus hours: 6 AM to 9 PM (16 hours)
+      expect(result.predictions.length).toBe(16);
+      expect(result.predictions[0].target_hour).toBe(6);
+      expect(result.predictions[result.predictions.length - 1].target_hour).toBe(21);
+    });
+
+    it('should cap predicted_occupancy at lot capacity', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([]);
+
+      const result = await service.getLongTermPredictions('G1', 1);
+
+      for (const p of result.predictions) {
+        expect(p.predicted_occupancy).toBeLessThanOrEqual(mockLotFull.capacity);
+        expect(p.confidence_lower).toBeGreaterThanOrEqual(0);
+        expect(p.confidence_upper).toBeLessThanOrEqual(mockLotFull.capacity);
+      }
+    });
+  });
 });
