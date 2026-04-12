@@ -18,4 +18,14 @@ export class WeatherController {
       data: weather,
     };
   }
+
+  @Get('impact')
+  @HttpCode(HttpStatus.OK)
+  async getWeatherImpact() {
+    const impact = await this.weatherService.getWeatherImpact();
+    return {
+      success: true,
+      data: impact,
+    };
+  }
 }
