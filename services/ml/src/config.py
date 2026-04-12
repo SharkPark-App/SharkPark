@@ -14,6 +14,9 @@ load_dotenv()
 __all__ = [
     "DATABASE_URL",
     "SHORT_TERM_MODEL_NAME",
+    "LONG_TERM_MODEL_NAME",
+    "LONG_TERM_HORIZON_DAYS",
+    "LONG_TERM_BASELINE_WEEKS",
     "OPERATING_START_HOUR",
     "OPERATING_END_HOUR",
     "BUFFER_START_HOUR",
@@ -23,6 +26,14 @@ __all__ = [
 ]
 
 SHORT_TERM_MODEL_NAME = "short-term-production"
+LONG_TERM_MODEL_NAME = "long-term-production"
+
+# =============================================================================
+# Long-Term Model Settings
+# =============================================================================
+
+LONG_TERM_HORIZON_DAYS = 7  # forecast window
+LONG_TERM_BASELINE_WEEKS = 4  # rolling average window for Stage 1 baseline
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 

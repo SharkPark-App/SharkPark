@@ -1,16 +1,15 @@
 """
-Training entrypoint for SharkPark short-term model.
+Training entrypoint for SharkPark long-term model.
 
 Loads synthetic data from parquet (and optionally real data from PostgreSQL),
-trains the XGBoost model, and logs the run (params + metrics) to MLflow.
+trains the two-stage long-term model, and logs the run (params + metrics) to MLflow.
 
 Usage:
-    python scripts/train_short_term.py
-    python scripts/train_short_term.py --data-path data/custom.parquet
-    python scripts/train_short_term.py --data-path "data/synthetic_*.parquet"   # multiple semesters
-    python scripts/train_short_term.py --include-real
-    python scripts/train_short_term.py --include-real --synthetic-weight 0.3
-
+    python scripts/train_long_term.py
+    python scripts/train_long_term.py --data-path data/custom.parquet
+    python scripts/train_long_term.py --data-path "data/synthetic_*.parquet"
+    python scripts/train_long_term.py --include-real
+    python scripts/train_long_term.py --include-real --synthetic-weight 0.3
 """
 
 import argparse
@@ -22,9 +21,10 @@ from typing import Optional
 
 import pandas as pd
 
-from src.evaluation.metrics import compute_metrics
+from src.evaluation.compare import HORIZON_MAE_TARGETS
 from src.features.base import merge_real_synthetic
-from src.models.short_term import ShortTermModel
+from src.config import LONG_TERM_HORIZON_DAYS
+from src.models.long_term import LongTermModel
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def train(
     hyperparams: dict | None = None,
 ) -> str:
     """
-    Train a short-term model and log to MLflow.
+    Train a long-term model and log to MLflow.
 
     Args:
         data_path: Path or glob pattern for parquet file(s) with synthetic data.
@@ -53,10 +53,10 @@ def train(
     Returns:
         MLflow run ID.
     """
-    # Load synthetic data (supports glob patterns for multiple parquets)
+    # Load synthetic data
     paths = sorted(glob.glob(data_path))
     if not paths:
-        # No glob match — treat as literal path for a clear error message
+        # Treat as literal path if no glob match
         path = Path(data_path)
         raise FileNotFoundError(
             f"Data file not found: {path}\n"
@@ -77,7 +77,7 @@ def train(
         "s" if len(paths) > 1 else "",
     )
 
-    # Mix real + synthetic data: real data replaces synthetic for overlapping dates
+    # Mix real + synthetic data: real data replaces synthetic for overlaps
     df = df_synthetic
     if include_real:
         from src.data.db import load_real_snapshots
@@ -97,8 +97,7 @@ def train(
 
     logger.info("Training on %s rows, %s lots", f"{len(df):,}", df["lot_id"].nunique())
 
-    # Train model
-    model = ShortTermModel()
+    model = LongTermModel()
     logger.info("Training model...")
     result = model.train(
         df,
@@ -111,13 +110,27 @@ def train(
     logger.info("Test size:  %s", f"{result['test_size']:,}")
     logger.info("Split date: %s", result["split_date"])
 
-    # Compute metrics on test set
-    if "test_predictions" not in result:
+    if "horizon_mae" not in result:
         raise ValueError("No test predictions — not enough data for temporal split.")
-    metrics = compute_metrics(result["test_actuals"], result["test_predictions"])
+
+    # Print horizon-stratified MAE table
+    logger.info("\nHorizon-Stratified MAE (occupancy rate, 0-1 scale):")
+    logger.info("  %-12s %8s  %s", "Days Ahead", "MAE", "Target")
+    for d in range(1, LONG_TERM_HORIZON_DAYS + 1):
+        mae = result["horizon_mae"].get(d, float("nan"))
+        target = HORIZON_MAE_TARGETS.get(d, 0.25)  # fallback to threshold 25%
+        status = "✓" if mae <= target else "✗"
+        logger.info("  Day %-8d %8.4f  < %.2f %s", d, mae, target, status)
+
+    # Flatten horizon MAE for MLflow logging
+    flat_metrics = {f"mae_day_{d}": v for d, v in result["horizon_mae"].items()}
+    overall_mae = (
+        sum(flat_metrics.values()) / len(flat_metrics) if flat_metrics else float("nan")
+    )
+    flat_metrics["mae"] = overall_mae
     if "quantile_coverage" in result:
-        metrics["quantile_coverage"] = result["quantile_coverage"]
-        metrics["mean_interval_width"] = result["mean_interval_width"]
+        flat_metrics["quantile_coverage"] = result["quantile_coverage"]
+        flat_metrics["mean_interval_width"] = result["mean_interval_width"]
 
     params = {
         **model.hyperparams,
@@ -131,31 +144,29 @@ def train(
         "synthetic_rows": len(df_synthetic),
     }
 
-    # Log the combined (real + synthetic) dataframe as the artifact
+    # Log the combined df as the artifact for reproducibility
     with tempfile.TemporaryDirectory() as tmp:
         combined_path = Path(tmp) / "training_data.parquet"
         df.to_parquet(combined_path)
-        run_id = model.save_mlflow(metrics, params, data_path=str(combined_path))
+        run_id = model.save_mlflow(flat_metrics, params, data_path=str(combined_path))
 
     # Display mlflow run id and metrics
     logger.info("\nMLflow run ID: %s", run_id)
-    logger.info("MAE:  %.4f", metrics["mae"])
-    logger.info("RMSE: %.4f", metrics["rmse"])
-    logger.info("MAPE: %.1f%%", metrics["mape"])
+    logger.info("Overall MAE: %.4f", overall_mae)
     if "quantile_coverage" in result:
         logger.info(
             "Quantile coverage (10-90): %.1f%%  |  Mean interval width: %.4f",
             result["quantile_coverage"] * 100,
             result["mean_interval_width"],
         )
-    print(f"\nNext step:\n  python -m scripts.evaluate_short_term --run-id {run_id}")
+    print(f"\nNext step:\n  python -m scripts.evaluate_long_term --run-id {run_id}")
 
     return run_id
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    parser = argparse.ArgumentParser(description="Train short-term occupancy model")
+    parser = argparse.ArgumentParser(description="Train long-term occupancy model")
     parser.add_argument(
         "--data-path",
         default="data/synthetic_*.parquet",

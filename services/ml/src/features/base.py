@@ -16,11 +16,12 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "normalize_timestamps",
+    "merge_real_synthetic",
     "encode_cyclical",
     "add_hour_encoding",
     "add_day_encoding",
     "extract_time_components",
-"validate_snapshot_data",
+    "validate_snapshot_data",
     "prepare_base_features",
 ]
 
@@ -37,6 +38,55 @@ def normalize_timestamps(df: pd.DataFrame, col: str = "timestamp") -> pd.DataFra
     if ts.dt.tz is not None:
         ts = ts.dt.tz_localize(None)
     df[col] = ts
+    return df
+
+
+# =============================================================================
+# Real / Synthetic Merging
+# =============================================================================
+
+
+def merge_real_synthetic(
+    df_real: pd.DataFrame,
+    df_synthetic: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Merge real and synthetic snapshot DataFrames, preferring real data.
+
+    Normalizes timestamps, deduplicates on 15-min (lot_id, slot) keys so that
+    real rows replace overlapping synthetic rows, then concatenates.
+
+    Args:
+        df_real: Real snapshot DataFrame (must not be empty).
+        df_synthetic: Synthetic snapshot DataFrame.
+
+    Returns:
+        Combined DataFrame with ``_source`` column set to ``"real"`` for real rows.
+    """
+    df_real = normalize_timestamps(df_real)
+    df_synthetic = normalize_timestamps(df_synthetic)
+
+    df_real["_source"] = "real"
+
+    df_real["_slot"] = df_real["timestamp"].dt.floor("15min")
+    df_synthetic["_slot"] = df_synthetic["timestamp"].dt.floor("15min")
+
+    real_keys = df_real[["lot_id", "_slot"]].drop_duplicates()
+    df_synthetic_filtered = (
+        df_synthetic.merge(
+            real_keys, on=["lot_id", "_slot"], how="left", indicator=True
+        )
+        .query('_merge == "left_only"')
+        .drop(columns=["_merge", "_slot"])
+    )
+    df_real = df_real.drop(columns=["_slot"])
+
+    dropped = len(df_synthetic) - len(df_synthetic_filtered)
+    if dropped:
+        logger.info("  Dropped %s synthetic rows replaced by real data", f"{dropped:,}")
+
+    df = pd.concat([df_real, df_synthetic_filtered], ignore_index=True)
+    logger.info("  Combined: %s rows", f"{len(df):,}")
     return df
 
 

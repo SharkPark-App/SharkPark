@@ -1,15 +1,23 @@
 """
-Short-term XGBoost regression model for SharkPark ML.
+Long-term two-stage hybrid model for SharkPark ML.
 
-Single global model (all lots, lot_id as categorical feature).
-Predicts occupancy_rate for hours 7-21 per lot.
+Stage 1 — Historical Baseline:
+    4-week rolling average per (lot_id, academic_period, day_of_week, hour).
+    Computed by compute_baseline() in src.features.long_term.
+
+Stage 2 — XGBoost Adjustment:
+    Predicts deviation from baseline using calendar and horizon features.
+    Final prediction: clip(baseline + xgb_deviation, 0, 1).
+
+Includes quantile regression (10th/90th percentile) for confidence intervals,
+with cold-start CI widening identical to the short-term model.
 
 Usage:
-    model = ShortTermModel()
+    model = LongTermModel()
     split_info = model.train(snapshot_df)
-    predictions = model.predict(features_df)
-    model.save("models/short_term_v1")
-    model = ShortTermModel.load("models/short_term_v1")
+    median, lower, upper = model.predict_quantiles(inference_df)
+    model.save("models/long_term_v1")
+    model = LongTermModel.load("models/long_term_v1")
 """
 
 from datetime import timedelta
@@ -18,8 +26,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from src.config import COLD_START_CI_MULTIPLIER
-from src.features.short_term import prepare_training_features
+from src.config import COLD_START_CI_MULTIPLIER, LONG_TERM_HORIZON_DAYS
+from src.features.long_term import compute_baseline, prepare_training_features
 from src.models.base import BaseXGBoostModel
 
 __all__ = [
@@ -27,7 +35,7 @@ __all__ = [
     "CATEGORICAL_FEATURES",
     "TARGET_COL",
     "HOLDOUT_DAYS",
-    "ShortTermModel",
+    "LongTermModel",
 ]
 
 
@@ -36,23 +44,19 @@ __all__ = [
 # =============================================================================
 
 NUMERIC_FEATURES = [
-    "hour",
-    "day_of_week",
+    "historical_baseline",
+    "days_ahead",
     "week_of_semester",
     "is_campus_open",
-    "occupancy_rate",
-    "occupancy_rate_lag_1",
-    "occupancy_rate_lag_2",
-    "occupancy_rate_lag_3",
-    "occupancy_rate_lag_4",
-    "momentum",
-    "target_hour",
-    "hours_ahead",
+    "sin_hour",
+    "cos_hour",
+    "sin_day",
+    "cos_day",
 ]
 
 CATEGORICAL_FEATURES = ["lot_id", "semester", "academic_period"]
 
-TARGET_COL = "target_occupancy_rate"
+TARGET_COL = "deviation"  # actual_occupancy_rate - historical_baseline
 
 HOLDOUT_DAYS = 14  # Hold out most recent 2 weeks for testing
 
@@ -62,23 +66,23 @@ HOLDOUT_DAYS = 14  # Hold out most recent 2 weeks for testing
 # =============================================================================
 
 
-class ShortTermModel(BaseXGBoostModel):
+class LongTermModel(BaseXGBoostModel):
     """
-    XGBoost regression model for short-term occupancy prediction.
+    Two-stage XGBoost model for long-term occupancy prediction.
 
-    Trains on features from src.features.short_term (lags, momentum, time
-    context, academic period). Uses lot_id as a categorical feature so a
-    single global model serves all lots.
+    Stage 1 (baseline) is pre-computed by compute_baseline() and passed in
+    at training and inference time. Stage 2 XGBoost learns deviations from
+    that baseline using calendar and horizon features.
 
-    Includes quantile regression models (10th and 90th percentile) for
-    confidence intervals via predict_quantiles().
+    Three quantile models (median, 10th, 90th percentile) provide confidence
+    intervals. Cold-start lots receive widened intervals.
     """
 
     NUMERIC_FEATURES = NUMERIC_FEATURES
     CATEGORICAL_FEATURES = CATEGORICAL_FEATURES
     TARGET_COL = TARGET_COL
-    MLFLOW_EXPERIMENT = "sharkpark-short-term"
-    MLFLOW_RUN_NAME = "short-term-training"
+    MLFLOW_EXPERIMENT = "sharkpark-long-term"
+    MLFLOW_RUN_NAME = "long-term-training"
 
     # -----------------------------------------------------------------
     # Training
@@ -92,7 +96,10 @@ class ShortTermModel(BaseXGBoostModel):
         hyperparams: dict | None = None,
     ) -> dict:
         """
-        Train the model on snapshot data.
+        Train the long-term model on snapshot data.
+
+        Computes the historical baseline internally and stores it on the
+        instance as ``self.baseline_df`` for later use during prediction.
 
         Args:
             df: Raw OccupancySnapshot DataFrame (output of synthetic.py).
@@ -107,11 +114,14 @@ class ShortTermModel(BaseXGBoostModel):
 
         Returns:
             Dict with train_size, test_size, split_date, feature_columns,
-            test_predictions, test_predictions_lower, test_predictions_upper,
-            test_actuals, test_features.
+            horizon_mae (dict of days_ahead -> MAE), and test data for evaluation.
         """
-        # Temporal train/test split: hold out most recent 2 weeks
+        # Temporal train/test split
         df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+        baseline_df = compute_baseline(df)
+        self.baseline_df = baseline_df
+
         max_date = df["timestamp"].max()
         split_date = max_date - timedelta(days=HOLDOUT_DAYS)
 
@@ -127,8 +137,12 @@ class ShortTermModel(BaseXGBoostModel):
         # Do not filter LOW confidence: real cold-start rows are LOW by
         # definition, and cold_start_weight is the mechanism for downweighting
         # them. Filtering here would drop the rows the weights were meant to handle.
-        train_features = prepare_training_features(train_raw, min_confidence=None)
-        test_features = prepare_training_features(test_raw, min_confidence=None)
+        train_features = prepare_training_features(
+            train_raw, baseline_df, min_confidence=None
+        )
+        test_features = prepare_training_features(
+            test_raw, baseline_df, min_confidence=None
+        )
 
         if train_features.empty:
             raise ValueError("No training features after split — need more data.")
@@ -136,9 +150,7 @@ class ShortTermModel(BaseXGBoostModel):
         # Build volume-normalized sample weights from _source / is_cold_start
         if use_weights:
             sample_weight = self._build_sample_weights(
-                train_features,
-                synthetic_weight,
-                cold_start_weight,
+                train_features, synthetic_weight, cold_start_weight
             )
         else:
             sample_weight = None
@@ -151,14 +163,13 @@ class ShortTermModel(BaseXGBoostModel):
         shared_params = {**self.DEFAULT_HYPERPARAMS, **(hyperparams or {})}
         self.hyperparams = shared_params.copy()
 
-        # Median model (point predictions)
         self.model = xgb.XGBRegressor(
             objective="reg:squarederror",
             **shared_params,
         )
         self.model.fit(X_train, y_train, sample_weight=sample_weight)
 
-        # Quantile models for confidence intervals
+        # Quantile models for CI
         self.model_lower = xgb.XGBRegressor(
             objective="reg:quantileerror",
             quantile_alpha=0.1,
@@ -183,23 +194,42 @@ class ShortTermModel(BaseXGBoostModel):
         # Attach test features for evaluation convenience
         if not test_features.empty:
             X_test, y_test = self._prepare_xy(test_features)
-            test_preds = np.clip(self.model.predict(X_test), 0.0, 1.0)
-            test_preds_lower = np.clip(self.model_lower.predict(X_test), 0.0, 1.0)
-            test_preds_upper = np.clip(self.model_upper.predict(X_test), 0.0, 1.0)
+            test_preds = self.model.predict(X_test)
+            test_baselines = test_features["historical_baseline"].values
+            predicted_rates = np.clip(test_baselines + test_preds, 0.0, 1.0)
+            actual_rates = np.clip(test_baselines + y_test, 0.0, 1.0)
+
+            # Horizon-stratified MAE
+            horizon_mae = {}
+            for d in range(1, LONG_TERM_HORIZON_DAYS + 1):
+                mask = test_features["days_ahead"].values == d
+                if mask.sum() > 0:
+                    horizon_mae[d] = float(
+                        np.mean(np.abs(predicted_rates[mask] - actual_rates[mask]))
+                    )
+
+            # Quantile predictions on test set
+            dev_lower = self.model_lower.predict(X_test)
+            dev_upper = self.model_upper.predict(X_test)
+            predicted_lower = np.clip(test_baselines + dev_lower, 0.0, 1.0)
+            predicted_upper = np.clip(test_baselines + dev_upper, 0.0, 1.0)
 
             # Coverage: fraction of actuals within [lower, upper]
-            in_interval = (y_test >= test_preds_lower) & (y_test <= test_preds_upper)
+            in_interval = (actual_rates >= predicted_lower) & (
+                actual_rates <= predicted_upper
+            )
             coverage = float(in_interval.mean())
 
             # Mean interval width (narrower is better at same coverage)
-            mean_interval_width = float((test_preds_upper - test_preds_lower).mean())
+            mean_interval_width = float((predicted_upper - predicted_lower).mean())
 
-            result["test_predictions"] = test_preds
-            result["test_predictions_lower"] = test_preds_lower
-            result["test_predictions_upper"] = test_preds_upper
+            result["horizon_mae"] = horizon_mae
             result["quantile_coverage"] = coverage
             result["mean_interval_width"] = mean_interval_width
-            result["test_actuals"] = y_test
+            result["test_predictions"] = predicted_rates
+            result["test_predictions_lower"] = predicted_lower
+            result["test_predictions_upper"] = predicted_upper
+            result["test_actuals"] = actual_rates
             result["test_features"] = test_features
 
         return result
@@ -213,8 +243,8 @@ class ShortTermModel(BaseXGBoostModel):
         Generate median predictions from prepared features.
 
         Args:
-            features_df: DataFrame with the same feature columns used
-                during training (output of prepare_training_features or
+            features_df: DataFrame with historical_baseline and all Stage 2
+                feature columns (output of prepare_training_features or
                 prepare_inference_features).
 
         Returns:
@@ -224,13 +254,14 @@ class ShortTermModel(BaseXGBoostModel):
             raise RuntimeError("Model has not been trained. Call train() first.")
 
         X, _ = self._prepare_xy(features_df, has_target=False)
-        predictions = self.model.predict(X)
+        dev_preds = self.model.predict(X)
+        baselines = features_df["historical_baseline"].values
 
-        # Clip predictions within valid range [0, 1]
-        return np.clip(predictions, 0.0, 1.0)
+        return np.clip(baselines + dev_preds, 0.0, 1.0)
 
     def predict_quantiles(
-        self, features_df: pd.DataFrame
+        self,
+        features_df: pd.DataFrame,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Generate median, lower (10th percentile), and upper (90th percentile) predictions.
@@ -239,36 +270,42 @@ class ShortTermModel(BaseXGBoostModel):
         receive widened confidence intervals to reflect higher uncertainty.
 
         Args:
-            features_df: DataFrame with the same feature columns used during training.
-                May include an ``is_cold_start`` boolean column (not used as a model
-                feature, only for interval widening).
+            features_df: DataFrame with historical_baseline and all Stage 2
+                feature columns (output of prepare_training_features or
+                prepare_inference_features). May include an ``is_cold_start``
+                boolean column (not used as a model feature, only for interval
+                widening).
 
         Returns:
-            Tuple of (median, lower, upper) arrays, each clamped to [0, 1].
+            Tuple of (median, lower, upper) arrays of occupancy rates,
+            each clamped to [0, 1].
         """
         if self.model is None or self.model_lower is None or self.model_upper is None:
             raise RuntimeError("Model has not been trained. Call train() first.")
 
         X, _ = self._prepare_xy(features_df, has_target=False)
-        median = np.clip(self.model.predict(X), 0.0, 1.0)
-        lower = np.clip(self.model_lower.predict(X), 0.0, 1.0)
-        upper = np.clip(self.model_upper.predict(X), 0.0, 1.0)
+        dev_median = self.model.predict(X)
+        dev_lower = self.model_lower.predict(X)
+        dev_upper = self.model_upper.predict(X)
 
-        # Enforce ordering: lower <= median <= upper
+        baseline = features_df["historical_baseline"].values
+
+        median = np.clip(baseline + dev_median, 0.0, 1.0)
+        lower = np.clip(baseline + dev_lower, 0.0, 1.0)
+        upper = np.clip(baseline + dev_upper, 0.0, 1.0)
+
+        # Enforce ordering
         lower = np.minimum(lower, median)
         upper = np.maximum(upper, median)
 
-        # Widen confidence intervals for cold-start lots
+        # Widen CI for cold-start lots
         if "is_cold_start" in features_df.columns:
             cold = features_df["is_cold_start"].values.astype(bool)
             if cold.any():
                 m = COLD_START_CI_MULTIPLIER
                 spread_lower = median - lower
                 spread_upper = upper - median
-                lower[cold] = median[cold] - spread_lower[cold] * m
-                upper[cold] = median[cold] + spread_upper[cold] * m
-
-                lower = np.clip(lower, 0.0, 1.0)
-                upper = np.clip(upper, 0.0, 1.0)
+                lower[cold] = np.clip(median[cold] - spread_lower[cold] * m, 0.0, 1.0)
+                upper[cold] = np.clip(median[cold] + spread_upper[cold] * m, 0.0, 1.0)
 
         return median, lower, upper

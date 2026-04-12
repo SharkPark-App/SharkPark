@@ -12,76 +12,32 @@ Usage:
 
 import argparse
 import logging
-
-import mlflow
+import sys
 
 from src.config import SHORT_TERM_MODEL_NAME
+from src.utils.mlflow_utils import promote_model
 
 logger = logging.getLogger(__name__)
 
 
 def promote(run_id: str, export_s3: bool = False) -> str | None:
     """
-    Register a model version and set the production alias.
-
-    Args:
-        run_id: MLflow run ID of the model to promote.
-        export_s3: If True, print a placeholder message for S3 export.
+    Promote a short-term model to production.
 
     Returns:
-        The registered model version number.
+        The registered model version number, or None on failure.
     """
-    client = mlflow.tracking.MlflowClient()
-
-    # Verify the run exists
-    try:
-        run = client.get_run(run_id)
-    except mlflow.exceptions.MlflowException as e:
-        if e.error_code == "RESOURCE_DOES_NOT_EXIST":
-            logger.error("Run '%s' not found. Check the run ID and try again.", run_id)
-            return None
-        logger.error("MLflow error while fetching run '%s' (error_code=%s): %s", run_id, e.error_code, e)
-        raise
-
-    artifact_uri = run.info.artifact_uri
-    model_uri = f"{artifact_uri}/model"
-
-    # Register model to mlflow
-    logger.info("Registering model from run %s...", run_id)
-    try:
-        result = mlflow.register_model(model_uri, SHORT_TERM_MODEL_NAME)
-    except mlflow.exceptions.MlflowException as e:
-        logger.error("Failed to register model — %s", e)
+    version, alias_set, run = promote_model(run_id, SHORT_TERM_MODEL_NAME, export_s3)
+    if version is None:
         return None
 
-    version = result.version
-
-    # Set production alias (automatically removes it from any previous version)
-    try:
-        client.set_registered_model_alias(SHORT_TERM_MODEL_NAME, "production", version)
-    except mlflow.exceptions.MlflowException as e:
-        logger.error(
-            "Model registered as v%s but failed to set production alias — %s",
-            version,
-            e,
-        )
+    if not alias_set:
         return version
 
-    logger.info("Model registered: %s v%s", SHORT_TERM_MODEL_NAME, version)
-    logger.info("Alias: @production")
-    logger.info("Run ID: %s", run_id)
-
-    # Print promotion metrics from the run
     metrics = run.data.metrics
     if metrics:
         logger.info("MAE:  %s", metrics.get("mae", "N/A"))
         logger.info("RMSE: %s", metrics.get("rmse", "N/A"))
-
-    if export_s3:
-        logger.info(
-            "\n[S3 Export] Not implemented yet. When deployed to Lambda, "
-            "this will upload the model artifact to S3 for Lambda-based inference."
-        )
 
     print("\nNext step:")
     print("  python -m scripts.predict_short_term")
@@ -106,4 +62,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    promote(args.run_id, args.export_s3)
+    version = promote(args.run_id, args.export_s3)
+    if version is None:
+        sys.exit(1)
