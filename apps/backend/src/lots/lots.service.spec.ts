@@ -577,7 +577,56 @@ describe('LotsService', () => {
 
       expect(results).toEqual([]);
     });
-  });
+    it('should penalize lots with active high-impact events', async () => {
+      const lotWithEvent = makeLot({
+        id: 'uuid-event',
+        lot_id: 'GE',
+        current_occupancy: 100,
+        capacity: 400,
+        center_lat: 33.7825,
+        center_lng: -118.1098,
+      });
+      const lotWithoutEvent = makeLot({
+        id: 'uuid-noevent',
+        lot_id: 'GF',
+        current_occupancy: 100,
+        capacity: 400,
+        center_lat: 33.7825,
+        center_lng: -118.1098,
+      });
+
+      prisma.lot.findFirst.mockResolvedValue(sourceLot);
+      prisma.lot.findMany.mockResolvedValue([lotWithEvent, lotWithoutEvent]);
+
+      // GE has a high-impact event (40% increase expected)
+      eventsService.getActiveImpactsForLots.mockResolvedValue(
+        new Map([['uuid-event', 40]]),
+      );
+
+      const results = await service.getRecommendations('G1');
+
+      const withEvent = results.find(r => r.lot_id === 'GE');
+      const withoutEvent = results.find(r => r.lot_id === 'GF');
+
+      expect(withEvent).toBeDefined();
+      expect(withoutEvent).toBeDefined();
+      // Lot without event should score higher
+      expect(withoutEvent!.recommendation_score).toBeGreaterThan(withEvent!.recommendation_score);
+    });
+
+    it('should include event impact info in recommendation reason', async () => {
+      prisma.lot.findFirst.mockResolvedValue(sourceLot);
+      prisma.lot.findMany.mockResolvedValue([nearbyAvailable]);
+
+      eventsService.getActiveImpactsForLots.mockResolvedValue(
+        new Map([['uuid-nearby', 25]]),
+      );
+
+      const results = await service.getRecommendations('G1');
+
+      expect(results[0].reason).toContain('event nearby');
+      expect(results[0].reason).toContain('+25% demand');
+    });  });
 
   describe('getShortTermPredictions', () => {
     const mockLot = { id: 'uuid-1', lot_id: 'G1' };

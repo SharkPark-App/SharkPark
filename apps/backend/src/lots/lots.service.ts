@@ -229,6 +229,7 @@ export class LotsService {
   /**
    * Recommends alternative lots when a preferred lot is full or nearly full.
    * Scores candidates using weighted factors: availability, distance, type match, permit compatibility.
+   * Factors in active event impacts (lots with high-impact events get penalized).
    * Excludes the source lot and any lots at ≥75% occupancy.
    */
   async getRecommendations(lotId: string, limit: number = 5): Promise<LotRecommendation[]> {
@@ -248,6 +249,10 @@ export class LotsService {
 
     // Batch-estimate penetration for all candidates
     const estimates = await this.penetrationService.estimateForAllLots(candidates);
+
+    // Batch-fetch active event impacts for all candidate lots
+    const candidateIds = candidates.map(c => c.id);
+    const eventImpacts = await this.eventsService.getActiveImpactsForLots(candidateIds);
 
     const W = LotsService.RECOMMENDATION_WEIGHTS;
 
@@ -279,15 +284,23 @@ export class LotsService {
         const overlap = candidate.permit_types.filter(p => sourcePermits.has(p)).length;
         const permitScore = sourcePermits.size > 0 ? overlap / sourcePermits.size : 1;
 
-        const score = Math.round(
-          (W.availability * availabilityScore +
+        // --- Event penalty (0–1): reduce score if active high-impact event ---
+        const eventIncrease = eventImpacts.get(candidate.id) ?? 0;
+        // Normalize: 50%+ expected increase → 0 penalty margin, 0% → no penalty
+        const eventPenalty = Math.min(1, eventIncrease / 50);
+
+        let score = W.availability * availabilityScore +
            W.distance    * distanceScore +
            W.typeMatch   * typeScore +
-           W.permitCompat * permitScore) * 100,
-        );
+           W.permitCompat * permitScore;
+
+        // Apply event penalty: reduce score by up to 20%
+        score *= (1 - eventPenalty * 0.20);
+
+        score = Math.round(score * 100);
 
         // Build a human-readable reason
-        const reason = this.buildRecommendationReason(response, distance);
+        const reason = this.buildRecommendationReason(response, distance, eventIncrease);
 
         return {
           ...response,
@@ -325,6 +338,7 @@ export class LotsService {
   private buildRecommendationReason(
     lot: ParkingLotResponse,
     distanceMeters: number,
+    eventIncrease: number = 0,
   ): string {
     const parts: string[] = [];
 
@@ -342,6 +356,10 @@ export class LotsService {
       parts.push('nearby');
     } else {
       parts.push(`~${Math.round(distanceMeters / 100) * 100}m away`);
+    }
+
+    if (eventIncrease > 0) {
+      parts.push(`event nearby (+${Math.round(eventIncrease)}% demand)`);
     }
 
     return parts.join(' · ');
