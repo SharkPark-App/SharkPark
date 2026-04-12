@@ -29,10 +29,14 @@ interface ValidationEventWithMetadata extends ValidationEvent {
 
 class ParkingValidationService {
   private activeSessions = new Map<string, ParkingSession>();
+  private sessionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private eventBuffer: ValidationEventWithMetadata[] = [];
   private isCollectingData = false;
   private behavioralCollector = sharedBehavioralCollector;
   private initPromise: Promise<void>;
+
+  // Maximum session duration before auto-cancellation (4 hours)
+  private readonly SESSION_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
   // Event listeners
   private validationCompleteListeners: ((analysis: ValidationAnalysis, lotId: string) => void)[] = [];
@@ -61,6 +65,12 @@ class ParkingValidationService {
 
     this.activeSessions.set(sessionId, session);
     this.isCollectingData = true;
+
+    // Auto-cancel stale sessions after timeout to prevent resource leaks
+    const timer = setTimeout(() => {
+      this.cancelStaleSession(sessionId);
+    }, this.SESSION_TIMEOUT_MS);
+    this.sessionTimers.set(sessionId, timer);
     
     // Start collecting location and movement data
     this.startDataCollection(sessionId, geofenceEvent.regionId);
@@ -87,6 +97,9 @@ class ParkingValidationService {
       if (__DEV__) console.log(`[ParkingValidation] No active session found for lot ${geofenceEvent.regionId}`);
       return null;
     }
+
+    // Clear the session timeout timer
+    this.clearSessionTimer(activeSession.sessionId);
 
     // Add final exit event
     const exitEvent = this.createValidationEvent('GEOFENCE_EXIT', activeSession.sessionId, geofenceEvent.regionId);
@@ -320,6 +333,39 @@ class ParkingValidationService {
       bluetoothState: metadata.bluetooth_state || undefined,
       eventType: eventType,
     });
+  }
+
+  private clearSessionTimer(sessionId: string): void {
+    const timer = this.sessionTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.sessionTimers.delete(sessionId);
+    }
+  }
+
+  private cancelStaleSession(sessionId: string): void {
+    const session = this.activeSessions.get(sessionId);
+    if (!session || session.status !== 'ACTIVE') return;
+
+    if (__DEV__) console.warn(`[ParkingValidation] Session ${sessionId} timed out, cancelling`);
+
+    session.status = 'CANCELLED';
+    this.activeSessions.delete(sessionId);
+    this.sessionTimers.delete(sessionId);
+    this.removePersistedSession(sessionId);
+
+    // Stop collecting if no active sessions remain
+    if (this.findAnyActiveSession() === undefined) {
+      this.isCollectingData = false;
+      this.behavioralCollector.stopCollection('parkingValidation');
+    }
+  }
+
+  private findAnyActiveSession(): ParkingSession | undefined {
+    for (const session of this.activeSessions.values()) {
+      if (session.status === 'ACTIVE') return session;
+    }
+    return undefined;
   }
 
   private findActiveSessionByLotId(lotId: string): ParkingSession | undefined {
