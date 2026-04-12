@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -6,7 +6,8 @@ if (isProduction && !process.env.DEVICE_HASH_SALT) {
   throw new Error('DEVICE_HASH_SALT environment variable is required in production');
 }
 
-const DEVICE_HASH_SALT = process.env.DEVICE_HASH_SALT || 'sharkpark-default-salt-2026';
+// In development, generate a random salt per process instead of a predictable default
+const DEVICE_HASH_SALT = process.env.DEVICE_HASH_SALT || `dev-${randomBytes(16).toString('hex')}`;
 
 /** Hashes device ID with SHA-256 + salt for privacy-safe deduplication */
 export function hashDeviceId(deviceId: string): string {
