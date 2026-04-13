@@ -39,6 +39,8 @@ describe('UsersController (e2e)', () => {
     })
     .overrideGuard(AzureAdGuard)
     .useClass(MockAuthGuard)
+    .overrideProvider(AzureAdGuard)
+    .useClass(MockAuthGuard)
     .compile();
 
     app = moduleFixture.createNestApplication();

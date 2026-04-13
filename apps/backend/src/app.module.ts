@@ -41,7 +41,7 @@ import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, validate
   providers: [
     AppService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_GUARD, useClass: AzureAdGuard },
+    { provide: APP_GUARD, useExisting: AzureAdGuard },
   ],
 })
 export class AppModule {}
