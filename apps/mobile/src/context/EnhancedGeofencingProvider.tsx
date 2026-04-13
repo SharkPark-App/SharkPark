@@ -12,6 +12,7 @@
 
 import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, ReactNode, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
@@ -21,12 +22,17 @@ import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createGeofenceRegionsFromLots } from '../utils/geofenceUtils';
 import { useAuth } from './AuthContext';
+import { geofenceLotFilterKey } from './AuthContext';
 
 /**
- * Filters lots to ≤20 for OS geofence registration based on the user's CSULB
- * email suffix:
- *   @student.csulb.edu → STUDENT lots (G-lots)
- *   @csulb.edu         → EMPLOYEE lots (E-lots)
+ * Returns the candidate lots for OS geofence registration based on the user's
+ * CSULB email suffix, before any saved per-user filter is applied:
+ *
+ *   @student.csulb.edu → STUDENT lots only (G-lots)
+ *   @csulb.edu         → All lots, E-lots first then G-lots (employees may
+ *                        park in both). The caller applies the saved filter
+ *                        and the 20-cap on top of this.
+ *   anything else      → [] (unauthenticated / non-CSULB)
  *
  * The map always shows all lots — this filter only affects which geofences
  * are registered with the OS.
@@ -39,9 +45,14 @@ export function filterLotsByUserType<T extends { lot_type: string }>(lots: T[], 
   if (isStudent) {
     filtered = lots.filter(l => l.lot_type === 'STUDENT');
   } else if (isEmployee) {
-    filtered = lots.filter(l => l.lot_type === 'EMPLOYEE');
+    // Employees may park in both E-lots and G-lots.
+    // Return E-lots first so that if the 20-cap trims the list, E-lots are
+    // always included. The saved AsyncStorage filter narrows this further.
+    const eLots = lots.filter(l => l.lot_type === 'EMPLOYEE');
+    const gLots = lots.filter(l => l.lot_type === 'STUDENT');
+    filtered = [...eLots, ...gLots];
   } else {
-    // Fallback: no email match — register no geofences (all CSULB users must log in)
+    // Fallback: no email match — register no geofences
     filtered = [];
   }
 
@@ -364,10 +375,29 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       try {
         const allLots = await lotsApi.getAllLots();
 
-        // Filter to ≤20 lots based on the user's CSULB email suffix.
+        // Step 1: filter by email to get the candidate set for this user type.
         // The map always shows all lots — this only affects OS geofence registration.
         const userEmail = user?.userId ?? '';
-        const lotsToFence = filterLotsByUserType(allLots, userEmail);
+        let lotsToFence = filterLotsByUserType(allLots, userEmail);
+
+        // Step 2: if the user has saved a custom lot selection (via the map
+        // filter modal), narrow down to only those lots. An absent or empty
+        // key means "no saved preference — use the full candidate set".
+        if (userEmail) {
+          try {
+            const raw = await AsyncStorage.getItem(geofenceLotFilterKey(userEmail));
+            if (raw) {
+              const savedIds = JSON.parse(raw) as string[];
+              if (Array.isArray(savedIds) && savedIds.length > 0) {
+                lotsToFence = lotsToFence.filter(l => savedIds.includes(l.lot_id));
+                // Re-apply the 20-cap after intersecting with the saved filter.
+                lotsToFence = lotsToFence.slice(0, 20);
+              }
+            }
+          } catch {
+            // AsyncStorage read failure — fall through with the unfiltered candidate set.
+          }
+        }
 
         if (__DEV__) {
           console.log(`[EnhancedGeofencing] User: ${userEmail}`);

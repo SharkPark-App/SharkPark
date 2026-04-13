@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -8,6 +8,7 @@ import {
   Text,
   ImageSourcePropType,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -20,6 +21,8 @@ import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
 import { TYPOGRAPHY, SPACING, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { geofenceLotFilterKey } from '../context/AuthContext';
 import type { MapStackParamList } from '../types/navigation';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
@@ -74,6 +77,7 @@ const NavigateButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = (
 
 const MapScreen: React.FC = () => {
   const { colors } = useTheme();
+  const { user } = useAuth();
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   const { favoriteLots, refreshFavorites } = useFavorites();
   const { lots: apiLots } = useLotsList();
@@ -81,6 +85,21 @@ const MapScreen: React.FC = () => {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
+
+  // Restore the user's saved lot filter from AsyncStorage on mount.
+  useEffect(() => {
+    if (!user?.userId) return;
+    AsyncStorage.getItem(geofenceLotFilterKey(user.userId))
+      .then(raw => {
+        if (raw) {
+          const parsed = JSON.parse(raw) as string[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSelectedLots(parsed);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user?.userId]);
 
   // Merge live API occupancy data with mock position data
   // API provides real-time occupancy; mock data provides map x/y positions
@@ -196,6 +215,18 @@ const MapScreen: React.FC = () => {
   const handleApplyFilter = (filteredLots: string[]) => {
     setSelectedLots(filteredLots);
     setIsFilterModalOpen(false);
+
+    // Persist the selection so the geofence provider picks it up on next
+    // registration. An empty selection removes the key so the provider falls
+    // back to its email-based default.
+    if (user?.userId) {
+      const key = geofenceLotFilterKey(user.userId);
+      if (filteredLots.length > 0) {
+        AsyncStorage.setItem(key, JSON.stringify(filteredLots)).catch(() => {});
+      } else {
+        AsyncStorage.removeItem(key).catch(() => {});
+      }
+    }
   };
 
   // Redirect to Short-Term Forecast Screen of the lot selected within the navigation modal

@@ -1,5 +1,8 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginWithAzure, logoutFromAzure, loadAuth, saveAuth, AuthResult } from '../auth/AzureAuth';
+
+export const geofenceLotFilterKey = (email: string) => `@geofence_lot_filter/${email}`;
 
 type AuthState = AuthResult;
 
@@ -76,6 +79,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (__DEV__) console.error('[AuthContext] Azure logout error:', error);
     }
     
+    // Clear the per-user geofence lot filter so a subsequent login (same or
+    // different account) starts with a clean default.
+    if (user?.userId) {
+      await AsyncStorage.removeItem(geofenceLotFilterKey(user.userId)).catch(() => {});
+    }
+
     // Clear React state (local storage already cleared in logoutFromAzure)
     setUser(null);
     setIsAuthenticated(false);

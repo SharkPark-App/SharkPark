@@ -3,8 +3,11 @@
  *
  * This pure function determines which parking lots are registered as OS
  * geofences based on the logged-in user's CSULB email suffix:
- *   @student.csulb.edu → STUDENT lots (G-lots)
- *   @csulb.edu         → EMPLOYEE lots (E-lots)
+ *   @student.csulb.edu → STUDENT lots only (G-lots)
+ *   @csulb.edu         → All lots, E-lots first then G-lots (employees may
+ *                        park in both). A saved AsyncStorage filter narrows
+ *                        this further in the provider, but that is not tested
+ *                        here — this function only returns the candidate set.
  *   anything else      → [] (no geofences)
  *
  * The OS hard limit is 20 simultaneous geofences — the function enforces this
@@ -17,7 +20,10 @@ jest.mock('../src/services/locationService', () => ({ default: {} }));
 jest.mock('../src/services/parkingValidationService', () => ({ default: {} }));
 jest.mock('../src/services/leaveDetectionService', () => ({ default: {} }));
 jest.mock('../src/services/api', () => ({ lotsApi: {} }));
-jest.mock('../src/context/AuthContext', () => ({ useAuth: jest.fn() }));
+jest.mock('../src/context/AuthContext', () => ({
+  useAuth: jest.fn(),
+  geofenceLotFilterKey: (email: string) => `@geofence_lot_filter/${email}`,
+}));
 jest.mock('../src/utils/geofenceUtils', () => ({ createGeofenceRegionsFromLots: jest.fn() }));
 
 import { filterLotsByUserType } from '../src/context/EnhancedGeofencingProvider';
@@ -53,15 +59,18 @@ describe('filterLotsByUserType', () => {
   });
 
   describe('employee email (@csulb.edu)', () => {
-    it('returns only EMPLOYEE lots', () => {
+    it('returns both EMPLOYEE and STUDENT lots', () => {
       const result = filterLotsByUserType(mixedLots, 'prof.smith@csulb.edu');
-      expect(result.every(l => l.lot_type === 'EMPLOYEE')).toBe(true);
-      expect(result).toHaveLength(2);
+      expect(result.some(l => l.lot_type === 'EMPLOYEE')).toBe(true);
+      expect(result.some(l => l.lot_type === 'STUDENT')).toBe(true);
+      expect(result).toHaveLength(mixedLots.length);
     });
 
-    it('excludes STUDENT lots', () => {
+    it('returns E-lots before G-lots', () => {
       const result = filterLotsByUserType(mixedLots, 'prof.smith@csulb.edu');
-      expect(result.some(l => l.lot_type === 'STUDENT')).toBe(false);
+      const firstStudentIndex = result.findIndex(l => l.lot_type === 'STUDENT');
+      const lastEmployeeIndex = result.map(l => l.lot_type).lastIndexOf('EMPLOYEE');
+      expect(lastEmployeeIndex).toBeLessThan(firstStudentIndex);
     });
 
     it('does not match a student email as employee (isStudent guard)', () => {
