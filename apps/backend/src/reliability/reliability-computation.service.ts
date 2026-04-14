@@ -131,11 +131,12 @@ export class ReliabilityComputationService {
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Fetch recent predictions with corresponding snapshots
+    // Fetch recent predictions (only past, not future)
+    const now = new Date();
     const predictions = await this.prisma.predictionShortTerm.findMany({
       where: {
         lot_id: lot.id,
-        target_time: { gte: sevenDaysAgo },
+        target_time: { gte: sevenDaysAgo, lte: now },
       },
       orderBy: { target_time: 'asc' },
       take: 100,
@@ -143,24 +144,41 @@ export class ReliabilityComputationService {
 
     if (predictions.length < 10) return null;
 
-    // For each prediction, find the closest snapshot
+    // Batch-fetch all snapshots in the full time range (±10 min window)
+    const oldestTime = predictions[0].target_time;
+    const newestTime = predictions[predictions.length - 1].target_time;
+    const snapshots = await this.prisma.occupancySnapshot.findMany({
+      where: {
+        lot_id: lot.id,
+        timestamp: {
+          gte: new Date(oldestTime.getTime() - 10 * 60 * 1000),
+          lte: new Date(newestTime.getTime() + 10 * 60 * 1000),
+        },
+      },
+      orderBy: { timestamp: 'asc' },
+    });
+
+    // For each prediction, find the closest snapshot by time
     let totalError = 0;
     let comparisons = 0;
+    const windowMs = 10 * 60 * 1000;
 
     for (const pred of predictions) {
-      const windowStart = new Date(pred.target_time.getTime() - 10 * 60 * 1000);
-      const windowEnd = new Date(pred.target_time.getTime() + 10 * 60 * 1000);
+      const targetTimeMs = pred.target_time.getTime();
 
-      const snapshot = await this.prisma.occupancySnapshot.findFirst({
-        where: {
-          lot_id: lot.id,
-          timestamp: { gte: windowStart, lte: windowEnd },
-        },
-        orderBy: { timestamp: 'asc' },
-      });
+      let closestSnapshot = null;
+      let minDiffMs = windowMs;
 
-      if (snapshot && snapshot.occupancy > 0) {
-        const error = Math.abs(pred.predicted_occupancy - snapshot.occupancy) / snapshot.occupancy;
+      for (const snap of snapshots) {
+        const diffMs = Math.abs(snap.timestamp.getTime() - targetTimeMs);
+        if (diffMs <= minDiffMs) {
+          minDiffMs = diffMs;
+          closestSnapshot = snap;
+        }
+      }
+
+      if (closestSnapshot && closestSnapshot.occupancy > 0) {
+        const error = Math.abs(pred.predicted_occupancy - closestSnapshot.occupancy) / closestSnapshot.occupancy;
         totalError += error;
         comparisons++;
       }
