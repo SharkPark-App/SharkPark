@@ -3,16 +3,27 @@ import { NotFoundException, InternalServerErrorException } from '@nestjs/common'
 import { LotsService } from './lots.service';
 import { PrismaService } from '../database/database.module';
 import { PenetrationEstimationService } from './penetration-estimation.service';
+import { EventsService } from '../events/events.service';
+import { WeatherService } from '../weather/weather.service';
 
 describe('LotsService', () => {
   let service: LotsService;
   let prisma: {
     lot: { findMany: jest.Mock; findFirst: jest.Mock; groupBy: jest.Mock };
     occupancySnapshot: { findMany: jest.Mock };
+    predictionShortTerm: { findMany: jest.Mock };
+    predictionLongTerm: { findMany: jest.Mock };
   };
   let penetrationService: {
     estimateForAllLots: jest.Mock;
     estimateForLot: jest.Mock;
+  };
+  let eventsService: {
+    getUpcomingImpactsForLot: jest.Mock;
+    getActiveImpactsForLots: jest.Mock;
+  };
+  let weatherService: {
+    getCurrent: jest.Mock;
   };
 
   /** Helper: builds a default PenetrationEstimate from a lot's raw values */
@@ -29,6 +40,8 @@ describe('LotsService', () => {
     prisma = {
       lot: { findMany: jest.fn(), findFirst: jest.fn(), groupBy: jest.fn() },
       occupancySnapshot: { findMany: jest.fn() },
+      predictionShortTerm: { findMany: jest.fn().mockResolvedValue([]) },
+      predictionLongTerm: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     penetrationService = {
@@ -42,11 +55,22 @@ describe('LotsService', () => {
       estimateForLot: jest.fn().mockImplementation(async (lot: any) => makeEstimate(lot)),
     };
 
+    eventsService = {
+      getUpcomingImpactsForLot: jest.fn().mockResolvedValue([]),
+      getActiveImpactsForLots: jest.fn().mockResolvedValue(new Map()),
+    };
+
+    weatherService = {
+      getCurrent: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LotsService,
         { provide: PrismaService, useValue: prisma },
         { provide: PenetrationEstimationService, useValue: penetrationService },
+        { provide: EventsService, useValue: eventsService },
+        { provide: WeatherService, useValue: weatherService },
       ],
     }).compile();
 
@@ -188,12 +212,46 @@ describe('LotsService', () => {
       expect(summary.total_occupied).toBe(80);
       expect(summary.total_available).toBe(100);
       expect(summary.overall_occupancy_rate).toBeCloseTo(80 / 180, 2);
-      expect(summary.student_lots.count).toBe(1);
-      expect(summary.student_lots.capacity).toBe(100);
-      expect(summary.student_lots.occupied).toBe(50);
-      expect(summary.employee_lots.count).toBe(1);
-      expect(summary.employee_lots.capacity).toBe(80);
-      expect(summary.employee_lots.occupied).toBe(30);
+      expect(summary.by_type.STUDENT.lots).toBe(1);
+      expect(summary.by_type.STUDENT.capacity).toBe(100);
+      expect(summary.by_type.STUDENT.occupied).toBe(50);
+      expect(summary.by_type.STUDENT.available).toBe(50);
+      expect(summary.by_type.EMPLOYEE.lots).toBe(1);
+      expect(summary.by_type.EMPLOYEE.capacity).toBe(80);
+      expect(summary.by_type.EMPLOYEE.occupied).toBe(30);
+      expect(summary.by_type.EMPLOYEE.available).toBe(50);
+      expect(summary.high_occupancy_lots).toBeDefined();
+      expect(summary.timestamp).toBeDefined();
+    });
+
+    it('should include high occupancy lots in summary', async () => {
+      const lots = [
+        {
+          id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
+          current_occupancy: 90, lot_type: 'STUDENT', permit_types: [],
+          daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+        },
+        {
+          id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
+          current_occupancy: 10, lot_type: 'EMPLOYEE', permit_types: [],
+          daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+        },
+      ];
+      prisma.lot.findMany.mockResolvedValue(lots);
+      prisma.lot.groupBy.mockResolvedValue([
+        { lot_type: 'STUDENT', _count: { id: 1 }, _sum: { capacity: 100, current_occupancy: 90 } },
+        { lot_type: 'EMPLOYEE', _count: { id: 1 }, _sum: { capacity: 80, current_occupancy: 10 } },
+      ]);
+
+      const summary = await service.getOccupancySummary();
+
+      // G1 at 90% should be in high_occupancy_lots (>= 75%)
+      expect(summary.high_occupancy_lots).toHaveLength(1);
+      expect(summary.high_occupancy_lots[0].lot_id).toBe('G1');
     });
 
     it('should return zero rate when total capacity is zero', async () => {
@@ -518,6 +576,191 @@ describe('LotsService', () => {
       const results = await service.getRecommendations('G1');
 
       expect(results).toEqual([]);
+    });
+    it('should penalize lots with active high-impact events', async () => {
+      const lotWithEvent = makeLot({
+        id: 'uuid-event',
+        lot_id: 'GE',
+        current_occupancy: 100,
+        capacity: 400,
+        center_lat: 33.7825,
+        center_lng: -118.1098,
+      });
+      const lotWithoutEvent = makeLot({
+        id: 'uuid-noevent',
+        lot_id: 'GF',
+        current_occupancy: 100,
+        capacity: 400,
+        center_lat: 33.7825,
+        center_lng: -118.1098,
+      });
+
+      prisma.lot.findFirst.mockResolvedValue(sourceLot);
+      prisma.lot.findMany.mockResolvedValue([lotWithEvent, lotWithoutEvent]);
+
+      // GE has a high-impact event (40% increase expected)
+      eventsService.getActiveImpactsForLots.mockResolvedValue(
+        new Map([['uuid-event', 40]]),
+      );
+
+      const results = await service.getRecommendations('G1');
+
+      const withEvent = results.find(r => r.lot_id === 'GE');
+      const withoutEvent = results.find(r => r.lot_id === 'GF');
+
+      expect(withEvent).toBeDefined();
+      expect(withoutEvent).toBeDefined();
+      // Lot without event should score higher
+      expect(withoutEvent!.recommendation_score).toBeGreaterThan(withEvent!.recommendation_score);
+    });
+
+    it('should include event impact info in recommendation reason', async () => {
+      prisma.lot.findFirst.mockResolvedValue(sourceLot);
+      prisma.lot.findMany.mockResolvedValue([nearbyAvailable]);
+
+      eventsService.getActiveImpactsForLots.mockResolvedValue(
+        new Map([['uuid-nearby', 25]]),
+      );
+
+      const results = await service.getRecommendations('G1');
+
+      expect(results[0].reason).toContain('event nearby');
+      expect(results[0].reason).toContain('+25% demand');
+    });  });
+
+  describe('getShortTermPredictions', () => {
+    const mockLot = { id: 'uuid-1', lot_id: 'G1' };
+
+    it('should throw NotFoundException when lot not found', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
+      await expect(service.getShortTermPredictions('INVALID')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return predictions with event impacts and weather context', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.predictionShortTerm.findMany.mockResolvedValue([
+        {
+          target_time: new Date('2026-03-01T14:00:00Z'),
+          predicted_occupancy: 150,
+          confidence_lower: 130,
+          confidence_upper: 170,
+          model_version: 'v1.0',
+        },
+      ]);
+
+      const mockEvent = {
+        event_name: 'Basketball Game',
+        event_type: 'ATHLETIC',
+        start_time: new Date('2026-03-01T13:00:00Z'),
+        end_time: new Date('2026-03-01T16:00:00Z'),
+        location: 'Walter Pyramid',
+        expected_attendance: 5000,
+      };
+      const mockImpact = {
+        impact_level: 'HIGH',
+        expected_increase_percent: 30,
+      };
+      eventsService.getUpcomingImpactsForLot.mockResolvedValue([
+        { event: mockEvent, impact: mockImpact },
+      ]);
+
+      weatherService.getCurrent.mockResolvedValue({
+        conditions: 'Sunny',
+        temperature_f: 72,
+        is_raining: false,
+        precipitation_probability: 0,
+      });
+
+      const result = await service.getShortTermPredictions('G1');
+
+      expect(result.lot_id).toBe('G1');
+      expect(result.predictions).toHaveLength(1);
+      expect(result.event_impacts).toHaveLength(1);
+      expect(result.event_impacts[0].event_name).toBe('Basketball Game');
+      expect(result.event_impacts[0].expected_increase_percent).toBe(30);
+      expect(result.weather).toBeDefined();
+      expect(result.weather!.conditions).toBe('Sunny');
+    });
+
+    it('should return null weather when no weather data available', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.predictionShortTerm.findMany.mockResolvedValue([]);
+      eventsService.getUpcomingImpactsForLot.mockResolvedValue([]);
+      weatherService.getCurrent.mockResolvedValue(null);
+
+      const result = await service.getShortTermPredictions('G1');
+
+      expect(result.weather).toBeNull();
+      expect(result.event_impacts).toEqual([]);
+      expect(result.predictions).toEqual([]);
+    });
+  });
+
+  describe('getLongTermPredictions', () => {
+    const mockLotFull = {
+      id: 'uuid-1', lot_id: 'G1', capacity: 200, current_occupancy: 100,
+      lot_type: 'STUDENT', lot_name: 'Lot G1',
+    };
+
+    it('should throw NotFoundException when lot not found', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
+      await expect(service.getLongTermPredictions('INVALID')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return ML predictions when available', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([
+        {
+          target_date: new Date('2026-04-13'),
+          target_hour: 10,
+          predicted_occupancy: 150,
+          confidence_lower: 130,
+          confidence_upper: 170,
+          model_version: 'xgboost-v2',
+        },
+      ]);
+
+      const result = await service.getLongTermPredictions('G1', 7);
+
+      expect(result.source).toBe('ml');
+      expect(result.predictions).toHaveLength(1);
+      expect(result.predictions[0].model_version).toBe('xgboost-v2');
+    });
+
+    it('should fall back to heuristic when no ML predictions exist', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([]);
+
+      const result = await service.getLongTermPredictions('G1', 1);
+
+      expect(result.source).toBe('heuristic');
+      expect(result.predictions.length).toBeGreaterThan(0);
+      expect(result.predictions[0].model_version).toBe('heuristic-v1');
+    });
+
+    it('should generate heuristic predictions for campus hours only', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([]);
+
+      const result = await service.getLongTermPredictions('G1', 1);
+
+      // Campus hours: 6 AM to 9 PM (16 hours)
+      expect(result.predictions.length).toBe(16);
+      expect(result.predictions[0].target_hour).toBe(6);
+      expect(result.predictions[result.predictions.length - 1].target_hour).toBe(21);
+    });
+
+    it('should cap predicted_occupancy at lot capacity', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([]);
+
+      const result = await service.getLongTermPredictions('G1', 1);
+
+      for (const p of result.predictions) {
+        expect(p.predicted_occupancy).toBeLessThanOrEqual(mockLotFull.capacity);
+        expect(p.confidence_lower).toBeGreaterThanOrEqual(0);
+        expect(p.confidence_upper).toBeLessThanOrEqual(mockLotFull.capacity);
+      }
     });
   });
 });

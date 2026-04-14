@@ -3,14 +3,26 @@
  */
 import lotsApi, { type ParkingLotResponse } from '../src/services/api/lots';
 import { apiService } from '../src/services/api/base';
+import { cacheService } from '../src/services/api/cache';
 
 // Mock the API service
 jest.mock('../src/services/api/base');
 const mockApiService = apiService as jest.Mocked<typeof apiService>;
 
+// Mock the cache service — pass-through by default (calls fetcher, wraps result)
+jest.mock('../src/services/api/cache');
+const mockCacheService = cacheService as jest.Mocked<typeof cacheService>;
+
 describe('LotsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: getOrFetch calls the fetcher and wraps the result
+    mockCacheService.getOrFetch.mockImplementation(
+      async (_key, fetcher) => {
+        const data = await fetcher();
+        return { data, source: 'network' as const, isStale: false };
+      },
+    );
   });
 
   describe('getAllLots', () => {

@@ -5,6 +5,7 @@
 import { apiService } from './base';
 import API_CONFIG from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { cacheService } from './cache';
 
 // Backend response interfaces (matching the backend)
 export interface ParkingLot {
@@ -114,36 +115,72 @@ export interface LotRecommendation extends ParkingLotResponse {
 }
 
 class LotsApiService {
+  /** Cache TTLs by data type */
+  private static readonly CACHE_TTL = {
+    ALL_LOTS: 60 * 1000,           // 1 minute — lot data changes frequently
+    SUMMARY: 60 * 1000,            // 1 minute
+    LOT_DETAILS: 30 * 1000,        // 30 seconds — individual lot detail is time-sensitive
+    HISTORY: 5 * 60 * 1000,        // 5 minutes — historical data is stable
+    RECOMMENDATIONS: 2 * 60 * 1000, // 2 minutes
+    FORECAST: 5 * 60 * 1000,       // 5 minutes
+  };
+
   /**
-   * Get all parking lots with optional filtering
+   * Get all parking lots with optional filtering.
+   * Uses stale-while-revalidate caching for offline support.
    */
   async getAllLots(params?: GetLotsParams): Promise<ParkingLotResponse[]> {
     const queryString = params ? this.buildQueryString(params) : '';
     const endpoint = `${API_CONFIG.ENDPOINTS.LOTS}${queryString}`;
-    
-    const response = await apiService.get<ParkingLotResponse[]>(endpoint);
-    return response.data;
+    const cacheKey = `lots:all${queryString}`;
+
+    const result = await cacheService.getOrFetch(
+      cacheKey,
+      async () => {
+        const response = await apiService.get<ParkingLotResponse[]>(endpoint);
+        return response.data;
+      },
+      { ttl: LotsApiService.CACHE_TTL.ALL_LOTS },
+    );
+    return result.data;
   }
 
   /**
-   * Get campus-wide occupancy summary
+   * Get campus-wide occupancy summary.
+   * Cached for offline dashboard access.
    */
   async getOccupancySummary(): Promise<OccupancySummary> {
-    const response = await apiService.get<OccupancySummary>(API_CONFIG.ENDPOINTS.LOTS_SUMMARY);
-    return response.data;
+    const result = await cacheService.getOrFetch(
+      'lots:summary',
+      async () => {
+        const response = await apiService.get<OccupancySummary>(API_CONFIG.ENDPOINTS.LOTS_SUMMARY);
+        return response.data;
+      },
+      { ttl: LotsApiService.CACHE_TTL.SUMMARY },
+    );
+    return result.data;
   }
 
   /**
-   * Get details for a specific lot
+   * Get details for a specific lot.
+   * Cached per-lot for offline detail views.
    */
   async getLotDetails(lotId: string): Promise<ParkingLotResponse> {
     const endpoint = API_CONFIG.ENDPOINTS.LOT_DETAILS(lotId);
-    const response = await apiService.get<ParkingLotResponse>(endpoint);
-    return response.data;
+    const result = await cacheService.getOrFetch(
+      `lots:detail:${lotId}`,
+      async () => {
+        const response = await apiService.get<ParkingLotResponse>(endpoint);
+        return response.data;
+      },
+      { ttl: LotsApiService.CACHE_TTL.LOT_DETAILS },
+    );
+    return result.data;
   }
 
   /**
-   * Get historical occupancy data for a specific lot
+   * Get historical occupancy data for a specific lot.
+   * History is stable — longer cache TTL.
    */
   async getLotHistory(
     lotId: string, 
@@ -151,9 +188,17 @@ class LotsApiService {
   ): Promise<OccupancyHistoryRecord[]> {
     const queryString = params ? this.buildQueryString(params) : '';
     const endpoint = `${API_CONFIG.ENDPOINTS.LOT_HISTORY(lotId)}${queryString}`;
-    
-    const response = await apiService.get<OccupancyHistoryRecord[]>(endpoint);
-    return response.data;
+    const cacheKey = `lots:history:${lotId}${queryString}`;
+
+    const result = await cacheService.getOrFetch(
+      cacheKey,
+      async () => {
+        const response = await apiService.get<OccupancyHistoryRecord[]>(endpoint);
+        return response.data;
+      },
+      { ttl: LotsApiService.CACHE_TTL.HISTORY },
+    );
+    return result.data;
   }
 
   /**
@@ -166,9 +211,17 @@ class LotsApiService {
   ): Promise<LotRecommendation[]> {
     const queryString = limit !== 5 ? `?limit=${limit}` : '';
     const endpoint = `${API_CONFIG.ENDPOINTS.LOT_RECOMMENDATIONS(sourceLotId)}${queryString}`;
+    const cacheKey = `lots:recommend:${sourceLotId}:${limit}`;
 
-    const response = await apiService.get<LotRecommendation[]>(endpoint);
-    return response.data;
+    const result = await cacheService.getOrFetch(
+      cacheKey,
+      async () => {
+        const response = await apiService.get<LotRecommendation[]>(endpoint);
+        return response.data;
+      },
+      { ttl: LotsApiService.CACHE_TTL.RECOMMENDATIONS },
+    );
+    return result.data;
   }
 
   /**
@@ -187,7 +240,8 @@ class LotsApiService {
 
   /**
    * Fetch short-term predictions from backend ML pipeline.
-   * Falls back to local heuristic if no predictions are available.
+   * Uses cache for offline support; falls back to local heuristic if
+   * neither the backend nor a cached result is available.
    */
   async getForecast(lot: ParkingLotResponse): Promise<Array<{
     time: string;
@@ -197,45 +251,53 @@ class LotsApiService {
     accuracy: number;
   }>> {
     try {
-      const endpoint = API_CONFIG.ENDPOINTS.LOT_PREDICTIONS_SHORT(lot.lot_id);
-      const response = await apiService.get<{
-        predictions: Array<{
-          target_time: string;
-          predicted_occupancy: number;
-          confidence_lower: number;
-          confidence_upper: number;
-        }>;
-      }>(endpoint);
+      const result = await cacheService.getOrFetch(
+        `lots:forecast:${lot.lot_id}`,
+        async () => {
+          const endpoint = API_CONFIG.ENDPOINTS.LOT_PREDICTIONS_SHORT(lot.lot_id);
+          const response = await apiService.get<{
+            predictions: Array<{
+              target_time: string;
+              predicted_occupancy: number;
+              confidence_lower: number;
+              confidence_upper: number;
+            }>;
+          }>(endpoint);
 
-      const predictions = response.data.predictions;
-      if (predictions && predictions.length > 0) {
-        return predictions.map((p) => {
-          const hour = new Date(p.target_time).getHours();
-          const occupancyPercent = lot.capacity > 0
-            ? Math.round((p.predicted_occupancy / lot.capacity) * 100)
-            : p.predicted_occupancy;
-          const lower = lot.capacity > 0
-            ? Math.round((p.confidence_lower / lot.capacity) * 100)
-            : p.confidence_lower;
-          const upper = lot.capacity > 0
-            ? Math.round((p.confidence_upper / lot.capacity) * 100)
-            : p.confidence_upper;
+          const predictions = response.data.predictions;
+          if (predictions && predictions.length > 0) {
+            return predictions.map((p) => {
+              const hour = new Date(p.target_time).getHours();
+              const occupancyPercent = lot.capacity > 0
+                ? Math.round((p.predicted_occupancy / lot.capacity) * 100)
+                : p.predicted_occupancy;
+              const lower = lot.capacity > 0
+                ? Math.round((p.confidence_lower / lot.capacity) * 100)
+                : p.confidence_lower;
+              const upper = lot.capacity > 0
+                ? Math.round((p.confidence_upper / lot.capacity) * 100)
+                : p.confidence_upper;
 
-          return {
-            time: hour.toString(),
-            occupancy: Math.min(100, Math.max(0, occupancyPercent)),
-            lowerBound: Math.min(100, Math.max(0, lower)),
-            upperBound: Math.min(100, Math.max(0, upper)),
-            accuracy: lot.confidence === 'HIGH' ? 95 :
-                     lot.confidence === 'MEDIUM' ? 85 : 70,
-          };
-        });
-      }
+              return {
+                time: hour.toString(),
+                occupancy: Math.min(100, Math.max(0, occupancyPercent)),
+                lowerBound: Math.min(100, Math.max(0, lower)),
+                upperBound: Math.min(100, Math.max(0, upper)),
+                accuracy: lot.confidence === 'HIGH' ? 95 :
+                         lot.confidence === 'MEDIUM' ? 85 : 70,
+              };
+            });
+          }
+          // No predictions from backend — return local heuristic (still cache it)
+          return this.generateForecast(lot);
+        },
+        { ttl: LotsApiService.CACHE_TTL.FORECAST },
+      );
+      return result.data;
     } catch {
-      // Backend predictions unavailable — fall through to local heuristic
+      // Cache miss + network failure — generate locally
+      return this.generateForecast(lot);
     }
-
-    return this.generateForecast(lot);
   }
 
   /**
