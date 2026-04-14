@@ -88,7 +88,6 @@ jest.mock('../src/context/AuthContext', () => ({
     logout: jest.fn(),
     refreshSession: jest.fn(),
   }),
-  geofenceLotFilterKey: (email: string) => `@geofence_lot_filter/${email}`,
 }));
 
 jest.mock('../src/components/Modals/RecommendationModal', () => ({

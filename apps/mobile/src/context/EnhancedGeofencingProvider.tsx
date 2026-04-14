@@ -12,52 +12,35 @@
 
 import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, ReactNode, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
 import leaveDetectionService, { LeaveIntentAnalysis } from '../services/leaveDetectionService';
+import dynamicGeofenceManager from '../services/dynamicGeofenceManager';
 import { lotsApi } from '../services/api';
+import type { ParkingLotResponse } from '../services/api';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createGeofenceRegionsFromLots } from '../utils/geofenceUtils';
 import { useAuth } from './AuthContext';
-import { geofenceLotFilterKey } from './AuthContext';
 
 /**
- * Returns the candidate lots for OS geofence registration based on the user's
- * CSULB email suffix, before any saved per-user filter is applied:
+ * @deprecated Use `dynamicGeofenceManager.computeGeofenceSet()` instead.
  *
- *   @student.csulb.edu → STUDENT lots only (G-lots)
- *   @csulb.edu         → All lots, E-lots first then G-lots (employees may
- *                        park in both). The caller applies the saved filter
- *                        and the 20-cap on top of this.
- *   anything else      → [] (unauthenticated / non-CSULB)
- *
- * The map always shows all lots — this filter only affects which geofences
- * are registered with the OS.
+ * Kept for backward compatibility with tests. Returns the guaranteed set
+ * for the given user type (no dynamic/proximity logic).
  */
 export function filterLotsByUserType<T extends { lot_type: string }>(lots: T[], email: string): T[] {
   const isStudent = email.endsWith('@student.csulb.edu');
   const isEmployee = !isStudent && email.endsWith('@csulb.edu');
 
-  let filtered: T[];
-  if (isStudent) {
-    filtered = lots.filter(l => l.lot_type === 'STUDENT');
-  } else if (isEmployee) {
-    // Employees may park in both E-lots and G-lots.
-    // Return E-lots first so that if the 20-cap trims the list, E-lots are
-    // always included. The saved AsyncStorage filter narrows this further.
+  if (isStudent) return lots.filter(l => l.lot_type === 'STUDENT').slice(0, 20);
+  if (isEmployee) {
     const eLots = lots.filter(l => l.lot_type === 'EMPLOYEE');
     const gLots = lots.filter(l => l.lot_type === 'STUDENT');
-    filtered = [...eLots, ...gLots];
-  } else {
-    // Fallback: no email match — register no geofences
-    filtered = [];
+    return [...eLots, ...gLots].slice(0, 20);
   }
-
-  // Safety cap: OS hard limit is 20 simultaneous geofences
-  return filtered.slice(0, 20);
+  return [];
 }
 
 interface EnhancedGeofencingContextType {
@@ -257,15 +240,16 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     });
   }, []);
 
-  // Real location updates from LocationService
+  // Real location updates from LocationService + dynamic geofence recalculation
+  // Stores all lots from the API so dynamic recalculation doesn't re-fetch.
+  const allLotsRef = useRef<ParkingLotResponse[]>([]);
+
   useEffect(() => {
     let locationInterval: ReturnType<typeof setInterval> | null = null;
     let isTrackingStarted = false;
     
-    // Set up real location tracking using LocationService
     const startLocationUpdates = async () => {
       try {
-        // Start the location service tracking
         const started = await locationService.startLocationTracking();
         if (!started) {
           if (__DEV__) console.warn('[EnhancedGeofencing] Failed to start location tracking');
@@ -274,14 +258,12 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         
         isTrackingStarted = true;
         
-        // Set up periodic location updates for the geofencing provider
         locationInterval = setInterval(async () => {
           try {
             const position = await locationService.getCurrentPosition();
             if (position && position.coords) {
               const { latitude, longitude, speed, accuracy, altitude, heading } = position.coords;
               
-              // Convert speed from m/s to mph if available
               const speedMph = speed !== null && speed !== undefined ? speed * 2.237 : undefined;
               
               lastLocationUpdate.current = {
@@ -289,7 +271,6 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
                 accuracy: accuracy
               };
 
-              // Feed location data to parking validation service for behavioral analysis
               parkingValidationService.updateLocation({
                 latitude,
                 longitude,
@@ -299,7 +280,6 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
                 heading: heading ?? null
               });
 
-              // Also feed location data to leave detection service
               leaveDetectionService.updateLocation({
                 latitude,
                 longitude,
@@ -308,6 +288,30 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
                 altitude: altitude ?? null,
                 heading: heading ?? null
               });
+
+              // ── Dynamic geofence recalculation ──
+              // Only recalculate when user has moved >300 m from last computation.
+              if (
+                allLotsRef.current.length > 0 &&
+                dynamicGeofenceManager.shouldRecalculate(latitude, longitude)
+              ) {
+                const userEmail = user?.userId ?? '';
+                const allocation = dynamicGeofenceManager.computeGeofenceSet(
+                  allLotsRef.current,
+                  userEmail,
+                  { latitude, longitude },
+                );
+
+                if (allocation.all.length > 0) {
+                  const regions = createGeofenceRegionsFromLots(allocation.all);
+                  await locationService.addGeofenceRegions(regions);
+                  if (__DEV__) {
+                    console.log(
+                      `[EnhancedGeofencing] Dynamic recalc: ${allocation.guaranteed.length} guaranteed + ${allocation.dynamic.length} dynamic = ${allocation.all.length} geofences`,
+                    );
+                  }
+                }
+              }
             }
           } catch (error) {
             if (__DEV__) console.warn('[EnhancedGeofencing] Failed to get current position:', error);
@@ -329,7 +333,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         locationService.stopLocationTracking();
       }
     };
-  }, []);
+  }, [user?.userId]);
 
   // App state monitoring for behavioral context
   useEffect(() => {
@@ -353,58 +357,45 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
   // Set up geofencing and validation
   useEffect(() => {
-    // Wrap refs in stable lambdas — these closures never change identity, so
-    // the effect is guaranteed to run exactly once on mount.
     const geofenceListener = (event: GeofenceEvent) => {
       handleGeofenceEventRef.current(event);
     };
 
     locationService.setOnGeofenceEvent(geofenceListener);
 
-    // Set up validation completion listener
     const validationListener = (analysis: ValidationAnalysis) => {
       setCurrentValidationStatus(analysis);
     };
 
     parkingValidationService.onValidationComplete(validationListener);
 
-    // Set up geofences from real parking lot data.
-    // Note: locationService.startLocationTracking() is already called by the
-    // location feed effect above - do not call it again here.
+    // Initial geofence registration using DynamicGeofenceManager.
+    // GPS is not available yet, so we pass null → guaranteed-only set.
+    // Dynamic lots get filled in by the location-update effect once GPS fires.
     (async () => {
       try {
         const allLots = await lotsApi.getAllLots();
+        allLotsRef.current = allLots;
 
-        // Step 1: filter by email to get the candidate set for this user type.
-        // The map always shows all lots — this only affects OS geofence registration.
         const userEmail = user?.userId ?? '';
-        let lotsToFence = filterLotsByUserType(allLots, userEmail);
 
-        // Step 2: if the user has saved a custom lot selection (via the map
-        // filter modal), narrow down to only those lots. An absent or empty
-        // key means "no saved preference — use the full candidate set".
-        if (userEmail) {
-          try {
-            const raw = await AsyncStorage.getItem(geofenceLotFilterKey(userEmail));
-            if (raw) {
-              const savedIds = JSON.parse(raw) as string[];
-              if (Array.isArray(savedIds) && savedIds.length > 0) {
-                lotsToFence = lotsToFence.filter(l => savedIds.includes(l.lot_id));
-                // Re-apply the 20-cap after intersecting with the saved filter.
-                lotsToFence = lotsToFence.slice(0, 20);
-              }
-            }
-          } catch {
-            // AsyncStorage read failure — fall through with the unfiltered candidate set.
-          }
-        }
+        // First computation: no GPS yet → guaranteed set only
+        const allocation = dynamicGeofenceManager.computeGeofenceSet(
+          allLots,
+          userEmail,
+          null, // no position yet
+        );
 
         if (__DEV__) {
-          console.log(`[EnhancedGeofencing] User: ${userEmail}`);
-          console.log(`[EnhancedGeofencing] Registering ${lotsToFence.length}/${allLots.length} lots as geofences (${lotsToFence[0]?.lot_type ?? 'none'})`);
+          console.log(`[EnhancedGeofencing] User: ${userEmail} (${allocation.userType})`);
+          console.log(
+            `[EnhancedGeofencing] Initial: ${allocation.guaranteed.length} guaranteed, ` +
+            `${allocation.dynamic.length} dynamic = ${allocation.all.length} geofences` +
+            (allocation.isAfterELotOpen ? ' (E-lots open)' : ''),
+          );
         }
 
-        const realGeofenceRegions = createGeofenceRegionsFromLots(lotsToFence);
+        const realGeofenceRegions = createGeofenceRegionsFromLots(allocation.all);
 
         if (realGeofenceRegions.length > 0) {
           await locationService.addGeofenceRegions(realGeofenceRegions);
@@ -440,6 +431,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       locationService.removeOnGeofenceEvent(geofenceListener);
       parkingValidationService.removeValidationListener(validationListener);
       stopLocationDataCollectionRef.current();
+      dynamicGeofenceManager.reset();
     };
   }, []); // stable: all mutable state is accessed through refs
 

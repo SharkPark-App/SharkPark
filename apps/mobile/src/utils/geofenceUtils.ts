@@ -7,11 +7,14 @@
 import { GeofenceRegion } from '../types/location';
 import { ParkingLotResponse } from '../services/api/lots';
 import { GEOFENCE_CONSTANTS } from '../constants/geofencing';
+import { getLotPolygon } from '../data/lotPolygons';
 
 /**
- * Convert parking lot API data to geofence regions
- * Only uses necessary data for geofencing - no personal info stored
- * Returns legacy format for backward compatibility
+ * Convert parking lot API data to geofence regions.
+ *
+ * Prefers polygon geometry from lotPolygons.ts (real satellite-traced
+ * perimeters) when available; falls back to the circular geofence from the
+ * API if no polygon is defined for that lot.
  */
 export function createGeofenceRegionsFromLots(lots: ParkingLotResponse[]): GeofenceRegion[] {
   return lots
@@ -19,20 +22,39 @@ export function createGeofenceRegionsFromLots(lots: ParkingLotResponse[]): Geofe
       // Only create geofences for lots with valid coordinates
       return lot.center_lat && lot.center_lng && lot.geofence_radius;
     })
-    .map(lot => ({
-      id: lot.lot_id,
-      name: lot.display_name || lot.lot_name,
-      geometry: {
-        type: 'circle' as const,
-        center: {
-          latitude: lot.center_lat,
-          longitude: lot.center_lng,
+    .map(lot => {
+      const polygon = getLotPolygon(lot.lot_id);
+
+      if (polygon) {
+        // Use the real satellite-traced polygon perimeter
+        return {
+          id: lot.lot_id,
+          name: lot.display_name || lot.lot_name,
+          geometry: {
+            type: 'polygon' as const,
+            coordinates: polygon.map(p => ({ latitude: p.lat, longitude: p.lng })),
+          },
+          notifyOnEntry: true,
+          notifyOnExit: true,
+        };
+      }
+
+      // Fallback: circular geofence from the API
+      return {
+        id: lot.lot_id,
+        name: lot.display_name || lot.lot_name,
+        geometry: {
+          type: 'circle' as const,
+          center: {
+            latitude: lot.center_lat,
+            longitude: lot.center_lng,
+          },
+          radius: lot.geofence_radius,
         },
-        radius: lot.geofence_radius,
-      },
-      notifyOnEntry: true,
-      notifyOnExit: true,
-    }));
+        notifyOnEntry: true,
+        notifyOnExit: true,
+      };
+    });
 }
 
 /**

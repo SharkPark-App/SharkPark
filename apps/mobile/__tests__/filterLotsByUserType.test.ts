@@ -1,17 +1,9 @@
 /**
- * Unit tests for filterLotsByUserType()
+ * Unit tests for filterLotsByUserType() (deprecated wrapper)
  *
- * This pure function determines which parking lots are registered as OS
- * geofences based on the logged-in user's CSULB email suffix:
- *   @student.csulb.edu → STUDENT lots only (G-lots)
- *   @csulb.edu         → All lots, E-lots first then G-lots (employees may
- *                        park in both). A saved AsyncStorage filter narrows
- *                        this further in the provider, but that is not tested
- *                        here — this function only returns the candidate set.
- *   anything else      → [] (no geofences)
- *
- * The OS hard limit is 20 simultaneous geofences — the function enforces this
- * with a .slice(0, 20) safety cap.
+ * filterLotsByUserType is kept for backward compatibility.
+ * The real allocation logic lives in DynamicGeofenceManager.
+ * These tests verify the wrapper still returns the expected guaranteed set.
  */
 
 // Mock all native modules that EnhancedGeofencingProvider imports so Jest
@@ -19,10 +11,13 @@
 jest.mock('../src/services/locationService', () => ({ default: {} }));
 jest.mock('../src/services/parkingValidationService', () => ({ default: {} }));
 jest.mock('../src/services/leaveDetectionService', () => ({ default: {} }));
+jest.mock('../src/services/dynamicGeofenceManager', () => ({
+  __esModule: true,
+  default: { computeGeofenceSet: jest.fn(), shouldRecalculate: jest.fn(), reset: jest.fn() },
+}));
 jest.mock('../src/services/api', () => ({ lotsApi: {} }));
 jest.mock('../src/context/AuthContext', () => ({
   useAuth: jest.fn(),
-  geofenceLotFilterKey: (email: string) => `@geofence_lot_filter/${email}`,
 }));
 jest.mock('../src/utils/geofenceUtils', () => ({ createGeofenceRegionsFromLots: jest.fn() }));
 
