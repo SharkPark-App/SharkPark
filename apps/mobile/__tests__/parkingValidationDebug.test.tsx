@@ -15,13 +15,6 @@ jest.mock('@react-native-community/netinfo', () => ({
   },
 }));
 
-jest.mock('@react-native-community/geolocation', () => ({
-  watchPosition: jest.fn(),
-  clearWatch: jest.fn(),
-  getCurrentPosition: jest.fn(),
-  setRNConfiguration: jest.fn(),
-}));
-
 jest.mock('react-native-device-info', () => ({
   getBrand: jest.fn().mockResolvedValue('Apple'),
   getModel: jest.fn().mockResolvedValue('iPhone'),

@@ -116,11 +116,13 @@ describe('Geofencing Database Integration', () => {
 
   it('should handle multiple events in sequence', async () => {
     const databaseListener = async (event: GeofenceEvent) => {
-      await lotsApi.recordOccupancyEvent({
-        lotId: event.regionId,
-        eventType: event.eventType,
-        source: 'GEOFENCE',
-      });
+      if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+        await lotsApi.recordOccupancyEvent({
+          lotId: event.regionId,
+          eventType: event.eventType,
+          source: 'GEOFENCE',
+        });
+      }
     };
 
     locationService.onGeofence(databaseListener);
@@ -157,14 +159,16 @@ describe('Geofencing Database Integration', () => {
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const databaseListener = async (event: GeofenceEvent) => {
-      try {
-        await lotsApi.recordOccupancyEvent({
-          lotId: event.regionId,
-          eventType: event.eventType,
-          source: 'GEOFENCE',
-        });
-      } catch (error) {
-        console.error('Failed to send occupancy event:', error);
+      if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+        try {
+          await lotsApi.recordOccupancyEvent({
+            lotId: event.regionId,
+            eventType: event.eventType,
+            source: 'GEOFENCE',
+          });
+        } catch (error) {
+          console.error('Failed to send occupancy event:', error);
+        }
       }
     };
 
@@ -184,19 +188,23 @@ describe('Geofencing Database Integration', () => {
 
   it('should support multiple listeners updating database simultaneously', async () => {
     const listener1 = async (event: GeofenceEvent) => {
-      await lotsApi.recordOccupancyEvent({
-        lotId: event.regionId,
-        eventType: event.eventType,
-        source: 'GEOFENCE',
-      });
+      if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+        await lotsApi.recordOccupancyEvent({
+          lotId: event.regionId,
+          eventType: event.eventType,
+          source: 'GEOFENCE',
+        });
+      }
     };
 
     const listener2 = async (event: GeofenceEvent) => {
-      await lotsApi.recordOccupancyEvent({
-        lotId: `analytics_${event.regionId}`,
-        eventType: event.eventType,
-        source: 'GEOFENCE',
-      });
+      if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+        await lotsApi.recordOccupancyEvent({
+          lotId: `analytics_${event.regionId}`,
+          eventType: event.eventType,
+          source: 'GEOFENCE',
+        });
+      }
     };
 
     locationService.onGeofence(listener1);

@@ -13,11 +13,6 @@ import BehavioralDataCollector from '../behavioralDataCollector';
 
 // ─── Native module mocks ─────────────────────────────────────────────────────
 
-jest.mock('@react-native-community/geolocation', () => ({
-  watchPosition: jest.fn(),
-  clearWatch: jest.fn(),
-}));
-
 jest.mock('@react-native-community/netinfo', () => ({
   fetch: jest.fn(),
 }));

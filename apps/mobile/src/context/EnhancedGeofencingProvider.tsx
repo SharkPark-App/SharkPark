@@ -10,6 +10,7 @@
 
 import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, ReactNode, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Location, MotionActivityEvent, MotionChangeEvent } from 'react-native-background-geolocation';
 import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
@@ -77,6 +78,12 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   // Stable refs that always point to the latest callback.
   const handleGeofenceEventRef = useRef<(event: GeofenceEvent) => void>(() => {});
 
+  // Track ENTER timestamps per lot for drive-through detection (<60s = DROVE_THROUGH)
+  const enterTimestamps = useRef<Map<string, number>>(new Map());
+
+  // Track which lots have received a DWELL event (for overlapping lot priority)
+  const dwelledLots = useRef<Set<string>>(new Set());
+
   // Stores all lots from the API so dynamic recalculation doesn't re-fetch.
   const allLotsRef = useRef<ParkingLotResponse[]>([]);
 
@@ -103,6 +110,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     if (event.eventType === 'ENTER') {
       if (!currentZones.current.has(event.regionId)) {
         currentZones.current.add(event.regionId);
+        enterTimestamps.current.set(event.regionId, Date.now());
         setCurrentLotId(event.regionId);
         currentLotIdRef.current = event.regionId;
 
@@ -145,11 +153,44 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
         await sendValidatedOccupancyEvent(event.regionId, 'ENTER');
       }
+    } else if (event.eventType === 'DWELL') {
+      // Native 5-min DWELL — high-confidence parking confirmation.
+      // Record as a DWELL behavioral event for the validator's activity recognition score.
+      dwelledLots.current.add(event.regionId);
+
+      parkingValidationService.recordBehavioralEvent('DWELL', {
+        raw_data: {
+          lot_id: event.regionId,
+          duration_ms: 300000,
+          timestamp: event.timestamp,
+        },
+      });
+
+      if (__DEV__) {
+        Alert.alert(
+          '[DEV] Dwell Detected',
+          `Parked in ${event.regionId} for 5+ minutes (native DWELL).`,
+          [{ text: 'OK' }]
+        );
+      }
     } else if (event.eventType === 'EXIT') {
       if (currentZones.current.has(event.regionId)) {
         currentZones.current.delete(event.regionId);
-        setCurrentLotId(null);
-        currentLotIdRef.current = null;
+
+        // Drive-through detection: EXIT within 60s of ENTER → DROVE_THROUGH
+        const enterTime = enterTimestamps.current.get(event.regionId);
+        const isDriveThrough = enterTime != null && (Date.now() - enterTime) < 60000;
+        enterTimestamps.current.delete(event.regionId);
+
+        // Overlapping lot priority: if multiple lots are active and this lot
+        // never received a DWELL event, suppress its occupancy contribution.
+        const hadDwell = dwelledLots.current.has(event.regionId);
+        const otherActiveZones = currentZones.current.size > 0;
+        const suppressForOverlap = otherActiveZones && !hadDwell;
+        dwelledLots.current.delete(event.regionId);
+
+        setCurrentLotId(currentZones.current.size > 0 ? [...currentZones.current][0] : null);
+        currentLotIdRef.current = currentZones.current.size > 0 ? [...currentZones.current][0] : null;
 
         try {
           const analysis = await parkingValidationService.completeParkingSession(event);
@@ -160,7 +201,11 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
           if (__DEV__) {
             let alertMessage = `Thanks for using ${event.regionId}!`;
-            if (analysis) {
+            if (isDriveThrough) {
+              alertMessage += '\n\nDrove through (<60s, suppressed).';
+            } else if (suppressForOverlap) {
+              alertMessage += '\n\nOverlapping lot without DWELL (suppressed).';
+            } else if (analysis) {
               switch (analysis.status) {
                 case 'PARKED':
                   alertMessage += `\n\nParked (${Math.round(analysis.confidenceScore * 100)}% confidence).`;
@@ -179,10 +224,15 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
             Alert.alert('[DEV] Left Parking Lot', alertMessage, [{ text: 'OK' }]);
           }
 
-          await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
+          // Suppress occupancy event for drive-throughs and overlapping non-DWELL lots
+          if (!isDriveThrough && !suppressForOverlap) {
+            await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
+          }
         } catch (error) {
           if (__DEV__) console.error('[EnhancedGeofencing] Failed to complete parking validation:', error);
-          await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
+          if (!isDriveThrough && !suppressForOverlap) {
+            await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
+          }
         }
 
         // Downgrade back to geofence-only (low power) if no lots active
@@ -437,6 +487,31 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
         // Start in geofence-only mode (low power)
         await locationService.startGeofenceMonitoring();
+
+        // Process pending headless events queued by the Android headless task
+        // while the app was terminated (see index.js registerHeadlessTask).
+        try {
+          const raw = await AsyncStorage.getItem('pending_geofence_events');
+          if (raw) {
+            const pending: Array<{ regionId: string; eventType: string; timestamp: string }> = JSON.parse(raw);
+            const oneHourAgo = Date.now() - 60 * 60 * 1000;
+
+            for (const pendingEvent of pending) {
+              const eventTime = new Date(pendingEvent.timestamp).getTime();
+              // Discard events older than 1 hour (matches backend's @IsRecentTimestamp)
+              if (eventTime < oneHourAgo) continue;
+
+              handleGeofenceEventRef.current({
+                regionId: pendingEvent.regionId,
+                eventType: pendingEvent.eventType as 'ENTER' | 'EXIT' | 'DWELL',
+                timestamp: pendingEvent.timestamp,
+              });
+            }
+            await AsyncStorage.removeItem('pending_geofence_events');
+          }
+        } catch (e) {
+          if (__DEV__) console.warn('[EnhancedGeofencing] Failed to process pending headless events:', e);
+        }
 
       } catch (error) {
         if (__DEV__) console.warn('[EnhancedGeofencing] Failed to load real parking lot data, falling back to test geofence:', error);

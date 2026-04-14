@@ -27,10 +27,12 @@ export function createSDKGeofencesFromLots(lots: ParkingLotResponse[]): Geofence
         radius: lot.geofence_radius,
         notifyOnEntry: true,
         notifyOnExit: true,
-        notifyOnDwell: false,
+        notifyOnDwell: true,
+        loiteringDelay: 300000, // 5 minutes — native DWELL = parking confirmation signal
         extras: {
-          name: lot.display_name || lot.lot_name,
-          lotType: lot.lot_type,
+          lot_name: lot.display_name || lot.lot_name,
+          lot_type: lot.lot_type,
+          capacity: lot.capacity,
         },
       };
 

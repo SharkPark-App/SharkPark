@@ -47,7 +47,7 @@ export interface CircularGeofenceRegion {
 
 export interface GeofenceEvent {
   regionId: string;
-  eventType: 'ENTER' | 'EXIT';
+  eventType: 'ENTER' | 'EXIT' | 'DWELL';
   timestamp: string;
   // NO location coordinates - privacy first!
 }

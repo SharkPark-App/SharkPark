@@ -318,9 +318,14 @@ class LocationService {
   // --- Internal SDK event handlers ---
 
   private handleGeofenceEvent = (event: SDKGeofenceEvent) => {
+    const actionMap: Record<string, 'ENTER' | 'EXIT' | 'DWELL'> = {
+      ENTER: 'ENTER',
+      EXIT: 'EXIT',
+      DWELL: 'DWELL',
+    };
     const geofenceEvent: GeofenceEvent = {
       regionId: event.identifier,
-      eventType: event.action === 'ENTER' ? 'ENTER' : 'EXIT',
+      eventType: actionMap[event.action] ?? 'EXIT',
       timestamp: String(event.location?.timestamp ?? new Date().toISOString()),
     };
 

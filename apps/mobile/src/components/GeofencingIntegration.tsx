@@ -98,11 +98,13 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
       sendOccupancyEvent(event.regionId, 'EXIT');
     }
 
-    // Notify parent component
-    onGeofenceEvent?.({
-      lotId: event.regionId,
-      eventType: event.eventType,
-    });
+    // Notify parent component (only for ENTER/EXIT, not DWELL)
+    if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+      onGeofenceEvent?.({
+        lotId: event.regionId,
+        eventType: event.eventType,
+      });
+    }
   };
 
   const sendOccupancyEvent = async (lotId: string, eventType: 'ENTER' | 'EXIT') => {

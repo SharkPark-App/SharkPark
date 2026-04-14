@@ -4,15 +4,6 @@
  */
 
 // Mock React Native modules first
-jest.mock('@react-native-community/geolocation', () => ({
-  getCurrentPosition: jest.fn(),
-  watchPosition: jest.fn(),
-  clearWatch: jest.fn(),
-  stopObserving: jest.fn(),
-  setRNConfiguration: jest.fn(),
-  requestAuthorization: jest.fn(),
-}));
-
 jest.mock('react-native', () => {
   return {
     Platform: { OS: 'ios' },
