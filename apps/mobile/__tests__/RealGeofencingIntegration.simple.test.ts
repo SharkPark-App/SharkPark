@@ -1,10 +1,16 @@
 /**
  * Simple Real Geofencing Integration Test
- * Verifies that geofencing utility functions work with real parking lot data
+ * Verifies that SDK geofence construction works with real parking lot data
  */
 
-import { createGeofenceRegionsFromLots } from '../src/utils/geofenceUtils';
+import { createSDKGeofencesFromLots } from '../src/utils/geofenceUtils';
 import type { ParkingLotResponse } from '../src/services/api/lots';
+
+// Mock BackgroundGeolocation SDK (needed by geofenceUtils import chain)
+jest.mock('react-native-background-geolocation', () => ({
+  __esModule: true,
+  default: {},
+}));
 
 describe('Real Geofencing Integration (Simple)', () => {
   // Sample minimal parking lot data
@@ -95,39 +101,39 @@ describe('Real Geofencing Integration (Simple)', () => {
     },
   ];
 
-  describe('createGeofenceRegionsFromLots utility', () => {
-    it('should convert real parking lot data to geofence regions', () => {
-      const geofenceRegions = createGeofenceRegionsFromLots(mockRealLots);
+  describe('createSDKGeofencesFromLots utility', () => {
+    it('should convert real parking lot data to SDK geofences', () => {
+      const geofences = createSDKGeofencesFromLots(mockRealLots);
 
-      expect(geofenceRegions).toHaveLength(2);
-      
-      // G1 has polygon data in lotPolygons.ts — should produce polygon geometry
-      const g1Region = geofenceRegions.find(region => region.id === 'G1');
-      expect(g1Region).toBeDefined();
-      expect(g1Region?.geometry.type).toBe('polygon');
-      expect(g1Region?.geometry.coordinates?.length).toBeGreaterThan(3);
-      
+      expect(geofences).toHaveLength(2);
+
+      // G1 has polygon data in lotPolygons.ts — should include vertices
+      const g1 = geofences.find(g => g.identifier === 'G1');
+      expect(g1).toBeDefined();
+      expect(g1?.vertices).toBeDefined();
+      expect(g1?.vertices!.length).toBeGreaterThan(3);
+
       // G2 also has polygon data
-      const g2Region = geofenceRegions.find(region => region.id === 'G2');
-      expect(g2Region).toBeDefined();
-      expect(g2Region?.geometry.type).toBe('polygon');
-      expect(g2Region?.geometry.coordinates?.length).toBeGreaterThan(3);
+      const g2 = geofences.find(g => g.identifier === 'G2');
+      expect(g2).toBeDefined();
+      expect(g2?.vertices).toBeDefined();
+      expect(g2?.vertices!.length).toBeGreaterThan(3);
     });
 
-    it('should fall back to circle geometry for lots without polygon data', () => {
+    it('should fall back to circular geofence for lots without polygon data', () => {
       const lotWithoutPolygon: ParkingLotResponse = {
         ...mockRealLots[0],
         lot_id: 'NODATA',
         lot_name: 'No polygon lot',
       };
 
-      const geofenceRegions = createGeofenceRegionsFromLots([lotWithoutPolygon]);
+      const geofences = createSDKGeofencesFromLots([lotWithoutPolygon]);
 
-      expect(geofenceRegions).toHaveLength(1);
-      expect(geofenceRegions[0].geometry.type).toBe('circle');
-      expect(geofenceRegions[0].geometry.center?.latitude).toBe(33.7838);
-      expect(geofenceRegions[0].geometry.center?.longitude).toBe(-118.1141);
-      expect(geofenceRegions[0].geometry.radius).toBe(100);
+      expect(geofences).toHaveLength(1);
+      expect(geofences[0].vertices).toBeUndefined();
+      expect(geofences[0].latitude).toBe(33.7838);
+      expect(geofences[0].longitude).toBe(-118.1141);
+      expect(geofences[0].radius).toBe(100);
     });
 
     it('should filter out lots with invalid coordinates', () => {
@@ -141,35 +147,35 @@ describe('Real Geofencing Integration (Simple)', () => {
         },
       ];
 
-      const geofenceRegions = createGeofenceRegionsFromLots(lotsWithInvalid);
-      
+      const geofences = createSDKGeofencesFromLots(lotsWithInvalid);
+
       // Should only include valid lots, not the one with 0,0 coordinates
-      expect(geofenceRegions).toHaveLength(2);
-      expect(geofenceRegions.find(region => region.id === 'INVALID')).toBeUndefined();
+      expect(geofences).toHaveLength(2);
+      expect(geofences.find(g => g.identifier === 'INVALID')).toBeUndefined();
     });
 
     it('should handle empty lot array', () => {
-      const geofenceRegions = createGeofenceRegionsFromLots([]);
-      expect(geofenceRegions).toHaveLength(0);
+      const geofences = createSDKGeofencesFromLots([]);
+      expect(geofences).toHaveLength(0);
     });
 
     it('should use lot_id as geofence identifier', () => {
-      const geofenceRegions = createGeofenceRegionsFromLots(mockRealLots);
-      
-      const identifiers = geofenceRegions.map(region => region.id);
+      const geofences = createSDKGeofencesFromLots(mockRealLots);
+
+      const identifiers = geofences.map(g => g.identifier);
       expect(identifiers).toContain('G1');
       expect(identifiers).toContain('G2');
     });
 
-    it('should convert polygon coordinates to {latitude, longitude} format', () => {
-      const geofenceRegions = createGeofenceRegionsFromLots(mockRealLots);
-      const g1Region = geofenceRegions.find(r => r.id === 'G1')!;
+    it('should include vertices as [lat, lng] pairs for polygon lots', () => {
+      const geofences = createSDKGeofencesFromLots(mockRealLots);
+      const g1 = geofences.find(g => g.identifier === 'G1')!;
 
-      // Polygon coordinates should use {latitude, longitude}, not {lat, lng}
-      expect(g1Region.geometry.coordinates![0]).toHaveProperty('latitude');
-      expect(g1Region.geometry.coordinates![0]).toHaveProperty('longitude');
-      expect(g1Region.geometry.coordinates![0]).not.toHaveProperty('lat');
-      expect(g1Region.geometry.coordinates![0]).not.toHaveProperty('lng');
+      // Vertices should be [lat, lng] pairs
+      expect(Array.isArray(g1.vertices![0])).toBe(true);
+      expect(g1.vertices![0]).toHaveLength(2);
+      expect(typeof g1.vertices![0][0]).toBe('number');
+      expect(typeof g1.vertices![0][1]).toBe('number');
     });
   });
 

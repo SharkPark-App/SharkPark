@@ -26,6 +26,7 @@ jest.mock('react-native-background-geolocation', () => ({
     onActivityChange: jest.fn(() => ({ remove: jest.fn() })),
     onMotionChange: jest.fn(() => ({ remove: jest.fn() })),
     onProviderChange: jest.fn(() => ({ remove: jest.fn() })),
+    onPowerSaveChange: jest.fn(() => ({ remove: jest.fn() })),
     AuthorizationStatus: { Always: 4, WhenInUse: 3, Denied: 1, NotDetermined: 0 },
     AccuracyAuthorization: { Full: 0, Reduced: 1 },
     DesiredAccuracy: { High: 0, Medium: 10, Low: 100 },

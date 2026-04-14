@@ -162,9 +162,9 @@ describe('Parking Validation Features', () => {
         },
       ];
 
-      // Test preliminary analysis (not final)
+      // Test preliminary analysis (not final) — too few events → INSUFFICIENT_DATA
       const preliminaryAnalysis = ParkingValidator.analyzeEventPatterns(mockEvents, false);
-      expect(preliminaryAnalysis.status).toBe('ANALYZING');
+      expect(preliminaryAnalysis.status).toBe('INSUFFICIENT_DATA');
 
       // Test final analysis with insufficient data
       const finalAnalysis = ParkingValidator.analyzeEventPatterns(mockEvents, true);

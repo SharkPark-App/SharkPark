@@ -60,9 +60,6 @@ describe('BehavioralDataCollector', () => {
     (mockDeviceInfo.getVersion as jest.Mock).mockResolvedValue('1.0.0');
     (mockDeviceInfo.getBatteryLevel as jest.Mock).mockResolvedValue(0.85);
 
-    // Use fake timers to control intervals, but keep setImmediate real so
-    // flushPromises() can drain the microtask queue after advancing timers.
-    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
   });
 
   afterEach(() => {
@@ -70,9 +67,6 @@ describe('BehavioralDataCollector', () => {
     if (collector) {
       collector.stopCollection();
     }
-    
-    // Reset timers
-    jest.useRealTimers();
   });
 
   it('should create an instance of BehavioralDataCollector', () => {
@@ -101,15 +95,13 @@ describe('BehavioralDataCollector', () => {
         onError: jest.fn(),
       };
 
+      await collector.startCollection(mockCallbacks);
+
+      // Metrics are now pushed when updateLocation is called (event-driven)
       collector.updateLocation({
         latitude: 33.7838, longitude: -118.1134,
         altitude: 50, accuracy: 5, speed: 2.5, heading: 180,
       });
-
-      await collector.startCollection(mockCallbacks);
-
-      // Advance the 30-second interval, then flush all pending microtasks
-      jest.advanceTimersByTime(30000);
       await flushPromises();
 
       expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
@@ -131,14 +123,12 @@ describe('BehavioralDataCollector', () => {
         onError: jest.fn(),
       };
 
+      await collector.startCollection(mockCallbacks);
+
       collector.updateLocation({
         latitude: 33.7838, longitude: -118.1134,
         altitude: 50, accuracy: 5, speed: 2.5, heading: 180,
       });
-
-      await collector.startCollection(mockCallbacks);
-
-      jest.advanceTimersByTime(30000);
       await flushPromises();
 
       expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
@@ -163,14 +153,12 @@ describe('BehavioralDataCollector', () => {
         onError: jest.fn(),
       };
 
+      await collector.startCollection(mockCallbacks);
+
       collector.updateLocation({
         latitude: 33.7838, longitude: -118.1134,
         altitude: 50, accuracy: 5, speed: 2.5, heading: 180,
       });
-
-      await collector.startCollection(mockCallbacks);
-
-      jest.advanceTimersByTime(30000);
       await flushPromises();
 
       expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
@@ -194,14 +182,12 @@ describe('BehavioralDataCollector', () => {
         onError: jest.fn(),
       };
 
+      await collector.startCollection(mockCallbacks);
+
       collector.updateLocation({
         latitude: 33.7838, longitude: -118.1134,
         altitude: 50, accuracy: 5, speed: 2.5, heading: 180,
       });
-
-      await collector.startCollection(mockCallbacks);
-
-      jest.advanceTimersByTime(30000);
       await flushPromises();
 
       expect(mockCallbacks.onMetricsCollected).toHaveBeenCalled();
@@ -214,7 +200,7 @@ describe('BehavioralDataCollector', () => {
   });
 
   describe('stopCollection', () => {
-    it('should stop collecting data and clear the interval', async () => {
+    it('should stop collecting data and unregister subscriber', async () => {
       const mockCallbacks = {
         onMetricsCollected: jest.fn(),
         onError: jest.fn(),
@@ -223,25 +209,18 @@ describe('BehavioralDataCollector', () => {
       await collector.startCollection(mockCallbacks);
       collector.stopCollection();
 
-      // After stopping, advancing time should NOT fire the callback
-      jest.advanceTimersByTime(30000);
-      await Promise.resolve();
-      await Promise.resolve();
+      // After stopping, updateLocation should NOT fire the callback
+      collector.updateLocation({
+        latitude: 33.7838, longitude: -118.1134,
+        altitude: 50, accuracy: 5, speed: 2.5, heading: 180,
+      });
+      await flushPromises();
 
       expect(mockCallbacks.onMetricsCollected).not.toHaveBeenCalled();
     });
   });
 
   describe('getCurrentMetrics', () => {
-    beforeEach(() => {
-      // Use real timers for getCurrentMetrics tests since they call collectAndSendMetrics directly
-      jest.useRealTimers();
-    });
-
-    afterEach(() => {
-      // Switch back to fake timers for other tests
-      jest.useFakeTimers();
-    });
 
     it('should return current metrics snapshot when collection is active', async () => {
       // Reset DeviceInfo mocks to working state for this test
@@ -295,7 +274,7 @@ describe('BehavioralDataCollector', () => {
   });
 
   describe('error handling', () => {
-    it('should handle network fetch errors on interval tick', async () => {
+    it('should handle network fetch errors on location update', async () => {
       mockNetInfo.fetch.mockRejectedValue(new Error('Network error'));
 
       const mockCallbacks = {
@@ -305,8 +284,11 @@ describe('BehavioralDataCollector', () => {
 
       await collector.startCollection(mockCallbacks);
 
-      // Advance to trigger the interval and flush the async promise chain
-      jest.advanceTimersByTime(30000);
+      // Trigger metrics push via location update
+      collector.updateLocation({
+        latitude: 33.7838, longitude: -118.1134,
+        altitude: 50, accuracy: 5, speed: 2.5, heading: 180,
+      });
       await flushPromises();
 
       expect(mockCallbacks.onError).toHaveBeenCalledWith(

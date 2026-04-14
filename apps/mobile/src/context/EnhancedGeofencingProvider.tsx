@@ -10,11 +10,12 @@
 
 import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, ReactNode, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
-import type { Location } from 'react-native-background-geolocation';
+import type { Location, MotionActivityEvent, MotionChangeEvent } from 'react-native-background-geolocation';
 import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
 import leaveDetectionService, { LeaveIntentAnalysis } from '../services/leaveDetectionService';
+import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
 import dynamicGeofenceManager from '../services/dynamicGeofenceManager';
 import { lotsApi } from '../services/api';
 import type { ParkingLotResponse } from '../services/api';
@@ -279,6 +280,45 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     }
   }, [user?.userId]);
 
+  // Feed SDK activity recognition events to validation + leave detection + behavioral collector
+  const handleActivityChange = useCallback((event: MotionActivityEvent) => {
+    const { activity, confidence } = event;
+
+    // Update behavioral collector with activity state
+    sharedBehavioralCollector.updateActivity(activity, confidence);
+
+    // Feed to leave detection for ACTIVITY_VEHICLE / WALKING_TO_CAR signals
+    leaveDetectionService.processActivityChange(activity, confidence);
+
+    // Record activity-based validation events when inside a lot
+    if (currentLotIdRef.current) {
+      const lowerActivity = activity.toLowerCase();
+      let eventType: 'ACTIVITY_STILL' | 'ACTIVITY_ON_FOOT' | 'ACTIVITY_IN_VEHICLE' | undefined;
+
+      if (lowerActivity === 'still') eventType = 'ACTIVITY_STILL';
+      else if (lowerActivity === 'on_foot' || lowerActivity === 'walking') eventType = 'ACTIVITY_ON_FOOT';
+      else if (lowerActivity === 'in_vehicle' || lowerActivity === 'automotive') eventType = 'ACTIVITY_IN_VEHICLE';
+
+      if (eventType) {
+        parkingValidationService.recordBehavioralEvent(eventType, {
+          raw_data: {
+            activity,
+            confidence,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    }
+  }, []);
+
+  // Feed SDK motion change events to leave detection + behavioral collector
+  const handleMotionChange = useCallback((event: MotionChangeEvent) => {
+    const { isMoving } = event;
+
+    sharedBehavioralCollector.updateMotion(isMoving);
+    leaveDetectionService.processMotionChange(isMoving);
+  }, []);
+
   // App state monitoring for behavioral context
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
@@ -309,6 +349,14 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     const removeLocation = locationService.onLocation((location: Location) => {
       if (!destroyed) handleLocationUpdate(location);
+    });
+
+    const removeActivity = locationService.onActivityChange((event: MotionActivityEvent) => {
+      if (!destroyed) handleActivityChange(event);
+    });
+
+    const removeMotion = locationService.onMotionChange((event: MotionChangeEvent) => {
+      if (!destroyed) handleMotionChange(event);
     });
 
     const validationListener = (analysis: ValidationAnalysis) => {
@@ -379,6 +427,8 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       destroyed = true;
       removeGeofence();
       removeLocation();
+      removeActivity();
+      removeMotion();
       parkingValidationService.removeValidationListener(validationListener);
       dynamicGeofenceManager.reset();
     };

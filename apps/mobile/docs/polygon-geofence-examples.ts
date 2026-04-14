@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { GeofenceRegion } from '../src/types/location';
-import { createPolygonGeofenceFromLot, isPointInPolygon, calculatePolygonCenter } from '../src/utils/geofenceUtils';
+import { isPointInPolygon, calculatePolygonCenter } from '../src/utils/geofenceUtils';
 import locationService from '../src/services/locationService';
 
 // Example 1: Create a rectangular parking lot geofence

@@ -14,7 +14,7 @@ import { BehavioralMetrics, sharedBehavioralCollector } from './behavioralDataCo
 import { GeofenceEvent } from '../types/location';
 
 export interface LeaveIntentSignal {
-  type: 'WALKING_TO_CAR' | 'BLUETOOTH_RECONNECT' | 'SPEED_INCREASE' | 'MOVEMENT_PATTERN' | 'TIME_BASED';
+  type: 'WALKING_TO_CAR' | 'BLUETOOTH_RECONNECT' | 'SPEED_INCREASE' | 'MOVEMENT_PATTERN' | 'TIME_BASED' | 'ACTIVITY_VEHICLE';
   confidence: number; // 0-1 scale
   timestamp: Date;
   metadata: {
@@ -22,6 +22,8 @@ export interface LeaveIntentSignal {
     bluetooth_state?: string;
     movement_direction?: 'TOWARD_CAR' | 'AWAY_FROM_CAR' | 'UNKNOWN';
     time_since_park?: number; // minutes
+    activity_type?: string;
+    activity_confidence?: number;
     raw_data?: Record<string, unknown>;
   };
 }
@@ -313,13 +315,14 @@ class LeaveDetectionService {
       return this.createEmptyAnalysis(sessionDuration);
     }
 
-    // Weight different signal types
+    // Weight different signal types (reweighted for activity recognition)
     const signalWeights: Record<LeaveIntentSignal['type'], number> = {
-      'BLUETOOTH_RECONNECT': 0.4,   // Strongest indicator
-      'SPEED_INCREASE': 0.3,        // Strong indicator  
-      'WALKING_TO_CAR': 0.2,        // Moderate indicator
-      'MOVEMENT_PATTERN': 0.15,     // Moderate indicator
-      'TIME_BASED': 0.1             // Weak indicator
+      'ACTIVITY_VEHICLE': 0.35,    // Strongest — native SDK vehicle detection
+      'BLUETOOTH_RECONNECT': 0.25, // Strong — reconnected to car
+      'SPEED_INCREASE': 0.20,      // Strong — driving speed detected
+      'WALKING_TO_CAR': 0.10,      // Moderate — walking toward parked location
+      'MOVEMENT_PATTERN': 0.05,    // Weak — general movement
+      'TIME_BASED': 0.05           // Weak — time-based probability
     };
 
     // Calculate weighted probability
@@ -347,10 +350,11 @@ class LeaveDetectionService {
     // Estimate leave time based on signals
     let estimatedLeaveTime: number | undefined;
     if (intentProbability > 0.7) {
+      const activityVehicle = recentSignals.find(s => s.type === 'ACTIVITY_VEHICLE');
       const bluetoothReconnect = recentSignals.find(s => s.type === 'BLUETOOTH_RECONNECT');
       const speedIncrease = recentSignals.find(s => s.type === 'SPEED_INCREASE');
       
-      if (speedIncrease) estimatedLeaveTime = 1; // Already driving
+      if (speedIncrease || activityVehicle) estimatedLeaveTime = 1; // Already driving
       else if (bluetoothReconnect) estimatedLeaveTime = 3; // Getting in car
       else estimatedLeaveTime = 5; // Walking to car
     }
@@ -515,6 +519,133 @@ class LeaveDetectionService {
   }): void {
     // Pass location data to behavioral collector for speed and movement analysis
     this.behavioralCollector.updateLocation(locationData);
+  }
+
+  /**
+   * Process SDK onActivityChange events for leave detection.
+   * Emits ACTIVITY_VEHICLE signal when in_vehicle activity is detected.
+   */
+  processActivityChange(activity: string, confidence: number): void {
+    const currentTime = new Date();
+
+    for (const session of this.activeSessions.values()) {
+      if (session.status !== 'MONITORING') continue;
+
+      const sessionDuration = (currentTime.getTime() - session.startTime.getTime()) / (1000 * 60);
+      if (sessionDuration < this.MIN_MONITORING_TIME) continue;
+
+      // in_vehicle/automotive → strong leave indicator
+      const lowerActivity = activity.toLowerCase();
+      if (lowerActivity === 'in_vehicle' || lowerActivity === 'automotive') {
+        const normalizedConfidence = Math.min(confidence, 100) / 100;
+        const signal: LeaveIntentSignal = {
+          type: 'ACTIVITY_VEHICLE',
+          confidence: normalizedConfidence,
+          timestamp: currentTime,
+          metadata: {
+            activity_type: activity,
+            activity_confidence: confidence,
+            time_since_park: sessionDuration,
+          },
+        };
+
+        // Dedup: skip if same type emitted within dedup window
+        const lastOfType = [...session.signals].reverse().find(s => s.type === 'ACTIVITY_VEHICLE');
+        if (lastOfType && (currentTime.getTime() - lastOfType.timestamp.getTime()) < this.SIGNAL_DEDUP_INTERVAL_MS) {
+          continue;
+        }
+
+        session.signals.push(signal);
+
+        const analysis = this.analyzeLeaveIntent(session);
+        session.lastAnalysis = analysis;
+
+        if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
+          this.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+        }
+
+        this.persistSession(session);
+
+        if (__DEV__) {
+          console.log(`[LeaveDetection] ACTIVITY_VEHICLE signal: ${activity} (${confidence}%) for lot ${session.lotId}`);
+        }
+      }
+
+      // on_foot/walking → emit WALKING_TO_CAR signal
+      if (lowerActivity === 'on_foot' || lowerActivity === 'walking') {
+        const normalizedConfidence = Math.min(confidence, 100) / 100;
+        const signal: LeaveIntentSignal = {
+          type: 'WALKING_TO_CAR',
+          confidence: normalizedConfidence * 0.7,
+          timestamp: currentTime,
+          metadata: {
+            activity_type: activity,
+            activity_confidence: confidence,
+            movement_direction: sessionDuration > 15 ? 'TOWARD_CAR' : 'UNKNOWN',
+            time_since_park: sessionDuration,
+          },
+        };
+
+        const lastOfType = [...session.signals].reverse().find(s => s.type === 'WALKING_TO_CAR');
+        if (lastOfType && (currentTime.getTime() - lastOfType.timestamp.getTime()) < this.SIGNAL_DEDUP_INTERVAL_MS) {
+          continue;
+        }
+
+        session.signals.push(signal);
+
+        const analysis = this.analyzeLeaveIntent(session);
+        session.lastAnalysis = analysis;
+
+        if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
+          this.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+        }
+
+        this.persistSession(session);
+      }
+    }
+  }
+
+  /**
+   * Process SDK onMotionChange events for leave detection.
+   */
+  processMotionChange(isMoving: boolean): void {
+    // Motion change is supplementary — triggers re-analysis of existing signals
+    if (!isMoving) return; // Only care about transitioning TO moving
+
+    const currentTime = new Date();
+
+    for (const session of this.activeSessions.values()) {
+      if (session.status !== 'MONITORING') continue;
+
+      const sessionDuration = (currentTime.getTime() - session.startTime.getTime()) / (1000 * 60);
+      if (sessionDuration < this.MIN_MONITORING_TIME) continue;
+
+      const signal: LeaveIntentSignal = {
+        type: 'MOVEMENT_PATTERN',
+        confidence: 0.4,
+        timestamp: currentTime,
+        metadata: {
+          time_since_park: sessionDuration,
+          raw_data: { motion_change: 'stationary_to_moving' },
+        },
+      };
+
+      const lastOfType = [...session.signals].reverse().find(s => s.type === 'MOVEMENT_PATTERN');
+      if (lastOfType && (currentTime.getTime() - lastOfType.timestamp.getTime()) < this.SIGNAL_DEDUP_INTERVAL_MS) {
+        continue;
+      }
+
+      session.signals.push(signal);
+
+      const analysis = this.analyzeLeaveIntent(session);
+      session.lastAnalysis = analysis;
+
+      if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
+        this.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+      }
+
+      this.persistSession(session);
+    }
   }
 }
 

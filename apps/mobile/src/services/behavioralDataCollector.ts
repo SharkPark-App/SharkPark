@@ -35,12 +35,17 @@ function getBluetoothStatusModule() {
   return _BluetoothStatus;
 }
 
+export type ActivityType = 'still' | 'on_foot' | 'in_vehicle' | 'on_bicycle' | 'running' | 'unknown';
+
 export interface BehavioralMetrics {
   speed_mph: number | null;
   accuracy_meters: number | null;
   bluetooth_state: ValidationEvent['bluetooth_state'];
   wifi_connected: boolean;
   network_type: string | null;
+  activity_type: ActivityType;
+  activity_confidence: number; // 0-100
+  is_moving: boolean;
   device_info: {
     brand: string;
     model: string;
@@ -74,10 +79,13 @@ interface DataCollectionCallbacks {
 }
 
 class BehavioralDataCollector {
-  private locationWatchId: number | null = null; // kept for interface compat
   private lastLocation: LocationData | null = null;
   private isCollecting = false;
-  private collectionInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Activity recognition state from SDK
+  private currentActivity: ActivityType = 'unknown';
+  private activityConfidence = 0;
+  private isMoving = false;
 
   // Multiple subscribers can register callbacks independently.
   // Using a Map keyed by a caller-supplied id so each service can
@@ -85,23 +93,17 @@ class BehavioralDataCollector {
   private subscribers = new Map<string, DataCollectionCallbacks>();
 
   /**
-   * Register a subscriber and begin the shared collection interval if not already running.
+   * Register a subscriber. Metrics are pushed via updateLocation/updateActivity
+   * from the SDK event stream — no polling interval needed.
    * @param subscriberId  A stable string identifying the caller (e.g. 'parkingValidation')
    */
   async startCollection(callbacks: DataCollectionCallbacks, subscriberId = 'default'): Promise<void> {
     this.subscribers.set(subscriberId, callbacks);
     this.isCollecting = true;
-
-    // Start the shared interval only once
-    if (!this.collectionInterval) {
-      this.collectionInterval = setInterval(() => {
-        this.collectAndSendMetrics();
-      }, 30000);
-    }
   }
 
   /**
-   * Unregister a subscriber. Stops the shared interval only when no subscribers remain.
+   * Unregister a subscriber. Stops collecting only when no subscribers remain.
    * @param subscriberId  Must match the id used in startCollection
    */
   stopCollection(subscriberId = 'default'): void {
@@ -113,7 +115,7 @@ class BehavioralDataCollector {
   }
 
   /**
-   * Force-stop all collection, clear all subscribers and timers.
+   * Force-stop all collection, clear all subscribers.
    * Use when the owning component unmounts to prevent memory leaks.
    */
   destroy(): void {
@@ -123,17 +125,15 @@ class BehavioralDataCollector {
 
   private teardown(): void {
     this.isCollecting = false;
-
-    if (this.collectionInterval) {
-      clearInterval(this.collectionInterval);
-      this.collectionInterval = null;
-    }
-
     this.lastLocation = null;
+    this.currentActivity = 'unknown';
+    this.activityConfidence = 0;
+    this.isMoving = false;
   }
 
   /**
-   * Update location data externally (to avoid multiple location trackers)
+   * Update location data from SDK onLocation events.
+   * Automatically pushes metrics to all subscribers.
    */
   updateLocation(locationData: {
     latitude: number;
@@ -152,16 +152,38 @@ class BehavioralDataCollector {
       heading: locationData.heading ?? null,
       timestamp: Date.now()
     };
+
+    // Push metrics immediately on location update (event-driven, no polling)
+    this.collectAndSendMetrics();
   }
 
   /**
-   * Start tracking location for speed and movement data.
-   * No-op: location data is now fed externally via updateLocation() from the
-   * BackgroundGeolocation SDK's onLocation events.
+   * Update activity recognition data from SDK onActivityChange events.
    */
-  private startLocationTracking(): void {
-    // Intentionally empty — GPS is managed by the native SDK.
-    // Data arrives through updateLocation() called by EnhancedGeofencingProvider.
+  updateActivity(activity: string, confidence: number): void {
+    this.currentActivity = this.mapActivityType(activity);
+    this.activityConfidence = confidence;
+
+    // Push metrics immediately on activity change
+    this.collectAndSendMetrics();
+  }
+
+  /**
+   * Update motion state from SDK onMotionChange events.
+   */
+  updateMotion(isMoving: boolean): void {
+    this.isMoving = isMoving;
+  }
+
+  private mapActivityType(activity: string): ActivityType {
+    switch (activity.toLowerCase()) {
+      case 'still': return 'still';
+      case 'on_foot': case 'walking': return 'on_foot';
+      case 'in_vehicle': case 'automotive': return 'in_vehicle';
+      case 'on_bicycle': return 'on_bicycle';
+      case 'running': return 'running';
+      default: return 'unknown';
+    }
   }
 
   private async collectAndSendMetrics(): Promise<void> {
@@ -212,6 +234,9 @@ class BehavioralDataCollector {
       bluetooth_state: bluetoothState,
       wifi_connected: networkState.type === 'wifi' && networkState.isConnected === true,
       network_type: networkState.type,
+      activity_type: this.currentActivity,
+      activity_confidence: this.activityConfidence,
+      is_moving: this.isMoving,
       device_info: {
         brand: deviceBrand,
         model: deviceModel,

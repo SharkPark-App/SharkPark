@@ -4,9 +4,9 @@
  * Tests for BehavioralDataCollector.
  *
  * The service no longer starts its own Geolocation.watchPosition — location is
- * fed externally via updateLocation().  Metrics are emitted either:
- *   (a) on the 30-second interval (advanced with jest.useFakeTimers), or
- *   (b) immediately when getCurrentMetrics() is called.
+ * fed externally via updateLocation().  Metrics are emitted immediately when
+ * updateLocation() or updateActivity() is called (event-driven, no polling).
+ * getCurrentMetrics() can also be called directly for a snapshot.
  */
 
 import BehavioralDataCollector from '../behavioralDataCollector';
@@ -296,8 +296,7 @@ describe('BehavioralDataCollector', () => {
       expect(metrics).toBeNull();
     });
 
-    it('subscriber onError is called on interval collection failure', async () => {
-      jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    it('subscriber onError is called on collection failure', async () => {
       const onMetricsCollected = jest.fn();
       const onError = jest.fn();
 
@@ -305,11 +304,10 @@ describe('BehavioralDataCollector', () => {
       (DeviceInfo.getBrand as jest.Mock).mockRejectedValue(new Error('Device error'));
 
       await collector.startCollection({ onMetricsCollected, onError });
-      jest.advanceTimersByTime(30000);
+      collector.updateLocation(makeLocation());
       await flushPromises();
 
       expect(onError).toHaveBeenCalledWith(expect.stringContaining('Failed to collect metrics'));
-      jest.useRealTimers();
     });
   });
 
@@ -337,8 +335,7 @@ describe('BehavioralDataCollector', () => {
   // ── Subscriber fan-out ────────────────────────────────────────────────────
 
   describe('Subscriber management', () => {
-    it('fans out to multiple subscribers on the interval tick', async () => {
-      jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    it('fans out to multiple subscribers on location update', async () => {
       (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
 
       const cb1 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
@@ -347,16 +344,14 @@ describe('BehavioralDataCollector', () => {
       await collector.startCollection(cb1, 'sub-a');
       await collector.startCollection(cb2, 'sub-b');
 
-      jest.advanceTimersByTime(30000);
+      collector.updateLocation(makeLocation());
       await flushPromises();
 
       expect(cb1.onMetricsCollected).toHaveBeenCalled();
       expect(cb2.onMetricsCollected).toHaveBeenCalled();
-      jest.useRealTimers();
     });
 
-    it('stops the interval only when the last subscriber is removed', async () => {
-      jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    it('stops delivering metrics when a subscriber is removed', async () => {
       (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
 
       const cb1 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
@@ -366,7 +361,7 @@ describe('BehavioralDataCollector', () => {
       await collector.startCollection(cb2, 'sub-b');
 
       collector.stopCollection('sub-a');
-      jest.advanceTimersByTime(30000);
+      collector.updateLocation(makeLocation());
       await flushPromises();
 
       expect(cb2.onMetricsCollected).toHaveBeenCalled();
@@ -374,11 +369,10 @@ describe('BehavioralDataCollector', () => {
 
       collector.stopCollection('sub-b');
       cb2.onMetricsCollected.mockClear();
-      jest.advanceTimersByTime(30000);
+      collector.updateLocation(makeLocation({ speed: 5 }));
       await flushPromises();
 
       expect(cb2.onMetricsCollected).not.toHaveBeenCalled();
-      jest.useRealTimers();
     });
   });
 

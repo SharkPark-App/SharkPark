@@ -62,6 +62,7 @@ class LocationService {
       BackgroundGeolocation.onActivityChange(this.handleActivityChange),
       BackgroundGeolocation.onMotionChange(this.handleMotionChange),
       BackgroundGeolocation.onProviderChange(this.handleProviderChange),
+      BackgroundGeolocation.onPowerSaveChange(this.handlePowerSaveChange),
     );
 
     const config = createSDKConfig();
@@ -319,6 +320,13 @@ class LocationService {
     // Filter out sample locations (intermediate GPS fixes)
     if (location.sample) return;
 
+    // GPS drift suppression: ignore low-quality fixes
+    const accuracy = location.coords.accuracy;
+    if (accuracy != null && accuracy > 50) {
+      if (__DEV__) console.log(`[LocationService] Dropping inaccurate fix (${accuracy}m > 50m)`);
+      return;
+    }
+
     this.locationCallbacks.forEach((cb) => {
       try {
         cb(location);
@@ -349,6 +357,31 @@ class LocationService {
   };
 
   private handleProviderChange = (event: ProviderChangeEvent) => {
+    if (__DEV__) {
+      console.log('[LocationService] Provider changed:', {
+        enabled: event.enabled,
+        status: event.status,
+        accuracyAuthorization: event.accuracyAuthorization,
+      });
+    }
+
+    // Detect permission downgrade
+    if (
+      event.status === BackgroundGeolocation.AuthorizationStatus.Denied ||
+      event.status === BackgroundGeolocation.AuthorizationStatus.NotDetermined
+    ) {
+      this.errorCallbacks.forEach((cb) => {
+        try {
+          cb({
+            code: 'PERMISSION_DENIED',
+            message: 'Location permissions were revoked. Geofencing requires at least "When In Use" permission.',
+          });
+        } catch (e) {
+          console.error('[LocationService] Error in error callback:', e);
+        }
+      });
+    }
+
     this.providerCallbacks.forEach((cb) => {
       try {
         cb(event);
@@ -356,6 +389,17 @@ class LocationService {
         console.error('[LocationService] Error in provider callback:', e);
       }
     });
+  };
+
+  private handlePowerSaveChange = (isPowerSaveMode: boolean) => {
+    if (isPowerSaveMode) {
+      console.warn(
+        '[LocationService] Device entered power-save mode. ' +
+        'Geofence monitoring may be degraded. Location updates will be less frequent.',
+      );
+    } else if (__DEV__) {
+      console.log('[LocationService] Power-save mode disabled, normal operation resumed.');
+    }
   };
 }
 

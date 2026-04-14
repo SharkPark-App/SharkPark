@@ -19,11 +19,15 @@ export type ValidationEventType =
   | 'BLUETOOTH_DISCONNECT'
   | 'GEOFENCE_ENTER'
   | 'GEOFENCE_EXIT'
-  | 'GPS_ACCURACY_CHANGE';
+  | 'GPS_ACCURACY_CHANGE'
+  | 'DWELL'
+  | 'ACTIVITY_STILL'
+  | 'ACTIVITY_ON_FOOT'
+  | 'ACTIVITY_IN_VEHICLE';
 
 export type BluetoothState = 'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN';
 
-export type ValidationStatus = 'ANALYZING' | 'PARKED' | 'DROVE_THROUGH' | 'SEARCHING' | 'UNKNOWN';
+export type ValidationStatus = 'ANALYZING' | 'PARKED' | 'DROVE_THROUGH' | 'SEARCHING' | 'INSUFFICIENT_DATA' | 'UNKNOWN';
 
 export interface ValidationAnalysis {
   status: ValidationStatus;
@@ -33,6 +37,7 @@ export interface ValidationAnalysis {
   dwellTimeScore: number;
   movementPatternScore: number;
   bluetoothScore: number;
+  activityRecognitionScore: number;
   metadata: {
     event_count: number;
     time_span_minutes: number;
