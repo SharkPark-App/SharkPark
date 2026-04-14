@@ -66,6 +66,9 @@ class LeaveDetectionService {
   private callbacks: LeaveDetectionCallbacks | null = null;
   private initPromise: Promise<void>;
 
+  // Minimum interval between signals of the same type to prevent duplicate emissions (60s)
+  private readonly SIGNAL_DEDUP_INTERVAL_MS = 60 * 1000;
+
   // Leave detection thresholds
   private readonly INTENT_PROBABILITY_THRESHOLD = 0.6;
   private readonly HIGH_CONFIDENCE_THRESHOLD = 0.8;
@@ -272,8 +275,15 @@ class LeaveDetectionService {
       });
     }
 
+    // Deduplicate: skip signal types that were already emitted within the dedup window
+    const dedupedSignals = signals.filter(signal => {
+      const lastOfType = [...session.signals].reverse().find(s => s.type === signal.type);
+      if (!lastOfType) return true;
+      return (currentTime.getTime() - lastOfType.timestamp.getTime()) >= this.SIGNAL_DEDUP_INTERVAL_MS;
+    });
+
     // Add signals to session
-    session.signals.push(...signals);
+    session.signals.push(...dedupedSignals);
 
     // Analyze current intent
     const analysis = this.analyzeLeaveIntent(session);
@@ -287,7 +297,7 @@ class LeaveDetectionService {
     // Persist updated session
     this.persistSession(session);
 
-    if (__DEV__) console.log(`[LeaveDetection] Added ${signals.length} signals. Intent probability: ${Math.round(analysis.intent_probability * 100)}%`);
+    if (__DEV__) console.log(`[LeaveDetection] Added ${dedupedSignals.length}/${signals.length} signals (deduped). Intent probability: ${Math.round(analysis.intent_probability * 100)}%`);
   }
 
   private analyzeLeaveIntent(session: LeaveSession): LeaveIntentAnalysis {

@@ -109,20 +109,33 @@ class BehavioralDataCollector {
     this.subscribers.delete(subscriberId);
 
     if (this.subscribers.size === 0) {
-      this.isCollecting = false;
-
-      if (this.locationWatchId) {
-        Geolocation.clearWatch(this.locationWatchId);
-        this.locationWatchId = null;
-      }
-
-      if (this.collectionInterval) {
-        clearInterval(this.collectionInterval);
-        this.collectionInterval = null;
-      }
-
-      this.lastLocation = null;
+      this.teardown();
     }
+  }
+
+  /**
+   * Force-stop all collection, clear all subscribers and timers.
+   * Use when the owning component unmounts to prevent memory leaks.
+   */
+  destroy(): void {
+    this.subscribers.clear();
+    this.teardown();
+  }
+
+  private teardown(): void {
+    this.isCollecting = false;
+
+    if (this.locationWatchId !== null) {
+      Geolocation.clearWatch(this.locationWatchId);
+      this.locationWatchId = null;
+    }
+
+    if (this.collectionInterval) {
+      clearInterval(this.collectionInterval);
+      this.collectionInterval = null;
+    }
+
+    this.lastLocation = null;
   }
 
   /**
@@ -345,10 +358,10 @@ export const useBehavioralDataCollection = () => {
     return collectorRef.current?.getCurrentMetrics() || null;
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup on unmount — destroy() force-clears all subscribers and timers
   useEffect(() => {
     return () => {
-      collectorRef.current?.stopCollection();
+      collectorRef.current?.destroy();
     };
   }, []);
 
