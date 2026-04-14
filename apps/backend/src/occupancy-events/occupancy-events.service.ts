@@ -69,17 +69,10 @@ export class OccupancyEventsService {
           },
         });
 
-        // Update lot occupancy atomically — re-read inside tx to avoid stale data
+        // Update lot occupancy atomically
         if (dto.event_type === 'EXIT') {
-          const currentLot = await tx.lot.findUniqueOrThrow({ where: { id: lot.id } });
-          if (currentLot.current_occupancy <= 0) {
-            this.logger.warn(`Cannot decrement occupancy below 0 for lot ${dto.lot_id}`);
-          } else {
-            await tx.lot.update({
-              where: { id: lot.id },
-              data: { current_occupancy: { increment: -1 } },
-            });
-          }
+          // Atomic decrement with floor at 0 — eliminates read-then-write race condition
+          await tx.$executeRaw`UPDATE lots SET current_occupancy = GREATEST(current_occupancy - 1, 0), updated_at = NOW() WHERE id = ${lot.id}`;
         } else {
           await tx.lot.update({
             where: { id: lot.id },
@@ -202,6 +195,14 @@ export class OccupancyEventsService {
       const [weekOfSemester, periodType] = getWeekOfSemester(schoolTime);
       const academicPeriod = periodType;
 
+      // Attach the latest weather record so each snapshot captures conditions at write time
+      const latestWeather = schoolId
+        ? await this.prisma.weather.findFirst({
+            where: { school_id: schoolId },
+            orderBy: { timestamp: 'desc' },
+          })
+        : null;
+
       let count = 0;
 
       // Gather reliability input for all lots in parallel (avoids N+1 DB calls)
@@ -241,6 +242,7 @@ export class OccupancyEventsService {
           penetration_rate_used: estimate
             ? Math.round(estimate.effectiveRate * 10000) / 10000
             : null,
+          weather_id: latestWeather?.id ?? null,
         };
       });
 

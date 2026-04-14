@@ -45,7 +45,7 @@ model Lot {
   geofence_radius     Float
   permit_types        String[]
   daily_permit_allowed Boolean @default(false)
-  daily_rate          Float?
+  daily_rate          Decimal? @db.Decimal(10, 2)
   hours_weekday       Json     // { open: string; close: string } | string
   hours_saturday      Json
   hours_sunday        Json
@@ -94,6 +94,7 @@ model User {
   school         School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
   favorites      UserFavorite[]
 
+  @@index([school_id])
   @@map("users")
 }
 
@@ -143,13 +144,17 @@ model OccupancySnapshot {
   estimated_occupancy    Int?     // Scaled-up occupancy estimate
   penetration_rate_used  Float?   // Effective penetration rate at snapshot time
 
+  // Weather context at snapshot time
+  weather_id        String?
+
   // ML feature columns (populated at write time by academic-calendar.ts)
   semester          String?         // "fall", "spring", "summer", "session", "break"
   academic_period   String?         // "early", "regular", "midterms", "late", "dead_week", "finals", "break"
   week_of_semester  Int?
   is_campus_open    Boolean         @default(true)
 
-  lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  lot     Lot      @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  weather Weather? @relation(fields: [weather_id], references: [id], onDelete: SetNull)
 
   @@index([lot_id, timestamp], name: "idx_snapshots_lot_time")
   @@index([lot_id, timestamp, semester, academic_period], name: "idx_snapshots_training")
@@ -185,6 +190,7 @@ model CampusEvent {
   school  School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
   impacts EventImpact[]
 
+  @@index([school_id])
   @@map("campus_events")
 }
 
@@ -215,7 +221,8 @@ model Weather {
   is_raining                Boolean
   created_at                DateTime @default(now())
 
-  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  school              School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  occupancy_snapshots OccupancySnapshot[]
 
   @@index([school_id, timestamp])
   @@map("weather")
