@@ -45,10 +45,22 @@ describe('ParkingValidationService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Reset service state
+    // Reset service state — clear timers first to prevent "log after tests" errors
+    for (const timer of parkingValidationService['sessionTimers'].values()) {
+      clearTimeout(timer);
+    }
+    parkingValidationService['sessionTimers'].clear();
     parkingValidationService['activeSessions'].clear();
     parkingValidationService['eventBuffer'] = [];
     parkingValidationService['validationCompleteListeners'] = [];
+  });
+
+  afterAll(() => {
+    // Final cleanup of any session timers created in the last test
+    for (const timer of parkingValidationService['sessionTimers'].values()) {
+      clearTimeout(timer);
+    }
+    parkingValidationService['sessionTimers'].clear();
   });
 
   describe('Session Management', () => {

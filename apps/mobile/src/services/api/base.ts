@@ -93,13 +93,15 @@ class ApiService {
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
 
+    const { signal, timerId } = this.createTimeoutSignal();
+
     const requestOptions: RequestInit = {
       ...options,
       headers: {
         ...this.defaultHeaders,
         ...options.headers,
       },
-      signal: this.createTimeoutSignal(),
+      signal,
     };
 
     try {
@@ -126,15 +128,17 @@ class ApiService {
       console.error(`API Error: ${endpoint}`, error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       throw new ApiError(0, `Network error: ${errorMessage}`);
+    } finally {
+      clearTimeout(timerId);
     }
   }
 
-  private createTimeoutSignal(): AbortSignal {
+  private createTimeoutSignal(): { signal: AbortSignal; timerId: ReturnType<typeof setTimeout> } {
     const controller = new AbortController();
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
       controller.abort();
     }, this.timeout);
-    return controller.signal;
+    return { signal: controller.signal, timerId };
   }
 
   async get<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
