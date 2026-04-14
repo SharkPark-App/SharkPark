@@ -2,6 +2,7 @@ import UIKit
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
+import TSBackgroundFetch
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlowManager {
@@ -23,6 +24,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlo
 
     reactNativeDelegate = delegate
     reactNativeFactory = factory
+
+    // Initialize background fetch for Transistor Background Geolocation SDK
+    TSBackgroundFetch.sharedInstance()?.didFinishLaunching()
 
     window = UIWindow(frame: UIScreen.main.bounds)
 

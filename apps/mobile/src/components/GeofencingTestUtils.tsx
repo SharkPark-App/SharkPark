@@ -2,16 +2,12 @@
  * Geofencing Test Utilities
  * Tools for testing geofencing without physical movement
  */
-/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
-
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Button, Alert, TextInput } from 'react-native';
-import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, SPACING } from '../constants/theme';
 import locationService from '../services/locationService';
-import { GeofenceEvent } from '../types/location';
 import { 
-  TEST_CONSTANTS, 
-  UI_CONSTANTS, 
+  TEST_CONSTANTS,
   ACCESSIBILITY_CONSTANTS 
 } from '../constants/geofencing';
 
@@ -20,14 +16,7 @@ export const GeofencingTestUtils: React.FC = () => {
   const [testEventType, setTestEventType] = useState<'ENTER' | 'EXIT'>('ENTER');
 
   const simulateGeofenceEvent = () => {
-    const event: GeofenceEvent = {
-      regionId: testLotId,
-      eventType: testEventType,
-      timestamp: new Date().toISOString(),
-    };
-
     // Use the proper locationService method to trigger events
-    // Triggering test geofence event
     locationService.triggerTestGeofenceEvent(testLotId, testEventType);
     
     Alert.alert(
@@ -51,14 +40,9 @@ export const GeofencingTestUtils: React.FC = () => {
       [{ text: 'OK' }]
     );
 
-    // Trigger location update manually
-    const locationServiceAny = locationService as any;
-    if (locationServiceAny.handleLocationUpdate) {
-      locationServiceAny.handleLocationUpdate({
-        coords: mockCoordinates,
-        timestamp: mockCoordinates.timestamp,
-      });
-    }
+    // The SDK now handles location updates natively.
+    // Use triggerTestGeofenceEvent for testing geofence events.
+    locationService.triggerTestGeofenceEvent(testLotId, testEventType);
   };
 
   return (

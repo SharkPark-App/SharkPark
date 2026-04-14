@@ -9,7 +9,6 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { NativeModules } from 'react-native';
-import Geolocation from '@react-native-community/geolocation';
 import NetInfo from '@react-native-community/netinfo';
 import DeviceInfo from 'react-native-device-info';
 import { ValidationEvent } from '../validation';
@@ -75,7 +74,7 @@ interface DataCollectionCallbacks {
 }
 
 class BehavioralDataCollector {
-  private locationWatchId: number | null = null;
+  private locationWatchId: number | null = null; // kept for interface compat
   private lastLocation: LocationData | null = null;
   private isCollecting = false;
   private collectionInterval: ReturnType<typeof setInterval> | null = null;
@@ -125,11 +124,6 @@ class BehavioralDataCollector {
   private teardown(): void {
     this.isCollecting = false;
 
-    if (this.locationWatchId !== null) {
-      Geolocation.clearWatch(this.locationWatchId);
-      this.locationWatchId = null;
-    }
-
     if (this.collectionInterval) {
       clearInterval(this.collectionInterval);
       this.collectionInterval = null;
@@ -161,33 +155,13 @@ class BehavioralDataCollector {
   }
 
   /**
-   * Start tracking location for speed and movement data
+   * Start tracking location for speed and movement data.
+   * No-op: location data is now fed externally via updateLocation() from the
+   * BackgroundGeolocation SDK's onLocation events.
    */
   private startLocationTracking(): void {
-    this.locationWatchId = Geolocation.watchPosition(
-      (position) => {
-        const locationData: LocationData = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          speed: position.coords.speed, // meters per second
-          altitude: position.coords.altitude,
-          heading: position.coords.heading,
-          timestamp: position.timestamp
-        };
-
-        this.lastLocation = locationData;
-      },
-      (error) => {
-        this.subscribers.forEach(cb => cb.onError(`Location tracking error: ${error.message}`));
-      },
-      {
-        enableHighAccuracy: true,
-        distanceFilter: 1, // Update every 1 meter
-        interval: 5000, // Update every 5 seconds
-        fastestInterval: 2000, // Fastest update every 2 seconds
-      }
-    );
+    // Intentionally empty — GPS is managed by the native SDK.
+    // Data arrives through updateLocation() called by EnhancedGeofencingProvider.
   }
 
   private async collectAndSendMetrics(): Promise<void> {

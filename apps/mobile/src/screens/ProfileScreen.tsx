@@ -25,7 +25,7 @@ const ProfileScreen: React.FC = () => {
 
   // Location service hook for permission checking
   const {
-    permissionStatus,
+    isTracking,
     requestPermissions,
   } = useLocationService();
 
@@ -35,14 +35,14 @@ const ProfileScreen: React.FC = () => {
   // Initialize permissions check
   useEffect(() => {
     // Background geofencing will automatically start when permissions are granted
-    if (permissionStatus?.granted) {
+    if (isTracking) {
       // Location permissions granted, background geofencing available
     }
-  }, [permissionStatus]);
+  }, [isTracking]);
 
   // Show geofencing status to user
   const getGeofencingStatusText = () => {
-    if (!permissionStatus?.granted) {
+    if (!isTracking) {
       return 'Location access needed';
     }
     if (isGeofencingActive) {
@@ -179,7 +179,7 @@ const ProfileScreen: React.FC = () => {
               </View>
             </View>
 
-            {!permissionStatus?.granted && (
+            {!isTracking && (
               <TouchableOpacity 
                 style={[styles.settingsButton, { backgroundColor: colors.primary }]}
                 onPress={openLocationSettings}

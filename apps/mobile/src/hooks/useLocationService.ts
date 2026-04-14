@@ -1,31 +1,25 @@
 /**
  * useLocationService Hook
- * React hook for privacy-first geofencing functionality
+ * React hook wrapping the native BackgroundGeolocation SDK service
  */
 
 import { useEffect, useState, useCallback } from 'react';
 import locationService from '../services/locationService';
-import { 
-  LocationPermissionStatus, 
-  GeofenceEvent, 
-  LocationError,
-  GeofenceRegion 
-} from '../types/location';
+import type { GeofenceEvent, LocationError } from '../types/location';
+import type { Geofence } from 'react-native-background-geolocation';
 
 interface UseLocationServiceReturn {
   // Status
   isTracking: boolean;
-  isBackgroundEnabled: boolean;
-  permissionStatus: LocationPermissionStatus | null;
+  trackingMode: 'off' | 'geofences' | 'full';
   monitoredRegions: number;
-  
+
   // Actions
   requestPermissions: () => Promise<boolean>;
-  requestBackgroundPermissions: () => Promise<boolean>;
-  startTracking: () => Promise<boolean>;
-  stopTracking: () => void;
-  addGeofenceRegions: (regions: GeofenceRegion[]) => void;
-  
+  startGeofenceMonitoring: () => Promise<void>;
+  stopTracking: () => Promise<void>;
+  registerGeofences: (geofences: Geofence[]) => Promise<void>;
+
   // Events
   lastGeofenceEvent: GeofenceEvent | null;
   lastError: LocationError | null;
@@ -33,104 +27,83 @@ interface UseLocationServiceReturn {
 
 export const useLocationService = (): UseLocationServiceReturn => {
   const [isTracking, setIsTracking] = useState(false);
-  const [isBackgroundEnabled, setIsBackgroundEnabled] = useState(false);
-  const [permissionStatus, setPermissionStatus] = useState<LocationPermissionStatus | null>(null);
+  const [trackingMode, setTrackingMode] = useState<'off' | 'geofences' | 'full'>('off');
   const [monitoredRegions, setMonitoredRegions] = useState(0);
   const [lastGeofenceEvent, setLastGeofenceEvent] = useState<GeofenceEvent | null>(null);
   const [lastError, setLastError] = useState<LocationError | null>(null);
 
   // Set up event listeners
   useEffect(() => {
-    locationService.setOnGeofenceEvent((event: GeofenceEvent) => {
-      // Geofence event received
+    const removeGeofence = locationService.onGeofence((event: GeofenceEvent) => {
       setLastGeofenceEvent(event);
     });
 
-    locationService.setOnLocationError((error: LocationError) => {
-      // Location error
+    const removeError = locationService.onError((error: LocationError) => {
       setLastError(error);
-    });
-
-    locationService.setOnPermissionChange((status: LocationPermissionStatus) => {
-      // Permission status changed
-      setPermissionStatus(status);
     });
 
     // Initial state sync
     setIsTracking(locationService.isLocationTracking());
-    setIsBackgroundEnabled(locationService.isBackgroundTrackingEnabled());
-    setMonitoredRegions(locationService.getMonitoredRegionsCount());
+    setTrackingMode(locationService.getTrackingMode());
+    locationService.getMonitoredRegionsCount().then(setMonitoredRegions);
 
     return () => {
-      // Cleanup is handled by the service itself
+      removeGeofence();
+      removeError();
     };
   }, []);
 
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     try {
-      const status = await locationService.requestLocationPermission();
-      setPermissionStatus(status);
-      return status.granted;
+      return await locationService.requestPermissions();
     } catch (error) {
       console.error('[useLocationService] Permission request failed:', error);
       return false;
     }
   }, []);
 
-  const requestBackgroundPermissions = useCallback(async (): Promise<boolean> => {
+  const startGeofenceMonitoring = useCallback(async (): Promise<void> => {
     try {
-      const granted = await locationService.requestBackgroundPermission();
-      setIsBackgroundEnabled(granted);
-      return granted;
+      await locationService.startGeofenceMonitoring();
+      setIsTracking(true);
+      setTrackingMode('geofences');
     } catch (error) {
-      console.error('[useLocationService] Background permission request failed:', error);
-      return false;
+      console.error('[useLocationService] Start geofence monitoring failed:', error);
     }
   }, []);
 
-  const startTracking = useCallback(async (): Promise<boolean> => {
+  const stopTracking = useCallback(async (): Promise<void> => {
     try {
-      const success = await locationService.startLocationTracking();
-      setIsTracking(success);
-      return success;
-    } catch (error) {
-      console.error('[useLocationService] Start tracking failed:', error);
-      return false;
-    }
-  }, []);
-
-  const stopTracking = useCallback(() => {
-    try {
-      locationService.stopLocationTracking();
+      await locationService.stop();
       setIsTracking(false);
+      setTrackingMode('off');
     } catch (error) {
       console.error('[useLocationService] Stop tracking failed:', error);
     }
   }, []);
 
-  const addGeofenceRegions = useCallback((regions: GeofenceRegion[]) => {
+  const registerGeofences = useCallback(async (geofences: Geofence[]): Promise<void> => {
     try {
-      locationService.addGeofenceRegions(regions);
-      setMonitoredRegions(locationService.getMonitoredRegionsCount());
+      await locationService.registerGeofences(geofences);
+      const count = await locationService.getMonitoredRegionsCount();
+      setMonitoredRegions(count);
     } catch (error) {
-      console.error('[useLocationService] Add geofence regions failed:', error);
+      console.error('[useLocationService] Register geofences failed:', error);
     }
   }, []);
 
   return {
     // Status
     isTracking,
-    isBackgroundEnabled,
-    permissionStatus,
+    trackingMode,
     monitoredRegions,
-    
+
     // Actions
     requestPermissions,
-    requestBackgroundPermissions,
-    startTracking,
+    startGeofenceMonitoring,
     stopTracking,
-    addGeofenceRegions,
-    
+    registerGeofences,
+
     // Events
     lastGeofenceEvent,
     lastError,

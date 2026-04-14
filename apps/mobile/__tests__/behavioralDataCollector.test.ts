@@ -4,13 +4,6 @@ jest.mock('@react-native-community/netinfo', () => ({
   fetch: jest.fn(),
 }));
 
-jest.mock('@react-native-community/geolocation', () => ({
-  watchPosition: jest.fn(),
-  clearWatch: jest.fn(),
-  getCurrentPosition: jest.fn(),
-  setRNConfiguration: jest.fn(),
-}));
-
 jest.mock('react-native-device-info', () => ({
   getBrand: jest.fn(),
   getModel: jest.fn(),
@@ -36,7 +29,6 @@ jest.mock('react-native', () => ({
 }));
 
 import NetInfo from '@react-native-community/netinfo';
-import Geolocation from '@react-native-community/geolocation';
 import DeviceInfo from 'react-native-device-info';
 
 /** Flush all pending microtasks (resolved promises) in the queue. */
@@ -46,7 +38,6 @@ describe('BehavioralDataCollector', () => {
   let collector: BehavioralDataCollector;
 
   const mockNetInfo = NetInfo as jest.Mocked<typeof NetInfo>;
-  const mockGeolocation = Geolocation as jest.Mocked<typeof Geolocation>;
   const mockDeviceInfo = DeviceInfo as jest.Mocked<typeof DeviceInfo>;
 
   beforeEach(() => {
@@ -69,23 +60,6 @@ describe('BehavioralDataCollector', () => {
     (mockDeviceInfo.getVersion as jest.Mock).mockResolvedValue('1.0.0');
     (mockDeviceInfo.getBatteryLevel as jest.Mock).mockResolvedValue(0.85);
 
-    mockGeolocation.watchPosition.mockImplementation((success) => {
-      // Immediately call success callback with location data  
-      success({
-        coords: {
-          latitude: 33.7838,
-          longitude: -118.1134,
-          altitude: 50,
-          accuracy: 5,
-          speed: 2.5, // 2.5 m/s - this is the key field for speed conversion test
-          heading: 180,
-          altitudeAccuracy: 3,
-        },
-        timestamp: Date.now(),
-      });
-      return 1; // mock watch ID
-    });
-    
     // Use fake timers to control intervals, but keep setImmediate real so
     // flushPromises() can drain the microtask queue after advancing timers.
     jest.useFakeTimers({ doNotFake: ['setImmediate'] });

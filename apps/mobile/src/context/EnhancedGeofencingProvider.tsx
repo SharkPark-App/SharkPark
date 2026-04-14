@@ -1,17 +1,16 @@
 /**
  * Enhanced Geofencing Provider with Parking Validation and Leave Detection
- * Integrates client-side behavioral analysis and leave intent detection into the geofencing workflow
- * 
- * This provider:
- * - Adds parking validation to geofence events
- * - Detects leave intent using behavioral patterns (walking to car, Bluetooth reconnect, speed increase)
- * - Collects behavioral data during parking sessions
- * - Includes validation and leave detection results in occupancy events sent to backend
- * - Provides real-time occupancy updates for improved user experience
+ *
+ * Uses the native BackgroundGeolocation SDK for:
+ * - OS-level geofence monitoring (works backgrounded/terminated)
+ * - Two-mode operation: geofence-only (low power) ↔ full tracking (inside lot)
+ * - Activity recognition (STILL/ON_FOOT/IN_VEHICLE) fed to validation & leave detection
+ * - Location events fed to behavioral data collection (replaces 5s polling interval)
  */
 
 import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, ReactNode, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
+import type { Location } from 'react-native-background-geolocation';
 import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
@@ -21,7 +20,7 @@ import { lotsApi } from '../services/api';
 import type { ParkingLotResponse } from '../services/api';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
-import { createGeofenceRegionsFromLots } from '../utils/geofenceUtils';
+import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
 import { useAuth } from './AuthContext';
 
 /**
@@ -65,23 +64,20 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   // Track current parking state
   const currentZones = useRef<Set<string>>(new Set());
   const [currentLotId, setCurrentLotId] = useState<string | null>(null);
-  const currentLotIdRef = useRef<string | null>(null); // ref copy for use inside callbacks
+  const currentLotIdRef = useRef<string | null>(null);
   const [currentValidationStatus, setCurrentValidationStatus] = useState<ValidationAnalysis | null>(null);
   const [currentLeaveIntent, setCurrentLeaveIntent] = useState<LeaveIntentAnalysis | null>(null);
-  const lastLocationUpdate = useRef<{ speed?: number; accuracy?: number } | null>(null);
   const appState = useRef<AppStateStatus>(AppState.currentState);
-  const dataCollectionInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Mutex: serialise geofence event processing so rapid ENTER/EXIT pairs
   // cannot interleave (e.g. EXIT resolving before ENTER's startParkingSession).
   const eventQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   // Stable refs that always point to the latest callback.
-  // The setup effect captures these refs (not the callbacks themselves), so it
-  // never needs to re-run because a callback identity changed.
   const handleGeofenceEventRef = useRef<(event: GeofenceEvent) => void>(() => {});
-  const startLocationDataCollectionRef = useRef<() => void>(() => {});
-  const stopLocationDataCollectionRef = useRef<() => void>(() => {});
+
+  // Stores all lots from the API so dynamic recalculation doesn't re-fetch.
+  const allLotsRef = useRef<ParkingLotResponse[]>([]);
 
   // Enhanced occupancy event with validation data
   const sendValidatedOccupancyEvent = useCallback(async (
@@ -100,7 +96,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     }
   }, []);
 
-  // Enhanced geofence event handler with parking validation
+  // Enhanced geofence event handler with two-mode switching
   const handleGeofenceEvent = useCallback(async (event: GeofenceEvent) => {
 
     if (event.eventType === 'ENTER') {
@@ -112,9 +108,16 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         if (__DEV__) {
           Alert.alert(
             '[DEV] Entered Parking Lot',
-            `Welcome to ${event.regionId}! Monitoring parking behavior and leave detection.`,
+            `Welcome to ${event.regionId}! Upgrading to full tracking mode.`,
             [{ text: 'OK' }]
           );
+        }
+
+        // Upgrade to full tracking for fine-grained location + activity
+        try {
+          await locationService.upgradeToFullTracking();
+        } catch (e) {
+          if (__DEV__) console.error('[EnhancedGeofencing] Failed to upgrade tracking:', e);
         }
 
         try {
@@ -122,9 +125,6 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           await leaveDetectionService.startLeaveMonitoring(event, {
             onLeaveIntentDetected: async (analysis: LeaveIntentAnalysis, lotId: string) => {
               setCurrentLeaveIntent(analysis);
-              // NOTE: Do NOT send an occupancy event here. Leave intent is a predictive
-              // signal only — the authoritative EXIT event is sent when the user actually
-              // leaves the geofence (see the EXIT branch below).
               if (analysis.confidence_level === 'HIGH' && __DEV__) {
                 Alert.alert(
                   '[DEV] Preparing to Leave?',
@@ -138,7 +138,6 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
               if (__DEV__) console.error('[EnhancedGeofencing] Leave detection error:', error);
             }
           });
-          startLocationDataCollectionRef.current();
         } catch (error) {
           if (__DEV__) console.error('[EnhancedGeofencing] Failed to start parking validation:', error);
         }
@@ -180,19 +179,24 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           }
 
           await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
-          stopLocationDataCollectionRef.current();
         } catch (error) {
           if (__DEV__) console.error('[EnhancedGeofencing] Failed to complete parking validation:', error);
           await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
+        }
+
+        // Downgrade back to geofence-only (low power) if no lots active
+        if (currentZones.current.size === 0) {
+          try {
+            await locationService.downgradeToGeofenceOnly();
+          } catch (e) {
+            if (__DEV__) console.error('[EnhancedGeofencing] Failed to downgrade tracking:', e);
+          }
         }
       }
     }
   }, [sendValidatedOccupancyEvent]);
 
-  // Keep ref in sync so the setup effect can call the latest version without
-  // being listed as a dependency (which would cause it to re-fire on every render).
-  // The outer wrapper serialises calls through eventQueueRef so rapid ENTER/EXIT
-  // events are processed strictly in order.
+  // Keep ref in sync for the setup effect
   useLayoutEffect(() => {
     const inner = handleGeofenceEvent;
     handleGeofenceEventRef.current = (event: GeofenceEvent) => {
@@ -204,150 +208,75 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     };
   });
 
-  // Location data collection for behavioral analysis
-  const startLocationDataCollection = useCallback(() => {
-    // Set up location update listener for behavioral data
-    const locationUpdateInterval = setInterval(() => {
-      if (currentLotIdRef.current && lastLocationUpdate.current) {
-        // Record behavioral events based on location data
-        recordBehavioralEvents();
-      }
-    }, 5000); // Every 5 seconds
+  // Feed SDK location events to validation + leave detection services
+  const handleLocationUpdate = useCallback((location: Location) => {
+    if (!currentLotIdRef.current) return;
 
-    // Store interval reference for cleanup
-    dataCollectionInterval.current = locationUpdateInterval;
-  }, []);
+    const { latitude, longitude, speed, accuracy, altitude, heading } = location.coords;
+    const safeSpeed = speed != null ? speed : -1;
+    const speedMph = safeSpeed >= 0 ? safeSpeed * 2.237 : undefined;
 
-  useLayoutEffect(() => { startLocationDataCollectionRef.current = startLocationDataCollection; });
+    parkingValidationService.updateLocation({
+      latitude,
+      longitude,
+      accuracy: accuracy ?? 0,
+      speed: safeSpeed >= 0 ? safeSpeed : null,
+      altitude: altitude ?? null,
+      heading: heading ?? null,
+    });
 
-  const stopLocationDataCollection = useCallback(() => {
-    if (dataCollectionInterval.current) {
-      clearInterval(dataCollectionInterval.current);
-      dataCollectionInterval.current = null;
-    }
-  }, []);
+    leaveDetectionService.updateLocation({
+      latitude,
+      longitude,
+      accuracy: accuracy ?? 0,
+      speed: safeSpeed >= 0 ? safeSpeed : null,
+      altitude: altitude ?? null,
+      heading: heading ?? null,
+    });
 
-  useLayoutEffect(() => { stopLocationDataCollectionRef.current = stopLocationDataCollection; });
-
-  const recordBehavioralEvents = useCallback(() => {
-    if (!lastLocationUpdate.current) return;
-
-    const { speed, accuracy } = lastLocationUpdate.current;
-
-    // Determine event type based on speed
+    // Record behavioral events based on speed
     let eventType: 'STATIONARY' | 'WALKING' | 'DRIVING' | 'SPEED_CHANGE' = 'STATIONARY';
-    if (speed !== undefined) {
-      if (speed < 1) eventType = 'STATIONARY';
-      else if (speed < 5) eventType = 'WALKING';
-      else if (speed > 10) eventType = 'DRIVING';
+    if (speedMph !== undefined) {
+      if (speedMph < 1) eventType = 'STATIONARY';
+      else if (speedMph < 5) eventType = 'WALKING';
+      else if (speedMph > 10) eventType = 'DRIVING';
       else eventType = 'SPEED_CHANGE';
     }
 
-    // Record the behavioral event
     parkingValidationService.recordBehavioralEvent(eventType, {
-      speed_mph: speed,
+      speed_mph: speedMph,
       accuracy_meters: accuracy,
-      bluetooth_state: 'UNKNOWN', // Could be enhanced with actual Bluetooth detection
+      bluetooth_state: 'UNKNOWN',
       raw_data: {
         app_state: appState.current,
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     });
-  }, []);
 
-  // Real location updates from LocationService + dynamic geofence recalculation
-  // Stores all lots from the API so dynamic recalculation doesn't re-fetch.
-  const allLotsRef = useRef<ParkingLotResponse[]>([]);
+    // Dynamic geofence recalculation on location change
+    if (
+      allLotsRef.current.length > 0 &&
+      dynamicGeofenceManager.shouldRecalculate(latitude, longitude)
+    ) {
+      const userEmail = user?.userId ?? '';
+      const allocation = dynamicGeofenceManager.computeGeofenceSet(
+        allLotsRef.current,
+        userEmail,
+        { latitude, longitude },
+      );
 
-  useEffect(() => {
-    let locationInterval: ReturnType<typeof setInterval> | null = null;
-    let isTrackingStarted = false;
-    
-    const startLocationUpdates = async () => {
-      try {
-        const started = await locationService.startLocationTracking();
-        if (!started) {
-          if (__DEV__) console.warn('[EnhancedGeofencing] Failed to start location tracking');
-          return;
+      if (allocation.all.length > 0) {
+        const geofences = createSDKGeofencesFromLots(allocation.all);
+        locationService.registerGeofences(geofences).catch(err => {
+          if (__DEV__) console.error('[EnhancedGeofencing] Dynamic recalc failed:', err);
+        });
+        if (__DEV__) {
+          console.log(
+            `[EnhancedGeofencing] Dynamic recalc: ${allocation.guaranteed.length} guaranteed + ${allocation.dynamic.length} dynamic = ${allocation.all.length} geofences`,
+          );
         }
-        
-        isTrackingStarted = true;
-        
-        locationInterval = setInterval(async () => {
-          try {
-            const position = await locationService.getCurrentPosition();
-            if (position && position.coords) {
-              const { latitude, longitude, speed, accuracy, altitude, heading } = position.coords;
-              
-              const speedMph = speed !== null && speed !== undefined ? speed * 2.237 : undefined;
-              
-              lastLocationUpdate.current = {
-                speed: speedMph,
-                accuracy: accuracy
-              };
-
-              parkingValidationService.updateLocation({
-                latitude,
-                longitude,
-                accuracy: accuracy ?? 0,
-                speed: speed ?? null,
-                altitude: altitude ?? null,
-                heading: heading ?? null
-              });
-
-              leaveDetectionService.updateLocation({
-                latitude,
-                longitude,
-                accuracy: accuracy ?? 0,
-                speed: speed ?? null,
-                altitude: altitude ?? null,
-                heading: heading ?? null
-              });
-
-              // ── Dynamic geofence recalculation ──
-              // Only recalculate when user has moved >300 m from last computation.
-              if (
-                allLotsRef.current.length > 0 &&
-                dynamicGeofenceManager.shouldRecalculate(latitude, longitude)
-              ) {
-                const userEmail = user?.userId ?? '';
-                const allocation = dynamicGeofenceManager.computeGeofenceSet(
-                  allLotsRef.current,
-                  userEmail,
-                  { latitude, longitude },
-                );
-
-                if (allocation.all.length > 0) {
-                  const regions = createGeofenceRegionsFromLots(allocation.all);
-                  await locationService.addGeofenceRegions(regions);
-                  if (__DEV__) {
-                    console.log(
-                      `[EnhancedGeofencing] Dynamic recalc: ${allocation.guaranteed.length} guaranteed + ${allocation.dynamic.length} dynamic = ${allocation.all.length} geofences`,
-                    );
-                  }
-                }
-              }
-            }
-          } catch (error) {
-            if (__DEV__) console.warn('[EnhancedGeofencing] Failed to get current position:', error);
-          }
-        }, 5000); // Update every 5 seconds
-        
-      } catch (error) {
-        if (__DEV__) console.error('[EnhancedGeofencing] Error starting location updates:', error);
       }
-    };
-
-    startLocationUpdates();
-
-    return () => {
-      if (locationInterval) {
-        clearInterval(locationInterval);
-      }
-      if (isTrackingStarted) {
-        locationService.stopLocationTracking();
-      }
-    };
+    }
   }, [user?.userId]);
 
   // App state monitoring for behavioral context
@@ -356,7 +285,6 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       appState.current = nextAppState;
       
       if (currentLotIdRef.current) {
-        // Record app state changes during parking sessions
         parkingValidationService.recordBehavioralEvent('GPS_ACCURACY_CHANGE', {
           raw_data: {
             app_state_change: nextAppState,
@@ -370,25 +298,30 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     return () => subscription?.remove();
   }, []);
 
-  // Set up geofencing and validation
+  // Initialize SDK + register geofences + subscribe to events
   useEffect(() => {
-    const geofenceListener = (event: GeofenceEvent) => {
-      handleGeofenceEventRef.current(event);
-    };
+    let destroyed = false;
 
-    locationService.setOnGeofenceEvent(geofenceListener);
+    // Subscribe to SDK events via locationService
+    const removeGeofence = locationService.onGeofence((event: GeofenceEvent) => {
+      if (!destroyed) handleGeofenceEventRef.current(event);
+    });
+
+    const removeLocation = locationService.onLocation((location: Location) => {
+      if (!destroyed) handleLocationUpdate(location);
+    });
 
     const validationListener = (analysis: ValidationAnalysis) => {
       setCurrentValidationStatus(analysis);
     };
-
     parkingValidationService.onValidationComplete(validationListener);
 
-    // Initial geofence registration using DynamicGeofenceManager.
-    // GPS is not available yet, so we pass null → guaranteed-only set.
-    // Dynamic lots get filled in by the location-update effect once GPS fires.
+    // Initialize SDK and register geofences
     (async () => {
       try {
+        await locationService.initialize();
+        await locationService.requestPermissions();
+
         const allLots = await lotsApi.getAllLots();
         allLotsRef.current = allLots;
 
@@ -398,7 +331,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         const allocation = dynamicGeofenceManager.computeGeofenceSet(
           allLots,
           userEmail,
-          null, // no position yet
+          null,
         );
 
         if (__DEV__) {
@@ -410,46 +343,46 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           );
         }
 
-        const realGeofenceRegions = createGeofenceRegionsFromLots(allocation.all);
+        const geofences = createSDKGeofencesFromLots(allocation.all);
 
-        if (realGeofenceRegions.length > 0) {
-          await locationService.addGeofenceRegions(realGeofenceRegions);
+        if (geofences.length > 0) {
+          await locationService.registerGeofences(geofences);
         } else {
           throw new Error('No valid parking lot geofences found for this user type');
         }
+
+        // Start in geofence-only mode (low power)
+        await locationService.startGeofenceMonitoring();
+
       } catch (error) {
         if (__DEV__) console.warn('[EnhancedGeofencing] Failed to load real parking lot data, falling back to test geofence:', error);
 
-        const testGeofenceRegions = [
-          {
-            id: TEST_CONSTANTS.TEST_LOT_ID,
-            name: TEST_CONSTANTS.TEST_LOT_NAME,
-            geometry: {
-              type: 'circle' as const,
-              center: {
-                latitude: TEST_CONSTANTS.CSULB_CENTER.latitude,
-                longitude: TEST_CONSTANTS.CSULB_CENTER.longitude,
-              },
-              radius: TEST_CONSTANTS.TEST_RADIUS,
-            },
+        // Fallback: register a test circular geofence
+        try {
+          await locationService.initialize();
+          await locationService.registerGeofences([{
+            identifier: TEST_CONSTANTS.TEST_LOT_ID,
+            latitude: TEST_CONSTANTS.CSULB_CENTER.latitude,
+            longitude: TEST_CONSTANTS.CSULB_CENTER.longitude,
+            radius: TEST_CONSTANTS.TEST_RADIUS,
             notifyOnEntry: true,
-            notifyOnExit: true
-          }
-        ];
-
-        await locationService.addGeofenceRegions(testGeofenceRegions);
+            notifyOnExit: true,
+          }]);
+          await locationService.startGeofenceMonitoring();
+        } catch (e) {
+          if (__DEV__) console.error('[EnhancedGeofencing] SDK init failed completely:', e);
+        }
       }
     })();
 
-    // Cleanup
     return () => {
-      locationService.removeOnGeofenceEvent(geofenceListener);
-      locationService.clearGeofenceRegions();
+      destroyed = true;
+      removeGeofence();
+      removeLocation();
       parkingValidationService.removeValidationListener(validationListener);
-      stopLocationDataCollectionRef.current();
       dynamicGeofenceManager.reset();
     };
-  }, []); // stable: all mutable state is accessed through refs
+  }, []); // stable: all mutable state accessed through refs
 
   const contextValue: EnhancedGeofencingContextType = {
     isGeofencingActive: true,
