@@ -6,19 +6,20 @@
 import { GeofenceRegion } from '../types/location';
 import type { Geofence } from 'react-native-background-geolocation';
 import { ParkingLotResponse } from '../services/api/lots';
-import { getLotPolygon } from '../data/lotPolygons';
 
 /**
  * Convert parking lot API data to SDK Geofence objects for BackgroundGeolocation.
  *
- * Uses polygon Vertices when available (satellite-traced perimeters);
- * falls back to circular geofence from the API.
+ * Uses polygon vertices from the API response (satellite-traced perimeters
+ * stored in the database); falls back to circular geofence when the polygon
+ * has fewer than 3 vertices.
  */
 export function createSDKGeofencesFromLots(lots: ParkingLotResponse[]): Geofence[] {
   return lots
     .filter(lot => lot.center_lat && lot.center_lng && lot.geofence_radius)
     .map(lot => {
-      const polygon = getLotPolygon(lot.lot_id);
+      const polygon = lot.geofence_polygon;
+      const hasPolygon = Array.isArray(polygon) && polygon.length >= 3;
 
       const base: Geofence = {
         identifier: lot.lot_id,
@@ -36,7 +37,7 @@ export function createSDKGeofencesFromLots(lots: ParkingLotResponse[]): Geofence
         },
       };
 
-      if (polygon) {
+      if (hasPolygon) {
         // SDK polygon: vertices as [lat, lng] pairs.
         // When vertices are set, the SDK uses polygon detection natively.
         base.vertices = polygon.map(p => [p.lat, p.lng]);

@@ -116,14 +116,6 @@ describe('Polygon Geofence System', () => {
 
   describe('SDK Geofence Construction', () => {
     it('should convert lots with polygons to SDK Vertices format', () => {
-      // Mock getLotPolygon for this test
-      jest.mock('../src/data/lotPolygons', () => ({
-        getLotPolygon: (id: string) => {
-          if (id === 'G1') return [{ lat: 33.78, lng: -118.11 }, { lat: 33.79, lng: -118.11 }, { lat: 33.79, lng: -118.10 }];
-          return null;
-        },
-      }));
-
       // A simple assertion that the function exists and returns an array
       const result = createSDKGeofencesFromLots([]);
       expect(Array.isArray(result)).toBe(true);

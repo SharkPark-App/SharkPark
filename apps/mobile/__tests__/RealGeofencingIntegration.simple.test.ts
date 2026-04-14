@@ -27,7 +27,12 @@ describe('Real Geofencing Integration (Simple)', () => {
       building_proximity: ['Engineering'],
       center_lat: 33.7838,
       center_lng: -118.1141,
-      geofence_polygon: [],
+      geofence_polygon: [
+        { lat: 33.7835, lng: -118.1145 },
+        { lat: 33.7842, lng: -118.1145 },
+        { lat: 33.7842, lng: -118.1137 },
+        { lat: 33.7835, lng: -118.1137 },
+      ],
       geofence_radius: 100,
       permit_types: ['Student'],
       daily_permit_allowed: true,
@@ -69,7 +74,12 @@ describe('Real Geofencing Integration (Simple)', () => {
       building_proximity: ['Library'],
       center_lat: 33.7840,
       center_lng: -118.1145,
-      geofence_polygon: [],
+      geofence_polygon: [
+        { lat: 33.7837, lng: -118.1149 },
+        { lat: 33.7843, lng: -118.1149 },
+        { lat: 33.7843, lng: -118.1141 },
+        { lat: 33.7837, lng: -118.1141 },
+      ],
       geofence_radius: 80,
       permit_types: ['Student'],
       daily_permit_allowed: true,
@@ -107,7 +117,7 @@ describe('Real Geofencing Integration (Simple)', () => {
 
       expect(geofences).toHaveLength(2);
 
-      // G1 has polygon data in lotPolygons.ts — should include vertices
+      // G1 has polygon data in geofence_polygon — should include vertices
       const g1 = geofences.find(g => g.identifier === 'G1');
       expect(g1).toBeDefined();
       expect(g1?.vertices).toBeDefined();
@@ -125,6 +135,7 @@ describe('Real Geofencing Integration (Simple)', () => {
         ...mockRealLots[0],
         lot_id: 'NODATA',
         lot_name: 'No polygon lot',
+        geofence_polygon: [],
       };
 
       const geofences = createSDKGeofencesFromLots([lotWithoutPolygon]);
