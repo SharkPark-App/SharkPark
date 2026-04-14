@@ -25,7 +25,11 @@ import mlflow
 import pandas as pd
 
 from src.config import SHORT_TERM_MODEL_NAME
-from src.evaluation.compare import compare_models
+from src.evaluation.compare import (
+    compare_models,
+    meets_promotion_criteria,
+    build_promotion_reason,
+)
 from src.evaluation.metrics import compute_metrics
 from src.features.short_term import prepare_training_features
 from src.models.short_term import HOLDOUT_DAYS, ShortTermModel
@@ -96,16 +100,34 @@ def evaluate(run_id: str, data_path: str | None = None) -> dict:
         total_lots=df["lot_id"].nunique(),
     )
 
+    baseline_passed = comparison["baseline_passed"]
+    failed_baselines = comparison["failed_baselines"]
+
+    should_promote = baseline_passed and meets_promotion_criteria(
+        candidate_metrics, production_metrics
+    )
+    promotion_reason = build_promotion_reason(
+        candidate_metrics,
+        production_metrics,
+        should_promote,
+        baseline_passed,
+        failed_baselines,
+    )
+
     logger.info("")
-    if comparison["should_promote"]:
-        logger.info("PROMOTE: %s", comparison["promotion_reason"])
+    if should_promote:
+        logger.info("PROMOTE: %s", promotion_reason)
         print(
-            f"\nNext step (only if promotion is approved):\n  python -m scripts.promote_short_term --run-id {run_id}"
+            f"Next step (only if promotion is approved): python -m scripts.promote_short_term --run-id {run_id}"
         )
     else:
-        logger.info("DO NOT PROMOTE: Candidate does not meet promotion criteria.")
+        logger.info("DO NOT PROMOTE: %s", promotion_reason)
 
-    return comparison
+    return {
+        "results": comparison["results"],
+        "should_promote": should_promote,
+        "promotion_reason": promotion_reason,
+    }
 
 
 def _evaluate_production_on_test(test_features: pd.DataFrame) -> dict | None:
@@ -129,6 +151,7 @@ def _evaluate_production_on_test(test_features: pd.DataFrame) -> dict | None:
             )
             return None
 
+        # Load production model and score it on the candidate's test set
         logger.info(
             "Re-evaluating production model (run %s) on candidate test set...", run_id
         )

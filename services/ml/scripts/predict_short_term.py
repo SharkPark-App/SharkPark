@@ -193,6 +193,13 @@ def _build_prediction_df(
     Converts occupancy rates to counts using lot capacities.
     Confidence bounds come from quantile regression (10th/90th percentile).
     """
+    missing_lots = set(features["lot_id"].unique()) - set(lot_capacities)
+    if missing_lots:
+        logger.warning(
+            "No capacity found for %d lot(s), using fallback 200: %s",
+            len(missing_lots),
+            sorted(missing_lots),
+        )
     capacities = features["lot_id"].map(lot_capacities).fillna(200)
 
     base_time = prediction_time.replace(minute=0, second=0, microsecond=0)

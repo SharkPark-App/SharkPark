@@ -165,6 +165,15 @@ class TestShortTermModel:
         loaded_preds = loaded_model.predict(test_features)
         np.testing.assert_array_almost_equal(original_preds, loaded_preds)
 
+    def test_train_includes_low_confidence_rows(self, synthetic_df):
+        """LOW-confidence rows must not be filtered — downweighting handled by cold-start weights"""
+        df = synthetic_df.copy()
+        df["confidence"] = "LOW"
+
+        model = ShortTermModel()
+        result = model.train(df)
+        assert result["train_size"] > 0
+
     def test_predict_quantiles_cold_start_widens_intervals(self, synthetic_df):
         """Cold-start lots should get wider confidence intervals."""
         model = ShortTermModel()

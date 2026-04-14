@@ -174,16 +174,22 @@ Week-ahead predictions answer "what will parking look like next Thursday at 10am
 **Architecture:**
 
 #### Stage 1: Historical Baseline
-- Compute 4-week rolling average for each `(lot_id, day_of_week, hour)` combination
+- Compute 4-week rolling average for each `(lot_id, academic_period, day_of_week, hour)` combination
 - Rolling average only uses data from the same `academic_period` — break data is not mixed with regular semester data
+- **Coverage fallback:** if a group has < 2 unique days of data, falls back to the global `(day_of_week, hour)` mean across all lots. The 4-week window caps coverage at 4 days per group, and short periods (dead_week, midterms) cap it further. The fallback is not scoped by academic_period — acceptable while the pool is small.
 - During breaks/summer with no prior break data, baseline falls back to near-zero (campus is largely empty)
 - Adjust for week-of-semester effects (e.g., week 1 lighter, finals week heavier)
+- **Confidence filtering:** LOW-confidence rows are excluded from baseline computation by default. The baseline is a simple unweighted mean — it has no mechanism to downweight noisy rows, so including LOW-confidence readings directly skews the average. XGBoost training keeps all confidence levels and uses `cold_start_weight` instead (weighting, not filtering). **Future improvement:** replace binary include/exclude with a weighted mean (e.g. HIGH=1.0, MEDIUM=0.5, LOW=0.1) once real data reveals how noisy LOW-confidence readings actually are.
 - **Output:** "Lot G2 on Tuesday at 10am typically has 75% occupancy in week 8"
 
 #### Stage 2: XGBoost Adjustment
 - Train single XGBoost model to predict **deviations** from baseline
 - **Target:** `actual_occupancy - historical_baseline`
 - **Final prediction:** `predicted_occupancy = historical_baseline + xgboost_adjustment`
+
+> **Known gap — period boundaries and unseen periods:** Because the baseline is restricted to the last 4 weeks *and* filtered by `academic_period`, a given period's slice within the window is often only 1–2 weeks. At the first occurrence of a short period (e.g., `dead_week`, `finals`), or at period boundaries where only 1 week of the new period is in the window, the lot-specific baseline either has < 2 coverage days (triggering the global fallback) or does not exist at all (forcing every row to the global fallback). The global fallback itself is not scoped by period, so it returns a cross-period `(day_of_week, hour)` mean that may not reflect the target period's typical occupancy. Stage 2 XGBoost has `academic_period` as a categorical feature, so it can learn period-specific corrections to an inaccurate baseline — we rely on this to correct the gap for MVP. Once multi-semester real data is available, a cross-semester baseline lookup (pull same-period data from prior semesters) is the right fix.
+
+> **Confidence filtering policy:** Training pipelines do **NOT** filter LOW-confidence rows. Real cold-start lots emit `confidence: LOW` by definition ([Reliability Scoring](#reliability-scoring)), and `cold_start_weight` is the mechanism for downweighting them at fit time. Filtering would eliminate the rows the weights were designed to handle, silently turning `cold_start_weight` into a no-op for real data. In contrast, `compute_baseline` **DOES** filter LOW by default — the baseline has no weighting mechanism, and a noisy baseline corrupts the Stage 2 deviation target directly.
 
 **Why two-stage over alternatives:**
 
@@ -246,6 +252,10 @@ Several model parameters are currently hand-tuned heuristics that should be cali
 | `synthetic_weight` | 1.0 (default) | Sweep values (0.1–1.0) and compare test MAE. As real data grows, lower values should improve accuracy. |
 | `cold_start_weight` | 1.0 (default) | Similar sweep; lower if cold-start data is noisy enough to hurt generalization. |
 | `HOLDOUT_DAYS` | 14 | May need adjustment based on data volume — shorter holdout if data is scarce, longer if plentiful. |
+
+**Long-term sample weight tuning:** The long-term model's Stage 2 XGBoost predicts residual deviations (actual − baseline), not raw occupancy rates. This means the signal-to-noise ratio is inherently lower — noisy synthetic or cold-start rows can bias the deviation model more easily than they would a raw-rate model. Expect `synthetic_weight` to need a lower value for long-term (e.g., 0.1–0.3) compared to short-term. Run a grid search over both weights once real data is available, evaluating on horizon-stratified MAE.
+
+**Cross-semester baseline lookup (long-term):** Once a lot has a full semester of real data, extend `compute_baseline` in `src/features/long_term.py` to fall back per-lot across semesters for the same `academic_period` (e.g. use last fall's `dead_week` data for this fall's `dead_week` baseline). This fixes the period-boundary sparsity gap — short periods like `dead_week` and `finals` get at most 1-2 weeks in the 4-week window, often triggering the global `(day_of_week, hour)` fallback. Gate per-lot so immature lots stay on the global fallback until they catch up. Requires retaining snapshots beyond 4 weeks and adding a period-scoped fallback tier to `_lookup_baseline`.
 
 **General progression:**
 1. **Synthetic-only (now):** All defaults, no weighting needed. Baseline comparisons are synthetic-vs-synthetic (validates pipeline, not real accuracy).
@@ -318,14 +328,15 @@ The `semester` (`fall`, `spring`, `summer`, `session`, `break`) and `academic_pe
 ### Long-term Features
 
 **Stage 1 (Historical Baseline):**
-- 4-week rolling average for `(lot_id, day_of_week, hour)` combination
+- 4-week rolling average for `(lot_id, academic_period, day_of_week, hour)` combination
+- Coverage fallback: groups with < 2 unique days use global `(day_of_week, hour)` mean
 - Week-of-semester adjustment factor
 - Historical variance (for confidence estimation)
 
 **Stage 2 (XGBoost Adjustment):**
 - `historical_baseline` (from Stage 1)
 - `days_ahead` (1-7, critical for horizon-specific learning)
-- `day_of_week`, `hour`
+- `sin_hour`, `cos_hour`, `sin_day`, `cos_day` (cyclical time encodings)
 - `week_of_semester` (1-16 during active semester, 0 outside semester)
 - `semester`: categorical (`fall`, `spring`, `summer`, `session`, `break`)
 - `academic_period`: categorical (`early`, `regular`, `midterms`, `late`, `dead_week`, `finals`)
@@ -335,17 +346,17 @@ The `semester` (`fall`, `spring`, `summer`, `session`, `break`) and `academic_pe
 
 **Key difference from short-term:** No lag features or current state. Week-ahead relies on patterns and calendar, not real-time conditions.
 
-### Event Features (Future)
+### Weekly Trend Feature (Planned — requires real data)
 
-Event-aware forecasting will incorporate campus events as features:
+Once sufficient real data accumulates, a `weekly_trend` feature should be added to Stage 2:
 
-- `event_active`: boolean, is there an event within 2 hours?
-- `event_type`: categorical (ATHLETIC, ACADEMIC, PERFORMANCE, OTHER) — matches `CampusEventType` enum
-- `event_magnitude`: expected attendance bucket (SMALL < 500, MEDIUM < 2000, LARGE 2000+) — derived from `expected_attendance`
-- `event_proximity`: distance from lot to event venue (closer lots affected more) — via `event_impacts` join table with `impact_level` and `expected_increase_percent`
-- `time_to_event`: minutes until event start (captures pre-event arrival patterns)
+- **Definition:** `mean(occupancy_rate over last 7 days for this lot) - historical_baseline` for the same `(day_of_week, hour)` slot
+- **Signal:** Captures whether the current week is running hotter or cooler than the historical norm - e.g. a conference on campus all week, or an unusually quiet week
+- **Why it enables tiered horizon targets:** With `weekly_trend`, Day 1-2 predictions get anchored to the current week's trend, while Day 6-7 must rely on the baseline alone. This creates a genuine accuracy gradient across horizons, making stricter near-term targets meaningful.
 
-**Data source:** `campus_events` and `event_impacts` tables in PostgreSQL, synced from university calendar API.
+**When implementing:** add `compute_weekly_trend()` to `src/features/long_term.py`, wire it into both training and inference feature prep, add `"weekly_trend"` to `NUMERIC_FEATURES` in `src/models/long_term.py`, and revisit `HORIZON_MAE_TARGETS` in `src/evaluation/compare.py` to re-introduce tiered targets.
+
+**Why cyclical encoding (`sin_hour`, `cos_hour`, `sin_day`, `cos_day`) is load-bearing for long-term:** Without lag features, XGBoost must learn time patterns purely from calendar context. Raw integer `hour` treats 23 and 0 as far apart numerically, but they're adjacent in time. Sin/cos encoding fixes this, making late-night/early-morning boundary patterns learnable. Short-term omits cyclical encoding entirely — lag features dominate there, and predictions run 7am–9pm so there is no wrap-around boundary to handle.
 
 ### Weather Features (Future)
 
@@ -492,6 +503,8 @@ Models must beat these naive baselines to be considered useful:
 
 **Minimum improvement threshold:** New model must reduce MAE by ≥5% vs current production model OR improve day-ahead accuracy by ≥3%.
 
+> **Open question — model-specific thresholds:** Short-term has lag features and current state, so its MAE floor is inherently lower than long-term. A 5% MAE improvement means something different for a state-transition model vs a calendar-only model. Short-term may warrant a higher bar (e.g., 10%). However, with sparse or mostly synthetic data, MAE scores are too noisy to reason about thresholds reliably. **Revisit once the first real training run passes the full baseline gate (`COVERAGE_ALL_THRESHOLD = 60%`)** — at that point, observed MAE variance across runs will inform what a meaningful improvement actually looks like.
+
 > **Fair comparison:** The evaluation script (`evaluate.py`) re-evaluates the production model on the candidate's test set, so both models are always compared on identical data. This avoids data drift bias when retraining on newer data.
 
 
@@ -524,6 +537,9 @@ A candidate model must meet at least one:
 - Reduce MAE by ≥5%
 - Improve directional accuracy by ≥3%
 - Evaluated on held-out test set from most recent 2 weeks
+
+**Long-term horizon MAE targets (promotion gate):**
+All horizons use a flat < 0.15 target. The long-term model is calendar-only (no same-day lag features), so it has no informational advantage at Day 1 vs Day 7 — the prediction is equally difficult at any horizon. Tiered targets (stricter at Day 1) only make sense for models with current-state anchoring. Revisit if the architecture gains a same-day snapshot input.
 
 **Workflow (local dev):**
 1. Train candidate model

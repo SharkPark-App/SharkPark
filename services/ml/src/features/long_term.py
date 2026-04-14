@@ -19,12 +19,13 @@ Target: deviation = actual_occupancy_rate - historical_baseline
 """
 
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Sequence
 
 import numpy as np
 import pandas as pd
 
+from src.academic_calendar import get_semester, get_week_of_semester, is_campus_open
 from src.config import LONG_TERM_BASELINE_WEEKS, PREDICTION_HOURS
 
 from .base import (
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "compute_baseline",
     "prepare_training_features",
+    "prepare_inference_features",
 ]
 
 # Minimum unique days per (lot_id, academic_period, day_of_week, hour) group
@@ -231,12 +233,10 @@ def prepare_training_features(
     and assembles the Stage 2 feature set. The ``days_ahead`` feature is
     simulated via uniform random sampling in [1, 7] per row.
 
-    Note on days_ahead simulation: In production inference, days_ahead
-    reflects true forecast horizon. During training we don't have paired
-    (snapshot, future-prediction) records, so we simulate it as a random
-    feature. This teaches the model that accuracy degrades with horizon
-    without introducing temporal leakage. Baseline values used here are
-    not horizon-adjusted (pragmatic simplification — documented here).
+    Note on days_ahead simulation: training data has no natural horizon, so
+    days_ahead is randomly assigned per row. This lets the model learn
+    horizon-level patterns without leaking future information. The baseline
+    is not adjusted per horizon.
 
     Args:
         df: Raw OccupancySnapshot DataFrame with columns: lot_id, timestamp,
@@ -325,6 +325,109 @@ def _empty_training_df() -> pd.DataFrame:
 # =============================================================================
 # Inference Features
 # =============================================================================
+
+
+def prepare_inference_features(
+    target_dates: list[date],
+    lot_ids: list[str],
+    baseline: pd.DataFrame,
+    snapshot_df: pd.DataFrame,
+    reference_date: date | None = None,
+) -> pd.DataFrame:
+    """
+    Build the inference feature grid for long-term predictions.
+
+    Generates one row per (lot_id, target_date, target_hour) combination —
+    i.e., len(lot_ids) x len(target_dates) x len(PREDICTION_HOURS) rows.
+
+    Args:
+        target_dates: List of future dates to predict.
+        lot_ids: List of human-readable lot IDs to predict for.
+        baseline: Output of compute_baseline().
+        snapshot_df: Recent snapshot DataFrame used to derive academic context
+            (semester, academic_period, week_of_semester, is_campus_open) for
+            each target date. These values are taken from the most recent
+            snapshot per lot that matches the target date's day-of-week, or
+            approximated from the latest available snapshot.
+        reference_date: The date predictions are being made from (today).
+            Defaults to today.
+
+    Returns:
+        DataFrame ready for LongTermModel.predict_quantiles().
+    """
+    if reference_date is None:
+        reference_date = date.today()
+    if not target_dates or not lot_ids:
+        return _empty_inference_df()
+
+    snapshot_df = snapshot_df.copy()
+    snapshot_df["timestamp"] = pd.to_datetime(snapshot_df["timestamp"])
+
+    # Per-lot cold-start status from most recent snapshot; missing lots default to True
+    cold_start = (
+        snapshot_df.sort_values("timestamp").groupby("lot_id")["is_cold_start"].last()
+        if "is_cold_start" in snapshot_df.columns
+        else pd.Series(dtype=bool)
+    )
+
+    # Cartesian product of (dates × lots × hours)
+    result = pd.MultiIndex.from_product(
+        [target_dates, lot_ids, PREDICTION_HOURS],
+        names=["target_date", "lot_id", "target_hour"],
+    ).to_frame(index=False)
+
+    # Date-level features
+    dates = pd.to_datetime(result["target_date"])
+    result["days_ahead"] = (dates - pd.Timestamp(reference_date)).dt.days
+    result["day_of_week"] = dates.dt.weekday
+    result["hour"] = result["target_hour"]
+    result["target_date"] = result["target_date"].astype(str)
+
+    # Calendar features derived directly per target date
+    unique_dates = list(target_dates)
+    week_num = {d: get_week_of_semester(d)[0] for d in unique_dates}
+    period = {d: get_week_of_semester(d)[1] for d in unique_dates}
+    semester = {d: get_semester(d) for d in unique_dates}
+    campus_open = {d: is_campus_open(d) for d in unique_dates}
+
+    result["week_of_semester"] = result["target_date"].map(
+        {d.isoformat(): week_num[d] for d in unique_dates}
+    )
+    result["academic_period"] = result["target_date"].map(
+        {d.isoformat(): period[d] for d in unique_dates}
+    )
+    result["semester"] = result["target_date"].map(
+        {d.isoformat(): semester[d] for d in unique_dates}
+    )
+    result["is_campus_open"] = result["target_date"].map(
+        {d.isoformat(): campus_open[d] for d in unique_dates}
+    )
+    result["is_cold_start"] = result["lot_id"].map(cold_start).fillna(True)
+
+    # Global fallback for baseline lookup
+    if "occupancy_rate" in snapshot_df.columns:
+        snap = snapshot_df.copy()
+        snap["timestamp"] = pd.to_datetime(snap["timestamp"])
+        snap["hour"] = snap["timestamp"].dt.hour
+        snap["day_of_week"] = snap["timestamp"].dt.dayofweek
+        snap = snap[snap["hour"].isin(PREDICTION_HOURS)]
+        global_mean = snap.groupby(["day_of_week", "hour"])["occupancy_rate"].mean()
+    else:
+        global_mean = pd.Series(dtype=float)
+
+    global_mean.index = list(
+        zip(
+            global_mean.index.get_level_values(0),
+            global_mean.index.get_level_values(1),
+        )
+    )
+
+    result["historical_baseline"] = _lookup_baseline(result, baseline, global_mean)
+
+    result = add_hour_encoding(result)
+    result = add_day_encoding(result)
+
+    return result.reset_index(drop=True)
 
 
 def _empty_inference_df() -> pd.DataFrame:
