@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { OccupancyEventsController } from './occupancy-events.controller';
 import { OccupancyEventsService } from './occupancy-events.service';
 
@@ -20,6 +21,7 @@ describe('OccupancyEventsController', () => {
       controllers: [OccupancyEventsController],
       providers: [
         { provide: OccupancyEventsService, useValue: mockService },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('') } },
       ],
     }).compile();
 

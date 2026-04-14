@@ -11,16 +11,18 @@ import { UsersModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
 import { WeatherModule } from './weather/weather.module';
 import { AuthModule } from './auth/auth.module';
+import { AzureAdGuard } from './auth/azure-ad.guard';
 import { OccupancyEventsModule } from './occupancy-events/occupancy-events.module';
 import { ReliabilityModule } from './reliability/reliability.module';
 import { HealthModule } from './health/health.module';
-import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig } from './config/configuration';
+import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, validateConfig } from './config/configuration';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig, authConfig, dbConfig, privacyConfig, weatherConfig],
+      validate: validateConfig,
     }),
     ScheduleModule.forRoot(),
     DatabaseModule,
@@ -39,6 +41,7 @@ import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig } from '.
   providers: [
     AppService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useExisting: AzureAdGuard },
   ],
 })
 export class AppModule {}

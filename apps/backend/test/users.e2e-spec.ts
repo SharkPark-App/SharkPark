@@ -4,7 +4,7 @@ import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
-import { AuthGuard } from '@nestjs/passport';
+import { AzureAdGuard } from '../src/auth/azure-ad.guard';
 
 /**
  * Azure AD AuthGuard blocks requests w/o valid credentials.
@@ -37,7 +37,9 @@ describe('UsersController (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-    .overrideGuard(AuthGuard('azure-ad'))
+    .overrideGuard(AzureAdGuard)
+    .useClass(MockAuthGuard)
+    .overrideProvider(AzureAdGuard)
     .useClass(MockAuthGuard)
     .compile();
 

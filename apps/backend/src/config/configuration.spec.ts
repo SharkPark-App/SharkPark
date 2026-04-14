@@ -1,4 +1,4 @@
-import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig } from './configuration';
+import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, validateConfig } from './configuration';
 
 describe('Configuration', () => {
   const originalEnv = process.env;
@@ -71,11 +71,11 @@ describe('Configuration', () => {
   });
 
   describe('privacyConfig', () => {
-    it('should use default salt when env is not set', () => {
+    it('should use empty string when env is not set', () => {
       delete process.env.DEVICE_HASH_SALT;
 
       const config = (privacyConfig as unknown as () => ReturnType<typeof Object>)();
-      expect(config).toEqual({ deviceHashSalt: 'sharkpark-default-salt-2026' });
+      expect(config).toEqual({ deviceHashSalt: '' });
     });
   });
 
@@ -104,6 +104,40 @@ describe('Configuration', () => {
           longitude: -118.2437,
         }),
       );
+    });
+  });
+
+  describe('validateConfig', () => {
+    it('should throw in production when required vars are missing', () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.DATABASE_URL;
+      delete process.env.AZURE_CLIENT_ID;
+      delete process.env.AZURE_TENANT_ID;
+      delete process.env.DEVICE_HASH_SALT;
+
+      expect(() => validateConfig({})).toThrow('Missing required environment variables');
+    });
+
+    it('should not throw in production when all required vars are set', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.AZURE_CLIENT_ID = 'test-client-id';
+      process.env.AZURE_TENANT_ID = 'test-tenant-id';
+      process.env.DEVICE_HASH_SALT = 'test-salt';
+
+      expect(() => validateConfig({})).not.toThrow();
+    });
+
+    it('should warn but not throw in development when vars are missing', () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.DATABASE_URL;
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const result = validateConfig({});
+
+      expect(warnSpy).toHaveBeenCalled();
+      expect(result).toEqual({});
+      warnSpy.mockRestore();
     });
   });
 });

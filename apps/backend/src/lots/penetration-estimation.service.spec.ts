@@ -180,9 +180,9 @@ describe('PenetrationEstimationService', () => {
   // ─── getMaxScaling ────────────────────────────────────
 
   describe('getMaxScaling', () => {
-    it('returns Infinity for 500+ devices', () => {
-      expect(service.getMaxScaling(500)).toBe(Infinity);
-      expect(service.getMaxScaling(1000)).toBe(Infinity);
+    it('returns 20 for 500+ devices', () => {
+      expect(service.getMaxScaling(500)).toBe(20);
+      expect(service.getMaxScaling(1000)).toBe(20);
     });
 
     it('returns 10 for 200–499 devices', () => {

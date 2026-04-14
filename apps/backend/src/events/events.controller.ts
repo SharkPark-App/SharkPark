@@ -1,10 +1,12 @@
 import { Controller, Get, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { EventsService } from './events.service';
+import { Public } from '../auth/public.decorator';
 
 /**
  * Provides campus event data and their impact on parking availability.
  * Events include sports games, graduations, and other large gatherings.
  */
+@Public()
 @Controller('events')
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}

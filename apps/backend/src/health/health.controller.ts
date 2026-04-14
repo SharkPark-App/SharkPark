@@ -2,7 +2,9 @@ import { Controller, Get } from '@nestjs/common';
 import { HealthCheckService, MemoryHealthIndicator } from '@nestjs/terminus';
 import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaHealthIndicator } from './prisma.health';
+import { Public } from '../auth/public.decorator';
 
+@Public()
 @Controller('health')
 @SkipThrottle()
 export class HealthController {
