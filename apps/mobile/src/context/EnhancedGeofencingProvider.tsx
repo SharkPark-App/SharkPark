@@ -215,7 +215,6 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     const { latitude, longitude, speed, accuracy, altitude, heading } = location.coords;
     const safeSpeed = speed != null ? speed : -1;
-    const speedMph = safeSpeed >= 0 ? safeSpeed * 2.237 : undefined;
 
     parkingValidationService.updateLocation({
       latitude,
@@ -235,20 +234,48 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       heading: heading ?? null,
     });
 
-    // Record behavioral events based on speed
-    let eventType: 'STATIONARY' | 'WALKING' | 'DRIVING' | 'SPEED_CHANGE' = 'STATIONARY';
-    if (speedMph !== undefined) {
-      if (speedMph < 1) eventType = 'STATIONARY';
-      else if (speedMph < 5) eventType = 'WALKING';
-      else if (speedMph > 10) eventType = 'DRIVING';
-      else eventType = 'SPEED_CHANGE';
+    // Feed SDK Location (with battery) to behavioral collector
+    sharedBehavioralCollector.updateLocation({
+      latitude,
+      longitude,
+      accuracy: accuracy ?? 0,
+      speed: safeSpeed >= 0 ? safeSpeed : null,
+      altitude: altitude ?? null,
+      heading: heading ?? null,
+      battery_level: location.battery?.level ?? null,
+      battery_charging: location.battery?.is_charging ?? null,
+    });
+
+    // Use SDK activity recognition (accelerometer + gyro) instead of speed heuristics.
+    // The Location object already carries the activity at the time it was recorded.
+    const activityType = location.activity?.type?.toLowerCase() ?? 'unknown';
+    let eventType: 'STATIONARY' | 'WALKING' | 'DRIVING' | 'SPEED_CHANGE' | 'ACTIVITY_STILL' | 'ACTIVITY_ON_FOOT' | 'ACTIVITY_IN_VEHICLE';
+    switch (activityType) {
+      case 'still':
+        eventType = 'ACTIVITY_STILL';
+        break;
+      case 'on_foot':
+      case 'walking':
+      case 'running':
+        eventType = 'ACTIVITY_ON_FOOT';
+        break;
+      case 'in_vehicle':
+      case 'automotive':
+        eventType = 'ACTIVITY_IN_VEHICLE';
+        break;
+      default:
+        eventType = 'STATIONARY';
+        break;
     }
 
+    const speedMph = safeSpeed >= 0 ? safeSpeed * 2.237 : undefined;
     parkingValidationService.recordBehavioralEvent(eventType, {
       speed_mph: speedMph,
       accuracy_meters: accuracy,
       bluetooth_state: 'UNKNOWN',
       raw_data: {
+        activity: activityType,
+        activity_confidence: location.activity?.confidence,
         app_state: appState.current,
         timestamp: new Date().toISOString(),
       },
@@ -257,13 +284,15 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     // Dynamic geofence recalculation on location change
     if (
       allLotsRef.current.length > 0 &&
-      dynamicGeofenceManager.shouldRecalculate(latitude, longitude)
+      dynamicGeofenceManager.shouldRecalculate(latitude, longitude, location.odometer)
     ) {
       const userEmail = user?.userId ?? '';
       const allocation = dynamicGeofenceManager.computeGeofenceSet(
         allLotsRef.current,
         userEmail,
         { latitude, longitude },
+        undefined,
+        location.odometer,
       );
 
       if (allocation.all.length > 0) {
@@ -271,6 +300,13 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         locationService.registerGeofences(geofences).catch(err => {
           if (__DEV__) console.error('[EnhancedGeofencing] Dynamic recalc failed:', err);
         });
+
+        // Tighten geofence proximity radius when on campus, widen when off
+        const managerState = dynamicGeofenceManager.getState();
+        locationService.setGeofenceProximityRadius(managerState.isOnCampus).catch(err => {
+          if (__DEV__) console.error('[EnhancedGeofencing] Proximity radius update failed:', err);
+        });
+
         if (__DEV__) {
           console.log(
             `[EnhancedGeofencing] Dynamic recalc: ${allocation.guaranteed.length} guaranteed + ${allocation.dynamic.length} dynamic = ${allocation.all.length} geofences`,

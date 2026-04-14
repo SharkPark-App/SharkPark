@@ -141,6 +141,23 @@ class LocationService {
   }
 
   /**
+   * Dynamically adjust geofenceProximityRadius based on campus proximity.
+   *
+   * When the user is on campus, a tight 1km radius keeps the SDK focused on
+   * nearby lots. When approaching from far away, a wider 3km radius ensures
+   * geofences activate early enough.
+   */
+  async setGeofenceProximityRadius(isOnCampus: boolean): Promise<void> {
+    const radius = isOnCampus ? 1000 : 3000;
+    await BackgroundGeolocation.setConfig({
+      geolocation: { geofenceProximityRadius: radius },
+    });
+    if (__DEV__) {
+      console.log(`[LocationService] geofenceProximityRadius → ${radius}m (${isOnCampus ? 'on' : 'off'} campus)`);
+    }
+  }
+
+  /**
    * Request location permissions. The SDK auto-requests on start/startGeofences,
    * but this allows explicit control for permission UI flows.
    */
@@ -395,10 +412,30 @@ class LocationService {
     if (isPowerSaveMode) {
       console.warn(
         '[LocationService] Device entered power-save mode. ' +
-        'Geofence monitoring may be degraded. Location updates will be less frequent.',
+        'Reducing accuracy to preserve battery.',
       );
-    } else if (__DEV__) {
-      console.log('[LocationService] Power-save mode disabled, normal operation resumed.');
+      // Dynamically reduce accuracy to conserve battery in power-save mode
+      BackgroundGeolocation.setConfig({
+        geolocation: {
+          desiredAccuracy: BackgroundGeolocation.DesiredAccuracy.Medium,
+          distanceFilter: 50,
+        },
+      }).catch(e => {
+        if (__DEV__) console.error('[LocationService] Failed to apply power-save config:', e);
+      });
+    } else {
+      if (__DEV__) {
+        console.log('[LocationService] Power-save mode disabled, restoring high accuracy.');
+      }
+      // Restore high accuracy when power-save is off
+      BackgroundGeolocation.setConfig({
+        geolocation: {
+          desiredAccuracy: BackgroundGeolocation.DesiredAccuracy.High,
+          distanceFilter: 20,
+        },
+      }).catch(e => {
+        if (__DEV__) console.error('[LocationService] Failed to restore accuracy config:', e);
+      });
     }
   };
 }

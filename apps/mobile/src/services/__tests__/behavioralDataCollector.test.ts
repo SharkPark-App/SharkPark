@@ -70,6 +70,8 @@ const makeLocation = (overrides: Partial<Parameters<BehavioralDataCollector['upd
   speed: 2.5,
   altitude: 50,
   heading: 90,
+  battery_level: 0.85,
+  battery_charging: false,
   ...overrides,
 });
 

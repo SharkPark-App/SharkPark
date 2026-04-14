@@ -52,6 +52,7 @@ export interface BehavioralMetrics {
     system_version: string;
     app_version: string;
     battery_level?: number;
+    battery_charging?: boolean;
   };
   raw_data: {
     timestamp: string;
@@ -71,6 +72,8 @@ interface LocationData {
   altitude: number | null;
   heading: number | null;
   timestamp: number;
+  battery_level: number | null;
+  battery_charging: boolean | null;
 }
 
 interface DataCollectionCallbacks {
@@ -142,6 +145,8 @@ class BehavioralDataCollector {
     speed: number | null;
     altitude?: number | null;
     heading?: number | null;
+    battery_level?: number | null;
+    battery_charging?: boolean | null;
   }): void {
     this.lastLocation = {
       latitude: locationData.latitude,
@@ -150,7 +155,9 @@ class BehavioralDataCollector {
       speed: locationData.speed,
       altitude: locationData.altitude ?? null,
       heading: locationData.heading ?? null,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      battery_level: locationData.battery_level ?? null,
+      battery_charging: locationData.battery_charging ?? null,
     };
 
     // Push metrics immediately on location update (event-driven, no polling)
@@ -214,7 +221,6 @@ class BehavioralDataCollector {
       deviceModel,
       systemVersion,
       appVersion,
-      batteryLevel
     ] = await Promise.all([
       this.getBluetoothState(),
       NetInfo.fetch(),
@@ -222,8 +228,11 @@ class BehavioralDataCollector {
       DeviceInfo.getModel(),
       DeviceInfo.getSystemVersion(),
       DeviceInfo.getVersion(),
-      DeviceInfo.getBatteryLevel().catch(() => null)
     ]);
+
+    // Use battery level from SDK Location (no extra async call needed)
+    const batteryLevel = this.lastLocation?.battery_level ?? null;
+    const batteryCharging = this.lastLocation?.battery_charging ?? null;
 
     // Calculate speed from location data
     const speedMph = this.calculateSpeed();
@@ -242,7 +251,8 @@ class BehavioralDataCollector {
         model: deviceModel,
         system_version: systemVersion,
         app_version: appVersion,
-        battery_level: batteryLevel || undefined
+        battery_level: batteryLevel || undefined,
+        battery_charging: batteryCharging ?? undefined,
       },
       raw_data: {
         timestamp: new Date().toISOString(),

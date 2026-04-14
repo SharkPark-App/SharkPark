@@ -17,6 +17,7 @@ jest.mock('react-native-background-geolocation', () => ({
     removeGeofences: jest.fn().mockResolvedValue(undefined),
     getGeofences: jest.fn().mockResolvedValue([]),
     getCurrentPosition: jest.fn().mockResolvedValue({ coords: { latitude: 33.78, longitude: -118.11 } }),
+    setConfig: jest.fn().mockResolvedValue({ enabled: true }),
     requestPermission: jest.fn().mockResolvedValue(4),
     requestTemporaryFullAccuracy: jest.fn().mockResolvedValue(1),
     getProviderState: jest.fn().mockResolvedValue({ accuracyAuthorization: 0 }),

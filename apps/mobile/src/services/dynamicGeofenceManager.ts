@@ -32,6 +32,7 @@ export interface GeofenceAllocation {
 
 export interface DynamicGeofenceState {
   lastCalculationPosition: { latitude: number; longitude: number } | null;
+  lastOdometer: number | null;
   currentAllocation: GeofenceAllocation | null;
   isOnCampus: boolean;
 }
@@ -116,6 +117,7 @@ function sortByProximity(
 class DynamicGeofenceManager {
   private state: DynamicGeofenceState = {
     lastCalculationPosition: null,
+    lastOdometer: null,
     currentAllocation: null,
     isOnCampus: false,
   };
@@ -134,6 +136,7 @@ class DynamicGeofenceManager {
     email: string,
     position: { latitude: number; longitude: number } | null,
     now?: Date,
+    odometer?: number,
   ): GeofenceAllocation {
     const userType = classifyUser(email);
 
@@ -192,6 +195,9 @@ class DynamicGeofenceManager {
     if (position) {
       this.state.lastCalculationPosition = { ...position };
     }
+    if (odometer !== undefined) {
+      this.state.lastOdometer = odometer;
+    }
     this.state.currentAllocation = allocation;
     this.state.isOnCampus = onCampus;
 
@@ -199,16 +205,25 @@ class DynamicGeofenceManager {
   }
 
   /**
-   * Determine whether the dynamic slots should be recalculated given a new
-   * GPS position.
+   * Determine whether the dynamic slots should be recalculated.
    *
-   * Returns `true` when the user has moved more than RECALCULATION_DISTANCE
-   * from the position used for the last dynamic computation.
+   * Uses the SDK's Kalman-filtered odometer for distance-traveled rather than
+   * computing Haversine between two lat/lng snapshots. This is more accurate
+   * (accounts for curved paths) and avoids manual trig math.
+   *
+   * Falls back to Haversine if no odometer data is available (e.g. first fix).
    */
-  shouldRecalculate(newLat: number, newLng: number): boolean {
+  shouldRecalculate(newLat: number, newLng: number, odometer?: number): boolean {
     const last = this.state.lastCalculationPosition;
     if (!last) return true; // Never calculated — always recalculate
 
+    // Prefer SDK odometer (Kalman-filtered distance traveled)
+    if (odometer !== undefined && this.state.lastOdometer !== null) {
+      const moved = odometer - this.state.lastOdometer;
+      return moved >= DYNAMIC_GEOFENCE.RECALCULATION_DISTANCE;
+    }
+
+    // Fallback to Haversine for the first location before odometer is established
     const moved = haversineDistance(last.latitude, last.longitude, newLat, newLng);
     return moved >= DYNAMIC_GEOFENCE.RECALCULATION_DISTANCE;
   }
@@ -227,6 +242,7 @@ class DynamicGeofenceManager {
   reset(): void {
     this.state = {
       lastCalculationPosition: null,
+      lastOdometer: null,
       currentAllocation: null,
       isOnCampus: false,
     };
