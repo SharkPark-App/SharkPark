@@ -105,6 +105,25 @@ export const PRIVACY_CONSTANTS = {
   MAX_EVENTS_PER_DAY: 1000,
 } as const;
 
+// Dynamic geofence loading configuration
+export const DYNAMIC_GEOFENCE = {
+  // Slot allocation per user type (must sum ≤ 20, the iOS hard limit)
+  STUDENT_GUARANTEED_SLOTS: 16,   // All 16 G-lots always registered
+  STUDENT_DYNAMIC_SLOTS: 4,      // Nearest E-lots after 5:30 PM
+  EMPLOYEE_GUARANTEED_SLOTS: 12,  // All 12 E-lots always registered
+  EMPLOYEE_DYNAMIC_SLOTS: 8,     // Nearest G-lots by location
+
+  // Time after which E-lots open to students (24-hour format)
+  E_LOT_OPEN_HOUR: 17,           // 5 PM
+  E_LOT_OPEN_MINUTE: 30,         // :30
+
+  // Movement threshold to trigger dynamic recalculation (meters)
+  RECALCULATION_DISTANCE: 300,
+
+  // Campus proximity — only compute dynamic lots when within this radius (meters)
+  CAMPUS_RADIUS: 3000,           // 3 km from campus center
+} as const;
+
 // Accessibility constants
 export const ACCESSIBILITY_CONSTANTS = {
   // Touch target sizes (iOS HIG and Android guidelines)

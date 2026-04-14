@@ -204,6 +204,8 @@ const MapScreen: React.FC = () => {
   const handleApplyFilter = (filteredLots: string[]) => {
     setSelectedLots(filteredLots);
     setIsFilterModalOpen(false);
+    // Filter is visual-only — does NOT affect geofence registration.
+    // Geofences are managed by DynamicGeofenceManager based on user type + GPS proximity.
   };
 
   // Redirect to Short-Term Forecast Screen of the lot selected within the navigation modal
