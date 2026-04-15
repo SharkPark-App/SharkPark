@@ -15,14 +15,21 @@ BackgroundGeolocation.registerHeadlessTask(async (event) => {
 
   switch (name) {
     case 'geofence': {
-      // Queue geofence event for processing when app next launches
+      // Queue geofence event for processing when app next launches.
+      // Include activity + speed so the provider can correctly classify
+      // headless EXIT events as vehicular (isVehicleExit needs them).
       const raw = await AsyncStorage.getItem('pending_geofence_events');
       const pending = raw ? JSON.parse(raw) : [];
+      const loc = params.location;
       pending.push({
         regionId: params.identifier,
         eventType: params.action === 'ENTER' ? 'ENTER' : 'EXIT',
         timestamp: new Date().toISOString(),
         extras: params.extras || {},
+        activity: loc?.activity
+          ? { type: loc.activity.type, confidence: loc.activity.confidence }
+          : undefined,
+        speed: loc?.coords?.speed ?? undefined,
       });
       await AsyncStorage.setItem(
         'pending_geofence_events',

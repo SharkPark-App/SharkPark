@@ -68,6 +68,11 @@ class LeaveDetectionService {
   private behavioralCollector = sharedBehavioralCollector;
   private initPromise: Promise<void>;
   private lastLocation: { latitude: number; longitude: number } | null = null;
+  private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingPersistSessionIds = new Set<string>();
+
+  // Debounce interval for AsyncStorage writes (reduces I/O during active collection)
+  private readonly PERSIST_DEBOUNCE_MS = 30_000;
 
   // Minimum interval between signals of the same type to prevent duplicate emissions (60s)
   private readonly SIGNAL_DEDUP_INTERVAL_MS = 60 * 1000;
@@ -302,8 +307,8 @@ class LeaveDetectionService {
       session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
     }
 
-    // Persist updated session
-    this.persistSession(session);
+    // Debounced persist — coalesces rapid writes from behavioral metrics
+    this.debouncedPersistSession(session.sessionId);
 
     if (__DEV__) console.log(`[LeaveDetection] Added ${dedupedSignals.length}/${signals.length} signals (deduped). Intent probability: ${Math.round(analysis.intent_probability * 100)}%`);
   }
@@ -440,10 +445,24 @@ class LeaveDetectionService {
   }
 
   private generateSessionId(): string {
-    return `leave-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    return `leave-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, '0')).join('')}`;
   }
 
   // --- Persistence Methods ---
+
+  private debouncedPersistSession(sessionId: string): void {
+    this.pendingPersistSessionIds.add(sessionId);
+    if (this.persistDebounceTimer) return; // already scheduled
+    this.persistDebounceTimer = setTimeout(() => {
+      this.persistDebounceTimer = null;
+      const ids = [...this.pendingPersistSessionIds];
+      this.pendingPersistSessionIds.clear();
+      for (const id of ids) {
+        const session = this.activeSessions.get(id);
+        if (session) this.persistSession(session);
+      }
+    }, this.PERSIST_DEBOUNCE_MS);
+  }
 
   private async persistSession(session: LeaveSession): Promise<void> {
     try {
@@ -494,6 +513,11 @@ class LeaveDetectionService {
           const age = Date.now() - session.startTime.getTime();
           if (age < 24 * 60 * 60 * 1000) {
             this.activeSessions.set(session.sessionId, session);
+            // Restart data collection for active sessions (callbacks will be
+            // reattached by the provider via reattachCallbacks).
+            if (session.status === 'MONITORING') {
+              this.startDataCollection(session.sessionId);
+            }
           } else {
             // Clean up old sessions
             await AsyncStorage.removeItem(key);
@@ -504,6 +528,20 @@ class LeaveDetectionService {
       if (__DEV__) console.log(`[LeaveDetection] Restored ${this.activeSessions.size} active sessions`);
     } catch (error) {
       if (__DEV__) console.error('[LeaveDetection] Failed to load persisted sessions:', error);
+    }
+  }
+
+  /**
+   * Re-attach live callbacks to restored sessions for a given lot.
+   * Called by the provider after cold-start restore so that
+   * onLeaveIntentDetected / onLeaveConfirmed actually fire.
+   */
+  async reattachCallbacks(lotId: string, callbacks: LeaveDetectionCallbacks): Promise<void> {
+    await this.initPromise;
+    const session = this.findActiveSessionByLotId(lotId);
+    if (session) {
+      session.callbacks = callbacks;
+      if (__DEV__) console.log(`[LeaveDetection] Reattached callbacks for lot ${lotId} (session ${session.sessionId})`);
     }
   }
 
@@ -590,7 +628,7 @@ class LeaveDetectionService {
           session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
         }
 
-        this.persistSession(session);
+        this.debouncedPersistSession(session.sessionId);
 
         if (__DEV__) {
           console.log(`[LeaveDetection] ACTIVITY_VEHICLE signal: ${activity} (${confidence}%) for lot ${session.lotId}`);
@@ -626,7 +664,7 @@ class LeaveDetectionService {
           session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
         }
 
-        this.persistSession(session);
+        this.debouncedPersistSession(session.sessionId);
       }
     }
   }
@@ -670,7 +708,7 @@ class LeaveDetectionService {
         session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
       }
 
-      this.persistSession(session);
+      this.debouncedPersistSession(session.sessionId);
     }
   }
 }

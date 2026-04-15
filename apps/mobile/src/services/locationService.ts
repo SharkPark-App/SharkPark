@@ -326,9 +326,14 @@ class LocationService {
       EXIT: 'EXIT',
       DWELL: 'DWELL',
     };
+    const eventType = actionMap[event.action];
+    if (!eventType) {
+      console.warn(`[LocationService] Unknown geofence action "${event.action}" for region ${event.identifier}, skipping`);
+      return;
+    }
     const geofenceEvent: GeofenceEvent = {
       regionId: event.identifier,
-      eventType: actionMap[event.action] ?? 'EXIT',
+      eventType,
       timestamp: String(event.location?.timestamp ?? new Date().toISOString()),
       // Preserve activity + speed for parking detection heuristics
       // (drive vs walk distinction). No coordinates stored — privacy first.

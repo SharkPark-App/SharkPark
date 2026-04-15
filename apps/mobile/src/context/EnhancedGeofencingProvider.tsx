@@ -161,6 +161,24 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         if (existingState === 'CONFIRMED_PARKED') {
           // Re-entering a lot where car is still parked (walked back from class).
           // No occupancy change — car was already counted.
+          // Re-attach leave detection callbacks (they're lost on cold restart
+          // since functions aren't serializable to AsyncStorage).
+          await leaveDetectionService.reattachCallbacks(event.regionId, {
+            onLeaveIntentDetected: async (analysis: LeaveIntentAnalysis, lotId: string) => {
+              setCurrentLeaveIntent(analysis);
+              if (analysis.confidence_level === 'HIGH' && __DEV__) {
+                Alert.alert(
+                  '[DEV] Preparing to Leave?',
+                  `Leave intent detected for ${lotId} (HIGH confidence).`,
+                  [{ text: 'OK' }]
+                );
+              }
+            },
+            onLeaveConfirmed: () => {},
+            onError: (error: string) => {
+              if (__DEV__) console.error('[EnhancedGeofencing] Leave detection error:', error);
+            }
+          });
           if (__DEV__) {
             Alert.alert(
               '[DEV] Returned to Lot',
@@ -450,6 +468,10 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     // ── Parking confirmation via activity changes ──
     //
+    // Iterate ALL lots with pending states, not just the last-entered lot.
+    // Overlapping geofences (common in dense parking areas) mean multiple lots
+    // can be in PENDING_VEHICLE_ENTRY simultaneously.
+    //
     // PENDING_VEHICLE_ENTRY (drove in with known vehicle activity):
     //   still → engine off, vehicle stopped → parked
     //   on_foot/walking → drove in, now walking → must have parked
@@ -458,14 +480,12 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     //   still → actually was parked → confirm
     //   on_foot/walking → could be a pedestrian who entered with 'unknown' → DON'T confirm
     //                     (this is the phantom +1 guard — DWELL is the backup)
-    if (currentLotIdRef.current) {
-      const lotId = currentLotIdRef.current;
-      const lowerActivity = activity.toLowerCase();
-      const parkState = lotParkingState.current.get(lotId);
+    const lowerActivity = activity.toLowerCase();
+    const isStill = lowerActivity === 'still';
+    const isWalking = lowerActivity === 'on_foot' || lowerActivity === 'walking';
+    let anyConfirmed = false;
 
-      const isStill = lowerActivity === 'still';
-      const isWalking = lowerActivity === 'on_foot' || lowerActivity === 'walking';
-
+    for (const [lotId, parkState] of lotParkingState.current.entries()) {
       const shouldConfirm =
         (parkState === 'PENDING_VEHICLE_ENTRY' && (isStill || isWalking)) ||
         (parkState === 'UNKNOWN_ENTRY' && isStill);
@@ -473,6 +493,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       if (shouldConfirm) {
         lotParkingState.current.set(lotId, 'CONFIRMED_PARKED');
         await sendValidatedOccupancyEvent(lotId, 'ENTER');
+        anyConfirmed = true;
 
         if (__DEV__) {
           console.log(`[EnhancedGeofencing] Parking confirmed in ${lotId} (activity → ${lowerActivity})`);
@@ -483,8 +504,10 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           );
         }
       }
+    }
 
-      // Record activity-based validation events
+    // Record activity-based validation events (for any active lot)
+    if (currentLotIdRef.current) {
       let eventType: 'ACTIVITY_STILL' | 'ACTIVITY_ON_FOOT' | 'ACTIVITY_IN_VEHICLE' | undefined;
 
       if (lowerActivity === 'still') eventType = 'ACTIVITY_STILL';
@@ -502,7 +525,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       }
 
       // Persist if parking state changed in this callback
-      if (shouldConfirm) {
+      if (anyConfirmed) {
         await persistParkingState();
       }
     }
@@ -601,7 +624,13 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         try {
           const raw = await AsyncStorage.getItem('pending_geofence_events');
           if (raw) {
-            const pending: Array<{ regionId: string; eventType: string; timestamp: string }> = JSON.parse(raw);
+            const pending: Array<{
+              regionId: string;
+              eventType: string;
+              timestamp: string;
+              activity?: { type: string; confidence: number };
+              speed?: number;
+            }> = JSON.parse(raw);
             const oneHourAgo = Date.now() - 60 * 60 * 1000;
 
             for (const pendingEvent of pending) {
@@ -613,6 +642,8 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
                 regionId: pendingEvent.regionId,
                 eventType: pendingEvent.eventType as 'ENTER' | 'EXIT' | 'DWELL',
                 timestamp: pendingEvent.timestamp,
+                activity: pendingEvent.activity,
+                speed: pendingEvent.speed,
               });
             }
             await AsyncStorage.removeItem('pending_geofence_events');
@@ -650,7 +681,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       removeMotion();
       parkingValidationService.removeValidationListener(validationListener);
     };
-  }, []); // stable: all mutable state accessed through refs
+  }, [user?.userId]); // Re-initialize when user changes (e.g. logout → login as different type)
 
   const contextValue: EnhancedGeofencingContextType = useMemo(() => {
     const pvDebug = parkingValidationService.getDebugInfo();

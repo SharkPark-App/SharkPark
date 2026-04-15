@@ -27,6 +27,11 @@ class ParkingValidationService {
   private sessionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private behavioralCollector = sharedBehavioralCollector;
   private initPromise: Promise<void>;
+  private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingPersistSessionIds = new Set<string>();
+
+  // Debounce interval for AsyncStorage writes (reduces I/O during active collection)
+  private readonly PERSIST_DEBOUNCE_MS = 30_000;
 
   // Maximum session duration before auto-cancellation (4 hours)
   private readonly SESSION_TIMEOUT_MS = 4 * 60 * 60 * 1000;
@@ -151,8 +156,8 @@ class ParkingValidationService {
           session.events = session.events.slice(-50);
         }
         
-        // Persist updated session
-        this.persistSession(session);
+        // Debounced persist — coalesces rapid writes from behavioral metrics
+        this.debouncedPersistSession(session.sessionId);
       }
     });
   }
@@ -282,8 +287,8 @@ class ParkingValidationService {
     // Add all events to the session
     session.events.push(...events);
 
-    // Persist the updated session
-    this.persistSession(session);
+    // Debounced persist — coalesces rapid writes from behavioral metrics
+    this.debouncedPersistSession(sessionId);
 
     if (__DEV__) console.log(`[ParkingValidation] Added ${events.length} real behavioral events to session ${sessionId}`);
   }
@@ -300,7 +305,7 @@ class ParkingValidationService {
     } = {}
   ): ValidationEvent {
     return {
-      id: `${sessionId}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      id: `${sessionId}-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, '0')).join('')}`,
       event_type: eventType,
       timestamp: new Date(),
       speed_mph: metadata.speed_mph ?? null,
@@ -327,6 +332,20 @@ class ParkingValidationService {
       bluetoothState: metadata.bluetooth_state || undefined,
       eventType: eventType,
     });
+  }
+
+  private debouncedPersistSession(sessionId: string): void {
+    this.pendingPersistSessionIds.add(sessionId);
+    if (this.persistDebounceTimer) return; // already scheduled
+    this.persistDebounceTimer = setTimeout(() => {
+      this.persistDebounceTimer = null;
+      const ids = [...this.pendingPersistSessionIds];
+      this.pendingPersistSessionIds.clear();
+      for (const id of ids) {
+        const session = this.activeSessions.get(id);
+        if (session) this.persistSession(session);
+      }
+    }, this.PERSIST_DEBOUNCE_MS);
   }
 
   private clearSessionTimer(sessionId: string): void {
@@ -371,7 +390,7 @@ class ParkingValidationService {
   }
 
   private generateSessionId(): string {
-    return `parking-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    return `parking-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, '0')).join('')}`;
   }
 
   private notifyValidationComplete(analysis: ValidationAnalysis, lotId: string): void {
@@ -421,9 +440,16 @@ class ParkingValidationService {
           if (sessionAge > maxAge || session.status !== 'ACTIVE') {
             await AsyncStorage.removeItem(key);
           } else {
-            // Restore active session and restart data collection
+            // Restore active session and restart data collection + safety timeout.
+            // The timeout accounts for time already elapsed since the session started.
             this.activeSessions.set(session.sessionId, session);
             if (session.status === 'ACTIVE') {
+              const remainingMs = Math.max(0, this.SESSION_TIMEOUT_MS - sessionAge);
+              const timer = setTimeout(() => {
+                this.cancelStaleSession(session.sessionId);
+              }, remainingMs);
+              this.sessionTimers.set(session.sessionId, timer);
+
               this.startDataCollection(session.sessionId, session.lotId);
             }
           }

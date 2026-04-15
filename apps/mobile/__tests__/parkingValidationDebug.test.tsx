@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent, act, waitFor } from '@testing-library/react-native';
 import { ParkingValidationDebug } from '../src/components/ParkingValidationDebug';
-import { useBehavioralDataCollection } from '../src/services/behavioralDataCollector';
+import { sharedBehavioralCollector } from '../src/services/behavioralDataCollector';
 
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
@@ -62,7 +62,7 @@ jest.mock('../src/context/EnhancedGeofencingProvider', () => ({
   }),
 }));
 
-// Mock BehavioralDataCollector class and hook
+// Mock BehavioralDataCollector class and shared instance
 jest.mock('../src/services/behavioralDataCollector', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => ({
@@ -70,7 +70,9 @@ jest.mock('../src/services/behavioralDataCollector', () => ({
     stopCollection: jest.fn(),
     getCurrentMetrics: jest.fn(),
   })),
-  useBehavioralDataCollection: jest.fn(),
+  sharedBehavioralCollector: {
+    getCurrentMetrics: jest.fn(),
+  },
 }));
 
 // Mock console to reduce test noise
@@ -79,17 +81,11 @@ jest.spyOn(console, 'warn').mockImplementation();
 jest.spyOn(console, 'error').mockImplementation();
 
 describe('ParkingValidationDebug Component', () => {
-  const mockGetCurrentMetrics = jest.fn();
-
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     
-    (useBehavioralDataCollection as jest.Mock).mockReturnValue({
-      getCurrentMetrics: mockGetCurrentMetrics,
-    });
-
-    mockGetCurrentMetrics.mockResolvedValue({
+    (sharedBehavioralCollector.getCurrentMetrics as jest.Mock).mockResolvedValue({
       speed_mph: 25.5,
       accuracy_meters: 5,
       bluetooth_state: 'CONNECTED',
@@ -144,7 +140,7 @@ describe('ParkingValidationDebug Component', () => {
     });
 
     it('should handle refresh sensors button', async () => {
-      mockGetCurrentMetrics.mockResolvedValue({
+      (sharedBehavioralCollector.getCurrentMetrics as jest.Mock).mockResolvedValue({
         speed_mph: 0,
         accuracy_meters: 5,
         bluetooth_state: 'CONNECTED',
@@ -178,11 +174,11 @@ describe('ParkingValidationDebug Component', () => {
         fireEvent.press(getByText('Refresh Sensors'));
       });
       
-      expect(mockGetCurrentMetrics).toHaveBeenCalled();
+      expect((sharedBehavioralCollector.getCurrentMetrics as jest.Mock)).toHaveBeenCalled();
     });
 
     it('should handle loading state during metrics fetch', async () => {
-      mockGetCurrentMetrics
+      (sharedBehavioralCollector.getCurrentMetrics as jest.Mock)
         .mockResolvedValueOnce({
           speed_mph: 0,
           accuracy_meters: 5,
@@ -222,7 +218,7 @@ describe('ParkingValidationDebug Component', () => {
     });
 
     it('should handle metrics fetch errors', async () => {
-      mockGetCurrentMetrics.mockRejectedValue(new Error('Failed to fetch'));
+      (sharedBehavioralCollector.getCurrentMetrics as jest.Mock).mockRejectedValue(new Error('Failed to fetch'));
       
       const { getByText } = render(<ParkingValidationDebug />);
       
@@ -248,7 +244,7 @@ describe('ParkingValidationDebug Component', () => {
     });
 
     it('should display network status correctly', async () => {
-      mockGetCurrentMetrics.mockResolvedValue({
+      (sharedBehavioralCollector.getCurrentMetrics as jest.Mock).mockResolvedValue({
         speed_mph: 0,
         accuracy_meters: 10,
         bluetooth_state: 'DISCONNECTED',
@@ -283,7 +279,7 @@ describe('ParkingValidationDebug Component', () => {
     });
 
     it('should handle missing optional data', async () => {
-      mockGetCurrentMetrics.mockResolvedValue({
+      (sharedBehavioralCollector.getCurrentMetrics as jest.Mock).mockResolvedValue({
         speed_mph: null,
         accuracy_meters: null,
         bluetooth_state: null,
@@ -319,7 +315,7 @@ describe('ParkingValidationDebug Component', () => {
 
   describe('Test Control Buttons', () => {
     it('should render all test control buttons', async () => {
-      mockGetCurrentMetrics.mockResolvedValue({
+      (sharedBehavioralCollector.getCurrentMetrics as jest.Mock).mockResolvedValue({
         speed_mph: 0,
         accuracy_meters: 5,
         bluetooth_state: null,
@@ -399,19 +395,19 @@ describe('ParkingValidationDebug Component', () => {
       });
       
       // Should have called getCurrentMetrics multiple times
-      expect(mockGetCurrentMetrics).toHaveBeenCalledTimes(2); // Initial + interval
+      expect((sharedBehavioralCollector.getCurrentMetrics as jest.Mock)).toHaveBeenCalledTimes(2); // Initial + interval
       
       await act(async () => {
         jest.advanceTimersByTime(3000); // Another 3 seconds
       });
       
-      expect(mockGetCurrentMetrics).toHaveBeenCalledTimes(3);
+      expect((sharedBehavioralCollector.getCurrentMetrics as jest.Mock)).toHaveBeenCalledTimes(3);
     });
   });
 
   describe('Edge Cases', () => {
     it('should handle very large speed values', async () => {
-      mockGetCurrentMetrics.mockResolvedValue({
+      (sharedBehavioralCollector.getCurrentMetrics as jest.Mock).mockResolvedValue({
         speed_mph: 999.99,
         accuracy_meters: 1,
         bluetooth_state: 'CONNECTED',
@@ -443,7 +439,7 @@ describe('ParkingValidationDebug Component', () => {
     });
 
     it('should handle malformed timestamps', async () => {
-      mockGetCurrentMetrics.mockResolvedValue({
+      (sharedBehavioralCollector.getCurrentMetrics as jest.Mock).mockResolvedValue({
         speed_mph: 0,
         accuracy_meters: 5,
         bluetooth_state: null,

@@ -378,14 +378,14 @@ describe('OccupancyEventsService', () => {
       ];
 
       (prisma as any).deviceState.findMany = jest.fn().mockResolvedValue(staleStates);
-      (prisma as any).deviceState.delete = jest.fn().mockResolvedValue({});
+      (prisma as any).deviceState.deleteMany = jest.fn().mockResolvedValue({ count: 2 });
       prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.cleanupStaleDeviceStates(18);
 
       expect(result.cleaned).toBe(2);
       expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
-      expect((prisma as any).deviceState.delete).toHaveBeenCalledTimes(2);
+      expect((prisma as any).deviceState.deleteMany).toHaveBeenCalledTimes(1);
     });
 
     it('should return cleaned:0 when no stale records exist', async () => {

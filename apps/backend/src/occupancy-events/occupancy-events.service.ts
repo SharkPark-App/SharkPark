@@ -147,13 +147,19 @@ export class OccupancyEventsService {
         return { cleaned: 0 };
       }
 
-      // Process each stale record in a transaction: decrement occupancy + delete state
-      for (const state of staleStates) {
-        await this.prisma.$transaction(async (tx) => {
-          await tx.$executeRaw`UPDATE lots SET current_occupancy = GREATEST(current_occupancy - 1, 0), updated_at = NOW() WHERE id = ${state.lot_id}`;
-          await tx.deviceState.delete({ where: { id: state.id } });
-        });
-      }
+      // Batch: aggregate decrements per lot, then delete all stale records in one transaction
+      const decrementsByLot = new Map<string, number>();
+      const staleIds = staleStates.map((s) => {
+        decrementsByLot.set(s.lot_id, (decrementsByLot.get(s.lot_id) ?? 0) + 1);
+        return s.id;
+      });
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const [lotId, count] of decrementsByLot) {
+          await tx.$executeRaw`UPDATE lots SET current_occupancy = GREATEST(current_occupancy - ${count}, 0), updated_at = NOW() WHERE id = ${lotId}`;
+        }
+        await tx.deviceState.deleteMany({ where: { id: { in: staleIds } } });
+      });
 
       this.logger.log(`Cleaned up ${staleStates.length} stale ENTER device states (older than ${maxAgeHours}h)`);
       return { cleaned: staleStates.length };

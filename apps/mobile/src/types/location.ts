@@ -3,8 +3,6 @@
  * Privacy-focused geofencing types for anonymous parking lot tracking
  */
 
-import { LOCATION_CONSTANTS } from '../constants/geofencing';
-
 export interface LocationPermissionStatus {
   granted: boolean;
   denied: boolean;
@@ -34,17 +32,6 @@ export interface GeofenceRegion {
   notifyOnExit: boolean;
 }
 
-// Legacy support - keep old interface for backward compatibility
-export interface CircularGeofenceRegion {
-  id: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-  radius: number; // meters
-  notifyOnEntry: boolean;
-  notifyOnExit: boolean;
-}
-
 export interface GeofenceEvent {
   regionId: string;
   eventType: 'ENTER' | 'EXIT' | 'DWELL';
@@ -59,30 +46,7 @@ export interface GeofenceEvent {
   speed?: number; // m/s from SDK — fallback when activity recognition has lag
 }
 
-export interface LocationServiceConfig {
-  // Performance settings
-  distanceFilter: number; // meters - minimum distance for location updates
-  desiredAccuracy: number; // meters
-  timeout: number; // milliseconds
-  maximumAge: number; // milliseconds - cache location data
-  
-  // Privacy settings
-  anonymousMode: boolean; // never store actual coordinates
-  backgroundTracking: boolean;
-  
-}
-
 export interface LocationError {
   code: 'PERMISSION_DENIED' | 'LOCATION_UNAVAILABLE' | 'TIMEOUT' | 'GEOFENCE_ERROR';
   message: string;
 }
-
-// Default privacy-first configuration
-export const DEFAULT_LOCATION_CONFIG: LocationServiceConfig = {
-  distanceFilter: LOCATION_CONSTANTS.DISTANCE_FILTER_NORMAL, // Only update every 50 meters for battery efficiency
-  desiredAccuracy: LOCATION_CONSTANTS.ACCURACY_NORMAL, // 100m accuracy is sufficient for parking lots
-  timeout: LOCATION_CONSTANTS.TIMEOUT_NORMAL, // 15 second timeout
-  maximumAge: LOCATION_CONSTANTS.CACHE_NORMAL, // Cache for 5 minutes to reduce GPS usage
-  anonymousMode: true, // Always anonymous
-  backgroundTracking: false, // User must opt-in
-};

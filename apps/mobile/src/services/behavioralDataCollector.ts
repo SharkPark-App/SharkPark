@@ -7,7 +7,6 @@
  * - Motion patterns
  */
 
-import { useEffect, useRef, useCallback } from 'react';
 import { NativeModules } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import DeviceInfo from 'react-native-device-info';
@@ -349,43 +348,6 @@ class BehavioralDataCollector {
     }
   }
 }
-
-/**
- * React Hook for behavioral data collection
- */
-export const useBehavioralDataCollection = () => {
-  const collectorRef = useRef<BehavioralDataCollector | null>(null);
-
-  // Initialize collector on first use
-  if (!collectorRef.current) {
-    collectorRef.current = new BehavioralDataCollector();
-  }
-
-  const startCollection = useCallback((callbacks: DataCollectionCallbacks) => {
-    collectorRef.current?.startCollection(callbacks);
-  }, []);
-
-  const stopCollection = useCallback(() => {
-    collectorRef.current?.stopCollection();
-  }, []);
-
-  const getCurrentMetrics = useCallback(async (): Promise<BehavioralMetrics | null> => {
-    return collectorRef.current?.getCurrentMetrics() || null;
-  }, []);
-
-  // Cleanup on unmount — destroy() force-clears all subscribers and timers
-  useEffect(() => {
-    return () => {
-      collectorRef.current?.destroy();
-    };
-  }, []);
-
-  return {
-    startCollection,
-    stopCollection,
-    getCurrentMetrics
-  };
-};
 
 // Shared singleton instance — both parkingValidationService and leaveDetectionService
 // must use this so GPS/sensor data is collected and processed only once.
