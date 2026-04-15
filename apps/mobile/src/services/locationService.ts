@@ -63,6 +63,7 @@ class LocationService {
       BackgroundGeolocation.onMotionChange(this.handleMotionChange),
       BackgroundGeolocation.onProviderChange(this.handleProviderChange),
       BackgroundGeolocation.onPowerSaveChange(this.handlePowerSaveChange),
+      BackgroundGeolocation.onGeofencesChange(this.handleGeofencesChange),
     );
 
     const config = createSDKConfig();
@@ -280,13 +281,15 @@ class LocationService {
   /**
    * Trigger a test geofence event (development only).
    */
-  triggerTestGeofenceEvent(regionId: string, eventType: 'ENTER' | 'EXIT') {
+  triggerTestGeofenceEvent(regionId: string, eventType: 'ENTER' | 'EXIT', activity?: { type: string; confidence: number }, speed?: number) {
     if (!__DEV__) return;
 
     const event: GeofenceEvent = {
       regionId,
       eventType,
       timestamp: new Date().toISOString(),
+      activity,
+      speed,
     };
     this.geofenceCallbacks.forEach((cb) => {
       try {
@@ -327,6 +330,12 @@ class LocationService {
       regionId: event.identifier,
       eventType: actionMap[event.action] ?? 'EXIT',
       timestamp: String(event.location?.timestamp ?? new Date().toISOString()),
+      // Preserve activity + speed for parking detection heuristics
+      // (drive vs walk distinction). No coordinates stored — privacy first.
+      activity: event.location?.activity
+        ? { type: event.location.activity.type, confidence: event.location.activity.confidence }
+        : undefined,
+      speed: event.location?.coords?.speed ?? undefined,
     };
 
     this.geofenceCallbacks.forEach((cb) => {
@@ -415,10 +424,12 @@ class LocationService {
 
   private handlePowerSaveChange = (isPowerSaveMode: boolean) => {
     if (isPowerSaveMode) {
-      console.warn(
-        '[LocationService] Device entered power-save mode. ' +
-        'Reducing accuracy to preserve battery.',
-      );
+      if (__DEV__) {
+        console.warn(
+          '[LocationService] Device entered power-save mode. ' +
+          'Reducing accuracy to preserve battery.',
+        );
+      }
       // Dynamically reduce accuracy to conserve battery in power-save mode
       BackgroundGeolocation.setConfig({
         geolocation: {
@@ -441,6 +452,17 @@ class LocationService {
       }).catch(e => {
         if (__DEV__) console.error('[LocationService] Failed to restore accuracy config:', e);
       });
+    }
+  };
+
+  private handleGeofencesChange = (event: { on: Geofence[]; off: string[] }) => {
+    if (__DEV__) {
+      console.log(
+        `[LocationService] Geofences activated: ${event.on.map(g => g.identifier).join(', ') || '(none)'}`,
+      );
+      console.log(
+        `[LocationService] Geofences deactivated: ${event.off.join(', ') || '(none)'}`,
+      );
     }
   };
 }

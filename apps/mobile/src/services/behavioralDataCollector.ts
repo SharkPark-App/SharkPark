@@ -90,6 +90,9 @@ class BehavioralDataCollector {
   private activityConfidence = 0;
   private isMoving = false;
 
+  // Cached device info (static per app session)
+  private cachedDeviceInfo: { brand: string; model: string; system_version: string; app_version: string } | null = null;
+
   // Multiple subscribers can register callbacks independently.
   // Using a Map keyed by a caller-supplied id so each service can
   // start/stop independently without affecting the other.
@@ -180,6 +183,9 @@ class BehavioralDataCollector {
    */
   updateMotion(isMoving: boolean): void {
     this.isMoving = isMoving;
+
+    // Push metrics on motion state change (still ↔ moving is critical for parking detection)
+    this.collectAndSendMetrics();
   }
 
   private mapActivityType(activity: string): ActivityType {
@@ -213,21 +219,21 @@ class BehavioralDataCollector {
    * Build a metrics snapshot from current sensor data
    */
   private async buildMetrics(): Promise<BehavioralMetrics> {
-    // Collect all data in parallel
-    const [
-      bluetoothState,
-      networkState,
-      deviceBrand,
-      deviceModel,
-      systemVersion,
-      appVersion,
-    ] = await Promise.all([
+    // Cache device info on first call (static per app session)
+    if (!this.cachedDeviceInfo) {
+      const [brand, model, systemVersion, appVersion] = await Promise.all([
+        DeviceInfo.getBrand(),
+        DeviceInfo.getModel(),
+        DeviceInfo.getSystemVersion(),
+        DeviceInfo.getVersion(),
+      ]);
+      this.cachedDeviceInfo = { brand, model, system_version: systemVersion, app_version: appVersion };
+    }
+
+    // Collect dynamic data in parallel
+    const [bluetoothState, networkState] = await Promise.all([
       this.getBluetoothState(),
       NetInfo.fetch(),
-      DeviceInfo.getBrand(),
-      DeviceInfo.getModel(),
-      DeviceInfo.getSystemVersion(),
-      DeviceInfo.getVersion(),
     ]);
 
     // Use battery level from SDK Location (no extra async call needed)
@@ -247,10 +253,10 @@ class BehavioralDataCollector {
       activity_confidence: this.activityConfidence,
       is_moving: this.isMoving,
       device_info: {
-        brand: deviceBrand,
-        model: deviceModel,
-        system_version: systemVersion,
-        app_version: appVersion,
+        brand: this.cachedDeviceInfo.brand,
+        model: this.cachedDeviceInfo.model,
+        system_version: this.cachedDeviceInfo.system_version,
+        app_version: this.cachedDeviceInfo.app_version,
         battery_level: batteryLevel || undefined,
         battery_charging: batteryCharging ?? undefined,
       },

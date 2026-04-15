@@ -26,12 +26,14 @@ jest.mock('react-native-background-geolocation', () => ({
     onMotionChange: jest.fn(() => ({ remove: jest.fn() })),
     onProviderChange: jest.fn(() => ({ remove: jest.fn() })),
     onPowerSaveChange: jest.fn(() => ({ remove: jest.fn() })),
+    onGeofencesChange: jest.fn(() => ({ remove: jest.fn() })),
     AuthorizationStatus: { Always: 4, WhenInUse: 3, Denied: 1, NotDetermined: 0 },
     AccuracyAuthorization: { Full: 0, Reduced: 1 },
     DesiredAccuracy: { High: 0, Medium: 10, Low: 100 },
     PersistMode: { None: 0, All: 2 },
     LogLevel: { Verbose: 5, Off: 0 },
     TriggerActivity: { InVehicle: 'in_vehicle', OnFoot: 'on_foot' },
+    ActivityType: { Other: 1, AutomotiveNavigation: 2, Fitness: 3, OtherNavigation: 4 },
   },
 }));
 

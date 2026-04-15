@@ -8,7 +8,7 @@
  * - Location events fed to behavioral data collection (replaces 5s polling interval)
  */
 
-import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, ReactNode, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, useMemo, ReactNode, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Location, MotionActivityEvent, MotionChangeEvent } from 'react-native-background-geolocation';
@@ -17,32 +17,12 @@ import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
 import leaveDetectionService, { LeaveIntentAnalysis } from '../services/leaveDetectionService';
 import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
-import dynamicGeofenceManager from '../services/dynamicGeofenceManager';
+import { classifyUser, isOnCampus } from '../utils/geoHelpers';
 import { lotsApi } from '../services/api';
-import type { ParkingLotResponse } from '../services/api';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
 import { useAuth } from './AuthContext';
-
-/**
- * @deprecated Use `dynamicGeofenceManager.computeGeofenceSet()` instead.
- *
- * Kept for backward compatibility with tests. Returns the guaranteed set
- * for the given user type (no dynamic/proximity logic).
- */
-export function filterLotsByUserType<T extends { lot_type: string }>(lots: T[], email: string): T[] {
-  const isStudent = email.endsWith('@student.csulb.edu');
-  const isEmployee = !isStudent && email.endsWith('@csulb.edu');
-
-  if (isStudent) return lots.filter(l => l.lot_type === 'STUDENT').slice(0, 20);
-  if (isEmployee) {
-    const eLots = lots.filter(l => l.lot_type === 'EMPLOYEE');
-    const gLots = lots.filter(l => l.lot_type === 'STUDENT');
-    return [...eLots, ...gLots].slice(0, 20);
-  }
-  return [];
-}
 
 interface EnhancedGeofencingContextType {
   isGeofencingActive: boolean;
@@ -84,8 +64,53 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   // Track which lots have received a DWELL event (for overlapping lot priority)
   const dwelledLots = useRef<Set<string>>(new Set());
 
-  // Stores all lots from the API so dynamic recalculation doesn't re-fetch.
-  const allLotsRef = useRef<ParkingLotResponse[]>([]);
+  // Parking detection state machine per lot.
+  // Tracks whether the user drove in or walked in, and whether parking is confirmed.
+  //   PENDING_VEHICLE_ENTRY → drove in, waiting for activity→still/on_foot to confirm parking
+  //   UNKNOWN_ENTRY         → entered with 'unknown' activity + low speed; ambiguous.
+  //                           Only 'still' or DWELL confirms (NOT on_foot — avoids phantom +1
+  //                           when a pedestrian enters with unknown activity).
+  //   CONFIRMED_PARKED      → parking confirmed, +1 occupancy sent
+  //   WALK_IN               → entered on foot (e.g. returning from class), no occupancy
+  type ParkingSessionState = 'PENDING_VEHICLE_ENTRY' | 'UNKNOWN_ENTRY' | 'CONFIRMED_PARKED' | 'WALK_IN';
+  const lotParkingState = useRef<Map<string, ParkingSessionState>>(new Map());
+
+  // ── Persistence for lotParkingState ──
+  // Survives app restarts so geofenceInitialTriggerEntry sees existing
+  // CONFIRMED_PARKED state and skips re-sending +1.
+  const PARKING_STATE_KEY = '@SharkPark:lotParkingState';
+
+  const persistParkingState = useCallback(async () => {
+    try {
+      const entries = Array.from(lotParkingState.current.entries()).map(
+        ([lotId, state]) => ({ lotId, state, ts: Date.now() })
+      );
+      await AsyncStorage.setItem(PARKING_STATE_KEY, JSON.stringify(entries));
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to persist parking state:', e);
+    }
+  }, []);
+
+  const restoreParkingState = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(PARKING_STATE_KEY);
+      if (!raw) return;
+      const entries: { lotId: string; state: ParkingSessionState; ts: number }[] = JSON.parse(raw);
+      const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+      const now = Date.now();
+      for (const { lotId, state, ts } of entries) {
+        if (now - ts < MAX_AGE_MS) {
+          lotParkingState.current.set(lotId, state);
+          if (state === 'CONFIRMED_PARKED') {
+            currentZones.current.add(lotId);
+          }
+        }
+      }
+      if (__DEV__) console.log(`[EnhancedGeofencing] Restored parking state for ${lotParkingState.current.size} lots`);
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to restore parking state:', e);
+    }
+  }, []);
 
   // Enhanced occupancy event with validation data
   const sendValidatedOccupancyEvent = useCallback(async (
@@ -104,8 +129,24 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     }
   }, []);
 
-  // Enhanced geofence event handler with two-mode switching
+  // Enhanced geofence event handler with activity-gated occupancy detection.
+  //
+  // Occupancy is gated on ACTIVITY, not just geofence boundary crossings:
+  //   +1 occupancy  → only when user DROVE in AND parking is confirmed (still activity or DWELL)
+  //   -1 occupancy  → only when user DRIVES out (in_vehicle activity or speed > 5 m/s)
+  //   walking in/out → no occupancy change (car didn't move)
+  //
+  // This prevents:
+  //   - Walk-to-class EXIT from decrementing occupancy (car is still parked)
+  //   - Walk-back ENTER from double-counting (car was already counted)
+  //   - Drive-throughs from creating phantom +1 (EXIT fires before confirmation)
   const handleGeofenceEvent = useCallback(async (event: GeofenceEvent) => {
+    // ── Classify activity from SDK data attached to the geofence event ──
+    const eventActivity = event.activity?.type?.toLowerCase() ?? 'unknown';
+    const eventSpeed = event.speed ?? 0;
+    const isVehicleActivity = eventActivity === 'in_vehicle' || eventActivity === 'automotive';
+    const isPedestrianActivity = eventActivity === 'on_foot' || eventActivity === 'walking'
+      || eventActivity === 'running' || eventActivity === 'on_bicycle';
 
     if (event.eventType === 'ENTER') {
       if (!currentZones.current.has(event.regionId)) {
@@ -114,15 +155,71 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         setCurrentLotId(event.regionId);
         currentLotIdRef.current = event.regionId;
 
-        if (__DEV__) {
-          Alert.alert(
-            '[DEV] Entered Parking Lot',
-            `Welcome to ${event.regionId}! Upgrading to full tracking mode.`,
-            [{ text: 'OK' }]
-          );
+        // ── Determine parking session state based on how the user entered ──
+        const existingState = lotParkingState.current.get(event.regionId);
+
+        if (existingState === 'CONFIRMED_PARKED') {
+          // Re-entering a lot where car is still parked (walked back from class).
+          // No occupancy change — car was already counted.
+          if (__DEV__) {
+            Alert.alert(
+              '[DEV] Returned to Lot',
+              `Welcome back to ${event.regionId}. Your car is still parked here.`,
+              [{ text: 'OK' }]
+            );
+          }
+        } else if (isPedestrianActivity) {
+          // Walking into lot (e.g. shortcut through lot, or returning to car without
+          // an existing session). Don't count for occupancy.
+          lotParkingState.current.set(event.regionId, 'WALK_IN');
+          if (__DEV__) {
+            Alert.alert(
+              '[DEV] Walked Into Lot',
+              `Entered ${event.regionId} on foot — no occupancy change.`,
+              [{ text: 'OK' }]
+            );
+          }
+        } else if (eventActivity === 'unknown' && eventSpeed < 2) {
+          // Ambiguous: SDK hasn't classified yet and speed is low (could be walking or
+          // just pulled in and stopped). Require stronger confirmation — only 'still' or
+          // DWELL may promote to CONFIRMED_PARKED. This prevents the phantom +1 path:
+          //   unknown ENTER → SDK fires on_foot → would falsely confirm parking.
+          lotParkingState.current.set(event.regionId, 'UNKNOWN_ENTRY');
+          if (__DEV__) {
+            Alert.alert(
+              '[DEV] Entered Lot (Unknown)',
+              `Entered ${event.regionId} with unknown activity (${(eventSpeed * 2.237).toFixed(0)} mph). ` +
+              `Waiting for still/DWELL confirmation…`,
+              [{ text: 'OK' }]
+            );
+          }
+        } else {
+          // Vehicle entry (explicit in_vehicle, or ambiguous activity with driving speed).
+          // Start confirmation — occupancy sent when activity transitions to 'still' or DWELL fires.
+          lotParkingState.current.set(event.regionId, 'PENDING_VEHICLE_ENTRY');
+
+          // Special case: ENTER with activity=still and near-zero speed means the user
+          // is ALREADY stationary inside the lot (e.g. geofenceInitialTriggerEntry fired
+          // on app launch while parked). Confirm immediately — onActivityChange won't
+          // fire again for still→still.
+          if (eventActivity === 'still' && eventSpeed < 1) {
+            lotParkingState.current.set(event.regionId, 'CONFIRMED_PARKED');
+            // Send +1 after setup completes (below)
+          }
+
+          if (__DEV__) {
+            const state = lotParkingState.current.get(event.regionId);
+            Alert.alert(
+              '[DEV] Entered Parking Lot',
+              state === 'CONFIRMED_PARKED'
+                ? `Already parked in ${event.regionId} (still, ${(eventSpeed * 2.237).toFixed(0)} mph) — occupancy +1.`
+                : `Drove into ${event.regionId} (${eventActivity}, ${(eventSpeed * 2.237).toFixed(0)} mph). Waiting for parking confirmation…`,
+              [{ text: 'OK' }]
+            );
+          }
         }
 
-        // Upgrade to full tracking for fine-grained location + activity
+        // Always upgrade to full tracking (needed for activity monitoring + leave detection)
         try {
           await locationService.upgradeToFullTracking();
         } catch (e) {
@@ -151,11 +248,16 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           if (__DEV__) console.error('[EnhancedGeofencing] Failed to start parking validation:', error);
         }
 
-        await sendValidatedOccupancyEvent(event.regionId, 'ENTER');
+        // Send +1 immediately if ENTER already confirmed parking (still + speed ≈ 0).
+        // Otherwise occupancy is deferred to parking confirmation
+        // (activity→still in handleActivityChange, or DWELL backup below).
+        const enterState = lotParkingState.current.get(event.regionId);
+        if (enterState === 'CONFIRMED_PARKED') {
+          await sendValidatedOccupancyEvent(event.regionId, 'ENTER');
+        }
       }
     } else if (event.eventType === 'DWELL') {
-      // Native 5-min DWELL — high-confidence parking confirmation.
-      // Record as a DWELL behavioral event for the validator's activity recognition score.
+      // Native 5-min DWELL — high-confidence parking confirmation backup.
       dwelledLots.current.add(event.regionId);
 
       parkingValidationService.recordBehavioralEvent('DWELL', {
@@ -166,16 +268,34 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         },
       });
 
-      if (__DEV__) {
+      // If we haven't confirmed parking yet, DWELL is the backup confirmation.
+      // This catches edge cases where activity recognition missed the still transition.
+      const state = lotParkingState.current.get(event.regionId);
+      if (state === 'PENDING_VEHICLE_ENTRY' || state === 'UNKNOWN_ENTRY') {
+        lotParkingState.current.set(event.regionId, 'CONFIRMED_PARKED');
+        await sendValidatedOccupancyEvent(event.regionId, 'ENTER');
+
+        if (__DEV__) {
+          Alert.alert(
+            '[DEV] Parking Confirmed (DWELL)',
+            `Parked in ${event.regionId} for 5+ minutes — occupancy +1 sent.`,
+            [{ text: 'OK' }]
+          );
+        }
+      } else if (__DEV__) {
         Alert.alert(
           '[DEV] Dwell Detected',
-          `Parked in ${event.regionId} for 5+ minutes (native DWELL).`,
+          `In ${event.regionId} for 5+ minutes (state: ${state ?? 'none'}).`,
           [{ text: 'OK' }]
         );
       }
     } else if (event.eventType === 'EXIT') {
       if (currentZones.current.has(event.regionId)) {
         currentZones.current.delete(event.regionId);
+
+        const lotState = lotParkingState.current.get(event.regionId);
+        const wasConfirmedParked = lotState === 'CONFIRMED_PARKED';
+        const wasPendingEntry = lotState === 'PENDING_VEHICLE_ENTRY' || lotState === 'UNKNOWN_ENTRY';
 
         // Drive-through detection: EXIT within 60s of ENTER → DROVE_THROUGH
         const enterTime = enterTimestamps.current.get(event.regionId);
@@ -189,6 +309,10 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         const suppressForOverlap = otherActiveZones && !hadDwell;
         dwelledLots.current.delete(event.regionId);
 
+        // Vehicle exit detection: in_vehicle activity OR speed > 5 m/s (~11 mph) as fallback
+        // for when activity recognition has lag during the geofence crossing.
+        const isVehicleExit = isVehicleActivity || eventSpeed > 5;
+
         setCurrentLotId(currentZones.current.size > 0 ? [...currentZones.current][0] : null);
         currentLotIdRef.current = currentZones.current.size > 0 ? [...currentZones.current][0] : null;
 
@@ -200,39 +324,51 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           setCurrentLeaveIntent(null);
 
           if (__DEV__) {
-            let alertMessage = `Thanks for using ${event.regionId}!`;
+            let alertMessage = `Exiting ${event.regionId} (${eventActivity}, ${(eventSpeed * 2.237).toFixed(0)} mph)`;
             if (isDriveThrough) {
-              alertMessage += '\n\nDrove through (<60s, suppressed).';
+              alertMessage += '\n\nDrive-through (<60s) — no occupancy change.';
+            } else if (wasPendingEntry) {
+              alertMessage += '\n\nLeft before parking confirmed — no occupancy change.';
+            } else if (!wasConfirmedParked) {
+              alertMessage += '\n\nNo confirmed parking session — no occupancy change.';
+            } else if (!isVehicleExit) {
+              alertMessage += '\n\nWalked out (on_foot) — car still parked, no -1 sent.';
             } else if (suppressForOverlap) {
-              alertMessage += '\n\nOverlapping lot without DWELL (suppressed).';
-            } else if (analysis) {
-              switch (analysis.status) {
-                case 'PARKED':
-                  alertMessage += `\n\nParked (${Math.round(analysis.confidenceScore * 100)}% confidence).`;
-                  break;
-                case 'DROVE_THROUGH':
-                  alertMessage += `\n\nDrove through without parking.`;
-                  break;
-                case 'SEARCHING':
-                  alertMessage += `\n\nSearching for parking detected.`;
-                  break;
+              alertMessage += '\n\nOverlapping lot without DWELL — suppressed.';
+            } else {
+              alertMessage += `\n\nDriving away — occupancy -1 sent.`;
+              if (analysis) {
+                alertMessage += ` Validation: ${analysis.status} (${Math.round(analysis.confidenceScore * 100)}%).`;
               }
             }
             if (leaveAnalysis && leaveAnalysis.intent_probability > 0.5) {
-              alertMessage += `\n\nLeave intent: ${Math.round(leaveAnalysis.intent_probability * 100)}% confidence.`;
+              alertMessage += `\n\nLeave intent: ${Math.round(leaveAnalysis.intent_probability * 100)}%.`;
             }
             Alert.alert('[DEV] Left Parking Lot', alertMessage, [{ text: 'OK' }]);
           }
 
-          // Suppress occupancy event for drive-throughs and overlapping non-DWELL lots
-          if (!isDriveThrough && !suppressForOverlap) {
+          // Only send -1 EXIT occupancy when ALL conditions are met:
+          // 1. Parking was confirmed (+1 was sent earlier)
+          // 2. Exit is vehicular (driving away, not walking to class)
+          // 3. Not a drive-through or suppressed overlap
+          if (wasConfirmedParked && isVehicleExit && !isDriveThrough && !suppressForOverlap) {
             await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
           }
         } catch (error) {
           if (__DEV__) console.error('[EnhancedGeofencing] Failed to complete parking validation:', error);
-          if (!isDriveThrough && !suppressForOverlap) {
+          // Fallback: still send EXIT if we're confident about the conditions
+          if (wasConfirmedParked && isVehicleExit && !isDriveThrough && !suppressForOverlap) {
             await sendValidatedOccupancyEvent(event.regionId, 'EXIT');
           }
+        }
+
+        // Clean up parking state:
+        // - Vehicle exit or unconfirmed → clear state entirely
+        // - Pedestrian exit from confirmed park → KEEP state (car is still there)
+        if (wasConfirmedParked && !isVehicleExit) {
+          // Walking to class — car still parked. Keep CONFIRMED_PARKED for re-entry.
+        } else {
+          lotParkingState.current.delete(event.regionId);
         }
 
         // Downgrade back to geofence-only (low power) if no lots active
@@ -245,7 +381,10 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         }
       }
     }
-  }, [sendValidatedOccupancyEvent]);
+
+    // Persist parking state after every geofence event (covers all set/delete paths above)
+    await persistParkingState();
+  }, [sendValidatedOccupancyEvent, persistParkingState]);
 
   // Keep ref in sync for the setup effect
   useLayoutEffect(() => {
@@ -265,15 +404,6 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     const { latitude, longitude, speed, accuracy, altitude, heading } = location.coords;
     const safeSpeed = speed != null ? speed : -1;
-
-    parkingValidationService.updateLocation({
-      latitude,
-      longitude,
-      accuracy: accuracy ?? 0,
-      speed: safeSpeed >= 0 ? safeSpeed : null,
-      altitude: altitude ?? null,
-      heading: heading ?? null,
-    });
 
     leaveDetectionService.updateLocation({
       latitude,
@@ -296,78 +426,20 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       battery_charging: location.battery?.is_charging ?? null,
     });
 
-    // Use SDK activity recognition (accelerometer + gyro) instead of speed heuristics.
-    // The Location object already carries the activity at the time it was recorded.
-    const activityType = location.activity?.type?.toLowerCase() ?? 'unknown';
-    let eventType: 'STATIONARY' | 'WALKING' | 'DRIVING' | 'SPEED_CHANGE' | 'ACTIVITY_STILL' | 'ACTIVITY_ON_FOOT' | 'ACTIVITY_IN_VEHICLE';
-    switch (activityType) {
-      case 'still':
-        eventType = 'ACTIVITY_STILL';
-        break;
-      case 'on_foot':
-      case 'walking':
-      case 'running':
-        eventType = 'ACTIVITY_ON_FOOT';
-        break;
-      case 'in_vehicle':
-      case 'automotive':
-        eventType = 'ACTIVITY_IN_VEHICLE';
-        break;
-      default:
-        eventType = 'STATIONARY';
-        break;
-    }
+    // NOTE: Activity recognition is handled exclusively by handleActivityChange
+    // (onActivityChange SDK callback). We do NOT extract location.activity here
+    // to avoid duplicate behavioral events.
 
-    const speedMph = safeSpeed >= 0 ? safeSpeed * 2.237 : undefined;
-    parkingValidationService.recordBehavioralEvent(eventType, {
-      speed_mph: speedMph,
-      accuracy_meters: accuracy,
-      bluetooth_state: 'UNKNOWN',
-      raw_data: {
-        activity: activityType,
-        activity_confidence: location.activity?.confidence,
-        app_state: appState.current,
-        timestamp: new Date().toISOString(),
-      },
+    // Adjust geofence proximity radius based on on/off campus (SDK activates nearest lots)
+    locationService.setGeofenceProximityRadius(isOnCampus(latitude, longitude)).catch(err => {
+      if (__DEV__) console.error('[EnhancedGeofencing] Proximity radius update failed:', err);
     });
+  }, []);
 
-    // Dynamic geofence recalculation on location change
-    if (
-      allLotsRef.current.length > 0 &&
-      dynamicGeofenceManager.shouldRecalculate(latitude, longitude, location.odometer)
-    ) {
-      const userEmail = user?.userId ?? '';
-      const allocation = dynamicGeofenceManager.computeGeofenceSet(
-        allLotsRef.current,
-        userEmail,
-        { latitude, longitude },
-        undefined,
-        location.odometer,
-      );
-
-      if (allocation.all.length > 0) {
-        const geofences = createSDKGeofencesFromLots(allocation.all);
-        locationService.registerGeofences(geofences).catch(err => {
-          if (__DEV__) console.error('[EnhancedGeofencing] Dynamic recalc failed:', err);
-        });
-
-        // Tighten geofence proximity radius when on campus, widen when off
-        const managerState = dynamicGeofenceManager.getState();
-        locationService.setGeofenceProximityRadius(managerState.isOnCampus).catch(err => {
-          if (__DEV__) console.error('[EnhancedGeofencing] Proximity radius update failed:', err);
-        });
-
-        if (__DEV__) {
-          console.log(
-            `[EnhancedGeofencing] Dynamic recalc: ${allocation.guaranteed.length} guaranteed + ${allocation.dynamic.length} dynamic = ${allocation.all.length} geofences`,
-          );
-        }
-      }
-    }
-  }, [user?.userId]);
-
-  // Feed SDK activity recognition events to validation + leave detection + behavioral collector
-  const handleActivityChange = useCallback((event: MotionActivityEvent) => {
+  // Feed SDK activity recognition events to validation + leave detection + behavioral collector.
+  // This is the SINGLE source of truth for activity data — handleLocationUpdate does NOT
+  // duplicate activity processing (it only feeds location/speed data).
+  const handleActivityChange = useCallback(async (event: MotionActivityEvent) => {
     const { activity, confidence } = event;
 
     // Update behavioral collector with activity state
@@ -376,9 +448,43 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     // Feed to leave detection for ACTIVITY_VEHICLE / WALKING_TO_CAR signals
     leaveDetectionService.processActivityChange(activity, confidence);
 
-    // Record activity-based validation events when inside a lot
+    // ── Parking confirmation via activity changes ──
+    //
+    // PENDING_VEHICLE_ENTRY (drove in with known vehicle activity):
+    //   still → engine off, vehicle stopped → parked
+    //   on_foot/walking → drove in, now walking → must have parked
+    //
+    // UNKNOWN_ENTRY (entered with 'unknown' activity + low speed):
+    //   still → actually was parked → confirm
+    //   on_foot/walking → could be a pedestrian who entered with 'unknown' → DON'T confirm
+    //                     (this is the phantom +1 guard — DWELL is the backup)
     if (currentLotIdRef.current) {
+      const lotId = currentLotIdRef.current;
       const lowerActivity = activity.toLowerCase();
+      const parkState = lotParkingState.current.get(lotId);
+
+      const isStill = lowerActivity === 'still';
+      const isWalking = lowerActivity === 'on_foot' || lowerActivity === 'walking';
+
+      const shouldConfirm =
+        (parkState === 'PENDING_VEHICLE_ENTRY' && (isStill || isWalking)) ||
+        (parkState === 'UNKNOWN_ENTRY' && isStill);
+
+      if (shouldConfirm) {
+        lotParkingState.current.set(lotId, 'CONFIRMED_PARKED');
+        await sendValidatedOccupancyEvent(lotId, 'ENTER');
+
+        if (__DEV__) {
+          console.log(`[EnhancedGeofencing] Parking confirmed in ${lotId} (activity → ${lowerActivity})`);
+          Alert.alert(
+            '[DEV] Parking Confirmed',
+            `Parked in ${lotId} (${lowerActivity}) — occupancy +1 sent.`,
+            [{ text: 'OK' }]
+          );
+        }
+      }
+
+      // Record activity-based validation events
       let eventType: 'ACTIVITY_STILL' | 'ACTIVITY_ON_FOOT' | 'ACTIVITY_IN_VEHICLE' | undefined;
 
       if (lowerActivity === 'still') eventType = 'ACTIVITY_STILL';
@@ -394,8 +500,13 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           },
         });
       }
+
+      // Persist if parking state changed in this callback
+      if (shouldConfirm) {
+        await persistParkingState();
+      }
     }
-  }, []);
+  }, [sendValidatedOccupancyEvent, persistParkingState]);
 
   // Feed SDK motion change events to leave detection + behavioral collector
   const handleMotionChange = useCallback((event: MotionChangeEvent) => {
@@ -453,36 +564,33 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     // Initialize SDK and register geofences
     (async () => {
       try {
+        // Restore parking state BEFORE event listeners fire so
+        // geofenceInitialTriggerEntry sees existing CONFIRMED_PARKED state.
+        await restoreParkingState();
+
         await locationService.initialize();
         await locationService.requestPermissions();
 
         const allLots = await lotsApi.getAllLots();
-        allLotsRef.current = allLots;
 
         const userEmail = user?.userId ?? '';
-
-        // First computation: no GPS yet → guaranteed set only
-        const allocation = dynamicGeofenceManager.computeGeofenceSet(
-          allLots,
-          userEmail,
-          null,
-        );
+        const userType = classifyUser(userEmail);
 
         if (__DEV__) {
-          console.log(`[EnhancedGeofencing] User: ${userEmail} (${allocation.userType})`);
-          console.log(
-            `[EnhancedGeofencing] Initial: ${allocation.guaranteed.length} guaranteed, ` +
-            `${allocation.dynamic.length} dynamic = ${allocation.all.length} geofences` +
-            (allocation.isAfterELotOpen ? ' (E-lots open)' : ''),
-          );
+          console.log(`[EnhancedGeofencing] User: ${userEmail} (${userType})`);
+          console.log(`[EnhancedGeofencing] Registering all ${allLots.length} lots (SDK manages proximity)`);
         }
 
-        const geofences = createSDKGeofencesFromLots(allocation.all);
+        if (userType === 'UNKNOWN') {
+          throw new Error('No valid parking lot geofences found for this user type');
+        }
+
+        const geofences = createSDKGeofencesFromLots(allLots);
 
         if (geofences.length > 0) {
           await locationService.registerGeofences(geofences);
         } else {
-          throw new Error('No valid parking lot geofences found for this user type');
+          throw new Error('No valid parking lot geofences found');
         }
 
         // Start in geofence-only mode (low power)
@@ -541,22 +649,25 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       removeActivity();
       removeMotion();
       parkingValidationService.removeValidationListener(validationListener);
-      dynamicGeofenceManager.reset();
     };
   }, []); // stable: all mutable state accessed through refs
 
-  const contextValue: EnhancedGeofencingContextType = {
-    isGeofencingActive: true,
-    currentLotId,
-    currentValidationStatus,
-    currentLeaveIntent,
-    debugInfo: {
-      ...parkingValidationService.getDebugInfo(),
-      ...leaveDetectionService.getDebugInfo(),
-      activeLeaveMonitoring: leaveDetectionService.getDebugInfo().activeSessions,
-      isMonitoringLeave: leaveDetectionService.getDebugInfo().isMonitoring
-    }
-  };
+  const contextValue: EnhancedGeofencingContextType = useMemo(() => {
+    const pvDebug = parkingValidationService.getDebugInfo();
+    const ldDebug = leaveDetectionService.getDebugInfo();
+    return {
+      isGeofencingActive: true,
+      currentLotId,
+      currentValidationStatus,
+      currentLeaveIntent,
+      debugInfo: {
+        activeSessions: pvDebug.activeSessions,
+        isCollectingData: pvDebug.isCollectingData,
+        activeLeaveMonitoring: ldDebug.activeSessions,
+        isMonitoringLeave: ldDebug.isMonitoring,
+      },
+    };
+  }, [currentLotId, currentValidationStatus, currentLeaveIntent]);
 
   return (
     <EnhancedGeofencingContext.Provider value={contextValue}>

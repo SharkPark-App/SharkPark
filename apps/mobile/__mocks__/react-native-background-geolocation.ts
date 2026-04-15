@@ -46,6 +46,7 @@ const mockBackgroundGeolocation = {
   PersistMode: { None: 0, All: 2, Locations: 1, Geofences: -1 },
   LogLevel: { Off: 0, Error: 1, Warning: 2, Info: 3, Debug: 4, Verbose: 5 },
   TriggerActivity: { InVehicle: 'in_vehicle', OnFoot: 'on_foot' },
+  ActivityType: { Other: 1, AutomotiveNavigation: 2, Fitness: 3, OtherNavigation: 4 },
   AuthorizationStatus: { NotDetermined: 0, Denied: 1, Always: 4, WhenInUse: 3 },
   AccuracyAuthorization: { Full: 0, Reduced: 1 },
 };

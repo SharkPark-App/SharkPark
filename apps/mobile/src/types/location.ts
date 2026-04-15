@@ -3,7 +3,7 @@
  * Privacy-focused geofencing types for anonymous parking lot tracking
  */
 
-import { LOCATION_CONSTANTS, GEOFENCE_CONSTANTS } from '../constants/geofencing';
+import { LOCATION_CONSTANTS } from '../constants/geofencing';
 
 export interface LocationPermissionStatus {
   granted: boolean;
@@ -49,7 +49,14 @@ export interface GeofenceEvent {
   regionId: string;
   eventType: 'ENTER' | 'EXIT' | 'DWELL';
   timestamp: string;
-  // NO location coordinates - privacy first!
+  // NO location coordinates — privacy first!
+  // Activity + speed are included for parking detection heuristics:
+  // they determine if the user drove in vs walked in (occupancy gating).
+  activity?: {
+    type: string;       // 'still' | 'on_foot' | 'walking' | 'in_vehicle' | 'automotive' | ...
+    confidence: number; // 0-100
+  };
+  speed?: number; // m/s from SDK — fallback when activity recognition has lag
 }
 
 export interface LocationServiceConfig {
@@ -63,8 +70,6 @@ export interface LocationServiceConfig {
   anonymousMode: boolean; // never store actual coordinates
   backgroundTracking: boolean;
   
-  // Geofencing settings
-  maxRegions: number; // platform limits: iOS=20, Android=100
 }
 
 export interface LocationError {
@@ -80,5 +85,4 @@ export const DEFAULT_LOCATION_CONFIG: LocationServiceConfig = {
   maximumAge: LOCATION_CONSTANTS.CACHE_NORMAL, // Cache for 5 minutes to reduce GPS usage
   anonymousMode: true, // Always anonymous
   backgroundTracking: false, // User must opt-in
-  maxRegions: GEOFENCE_CONSTANTS.MAX_REGIONS_IOS, // iOS limit for safety
 };

@@ -51,7 +51,6 @@ describe('ParkingValidationService', () => {
     }
     parkingValidationService['sessionTimers'].clear();
     parkingValidationService['activeSessions'].clear();
-    parkingValidationService['eventBuffer'] = [];
     parkingValidationService['validationCompleteListeners'] = [];
   });
 

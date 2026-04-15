@@ -121,6 +121,49 @@ export class OccupancyEventsService {
   }
 
   /**
+   * Cleans up stale DeviceState records where an ENTER was recorded but no
+   * EXIT ever arrived (app killed, phone died, permissions revoked, etc.).
+   *
+   * For each stale record, decrements the lot's occupancy and deletes the
+   * DeviceState row. The GREATEST(current_occupancy - 1, 0) floor prevents
+   * negative occupancy.
+   *
+   * Called by the scheduler at 3 AM daily (Pacific).
+   */
+  async cleanupStaleDeviceStates(maxAgeHours: number = 18): Promise<{ cleaned: number }> {
+    const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+
+    try {
+      // Find all ENTER device states older than the cutoff
+      const staleStates = await this.prisma.deviceState.findMany({
+        where: {
+          last_event_type: 'ENTER',
+          updated_at: { lt: cutoff },
+        },
+        select: { id: true, lot_id: true, device_hash: true },
+      });
+
+      if (staleStates.length === 0) {
+        return { cleaned: 0 };
+      }
+
+      // Process each stale record in a transaction: decrement occupancy + delete state
+      for (const state of staleStates) {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`UPDATE lots SET current_occupancy = GREATEST(current_occupancy - 1, 0), updated_at = NOW() WHERE id = ${state.lot_id}`;
+          await tx.deviceState.delete({ where: { id: state.id } });
+        });
+      }
+
+      this.logger.log(`Cleaned up ${staleStates.length} stale ENTER device states (older than ${maxAgeHours}h)`);
+      return { cleaned: staleStates.length };
+    } catch (error) {
+      this.logger.error('Failed to clean up stale device states', error);
+      throw new InternalServerErrorException('Failed to clean up stale device states');
+    }
+  }
+
+  /**
    * Retrieves events for a specific lot within a date range.
    */
   async findByLot(

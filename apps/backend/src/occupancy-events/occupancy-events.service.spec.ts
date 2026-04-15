@@ -369,4 +369,39 @@ describe('OccupancyEventsService', () => {
         .rejects.toThrow('Failed to fetch snapshots for lot G1');
     });
   });
+
+  describe('cleanupStaleDeviceStates', () => {
+    it('should decrement occupancy and delete stale ENTER device states', async () => {
+      const staleStates = [
+        { id: 'ds-1', lot_id: 'lot-uuid-1', device_hash: 'hash-1' },
+        { id: 'ds-2', lot_id: 'lot-uuid-2', device_hash: 'hash-2' },
+      ];
+
+      (prisma as any).deviceState.findMany = jest.fn().mockResolvedValue(staleStates);
+      (prisma as any).deviceState.delete = jest.fn().mockResolvedValue({});
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+
+      const result = await service.cleanupStaleDeviceStates(18);
+
+      expect(result.cleaned).toBe(2);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+      expect((prisma as any).deviceState.delete).toHaveBeenCalledTimes(2);
+    });
+
+    it('should return cleaned:0 when no stale records exist', async () => {
+      (prisma as any).deviceState.findMany = jest.fn().mockResolvedValue([]);
+
+      const result = await service.cleanupStaleDeviceStates(18);
+
+      expect(result.cleaned).toBe(0);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should throw InternalServerErrorException on database error', async () => {
+      (prisma as any).deviceState.findMany = jest.fn().mockRejectedValue(new Error('Connection lost'));
+
+      await expect(service.cleanupStaleDeviceStates(18))
+        .rejects.toThrow('Failed to clean up stale device states');
+    });
+  });
 });

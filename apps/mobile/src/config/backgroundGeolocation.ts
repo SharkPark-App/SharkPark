@@ -16,14 +16,18 @@ export function createSDKConfig(): Config {
       distanceFilter: 20,
       locationAuthorizationRequest: 'Always',
       geofenceProximityRadius: 2000, // 2km — covers CSULB campus + approach roads
+      geofenceModeHighAccuracy: true, // Android: foreground service for near-instant geofence triggers
+      geofenceInitialTriggerEntry: true, // Fire ENTER if already inside a lot when SDK starts
       stationaryRadius: 25, // Parking lot size — prevents false motion triggers
       stopTimeout: 5, // 5 min motionless → stationary state
+      activityType: BackgroundGeolocation.ActivityType.AutomotiveNavigation, // iOS hint for driving stop-detection
     },
     activity: {
       triggerActivities: [
         BackgroundGeolocation.TriggerActivity.InVehicle,
         BackgroundGeolocation.TriggerActivity.OnFoot,
       ],
+      stopDetectionDelay: 10000, // iOS: 10s grace period before engaging stop-detection (avoids false stops at traffic lights)
     },
     app: {
       stopOnTerminate: false,

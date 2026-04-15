@@ -22,16 +22,9 @@ interface ParkingSession {
   status: 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 }
 
-interface ValidationEventWithMetadata extends ValidationEvent {
-  sessionId: string;
-  lotId: string;
-}
-
 class ParkingValidationService {
   private activeSessions = new Map<string, ParkingSession>();
   private sessionTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private eventBuffer: ValidationEventWithMetadata[] = [];
-  private isCollectingData = false;
   private behavioralCollector = sharedBehavioralCollector;
   private initPromise: Promise<void>;
 
@@ -64,7 +57,6 @@ class ParkingValidationService {
     };
 
     this.activeSessions.set(sessionId, session);
-    this.isCollectingData = true;
 
     // Auto-cancel stale sessions after timeout to prevent resource leaks
     const timer = setTimeout(() => {
@@ -105,8 +97,6 @@ class ParkingValidationService {
     const exitEvent = this.createValidationEvent('GEOFENCE_EXIT', activeSession.sessionId, geofenceEvent.regionId);
     activeSession.events.push(exitEvent);
     
-    this.isCollectingData = false;
-    this.behavioralCollector.stopCollection('parkingValidation');
     activeSession.status = 'COMPLETED';
     
     // Analyze the behavioral patterns
@@ -125,6 +115,11 @@ class ParkingValidationService {
     // Clean up session
     this.activeSessions.delete(activeSession.sessionId);
     await this.removePersistedSession(activeSession.sessionId);
+
+    // Stop collecting if no active sessions remain
+    if (this.findAnyActiveSession() === undefined) {
+      this.behavioralCollector.stopCollection('parkingValidation');
+    }
     
     return analysis;
   }
@@ -141,7 +136,7 @@ class ParkingValidationService {
       raw_data?: Record<string, unknown>;
     } = {}
   ): void {
-    if (!this.isCollectingData || this.activeSessions.size === 0) {
+    if (this.activeSessions.size === 0) {
       return;
     }
 
@@ -202,7 +197,6 @@ class ParkingValidationService {
   // --- Private Methods ---
 
   private startDataCollection(sessionId: string, lotId: string): void {
-    this.isCollectingData = true;
     
     // Start real behavioral data collection
     this.behavioralCollector.startCollection({
@@ -356,7 +350,6 @@ class ParkingValidationService {
 
     // Stop collecting if no active sessions remain
     if (this.findAnyActiveSession() === undefined) {
-      this.isCollectingData = false;
       this.behavioralCollector.stopCollection('parkingValidation');
     }
   }
@@ -428,10 +421,10 @@ class ParkingValidationService {
           if (sessionAge > maxAge || session.status !== 'ACTIVE') {
             await AsyncStorage.removeItem(key);
           } else {
-            // Restore active session
+            // Restore active session and restart data collection
             this.activeSessions.set(session.sessionId, session);
             if (session.status === 'ACTIVE') {
-              this.isCollectingData = true;
+              this.startDataCollection(session.sessionId, session.lotId);
             }
           }
         }
@@ -460,26 +453,12 @@ class ParkingValidationService {
 
     return {
       activeSessions: this.activeSessions.size,
-      isCollectingData: this.isCollectingData,
+      isCollectingData: this.findAnyActiveSession() !== undefined,
       sessions: sessionInfo
     };
   }
 
-  /**
-   * Update location data for behavioral analysis
-   * This should be called from the main location tracking service to avoid conflicts
-   */
-  updateLocation(locationData: {
-    latitude: number;
-    longitude: number;
-    accuracy: number;
-    speed: number | null;
-    altitude?: number | null;
-    heading?: number | null;
-  }): void {
-    // Pass location data to behavioral collector for speed and movement analysis
-    this.behavioralCollector.updateLocation(locationData);
-  }
+
 }
 
 // Export singleton instance

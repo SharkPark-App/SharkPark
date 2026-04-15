@@ -392,20 +392,22 @@ class LotsApiService {
       return newId;
     } catch {
       // Fallback: generate a session-only ID if AsyncStorage fails
-      console.warn('[LotsApi] Failed to access AsyncStorage, using session-only ID');
+      if (__DEV__) console.warn('[LotsApi] Failed to access AsyncStorage, using session-only ID');
       return this.sessionDeviceId || (this.sessionDeviceId = this.generateUUID());
     }
   }
 
   /**
-   * Generate a random UUID v4
+   * Generate a random UUID v4 using crypto.getRandomValues for security
    */
   private generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    // Set version 4 (0100) and variant 10xx per RFC 4122
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
   // Fallback session-only device ID

@@ -10,6 +10,7 @@ jest.mock('react-native-background-geolocation', () => ({
     PersistMode: { None: 0, All: 2, Locations: 1, Geofences: -1 },
     LogLevel: { Off: 0, Error: 1, Warning: 2, Info: 3, Debug: 4, Verbose: 5 },
     TriggerActivity: { InVehicle: 'in_vehicle', OnFoot: 'on_foot' },
+    ActivityType: { Other: 1, AutomotiveNavigation: 2, Fitness: 3, OtherNavigation: 4 },
   },
 }));
 
@@ -64,6 +65,21 @@ describe('SDK Configuration', () => {
       const config = createSDKConfig();
       expect(config.geolocation?.locationAuthorizationRequest).toBe('Always');
     });
+
+    it('should enable geofenceModeHighAccuracy for instant Android triggers', () => {
+      const config = createSDKConfig();
+      expect(config.geolocation?.geofenceModeHighAccuracy).toBe(true);
+    });
+
+    it('should fire ENTER if already inside a lot when SDK starts', () => {
+      const config = createSDKConfig();
+      expect(config.geolocation?.geofenceInitialTriggerEntry).toBe(true);
+    });
+
+    it('should use AutomotiveNavigation activity type for iOS', () => {
+      const config = createSDKConfig();
+      expect(config.geolocation?.activityType).toBe(2); // AutomotiveNavigation
+    });
   });
 
   describe('activity triggers', () => {
@@ -72,6 +88,11 @@ describe('SDK Configuration', () => {
       expect(config.activity?.triggerActivities).toEqual(
         expect.arrayContaining(['in_vehicle', 'on_foot'])
       );
+    });
+
+    it('should set stopDetectionDelay for iOS traffic light grace period', () => {
+      const config = createSDKConfig();
+      expect(config.activity?.stopDetectionDelay).toBe(10000);
     });
   });
 
