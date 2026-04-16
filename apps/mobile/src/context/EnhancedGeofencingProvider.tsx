@@ -316,8 +316,10 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         const wasPendingEntry = lotState === 'PENDING_VEHICLE_ENTRY' || lotState === 'UNKNOWN_ENTRY';
 
         // Drive-through detection: EXIT within 60s of ENTER → DROVE_THROUGH
+        // Only applies to unconfirmed entries. If parking was already confirmed
+        // (+1 sent), we must allow the -1 EXIT regardless of timing.
         const enterTime = enterTimestamps.current.get(event.regionId);
-        const isDriveThrough = enterTime != null && (Date.now() - enterTime) < 60000;
+        const isDriveThrough = !wasConfirmedParked && enterTime != null && (Date.now() - enterTime) < 60000;
         enterTimestamps.current.delete(event.regionId);
 
         // Overlapping lot priority: if multiple lots are active and this lot
@@ -344,7 +346,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           if (__DEV__) {
             let alertMessage = `Exiting ${event.regionId} (${eventActivity}, ${(eventSpeed * 2.237).toFixed(0)} mph)`;
             if (isDriveThrough) {
-              alertMessage += '\n\nDrive-through (<60s) — no occupancy change.';
+              alertMessage += '\n\nDrive-through (<60s, unconfirmed) — no occupancy change.';
             } else if (wasPendingEntry) {
               alertMessage += '\n\nLeft before parking confirmed — no occupancy change.';
             } else if (!wasConfirmedParked) {
@@ -523,11 +525,11 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           },
         });
       }
+    }
 
-      // Persist if parking state changed in this callback
-      if (anyConfirmed) {
-        await persistParkingState();
-      }
+    // Persist if parking state changed in this callback
+    if (anyConfirmed) {
+      await persistParkingState();
     }
   }, [sendValidatedOccupancyEvent, persistParkingState]);
 
