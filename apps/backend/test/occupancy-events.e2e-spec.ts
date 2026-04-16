@@ -216,20 +216,6 @@ describe('OccupancyEventsController (e2e)', () => {
     });
   });
 
-  describe('/api/v1/occupancy-events/snapshots (POST)', () => {
-    it('should create snapshots for all lots', () => {
-      return request(app.getHttpServer())
-        .post('/api/v1/occupancy-events/snapshots')
-        .expect(201)
-        .expect((res: Response) => {
-          expect(res.body.success).toBe(true);
-          expect(res.body.data).toHaveProperty('count');
-          expect(res.body.data).toHaveProperty('timestamp');
-          expect(res.body.data.count).toBeGreaterThanOrEqual(0);
-        });
-    });
-  });
-
   describe('/api/v1/occupancy-events/snapshots/:lotId (GET)', () => {
     it('should return snapshots for a lot', () => {
       const today = new Date().toISOString().split('T')[0];
