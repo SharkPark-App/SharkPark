@@ -142,6 +142,41 @@ describe('EventsService', () => {
     });
   });
 
+  describe('findUpcoming', () => {
+    it('should return events within the time window', async () => {
+      const mockEvents = [
+        { id: 'ev-1', event_name: 'Game', start_time: new Date(), end_time: new Date(Date.now() + 3600000) },
+      ];
+      prisma.campusEvent.findMany.mockResolvedValue(mockEvents);
+
+      const windowEnd = new Date(Date.now() + 24 * 3600000);
+      const result = await service.findUpcoming(windowEnd);
+
+      expect(result).toEqual(mockEvents);
+      expect(prisma.campusEvent.findMany).toHaveBeenCalledWith({
+        where: {
+          start_time: { lte: windowEnd },
+          end_time: { gte: expect.any(Date) },
+        },
+        orderBy: { start_time: 'asc' },
+      });
+    });
+
+    it('should return empty array when no upcoming events', async () => {
+      prisma.campusEvent.findMany.mockResolvedValue([]);
+
+      const result = await service.findUpcoming(new Date(Date.now() + 3600000));
+
+      expect(result).toEqual([]);
+    });
+
+    it('should throw on database error', async () => {
+      prisma.campusEvent.findMany.mockRejectedValue(new Error('DB error'));
+
+      await expect(service.findUpcoming(new Date())).rejects.toThrow('DB error');
+    });
+  });
+
   describe('getActiveImpactsForLots', () => {
     it('should batch-fetch active impacts and return max per lot', async () => {
       const mockImpacts = [
