@@ -50,6 +50,12 @@ describe('ParkingValidationService', () => {
       clearTimeout(timer);
     }
     parkingValidationService['sessionTimers'].clear();
+    // Clear debounced persist timer to prevent async leaks
+    if (parkingValidationService['persistDebounceTimer']) {
+      clearTimeout(parkingValidationService['persistDebounceTimer']);
+      parkingValidationService['persistDebounceTimer'] = null;
+    }
+    parkingValidationService['pendingPersistSessionIds']?.clear();
     parkingValidationService['activeSessions'].clear();
     parkingValidationService['validationCompleteListeners'] = [];
   });
@@ -60,6 +66,12 @@ describe('ParkingValidationService', () => {
       clearTimeout(timer);
     }
     parkingValidationService['sessionTimers'].clear();
+    // Clear debounced persist timer
+    if (parkingValidationService['persistDebounceTimer']) {
+      clearTimeout(parkingValidationService['persistDebounceTimer']);
+      parkingValidationService['persistDebounceTimer'] = null;
+    }
+    parkingValidationService['pendingPersistSessionIds']?.clear();
   });
 
   describe('Session Management', () => {
