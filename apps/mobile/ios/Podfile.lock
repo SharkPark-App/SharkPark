@@ -1791,8 +1791,6 @@ PODS:
   - react-native-app-auth (8.1.0):
     - AppAuth (>= 1.7.6)
     - React-Core
-  - react-native-bluetooth-status (1.5.1):
-    - React
   - react-native-netinfo (12.0.1):
     - boost
     - DoubleConversion
@@ -2880,7 +2878,6 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../../../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-app-auth (from `../../../node_modules/react-native-app-auth`)
-  - react-native-bluetooth-status (from `../../../node_modules/react-native-bluetooth-status`)
   - "react-native-netinfo (from `../../../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../../../node_modules/react-native-safe-area-context`)
   - React-NativeModulesApple (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
@@ -3018,8 +3015,6 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-app-auth:
     :path: "../../../node_modules/react-native-app-auth"
-  react-native-bluetooth-status:
-    :path: "../../../node_modules/react-native-bluetooth-status"
   react-native-netinfo:
     :path: "../../../node_modules/@react-native-community/netinfo"
   react-native-safe-area-context:
@@ -3152,7 +3147,6 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 06d59c448da7e34eb05b3fb2189e12f6a30fec57
   React-microtasksnativemodule: d1ee999dc9052e23f6488b730fa2d383a4ea40e5
   react-native-app-auth: e21c8ee920876b960e38c9381971bd189ebea06b
-  react-native-bluetooth-status: 0cef06a3bb1db870798b9b72873ac2b1c6bb110f
   react-native-netinfo: a0be8c77f8420a60ddf07eb87be1a36f02a1bd65
   react-native-safe-area-context: c00143b4823773bba23f2f19f85663ae89ceb460
   React-NativeModulesApple: 46690a0fe94ec28fc6fc686ec797b911d251ded0
@@ -3201,6 +3195,6 @@ SPEC CHECKSUMS:
   TSLocationManager: d0e8ec5c1467782d3eef1d90fbca4a42e98bb287
   Yoga: 689c8e04277f3ad631e60fe2a08e41d411daf8eb
 
-PODFILE CHECKSUM: 5ce913771a0a674565161aac33f6f6f752879047
+PODFILE CHECKSUM: c826b6b4a69deda2a9503192266f515c38ee0dec
 
 COCOAPODS: 1.16.2
