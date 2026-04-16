@@ -265,14 +265,11 @@ describe('OccupancyEventsService', () => {
   describe('getEventStats', () => {
     it('should calculate correct statistics', async () => {
       const mockLot = { id: 'lot-uuid-1', lot_id: 'G1' };
-      const mockEvents = [
-        { event_type: 'ENTER', timestamp: new Date(), device_hash: 'h1' },
-        { event_type: 'ENTER', timestamp: new Date(), device_hash: 'h2' },
-        { event_type: 'EXIT', timestamp: new Date(), device_hash: 'h3' },
-      ];
-
       prisma.lot.findFirst.mockResolvedValue(mockLot);
-      prisma.occupancyEvent.findMany.mockResolvedValue(mockEvents);
+      (prisma as any).occupancyEvent.groupBy = jest.fn().mockResolvedValue([
+        { event_type: 'ENTER', _count: { event_type: 2 } },
+        { event_type: 'EXIT', _count: { event_type: 1 } },
+      ]);
 
       const stats = await service.getEventStats('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
@@ -283,7 +280,7 @@ describe('OccupancyEventsService', () => {
 
     it('should handle empty events', async () => {
       prisma.lot.findFirst.mockResolvedValue({ id: 'lot-uuid-1', lot_id: 'G1' });
-      prisma.occupancyEvent.findMany.mockResolvedValue([]);
+      (prisma as any).occupancyEvent.groupBy = jest.fn().mockResolvedValue([]);
 
       const stats = await service.getEventStats('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 

@@ -178,6 +178,7 @@ export class OccupancyEventsService {
     endDate: string,
     limit: number = 1000,
   ): Promise<OccupancyEvent[]> {
+    const cappedLimit = Math.min(limit, 1000);
     try {
       const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
       if (!lot) return [];
@@ -191,7 +192,7 @@ export class OccupancyEventsService {
           },
         },
         orderBy: { timestamp: 'asc' },
-        take: limit,
+        take: cappedLimit,
       });
     } catch (error) {
       this.logger.error(`Failed to fetch events for lot ${lotId}`, error);
@@ -203,19 +204,46 @@ export class OccupancyEventsService {
    * Gets event statistics for a lot over a time period.
    */
   async getEventStats(lotId: string, startDate: string, endDate: string): Promise<EventStats> {
-    const events = await this.findByLot(lotId, startDate, endDate);
+    try {
+      const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+      if (!lot) {
+        return {
+          lot_id: lotId,
+          start_date: startDate,
+          end_date: endDate,
+          total_enters: 0,
+          total_exits: 0,
+          net_change: 0,
+        };
+      }
 
-    const totalEnters = events.filter(e => e.event_type === 'ENTER').length;
-    const totalExits = events.filter(e => e.event_type === 'EXIT').length;
+      const counts = await this.prisma.occupancyEvent.groupBy({
+        by: ['event_type'],
+        where: {
+          lot_id: lot.id,
+          timestamp: {
+            gte: new Date(startDate),
+            lte: new Date(endDate),
+          },
+        },
+        _count: { event_type: true },
+      });
 
-    return {
-      lot_id: lotId,
-      start_date: startDate,
-      end_date: endDate,
-      total_enters: totalEnters,
-      total_exits: totalExits,
-      net_change: totalEnters - totalExits,
-    };
+      const totalEnters = counts.find(c => c.event_type === 'ENTER')?._count.event_type ?? 0;
+      const totalExits = counts.find(c => c.event_type === 'EXIT')?._count.event_type ?? 0;
+
+      return {
+        lot_id: lotId,
+        start_date: startDate,
+        end_date: endDate,
+        total_enters: totalEnters,
+        total_exits: totalExits,
+        net_change: totalEnters - totalExits,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to fetch event stats for lot ${lotId}`, error);
+      throw new InternalServerErrorException(`Failed to fetch event stats for lot ${lotId}`);
+    }
   }
 
   /**

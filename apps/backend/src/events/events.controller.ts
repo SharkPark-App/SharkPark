@@ -31,10 +31,7 @@ export class EventsController {
     const now = new Date();
     const windowEnd = new Date(now.getTime() + windowHours * 60 * 60 * 1000);
 
-    const events = await this.eventsService.findAll();
-    const upcoming = events.filter(
-      (e) => e.start_time <= windowEnd && e.end_time >= now,
-    );
+    const upcoming = await this.eventsService.findUpcoming(windowEnd);
 
     return {
       success: true,
