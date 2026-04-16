@@ -12,11 +12,15 @@ jest.mock('react-native-device-info', () => ({
   getBatteryLevel: jest.fn(),
 }));
 
-// react-native-bluetooth-status creates a NativeEventEmitter in its module
-// body, which requires a non-null native module — mock it before the service
-// is imported so the Node test environment does not throw.
-jest.mock('react-native-bluetooth-status', () => ({
-  state: jest.fn(),
+// Mock our carBluetooth native bridge module
+jest.mock('../src/services/carBluetooth', () => ({
+  __esModule: true,
+  default: {
+    isAvailable: true,
+    isConnected: jest.fn().mockResolvedValue(false),
+    onConnect: jest.fn(() => ({ remove: jest.fn() })),
+    onDisconnect: jest.fn(() => ({ remove: jest.fn() })),
+  },
 }));
 
 jest.mock('react-native', () => ({

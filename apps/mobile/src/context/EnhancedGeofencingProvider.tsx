@@ -17,6 +17,7 @@ import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
 import leaveDetectionService, { LeaveIntentAnalysis } from '../services/leaveDetectionService';
 import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
+import carBluetooth from '../services/carBluetooth';
 import { classifyUser, isOnCampus } from '../utils/geoHelpers';
 import { lotsApi } from '../services/api';
 import { TEST_CONSTANTS } from '../constants/geofencing';
@@ -541,6 +542,53 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     leaveDetectionService.processMotionChange(isMoving);
   }, []);
 
+  // ── Car Bluetooth detection ─────────────────────────────────────────────
+  //
+  // Disconnect inside a geofence with pending parking → instant confirm (+1).
+  // Connect while confirmed parked → strong leave-intent signal.
+  const handleCarBluetoothDisconnect = useCallback(async () => {
+    sharedBehavioralCollector.updateCarBluetoothState(false);
+
+    let anyConfirmed = false;
+    for (const [lotId, parkState] of lotParkingState.current.entries()) {
+      if (parkState === 'PENDING_VEHICLE_ENTRY' || parkState === 'UNKNOWN_ENTRY') {
+        lotParkingState.current.set(lotId, 'CONFIRMED_PARKED');
+        await sendValidatedOccupancyEvent(lotId, 'ENTER');
+        anyConfirmed = true;
+
+        if (__DEV__) {
+          console.log(`[EnhancedGeofencing] Parking confirmed in ${lotId} (car BT disconnected)`);
+          Alert.alert(
+            '[DEV] Parking Confirmed (BT)',
+            `Car Bluetooth disconnected in ${lotId} — occupancy +1 sent.`,
+            [{ text: 'OK' }]
+          );
+        }
+      }
+    }
+
+    if (anyConfirmed) {
+      await persistParkingState();
+    }
+  }, [sendValidatedOccupancyEvent, persistParkingState]);
+
+  const handleCarBluetoothConnect = useCallback(() => {
+    sharedBehavioralCollector.updateCarBluetoothState(true);
+
+    // Feed to leave detection as a BLUETOOTH_RECONNECT signal for any confirmed lot
+    for (const [lotId, parkState] of lotParkingState.current.entries()) {
+      if (parkState === 'CONFIRMED_PARKED') {
+        parkingValidationService.recordBehavioralEvent('BLUETOOTH_CONNECT', {
+          raw_data: { lot_id: lotId, timestamp: new Date().toISOString() },
+        });
+
+        if (__DEV__) {
+          console.log(`[EnhancedGeofencing] Car BT connected while parked in ${lotId} — leave intent signal`);
+        }
+      }
+    }
+  }, []);
+
   // App state monitoring for behavioral context
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
@@ -579,6 +627,14 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     const removeMotion = locationService.onMotionChange((event: MotionChangeEvent) => {
       if (!destroyed) handleMotionChange(event);
+    });
+
+    // Subscribe to car Bluetooth connect/disconnect events
+    const removeBtDisconnect = carBluetooth.onDisconnect(() => {
+      if (!destroyed) handleCarBluetoothDisconnect();
+    });
+    const removeBtConnect = carBluetooth.onConnect(() => {
+      if (!destroyed) handleCarBluetoothConnect();
     });
 
     const validationListener = (analysis: ValidationAnalysis) => {
@@ -681,6 +737,8 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       removeLocation();
       removeActivity();
       removeMotion();
+      removeBtDisconnect.remove();
+      removeBtConnect.remove();
       parkingValidationService.removeValidationListener(validationListener);
     };
   }, [user?.userId]); // Re-initialize when user changes (e.g. logout → login as different type)

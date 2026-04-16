@@ -2,37 +2,15 @@
  * Behavioral Data Collector Service
  * Collects real sensor data for parking validation including:
  * - User speed from GPS location updates
- * - Device connectivity (Bluetooth state, WiFi)
+ * - Device connectivity (car Bluetooth, WiFi)
  * - Device information (battery, model, etc.)
  * - Motion patterns
  */
 
-import { NativeModules } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import DeviceInfo from 'react-native-device-info';
+import carBluetooth from './carBluetooth';
 import { ValidationEvent } from '../validation';
-
-// Lazy-load react-native-bluetooth-status only when the native module is
-// present. The library instantiates NativeEventEmitter at require-time,
-// which fatally crashes if the native module (RNBluetoothManager) isn't
-// linked (e.g. on iOS simulators).  Checking NativeModules first avoids
-// the require entirely.
-let _BluetoothStatus: typeof import('react-native-bluetooth-status').default | undefined;
-let _bluetoothChecked = false;
-function getBluetoothStatusModule() {
-  if (!_bluetoothChecked) {
-    _bluetoothChecked = true;
-    if (NativeModules.RNBluetoothManager) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        _BluetoothStatus = require('react-native-bluetooth-status').default;
-      } catch {
-        _BluetoothStatus = undefined;
-      }
-    }
-  }
-  return _BluetoothStatus;
-}
 
 export type ActivityType = 'still' | 'on_foot' | 'in_vehicle' | 'on_bicycle' | 'running' | 'unknown';
 
@@ -89,6 +67,9 @@ class BehavioralDataCollector {
   private activityConfidence = 0;
   private isMoving = false;
 
+  // Car Bluetooth state — updated via event-driven callbacks from CarBluetoothModule
+  private carBluetoothConnected: boolean | null = null;
+
   // Cached device info (static per app session)
   private cachedDeviceInfo: { brand: string; model: string; system_version: string; app_version: string } | null = null;
 
@@ -134,6 +115,7 @@ class BehavioralDataCollector {
     this.currentActivity = 'unknown';
     this.activityConfidence = 0;
     this.isMoving = false;
+    this.carBluetoothConnected = null;
   }
 
   /**
@@ -184,6 +166,17 @@ class BehavioralDataCollector {
     this.isMoving = isMoving;
 
     // Push metrics on motion state change (still ↔ moving is critical for parking detection)
+    this.collectAndSendMetrics();
+  }
+
+  /**
+   * Update car Bluetooth connection state from CarBluetoothModule events.
+   * Called by the geofencing provider when connect/disconnect events fire.
+   */
+  updateCarBluetoothState(connected: boolean): void {
+    this.carBluetoothConnected = connected;
+
+    // Push metrics immediately — Bluetooth state change is a strong parking/leave signal
     this.collectAndSendMetrics();
   }
 
@@ -271,55 +264,21 @@ class BehavioralDataCollector {
   }
 
   /**
-   * Get current Bluetooth state
-   * Uses react-native-bluetooth-status to detect actual Bluetooth state
+   * Get current car Bluetooth state.
+   * Prefers the cached event-driven state; falls back to polling the native module.
    */
   private async getBluetoothState(): Promise<ValidationEvent['bluetooth_state']> {
-    try {
-      const BluetoothStatus = getBluetoothStatusModule();
-      // Check if BluetoothStatus is available
-      if (!BluetoothStatus || typeof BluetoothStatus.state !== 'function') {
-        if (__DEV__) console.warn('[BehavioralDataCollector] BluetoothStatus API not available');
-        return null;
-      }
+    // If we have event-driven state, use it (most up-to-date)
+    if (this.carBluetoothConnected !== null) {
+      return this.carBluetoothConnected ? 'CONNECTED' : 'DISCONNECTED';
+    }
 
-      // Get actual Bluetooth state from the device
-      const bluetoothState = await BluetoothStatus.state();
-      
-      // Check if bluetoothState is null/undefined
-      if (bluetoothState === null || bluetoothState === undefined) {
-        if (__DEV__) console.warn('[BehavioralDataCollector] BluetoothStatus.state() returned null/undefined');
-        return null;
-      }
-      
-      // Handle different possible return formats
-      if (typeof bluetoothState === 'boolean') {
-        return bluetoothState ? 'CONNECTED' : 'DISCONNECTED';
-      } else if (bluetoothState && typeof bluetoothState === 'object') {
-        // If it returns an object, check for common state properties.
-        // Use 'in' checks rather than || chaining so that a boolean false
-        // value is not accidentally skipped by short-circuit evaluation.
-        const stateObj = bluetoothState as Record<string, unknown>; // Handle unknown object structure safely
-        const rawState =
-          'state' in stateObj ? stateObj.state :
-          'enabled' in stateObj ? stateObj.enabled :
-          'status' in stateObj ? stateObj.status : undefined;
-        if (typeof rawState === 'boolean') {
-          return rawState ? 'CONNECTED' : 'DISCONNECTED';
-        } else if (typeof rawState === 'string') {
-          return rawState.toLowerCase().includes('on') || rawState.toLowerCase().includes('enabled')
-            ? 'CONNECTED' : 'DISCONNECTED';
-        }
-      }
-      
-      // If we can't determine the state
-      if (__DEV__) console.warn('[BehavioralDataCollector] Bluetooth state returned unexpected format:', bluetoothState);
-      return null; // UNKNOWN state
-      
-    } catch (error) {
-      if (__DEV__) console.warn('[BehavioralDataCollector] Failed to get Bluetooth state:', error);
-      
-      // If we can't determine the state, return UNKNOWN (null)
+    // Fallback: poll the native module for initial state
+    try {
+      const connected = await carBluetooth.isConnected();
+      this.carBluetoothConnected = connected;
+      return connected ? 'CONNECTED' : 'DISCONNECTED';
+    } catch {
       return null;
     }
   }

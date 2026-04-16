@@ -25,15 +25,16 @@ jest.mock('react-native-device-info', () => ({
   getBatteryLevel: jest.fn(),
 }));
 
-// react-native-bluetooth-status creates a NativeEventEmitter in its module
-// body which requires a non-null native module — provide a minimal mock so
-// the import does not throw in a Node test environment.
-jest.mock('react-native-bluetooth-status', () => ({
+// Mock our carBluetooth native bridge module
+const mockIsConnected = jest.fn().mockResolvedValue(false);
+jest.mock('../carBluetooth', () => ({
   __esModule: true,
   default: {
-    state: jest.fn(),
+    isAvailable: true,
+    isConnected: (...args: unknown[]) => mockIsConnected(...args),
+    onConnect: jest.fn(() => ({ remove: jest.fn() })),
+    onDisconnect: jest.fn(() => ({ remove: jest.fn() })),
   },
-  state: jest.fn(),
 }));
 
 jest.mock('react-native', () => ({
@@ -41,9 +42,7 @@ jest.mock('react-native', () => ({
     addListener: jest.fn(),
     removeListener: jest.fn(),
   })),
-  NativeModules: {
-    RNBluetoothManager: {},
-  },
+  NativeModules: {},
   Platform: { OS: 'ios' },
 }));
 
@@ -51,7 +50,6 @@ jest.mock('react-native', () => ({
 
 import NetInfo from '@react-native-community/netinfo';
 import DeviceInfo from 'react-native-device-info';
-import BluetoothStatus from 'react-native-bluetooth-status';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -96,119 +94,60 @@ describe('BehavioralDataCollector', () => {
     collector.stopCollection();
   });
 
-  // ── Bluetooth state ───────────────────────────────────────────────────────
+  // ── Car Bluetooth state ────────────────────────────────────────────────────
   //
-  // NOTE: BluetoothStatus.state() is mocked at the module boundary because
-  // react-native-bluetooth-status requires a native bridge unavailable in a
-  // Node test environment.  The actual getBluetoothState() branching logic
-  // (boolean, object variants, null/undefined, error) runs for real — only
-  // the underlying native call is replaced.
+  // The CarBluetoothModule native module is mocked — carBluetooth.isConnected()
+  // returns a promise resolving to a boolean.  The collector also supports
+  // event-driven updates via updateCarBluetoothState().
 
-  describe('Bluetooth State Detection', () => {
-    // ── Boolean responses (primary path on iOS/Android) ───────────────────
-
-    it('returns CONNECTED when BluetoothStatus.state() resolves true', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+  describe('Car Bluetooth State Detection', () => {
+    it('returns CONNECTED when car Bluetooth is connected (polled)', async () => {
+      mockIsConnected.mockResolvedValue(true);
       const metrics = await collector.getCurrentMetrics();
       expect(metrics).not.toBeNull();
       expect(metrics!.bluetooth_state).toBe('CONNECTED');
     });
 
-    it('returns DISCONNECTED when BluetoothStatus.state() resolves false', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(false);
+    it('returns DISCONNECTED when car Bluetooth is not connected (polled)', async () => {
+      mockIsConnected.mockResolvedValue(false);
       const metrics = await collector.getCurrentMetrics();
       expect(metrics).not.toBeNull();
       expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
     });
 
-    // ── Null / undefined responses ────────────────────────────────────────
-
-    it('returns null bluetooth_state when BluetoothStatus.state() resolves null', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(null);
+    it('returns null bluetooth_state when isConnected throws', async () => {
+      mockIsConnected.mockRejectedValue(new Error('Not available'));
       const metrics = await collector.getCurrentMetrics();
       expect(metrics).not.toBeNull();
       expect(metrics!.bluetooth_state).toBeNull();
     });
 
-    it('returns null bluetooth_state when BluetoothStatus.state() resolves undefined', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(undefined);
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics).not.toBeNull();
-      expect(metrics!.bluetooth_state).toBeNull();
-    });
-
-    // ── Object responses (some Android implementations return an object) ──
-
-    it('returns CONNECTED when state object has { state: true }', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: true });
+    it('returns CONNECTED when updateCarBluetoothState(true) is called', async () => {
+      mockIsConnected.mockResolvedValue(false); // poll would say false
+      collector.updateCarBluetoothState(true);   // but event says true
       const metrics = await collector.getCurrentMetrics();
       expect(metrics!.bluetooth_state).toBe('CONNECTED');
     });
 
-    it('returns DISCONNECTED when state object has { state: false }', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: false });
+    it('returns DISCONNECTED when updateCarBluetoothState(false) is called', async () => {
+      mockIsConnected.mockResolvedValue(true); // poll would say true
+      collector.updateCarBluetoothState(false); // but event says false
       const metrics = await collector.getCurrentMetrics();
       expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
     });
 
-    it('returns CONNECTED when state object has { enabled: true }', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ enabled: true });
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics!.bluetooth_state).toBe('CONNECTED');
-    });
+    it('event-driven state pushes metrics to subscribers', async () => {
+      const cb = { onMetricsCollected: jest.fn(), onError: jest.fn() };
+      await collector.startCollection(cb, 'bt-test');
 
-    it('returns DISCONNECTED when state object has { enabled: false }', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ enabled: false });
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
-    });
+      collector.updateCarBluetoothState(true);
+      await flushPromises();
 
-    it('returns CONNECTED when state object has { state: "on" }', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: 'on' });
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics!.bluetooth_state).toBe('CONNECTED');
-    });
+      expect(cb.onMetricsCollected).toHaveBeenCalled();
+      const metrics = cb.onMetricsCollected.mock.calls[0][0];
+      expect(metrics.bluetooth_state).toBe('CONNECTED');
 
-    it('returns CONNECTED when state object has { state: "enabled" }', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: 'enabled' });
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics!.bluetooth_state).toBe('CONNECTED');
-    });
-
-    it('returns DISCONNECTED when state object has { state: "off" }', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ state: 'off' });
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics!.bluetooth_state).toBe('DISCONNECTED');
-    });
-
-    // ── Unexpected / unrecognised format ──────────────────────────────────
-
-    it('returns null bluetooth_state for an unrecognised object format', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue({ unknown: 'value' });
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics!.bluetooth_state).toBeNull();
-    });
-
-    // ── Error / unavailable ───────────────────────────────────────────────
-
-    it('returns null bluetooth_state when BluetoothStatus.state() throws', async () => {
-      (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('Bluetooth access denied'));
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics).not.toBeNull();
-      expect(metrics!.bluetooth_state).toBeNull();
-    });
-
-    it('returns null bluetooth_state when BluetoothStatus.state is not a function', async () => {
-      // Simulate a platform where the native module exposes the object but
-      // not the state() method (e.g. older library version).
-      const original = BluetoothStatus.state;
-      (BluetoothStatus as unknown as Record<string, unknown>).state = undefined;
-
-      const metrics = await collector.getCurrentMetrics();
-      expect(metrics!.bluetooth_state).toBeNull();
-
-      // Restore
-      (BluetoothStatus as unknown as Record<string, unknown>).state = original;
+      collector.stopCollection('bt-test');
     });
   });
 
@@ -216,7 +155,7 @@ describe('BehavioralDataCollector', () => {
 
   describe('Complete Data Collection', () => {
     it('collects all behavioral metrics in a single getCurrentMetrics call', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      mockIsConnected.mockResolvedValue(true);
       collector.updateLocation(makeLocation({ speed: 5 }));
 
       const metrics = await collector.getCurrentMetrics();
@@ -242,7 +181,7 @@ describe('BehavioralDataCollector', () => {
         isConnected: true,
         details: { carrier: 'Verizon' },
       });
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(false);
+      mockIsConnected.mockResolvedValue(false);
 
       const metrics = await collector.getCurrentMetrics();
 
@@ -262,20 +201,20 @@ describe('BehavioralDataCollector', () => {
       { input: 2.5,  expected: 5.59  },
       { input: 13.4, expected: 29.98 },
     ])('converts $input m/s to ~$expected mph', async ({ input, expected }) => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      mockIsConnected.mockResolvedValue(true);
       collector.updateLocation(makeLocation({ speed: input }));
       const metrics = await collector.getCurrentMetrics();
       expect(metrics!.speed_mph).toBeCloseTo(expected, 1);
     });
 
     it('returns null speed when no location has been fed', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      mockIsConnected.mockResolvedValue(true);
       const metrics = await collector.getCurrentMetrics();
       expect(metrics!.speed_mph).toBeNull();
     });
 
     it('returns null speed when location speed field is null', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      mockIsConnected.mockResolvedValue(true);
       collector.updateLocation(makeLocation({ speed: null }));
       const metrics = await collector.getCurrentMetrics();
       expect(metrics!.speed_mph).toBeNull();
@@ -286,7 +225,7 @@ describe('BehavioralDataCollector', () => {
 
   describe('Error Handling', () => {
     it('getCurrentMetrics returns null when all data services fail', async () => {
-      (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('BT error'));
+      mockIsConnected.mockRejectedValue(new Error('BT error'));
       (NetInfo.fetch as jest.Mock).mockRejectedValue(new Error('Network error'));
       (DeviceInfo.getBrand as jest.Mock).mockRejectedValue(new Error('Device error'));
       const metrics = await collector.getCurrentMetrics();
@@ -312,7 +251,7 @@ describe('BehavioralDataCollector', () => {
 
   describe('getCurrentMetrics', () => {
     it('returns metrics without starting a subscription', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      mockIsConnected.mockResolvedValue(true);
       collector.updateLocation(makeLocation());
       const metrics = await collector.getCurrentMetrics();
       expect(metrics).not.toBeNull();
@@ -321,7 +260,7 @@ describe('BehavioralDataCollector', () => {
     });
 
     it('returns null when all services reject', async () => {
-      (BluetoothStatus.state as jest.Mock).mockRejectedValue(new Error('Failed'));
+      mockIsConnected.mockRejectedValue(new Error('Failed'));
       (NetInfo.fetch as jest.Mock).mockRejectedValue(new Error('Failed'));
       (DeviceInfo.getBrand as jest.Mock).mockRejectedValue(new Error('Failed'));
       const metrics = await collector.getCurrentMetrics();
@@ -333,7 +272,7 @@ describe('BehavioralDataCollector', () => {
 
   describe('Subscriber management', () => {
     it('fans out to multiple subscribers on location update', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      mockIsConnected.mockResolvedValue(true);
 
       const cb1 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
       const cb2 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
@@ -349,7 +288,7 @@ describe('BehavioralDataCollector', () => {
     });
 
     it('stops delivering metrics when a subscriber is removed', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      mockIsConnected.mockResolvedValue(true);
 
       const cb1 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
       const cb2 = { onMetricsCollected: jest.fn(), onError: jest.fn() };
@@ -377,7 +316,7 @@ describe('BehavioralDataCollector', () => {
 
   describe('updateLocation', () => {
     it('updates the location used for the next metrics snapshot', async () => {
-      (BluetoothStatus.state as jest.Mock).mockResolvedValue(true);
+      mockIsConnected.mockResolvedValue(true);
       collector.updateLocation(makeLocation({ speed: 10, accuracy: 3 }));
       const metrics = await collector.getCurrentMetrics();
       expect(metrics!.speed_mph).toBeCloseTo(10 * 2.237, 1);
