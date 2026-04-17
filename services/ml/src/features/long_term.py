@@ -92,7 +92,8 @@ def compute_baseline(
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    # Filter by confidence before windowing so the cutoff reflects clean data
+    # Lots with only LOW-confidence snapshots are dropped entirely,
+    # intentionally causing fall back to the global (day_of_week, hour) mean
     if min_confidence is not None and "confidence" in df.columns:
         df = df[df["confidence"].isin(min_confidence)]
 
