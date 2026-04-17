@@ -12,9 +12,7 @@ from .base import (
     add_hour_encoding,
     add_day_encoding,
     extract_time_components,
-    add_time_bucket,
-    add_activity_level,
-    validate_snapshot_data,
+validate_snapshot_data,
     prepare_base_features,
 )
 
@@ -38,9 +36,7 @@ __all__ = [
     "add_hour_encoding",
     "add_day_encoding",
     "extract_time_components",
-    "add_time_bucket",
-    "add_activity_level",
-    "validate_snapshot_data",
+"validate_snapshot_data",
     "prepare_base_features",
     # Short-term
     "compute_lag_features",

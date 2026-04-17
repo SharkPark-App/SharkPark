@@ -6,14 +6,12 @@ features from recent snapshot data, and writes predictions to the
 predictions_short_term database table (default) and optionally to a local file.
 
 Usage:
-    python scripts/predict.py                                        # read from DB, write to DB
-    python scripts/predict.py --data-path data/custom.parquet        # use parquet instead of DB
-    python scripts/predict.py --start-of-day                         # predict all hours (7-21)
-    python scripts/predict.py --write-local                            # also write to local CSV
-    python scripts/predict.py --write-local --output-path data/preds.csv
+    python scripts/predict_short_term.py                                        # read from DB, write to DB
+    python scripts/predict_short_term.py --data-path data/custom.parquet        # use parquet instead of DB
+    python scripts/predict_short_term.py --start-of-day                         # predict all hours (7-21)
+    python scripts/predict_short_term.py --write-local                            # also write to local CSV
+    python scripts/predict_short_term.py --write-local --output-path data/preds.csv
 
-Note: Currently short-term only. When long-term is implemented, add a
---model-type flag to select features, model class, and baselines.
 """
 
 import argparse
@@ -109,9 +107,9 @@ def predict(
     )
 
     # Write to database (default)
-    from src.data.db import write_predictions
+    from src.data.db import write_short_term_predictions
 
-    n = write_predictions(predictions)
+    n = write_short_term_predictions(predictions)
     logger.info("\nWrote %s predictions to database (predictions_short_term)", n)
 
     # Optionally write to local file
@@ -195,6 +193,13 @@ def _build_prediction_df(
     Converts occupancy rates to counts using lot capacities.
     Confidence bounds come from quantile regression (10th/90th percentile).
     """
+    missing_lots = set(features["lot_id"].unique()) - set(lot_capacities)
+    if missing_lots:
+        logger.warning(
+            "No capacity found for %d lot(s), using fallback 200: %s",
+            len(missing_lots),
+            sorted(missing_lots),
+        )
     capacities = features["lot_id"].map(lot_capacities).fillna(200)
 
     base_time = prediction_time.replace(minute=0, second=0, microsecond=0)

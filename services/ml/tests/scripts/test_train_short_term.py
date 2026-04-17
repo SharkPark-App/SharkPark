@@ -1,5 +1,5 @@
 """
-Tests for the training script (scripts/train.py).
+Tests for the training script (scripts/train_short_term.py).
 
 Covers:
     - Training produces an MLflow run with expected metrics
@@ -15,7 +15,7 @@ import mlflow
 import pandas as pd
 import pytest
 
-from scripts.train import train
+from scripts.train_short_term import train
 
 
 # =============================================================================

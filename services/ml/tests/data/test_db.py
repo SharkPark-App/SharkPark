@@ -17,7 +17,7 @@ from src.data.db import (
     fetch_recent_snapshots,
     get_lot_id_map,
     load_real_snapshots,
-    write_predictions,
+    write_short_term_predictions,
 )
 
 
@@ -113,7 +113,7 @@ class TestGetLotIdMap:
 
 
 # =============================================================================
-# Tests — write_predictions
+# Tests — write_short_term_predictions
 # =============================================================================
 
 
@@ -132,7 +132,7 @@ class TestWritePredictions:
         cursor.fetchall.return_value = lot_id_rows
         mock_get_conn.return_value = conn
 
-        result = write_predictions(sample_predictions)
+        result = write_short_term_predictions(sample_predictions)
 
         assert result == 3
         conn.commit.assert_called_once()
@@ -152,7 +152,7 @@ class TestWritePredictions:
         cursor.fetchall.return_value = lot_id_rows
         mock_get_conn.return_value = conn
 
-        write_predictions(sample_predictions)
+        write_short_term_predictions(sample_predictions)
 
         # First call should be the SELECT (via get_lot_id_map)
         # Second call should be the DELETE
@@ -174,7 +174,7 @@ class TestWritePredictions:
         cursor.fetchall.return_value = lot_id_rows
         mock_get_conn.return_value = conn
 
-        write_predictions(sample_predictions)
+        write_short_term_predictions(sample_predictions)
 
         mock_exec_values.assert_called_once()
         insert_sql = mock_exec_values.call_args[0][1]
@@ -196,7 +196,7 @@ class TestWritePredictions:
         cursor.fetchall.return_value = lot_id_rows
         mock_get_conn.return_value = conn
 
-        write_predictions(sample_predictions)
+        write_short_term_predictions(sample_predictions)
 
         rows = mock_exec_values.call_args[0][2]
         # Row format: (id, lot_id_cuid, predicted_at, ...)
@@ -213,10 +213,10 @@ class TestWritePredictions:
         mock_get_conn.return_value = conn
 
         with pytest.raises(RuntimeError, match="Cannot resolve lot_id"):
-            write_predictions(sample_predictions)
+            write_short_term_predictions(sample_predictions)
 
     def test_empty_dataframe_returns_zero(self):
-        result = write_predictions(pd.DataFrame())
+        result = write_short_term_predictions(pd.DataFrame())
         assert result == 0
 
     @patch("src.data.db.get_connection")
@@ -252,7 +252,7 @@ class TestWritePredictions:
         conn.cursor.side_effect = cursor_side_effect
 
         with pytest.raises(RuntimeError, match="Could not connect"):
-            write_predictions(sample_predictions)
+            write_short_term_predictions(sample_predictions)
 
     @patch(
         "src.data.db.execute_values", side_effect=psycopg2.ProgrammingError("bad SQL")
@@ -271,7 +271,7 @@ class TestWritePredictions:
         mock_get_conn.return_value = conn
 
         with pytest.raises(RuntimeError, match="Database write failed"):
-            write_predictions(sample_predictions)
+            write_short_term_predictions(sample_predictions)
 
         conn.rollback.assert_called_once()
         conn.close.assert_called_once()
