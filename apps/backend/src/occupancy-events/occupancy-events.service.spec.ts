@@ -265,14 +265,11 @@ describe('OccupancyEventsService', () => {
   describe('getEventStats', () => {
     it('should calculate correct statistics', async () => {
       const mockLot = { id: 'lot-uuid-1', lot_id: 'G1' };
-      const mockEvents = [
-        { event_type: 'ENTER', timestamp: new Date(), device_hash: 'h1' },
-        { event_type: 'ENTER', timestamp: new Date(), device_hash: 'h2' },
-        { event_type: 'EXIT', timestamp: new Date(), device_hash: 'h3' },
-      ];
-
       prisma.lot.findFirst.mockResolvedValue(mockLot);
-      prisma.occupancyEvent.findMany.mockResolvedValue(mockEvents);
+      (prisma as any).occupancyEvent.groupBy = jest.fn().mockResolvedValue([
+        { event_type: 'ENTER', _count: { event_type: 2 } },
+        { event_type: 'EXIT', _count: { event_type: 1 } },
+      ]);
 
       const stats = await service.getEventStats('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
@@ -283,7 +280,7 @@ describe('OccupancyEventsService', () => {
 
     it('should handle empty events', async () => {
       prisma.lot.findFirst.mockResolvedValue({ id: 'lot-uuid-1', lot_id: 'G1' });
-      prisma.occupancyEvent.findMany.mockResolvedValue([]);
+      (prisma as any).occupancyEvent.groupBy = jest.fn().mockResolvedValue([]);
 
       const stats = await service.getEventStats('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
@@ -367,6 +364,41 @@ describe('OccupancyEventsService', () => {
 
       await expect(service.getSnapshots('G1', '2026-02-07'))
         .rejects.toThrow('Failed to fetch snapshots for lot G1');
+    });
+  });
+
+  describe('cleanupStaleDeviceStates', () => {
+    it('should decrement occupancy and delete stale ENTER device states', async () => {
+      const staleStates = [
+        { id: 'ds-1', lot_id: 'lot-uuid-1', device_hash: 'hash-1' },
+        { id: 'ds-2', lot_id: 'lot-uuid-2', device_hash: 'hash-2' },
+      ];
+
+      (prisma as any).deviceState.findMany = jest.fn().mockResolvedValue(staleStates);
+      (prisma as any).deviceState.deleteMany = jest.fn().mockResolvedValue({ count: 2 });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+
+      const result = await service.cleanupStaleDeviceStates(18);
+
+      expect(result.cleaned).toBe(2);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+      expect((prisma as any).deviceState.deleteMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return cleaned:0 when no stale records exist', async () => {
+      (prisma as any).deviceState.findMany = jest.fn().mockResolvedValue([]);
+
+      const result = await service.cleanupStaleDeviceStates(18);
+
+      expect(result.cleaned).toBe(0);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should throw InternalServerErrorException on database error', async () => {
+      (prisma as any).deviceState.findMany = jest.fn().mockRejectedValue(new Error('Connection lost'));
+
+      await expect(service.cleanupStaleDeviceStates(18))
+        .rejects.toThrow('Failed to clean up stale device states');
     });
   });
 });

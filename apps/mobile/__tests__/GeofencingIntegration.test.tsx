@@ -24,16 +24,17 @@ jest.mock('../src/hooks/useAllLotsData', () => ({
 }));
 
 // Provide a controllable mock of useLocationService
-const mockAddGeofenceRegions = jest.fn();
+const mockRegisterGeofences = jest.fn();
 const mockRequestPermissions = jest.fn();
-const mockStartTracking = jest.fn();
+const mockStartGeofenceMonitoring = jest.fn();
 const defaultLocationState = {
   isTracking: false,
-  permissionStatus: null as { granted: boolean } | null,
+  trackingMode: 'off' as 'off' | 'geofences' | 'full',
   monitoredRegions: 0,
   requestPermissions: mockRequestPermissions,
-  startTracking: mockStartTracking,
-  addGeofenceRegions: mockAddGeofenceRegions,
+  startGeofenceMonitoring: mockStartGeofenceMonitoring,
+  stopTracking: jest.fn(),
+  registerGeofences: mockRegisterGeofences,
   lastGeofenceEvent: null as { eventType: 'ENTER' | 'EXIT'; regionId: string } | null,
   lastError: null as { message: string } | null,
 };
@@ -44,11 +45,9 @@ jest.mock('../src/hooks/useLocationService', () => ({
 }));
 
 // geofenceUtils
-const mockCreateGeofenceRegionsFromLots = jest.fn().mockReturnValue([]);
-const mockPrioritizeGeofenceRegions = jest.fn().mockReturnValue([]);
+const mockCreateSDKGeofencesFromLots = jest.fn().mockReturnValue([]);
 jest.mock('../src/utils/geofenceUtils', () => ({
-  createGeofenceRegionsFromLots: (...a: unknown[]) => mockCreateGeofenceRegionsFromLots(...a),
-  prioritizeGeofenceRegions: (...a: unknown[]) => mockPrioritizeGeofenceRegions(...a),
+  createSDKGeofencesFromLots: (...a: unknown[]) => mockCreateSDKGeofencesFromLots(...a),
 }));
 
 // lotsApi
@@ -100,7 +99,7 @@ describe('GeofencingIntegration', () => {
     jest.clearAllMocks();
     mockLocationState = { ...defaultLocationState };
     mockRequestPermissions.mockResolvedValue(true);
-    mockStartTracking.mockResolvedValue(true);
+    mockStartGeofenceMonitoring.mockResolvedValue(true);
     mockRecordOccupancyEvent.mockResolvedValue({ event_id: 'e1', deduplicated: false });
   });
 
@@ -170,26 +169,24 @@ describe('GeofencingIntegration', () => {
 
   it('displays permission status as Granted', () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
-    mockLocationState = { ...defaultLocationState, permissionStatus: { granted: true } };
+    mockLocationState = { ...defaultLocationState, isTracking: true };
     const root = renderComponent();
     const text = JSON.stringify(root.toJSON());
-    expect(text).toContain('Granted');
+    expect(text).toContain('Active');
   });
 
   // ── Geofence initialisation ────────────────────────
 
   it('initializes geofencing when lots are available', () => {
     const lots = [makeLot()];
-    const regions = [{ id: 'G1', latitude: 33, longitude: -118, radius: 50 }];
-    mockCreateGeofenceRegionsFromLots.mockReturnValue(regions);
-    mockPrioritizeGeofenceRegions.mockReturnValue(regions);
+    const regions = [{ identifier: 'G1', latitude: 33, longitude: -118, radius: 50, notifyOnEntry: true, notifyOnExit: true }];
+    mockCreateSDKGeofencesFromLots.mockReturnValue(regions);
     mockUseAllLotsData.mockReturnValue({ lots, loading: false, error: null });
 
     renderComponent();
 
-    expect(mockCreateGeofenceRegionsFromLots).toHaveBeenCalledWith(lots);
-    expect(mockPrioritizeGeofenceRegions).toHaveBeenCalledWith(regions, 20); // MAX_REGIONS_IOS
-    expect(mockAddGeofenceRegions).toHaveBeenCalledWith(regions);
+    expect(mockCreateSDKGeofencesFromLots).toHaveBeenCalledWith(lots);
+    expect(mockRegisterGeofences).toHaveBeenCalledWith(regions);
   });
 
   // ── Geofence events ────────────────────────────────
@@ -290,7 +287,7 @@ describe('GeofencingIntegration', () => {
     });
 
     expect(mockRequestPermissions).toHaveBeenCalled();
-    expect(mockStartTracking).toHaveBeenCalled();
+    expect(mockStartGeofenceMonitoring).toHaveBeenCalled();
   });
 
   it('shows alert when permissions denied', async () => {
@@ -308,11 +305,11 @@ describe('GeofencingIntegration', () => {
       expect.any(String),
       expect.any(Array),
     );
-    expect(mockStartTracking).not.toHaveBeenCalled();
+    expect(mockStartGeofenceMonitoring).not.toHaveBeenCalled();
   });
 
   it('shows alert when tracking fails to start', async () => {
-    mockStartTracking.mockResolvedValue(false);
+    mockStartGeofenceMonitoring.mockRejectedValue(new Error('tracking failed'));
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
     const root = renderComponent();
 
@@ -406,7 +403,7 @@ describe('GeofencingIntegration', () => {
 
   it('handles geofence initialisation failure gracefully', async () => {
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-    mockCreateGeofenceRegionsFromLots.mockImplementation(() => { throw new Error('Init fail'); });
+    mockCreateSDKGeofencesFromLots.mockImplementation(() => { throw new Error('Init fail'); });
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
 
     // Should not crash

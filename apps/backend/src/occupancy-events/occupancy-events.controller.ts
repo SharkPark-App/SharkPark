@@ -112,20 +112,6 @@ export class OccupancyEventsController {
     };
   }
 
-  /** Manually trigger snapshot creation (normally called by scheduler) */
-  @Public()
-  @Post('snapshots')
-  @HttpCode(HttpStatus.CREATED)
-  async createSnapshots() {
-    const result = await this.occupancyEventsService.createSnapshots();
-    
-    return {
-      success: true,
-      message: `Created ${result.count} occupancy snapshots`,
-      data: result,
-    };
-  }
-
   /** Get snapshots for a lot on a given date */
   @Public()
   @Get('snapshots/:lotId')

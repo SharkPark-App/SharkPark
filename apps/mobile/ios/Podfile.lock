@@ -1791,36 +1791,6 @@ PODS:
   - react-native-app-auth (8.1.0):
     - AppAuth (>= 1.7.6)
     - React-Core
-  - react-native-bluetooth-status (1.5.1):
-    - React
-  - react-native-geolocation (3.4.0):
-    - boost
-    - DoubleConversion
-    - fast_float
-    - fmt
-    - glog
-    - hermes-engine
-    - RCT-Folly
-    - RCT-Folly/Fabric
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - SocketRocket
-    - Yoga
   - react-native-netinfo (12.0.1):
     - boost
     - DoubleConversion
@@ -2475,6 +2445,35 @@ PODS:
     - React-perflogger (= 0.82.1)
     - React-utils (= 0.82.1)
     - SocketRocket
+  - RNBackgroundGeolocation (5.1.1):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - TSLocationManager (~> 4.1.0)
+    - Yoga
   - RNCAsyncStorage (2.2.0):
     - boost
     - DoubleConversion
@@ -2830,6 +2829,9 @@ PODS:
     - SocketRocket
     - Yoga
   - SocketRocket (0.7.1)
+  - TSBackgroundFetch (4.0.6)
+  - TSLocationManager (4.1.2):
+    - TSBackgroundFetch (~> 4.0.6)
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -2876,8 +2878,6 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../../../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-app-auth (from `../../../node_modules/react-native-app-auth`)
-  - react-native-bluetooth-status (from `../../../node_modules/react-native-bluetooth-status`)
-  - "react-native-geolocation (from `../../../node_modules/@react-native-community/geolocation`)"
   - "react-native-netinfo (from `../../../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../../../node_modules/react-native-safe-area-context`)
   - React-NativeModulesApple (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
@@ -2912,6 +2912,7 @@ DEPENDENCIES:
   - ReactAppDependencyProvider (from `build/generated/ios`)
   - ReactCodegen (from `build/generated/ios`)
   - ReactCommon/turbomodule/core (from `../../../node_modules/react-native/ReactCommon`)
+  - RNBackgroundGeolocation (from `../../../node_modules/react-native-background-geolocation`)
   - "RNCAsyncStorage (from `../../../node_modules/@react-native-async-storage/async-storage`)"
   - RNDeviceInfo (from `../../../node_modules/react-native-device-info`)
   - RNGestureHandler (from `../../../node_modules/react-native-gesture-handler`)
@@ -2927,6 +2928,8 @@ SPEC REPOS:
   trunk:
     - AppAuth
     - SocketRocket
+    - TSBackgroundFetch
+    - TSLocationManager
 
 EXTERNAL SOURCES:
   boost:
@@ -3012,10 +3015,6 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-app-auth:
     :path: "../../../node_modules/react-native-app-auth"
-  react-native-bluetooth-status:
-    :path: "../../../node_modules/react-native-bluetooth-status"
-  react-native-geolocation:
-    :path: "../../../node_modules/@react-native-community/geolocation"
   react-native-netinfo:
     :path: "../../../node_modules/@react-native-community/netinfo"
   react-native-safe-area-context:
@@ -3084,6 +3083,8 @@ EXTERNAL SOURCES:
     :path: build/generated/ios
   ReactCommon:
     :path: "../../../node_modules/react-native/ReactCommon"
+  RNBackgroundGeolocation:
+    :path: "../../../node_modules/react-native-background-geolocation"
   RNCAsyncStorage:
     :path: "../../../node_modules/@react-native-async-storage/async-storage"
   RNDeviceInfo:
@@ -3146,8 +3147,6 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 06d59c448da7e34eb05b3fb2189e12f6a30fec57
   React-microtasksnativemodule: d1ee999dc9052e23f6488b730fa2d383a4ea40e5
   react-native-app-auth: e21c8ee920876b960e38c9381971bd189ebea06b
-  react-native-bluetooth-status: 0cef06a3bb1db870798b9b72873ac2b1c6bb110f
-  react-native-geolocation: 95e48fe2687e5a8280103085372fa62c2297c5d6
   react-native-netinfo: a0be8c77f8420a60ddf07eb87be1a36f02a1bd65
   react-native-safe-area-context: c00143b4823773bba23f2f19f85663ae89ceb460
   React-NativeModulesApple: 46690a0fe94ec28fc6fc686ec797b911d251ded0
@@ -3182,6 +3181,7 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: a45ef34bb22dc1c9b2ac1f74167d9a28af961176
   ReactCodegen: 65ae48ae967a383859da021028e6e8dd7b2d97d1
   ReactCommon: 804dc80944fa90b86800b43c871742ec005ca424
+  RNBackgroundGeolocation: 68017f04ca292cfdde26becac33ae801157c91fb
   RNCAsyncStorage: 29f0230e1a25f36c20b05f65e2eb8958d6526e82
   RNDeviceInfo: 4c852998208b60dc192ae3529e5867817719ad1e
   RNGestureHandler: f97d19585553412302394c42495cdaf499589d34
@@ -3191,6 +3191,8 @@ SPEC CHECKSUMS:
   RNVectorIcons: 791f13226ec4a3fd13062eda9e892159f0981fae
   RNWorklets: fbf7aeabcfcc73ab57d8304d050dce3243d4baed
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
+  TSBackgroundFetch: 0afbeaae4e1132866e1d4b6e55265af26b5958ae
+  TSLocationManager: d0e8ec5c1467782d3eef1d90fbca4a42e98bb287
   Yoga: 689c8e04277f3ad631e60fe2a08e41d411daf8eb
 
 PODFILE CHECKSUM: c826b6b4a69deda2a9503192266f515c38ee0dec

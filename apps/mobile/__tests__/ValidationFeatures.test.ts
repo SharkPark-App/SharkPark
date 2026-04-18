@@ -4,15 +4,6 @@
  */
 
 // Mock React Native modules first
-jest.mock('@react-native-community/geolocation', () => ({
-  getCurrentPosition: jest.fn(),
-  watchPosition: jest.fn(),
-  clearWatch: jest.fn(),
-  stopObserving: jest.fn(),
-  setRNConfiguration: jest.fn(),
-  requestAuthorization: jest.fn(),
-}));
-
 jest.mock('react-native', () => {
   return {
     Platform: { OS: 'ios' },
@@ -162,9 +153,9 @@ describe('Parking Validation Features', () => {
         },
       ];
 
-      // Test preliminary analysis (not final)
+      // Test preliminary analysis (not final) — too few events → INSUFFICIENT_DATA
       const preliminaryAnalysis = ParkingValidator.analyzeEventPatterns(mockEvents, false);
-      expect(preliminaryAnalysis.status).toBe('ANALYZING');
+      expect(preliminaryAnalysis.status).toBe('INSUFFICIENT_DATA');
 
       // Test final analysis with insufficient data
       const finalAnalysis = ParkingValidator.analyzeEventPatterns(mockEvents, true);

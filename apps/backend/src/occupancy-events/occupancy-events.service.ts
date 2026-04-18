@@ -121,6 +121,55 @@ export class OccupancyEventsService {
   }
 
   /**
+   * Cleans up stale DeviceState records where an ENTER was recorded but no
+   * EXIT ever arrived (app killed, phone died, permissions revoked, etc.).
+   *
+   * For each stale record, decrements the lot's occupancy and deletes the
+   * DeviceState row. The GREATEST(current_occupancy - 1, 0) floor prevents
+   * negative occupancy.
+   *
+   * Called by the scheduler at 3 AM daily (Pacific).
+   */
+  async cleanupStaleDeviceStates(maxAgeHours: number = 18): Promise<{ cleaned: number }> {
+    const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+
+    try {
+      // Find all ENTER device states older than the cutoff
+      const staleStates = await this.prisma.deviceState.findMany({
+        where: {
+          last_event_type: 'ENTER',
+          updated_at: { lt: cutoff },
+        },
+        select: { id: true, lot_id: true, device_hash: true },
+      });
+
+      if (staleStates.length === 0) {
+        return { cleaned: 0 };
+      }
+
+      // Batch: aggregate decrements per lot, then delete all stale records in one transaction
+      const decrementsByLot = new Map<string, number>();
+      const staleIds = staleStates.map((s) => {
+        decrementsByLot.set(s.lot_id, (decrementsByLot.get(s.lot_id) ?? 0) + 1);
+        return s.id;
+      });
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const [lotId, count] of decrementsByLot) {
+          await tx.$executeRaw`UPDATE lots SET current_occupancy = GREATEST(current_occupancy - ${count}, 0), updated_at = NOW() WHERE id = ${lotId}`;
+        }
+        await tx.deviceState.deleteMany({ where: { id: { in: staleIds } } });
+      });
+
+      this.logger.log(`Cleaned up ${staleStates.length} stale ENTER device states (older than ${maxAgeHours}h)`);
+      return { cleaned: staleStates.length };
+    } catch (error) {
+      this.logger.error('Failed to clean up stale device states', error);
+      throw new InternalServerErrorException('Failed to clean up stale device states');
+    }
+  }
+
+  /**
    * Retrieves events for a specific lot within a date range.
    */
   async findByLot(
@@ -129,6 +178,7 @@ export class OccupancyEventsService {
     endDate: string,
     limit: number = 1000,
   ): Promise<OccupancyEvent[]> {
+    const cappedLimit = Math.min(limit, 1000);
     try {
       const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
       if (!lot) return [];
@@ -142,7 +192,7 @@ export class OccupancyEventsService {
           },
         },
         orderBy: { timestamp: 'asc' },
-        take: limit,
+        take: cappedLimit,
       });
     } catch (error) {
       this.logger.error(`Failed to fetch events for lot ${lotId}`, error);
@@ -154,19 +204,46 @@ export class OccupancyEventsService {
    * Gets event statistics for a lot over a time period.
    */
   async getEventStats(lotId: string, startDate: string, endDate: string): Promise<EventStats> {
-    const events = await this.findByLot(lotId, startDate, endDate);
+    try {
+      const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+      if (!lot) {
+        return {
+          lot_id: lotId,
+          start_date: startDate,
+          end_date: endDate,
+          total_enters: 0,
+          total_exits: 0,
+          net_change: 0,
+        };
+      }
 
-    const totalEnters = events.filter(e => e.event_type === 'ENTER').length;
-    const totalExits = events.filter(e => e.event_type === 'EXIT').length;
+      const counts = await this.prisma.occupancyEvent.groupBy({
+        by: ['event_type'],
+        where: {
+          lot_id: lot.id,
+          timestamp: {
+            gte: new Date(startDate),
+            lte: new Date(endDate),
+          },
+        },
+        _count: { event_type: true },
+      });
 
-    return {
-      lot_id: lotId,
-      start_date: startDate,
-      end_date: endDate,
-      total_enters: totalEnters,
-      total_exits: totalExits,
-      net_change: totalEnters - totalExits,
-    };
+      const totalEnters = counts.find(c => c.event_type === 'ENTER')?._count.event_type ?? 0;
+      const totalExits = counts.find(c => c.event_type === 'EXIT')?._count.event_type ?? 0;
+
+      return {
+        lot_id: lotId,
+        start_date: startDate,
+        end_date: endDate,
+        total_enters: totalEnters,
+        total_exits: totalExits,
+        net_change: totalEnters - totalExits,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to fetch event stats for lot ${lotId}`, error);
+      throw new InternalServerErrorException(`Failed to fetch event stats for lot ${lotId}`);
+    }
   }
 
   /**

@@ -156,9 +156,6 @@ importers:
       '@react-native-async-storage/async-storage':
         specifier: ^2.2.0
         version: 2.2.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))
-      '@react-native-community/geolocation':
-        specifier: ^3.4.0
-        version: 3.4.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)
       '@react-native-community/netinfo':
         specifier: ^12.0.1
         version: 12.0.1(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)
@@ -183,9 +180,9 @@ importers:
       react-native-app-auth:
         specifier: ^8.1.0
         version: 8.1.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))
-      react-native-bluetooth-status:
-        specifier: ^1.5.1
-        version: 1.5.1(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)
+      react-native-background-geolocation:
+        specifier: ^5.1.1
+        version: 5.1.1
       react-native-device-info:
         specifier: ^15.0.2
         version: 15.0.2(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))
@@ -799,9 +796,6 @@ packages:
   '@colors/colors@1.5.0':
     resolution: {integrity: sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ==}
     engines: {node: '>=0.1.90'}
-
-  '@cs125/wait-until@0.0.3':
-    resolution: {integrity: sha512-Z3+GXZbAjiiI0cJi1si+WfBBPfmLwZ9Tk4wqyFJGeZHJilyveBCpSktHdJlmqjHBBvrMi8ymXefYi2S833LhRA==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -1526,13 +1520,6 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@react-native-community/geolocation@3.4.0':
-    resolution: {integrity: sha512-bzZH89/cwmpkPMKKveoC72C4JH0yF4St5Ceg/ZM9pA1SqX9MlRIrIrrOGZ/+yi++xAvFDiYfihtn9TvXWU9/rA==}
-    engines: {node: '>=18.0.0'}
-    peerDependencies:
-      react: '*'
-      react-native: '*'
-
   '@react-native-community/netinfo@12.0.1':
     resolution: {integrity: sha512-P/3caXIvfYSJG8AWJVefukg+ZGRPs+M4Lp3pNJtgcTYoJxCjWrKQGNnCkj/Cz//zWa/avGed0i/wzm0T8vV2IQ==}
     peerDependencies:
@@ -1708,6 +1695,9 @@ packages:
 
   '@tokenizer/token@0.3.0':
     resolution: {integrity: sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A==}
+
+  '@transistorsoft/background-geolocation-types@5.1.1':
+    resolution: {integrity: sha512-ygzz169W6rs+HoRan0PIWaRgAnzPo4gkhPleYcsnmYEAk050+hpokKiAWAlLbXP89vHsGruhfw87d9kPTsakEQ==}
 
   '@tsconfig/node10@1.0.12':
     resolution: {integrity: sha512-UCYBaeFvM11aU2y3YPZ//O5Rhj+xKyzy7mvcIoAjASbigy8mHMryP5cK7dgjlz2hWxh1g5pLw084E0a/wlUSFQ==}
@@ -4469,14 +4459,11 @@ packages:
     peerDependencies:
       react-native: '>=0.63.0'
 
+  react-native-background-geolocation@5.1.1:
+    resolution: {integrity: sha512-uEfgpocZCiIcrM1EFgflb54zEGcbkeHW/6DepZkpnaIN3Ql8Yj61V3LpX6ys5YAZSNI3rkxeowbYsdgKKxfGeA==}
+
   react-native-base64@0.0.2:
     resolution: {integrity: sha512-Fu/J1a2y0X22EJDWqJR2oEa1fpP4gTFjYxk8ElJdt1Yak3HOXmFJ7EohLVHU2DaQkgmKfw8qb7u/48gpzveRbg==}
-
-  react-native-bluetooth-status@1.5.1:
-    resolution: {integrity: sha512-d+7NvFhLh3FRJOWWrJQjDwg/X9KILViEwLW2BBocIBsWGdFoZR51oXUKkR/FpMZ03AQiedKMDOTbP9nKBIVIEg==}
-    peerDependencies:
-      react: ^16.8.0
-      react-native: ^0.61.0
 
   react-native-device-info@15.0.2:
     resolution: {integrity: sha512-dd71eXG2l3Cwp66IvKNadMTB8fhU3PEjyVddI97sYan+D4bgIAUmgGDhbSOFvHcGavksb2U17kiQYaDiK2WK2g==}
@@ -6032,8 +6019,6 @@ snapshots:
   '@colors/colors@1.5.0':
     optional: true
 
-  '@cs125/wait-until@0.0.3': {}
-
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
@@ -7060,11 +7045,6 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@react-native-community/geolocation@3.4.0(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)':
-    dependencies:
-      react: 19.1.1
-      react-native: 0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1)
-
   '@react-native-community/netinfo@12.0.1(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1)':
     dependencies:
       react: 19.1.1
@@ -7330,6 +7310,8 @@ snapshots:
       - supports-color
 
   '@tokenizer/token@0.3.0': {}
+
+  '@transistorsoft/background-geolocation-types@5.1.1': {}
 
   '@tsconfig/node10@1.0.12': {}
 
@@ -10666,13 +10648,13 @@ snapshots:
       react-native: 0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1)
       react-native-base64: 0.0.2
 
-  react-native-base64@0.0.2: {}
-
-  react-native-bluetooth-status@1.5.1(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1))(react@19.1.1):
+  react-native-background-geolocation@5.1.1:
     dependencies:
-      '@cs125/wait-until': 0.0.3
-      react: 19.1.1
-      react-native: 0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1)
+      '@babel/runtime': 7.28.6
+      '@transistorsoft/background-geolocation-types': 5.1.1
+      tslib: 2.8.1
+
+  react-native-base64@0.0.2: {}
 
   react-native-device-info@15.0.2(react-native@0.82.1(@babel/core@7.29.0)(@react-native-community/cli@20.0.0(typescript@5.9.3))(@react-native/metro-config@0.82.1(@babel/core@7.29.0))(@types/react@19.2.13)(react@19.1.1)):
     dependencies:

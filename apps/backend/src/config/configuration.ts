@@ -39,6 +39,7 @@ export function validateConfig(config: Record<string, unknown>): Record<string, 
     { key: 'AZURE_CLIENT_ID', envVar: 'AZURE_CLIENT_ID' },
     { key: 'AZURE_TENANT_ID', envVar: 'AZURE_TENANT_ID' },
     { key: 'DEVICE_HASH_SALT', envVar: 'DEVICE_HASH_SALT' },
+    { key: 'DEVICE_EVENT_SECRET', envVar: 'DEVICE_EVENT_SECRET' },
   ];
 
   const missing: string[] = [];

@@ -7,14 +7,13 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Button, Alert, ScrollView } from 'react-native';
 import useLocationService from '../hooks/useLocationService';
 import { useAllLotsData } from '../hooks/useAllLotsData';
-import { createGeofenceRegionsFromLots, prioritizeGeofenceRegions } from '../utils/geofenceUtils';
+import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
 import { lotsApi, ParkingLotResponse } from '../services/api';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { GeofenceEvent } from '../types/location';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GeofencingTestUtils = __DEV__ ? require('./GeofencingTestUtils').default : null;
 import { 
-  GEOFENCE_CONSTANTS, 
   MESSAGE_CONSTANTS, 
   ACCESSIBILITY_CONSTANTS 
 } from '../constants/geofencing';
@@ -29,11 +28,10 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
   const { lots, loading: lotsLoading, error: lotsError } = useAllLotsData();
   const {
     isTracking,
-    permissionStatus,
     monitoredRegions,
     requestPermissions,
-    startTracking,
-    addGeofenceRegions,
+    startGeofenceMonitoring,
+    registerGeofences,
     lastGeofenceEvent,
     lastError,
   } = useLocationService();
@@ -58,16 +56,11 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
   const initializeGeofencing = async () => {
     try {
 
-      // Convert parking lot data to geofence regions
-      const allRegions = createGeofenceRegionsFromLots(lots);
-      // Created geofence regions
+      // Convert parking lot data to SDK geofences
+      const geofences = createSDKGeofencesFromLots(lots);
 
-      // Prioritize regions (limit to platform constraints)
-      const prioritizedRegions = prioritizeGeofenceRegions(allRegions, GEOFENCE_CONSTANTS.MAX_REGIONS_IOS);
-      // Using prioritized regions
-
-      // Add regions to location service
-      addGeofenceRegions(prioritizedRegions);
+      // Register geofences with the SDK (handles platform limits via geofenceProximityRadius)
+      await registerGeofences(geofences);
 
       setIsInitialized(true);
       // Geofencing initialized successfully
@@ -105,11 +98,13 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
       sendOccupancyEvent(event.regionId, 'EXIT');
     }
 
-    // Notify parent component
-    onGeofenceEvent?.({
-      lotId: event.regionId,
-      eventType: event.eventType,
-    });
+    // Notify parent component (only for ENTER/EXIT, not DWELL)
+    if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+      onGeofenceEvent?.({
+        lotId: event.regionId,
+        eventType: event.eventType,
+      });
+    }
   };
 
   const sendOccupancyEvent = async (lotId: string, eventType: 'ENTER' | 'EXIT') => {
@@ -138,11 +133,12 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
       return;
     }
 
-    const trackingStarted = await startTracking();
-    if (!trackingStarted) {
+    try {
+      await startGeofenceMonitoring();
+    } catch {
       Alert.alert(
         'Error',
-        MESSAGE_CONSTANTS.ERRORS.LOCATION_UNAVAILABLE,
+        'Failed to start parking detection. Please try again.',
         [{ text: 'OK' }]
       );
     }
@@ -227,12 +223,12 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
           <Text style={styles.statLabel}>Permission Status:</Text>
           <Text 
             style={[styles.statValue, { 
-              color: permissionStatus?.granted ? COLORS.primary : COLORS.gray 
+              color: isTracking ? COLORS.primary : COLORS.gray 
             }]}
             accessibilityLabel={ACCESSIBILITY_CONSTANTS.LABELS.PERMISSION_STATUS}
-            accessibilityValue={{ text: permissionStatus?.granted ? 'Granted' : 'Not Granted' }}
+            accessibilityValue={{ text: isTracking ? 'Granted' : 'Not Granted' }}
           >
-            {permissionStatus?.granted ? 'Granted' : 'Not Granted'}
+            {isTracking ? 'Granted' : 'Not Granted'}
           </Text>
         </View>
         <View style={styles.statRow}>

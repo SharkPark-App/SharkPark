@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { GeofenceRegion } from '../src/types/location';
-import { createPolygonGeofenceFromLot, isPointInPolygon, calculatePolygonCenter } from '../src/utils/geofenceUtils';
+import { isPointInPolygon, calculatePolygonCenter } from '../src/utils/geofenceUtils';
 import locationService from '../src/services/locationService';
 
 // Example 1: Create a rectangular parking lot geofence
@@ -90,7 +90,7 @@ export async function setupPolygonGeofencingSystem() {
   ];
 
   // Set up event listener for polygon geofence events
-  locationService.setOnGeofenceEvent((event) => {
+  locationService.onGeofence((event) => {
     // Handle the event (send to API, show notification, etc.)
     switch (event.eventType) {
       case 'ENTER':
@@ -104,11 +104,11 @@ export async function setupPolygonGeofencingSystem() {
     }
   });
 
-  // Add the polygon geofences to the location service
-  locationService.addGeofenceRegions(polygonLots);
+  // Register the polygon geofences with the SDK
+  await locationService.registerGeofences(polygonLots as never[]);
   
-  // Start location tracking
-  return await locationService.startLocationTracking();
+  // Start geofence monitoring
+  return await locationService.startGeofenceMonitoring();
 }
 
 // Example 5: Test if a point is inside a parking lot

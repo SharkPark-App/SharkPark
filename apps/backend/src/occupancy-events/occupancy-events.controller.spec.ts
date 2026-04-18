@@ -162,21 +162,6 @@ describe('OccupancyEventsController', () => {
     });
   });
 
-  describe('createSnapshots', () => {
-    it('should trigger snapshot creation', async () => {
-      service.createSnapshots.mockResolvedValue({
-        count: 25,
-        timestamp: '2026-02-07T14:30:00.000Z',
-      });
-
-      const result = await controller.createSnapshots();
-
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Created 25 occupancy snapshots');
-      expect(result.data.count).toBe(25);
-    });
-  });
-
   describe('getSnapshots', () => {
     it('should return snapshots for a lot', async () => {
       const mockSnapshots = [

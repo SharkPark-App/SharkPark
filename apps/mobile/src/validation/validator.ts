@@ -152,12 +152,40 @@ export class ParkingValidator {
       if (hasDisconnect) bluetoothScore = 0.8; // Disconnect from car audio → left vehicle
     }
 
-    // Calculate overall confidence
-    const overallConfidence = (speedTransitionScore + dwellTimeScore + movementPatternScore + bluetoothScore) / 4;
+    // Activity recognition analysis (from SDK onActivityChange events)
+    const activityEvents = events.filter(e =>
+      e.event_type === 'ACTIVITY_STILL' ||
+      e.event_type === 'ACTIVITY_ON_FOOT' ||
+      e.event_type === 'ACTIVITY_IN_VEHICLE' ||
+      e.event_type === 'DWELL'
+    );
+    let activityRecognitionScore = 0.5;
+    if (activityEvents.length > 0) {
+      const hasStill = activityEvents.some(e => e.event_type === 'ACTIVITY_STILL');
+      const hasOnFoot = activityEvents.some(e => e.event_type === 'ACTIVITY_ON_FOOT');
+      const hasInVehicle = activityEvents.some(e => e.event_type === 'ACTIVITY_IN_VEHICLE');
+      const hasDwell = activityEvents.some(e => e.event_type === 'DWELL');
+
+      if ((hasStill || hasDwell) && hasOnFoot) activityRecognitionScore = 0.95; // Park + walk away
+      else if (hasStill || hasDwell) activityRecognitionScore = 0.8;
+      else if (hasOnFoot) activityRecognitionScore = 0.7;
+      else if (hasInVehicle && !hasStill) activityRecognitionScore = 0.15; // Still driving
+    }
+
+    // Weighted confidence (5 dimensions):
+    // Speed 0.20, Dwell 0.20, Movement 0.15, Bluetooth 0.15, Activity 0.30
+    const overallConfidence =
+      speedTransitionScore * 0.20 +
+      dwellTimeScore * 0.20 +
+      movementPatternScore * 0.15 +
+      bluetoothScore * 0.15 +
+      activityRecognitionScore * 0.30;
 
     // Determine status based on confidence and patterns
     let status: ValidationStatus = 'UNKNOWN';
-    if (overallConfidence > thresholds.confidenceParked) status = 'PARKED';
+    // Not enough data to make a determination
+    if (events.length < 3 && !isFinalAnalysis) status = 'INSUFFICIENT_DATA';
+    else if (overallConfidence > thresholds.confidenceParked) status = 'PARKED';
     else if (overallConfidence < thresholds.confidenceDroveThrough) status = 'DROVE_THROUGH';
     else if (!isFinalAnalysis) status = 'ANALYZING';
     else status = 'SEARCHING';
@@ -174,6 +202,7 @@ export class ParkingValidator {
       dwellTimeScore: Math.round(dwellTimeScore * 100) / 100,
       movementPatternScore: Math.round(movementPatternScore * 100) / 100,
       bluetoothScore: Math.round(bluetoothScore * 100) / 100,
+      activityRecognitionScore: Math.round(activityRecognitionScore * 100) / 100,
       preliminaryStatus: !isFinalAnalysis ? (overallConfidence > thresholds.confidencePreliminary ? 'PARKED' : 'ANALYZING') : status,
       confidence: overallConfidence,
       metadata: {

@@ -50,8 +50,13 @@ describe('ParkingValidationService', () => {
       clearTimeout(timer);
     }
     parkingValidationService['sessionTimers'].clear();
+    // Clear debounced persist timer to prevent async leaks
+    if (parkingValidationService['persistDebounceTimer']) {
+      clearTimeout(parkingValidationService['persistDebounceTimer']);
+      parkingValidationService['persistDebounceTimer'] = null;
+    }
+    parkingValidationService['pendingPersistSessionIds']?.clear();
     parkingValidationService['activeSessions'].clear();
-    parkingValidationService['eventBuffer'] = [];
     parkingValidationService['validationCompleteListeners'] = [];
   });
 
@@ -61,6 +66,12 @@ describe('ParkingValidationService', () => {
       clearTimeout(timer);
     }
     parkingValidationService['sessionTimers'].clear();
+    // Clear debounced persist timer
+    if (parkingValidationService['persistDebounceTimer']) {
+      clearTimeout(parkingValidationService['persistDebounceTimer']);
+      parkingValidationService['persistDebounceTimer'] = null;
+    }
+    parkingValidationService['pendingPersistSessionIds']?.clear();
   });
 
   describe('Session Management', () => {
@@ -365,6 +376,58 @@ describe('ParkingValidationService', () => {
       
       const status = await parkingValidationService.getCurrentValidationStatus('test-lot-1');
       expect(status).toBeNull();
+    });
+  });
+
+  describe('Bluetooth Event Recording', () => {
+    it('should record BLUETOOTH_CONNECT event with bluetooth_state', async () => {
+      await parkingValidationService.startParkingSession(mockGeofenceEvent);
+
+      parkingValidationService.recordBehavioralEvent(
+        'BLUETOOTH_CONNECT',
+        { bluetooth_state: 'CONNECTED' }
+      );
+
+      const sessions = parkingValidationService['activeSessions'];
+      const session = sessions.values().next().value;
+      expect(session?.events).toHaveLength(2); // ENTER + BLUETOOTH_CONNECT
+      expect(session?.events[1].event_type).toBe('BLUETOOTH_CONNECT');
+      expect(session?.events[1].bluetooth_state).toBe('CONNECTED');
+    });
+
+    it('should record BLUETOOTH_DISCONNECT event with bluetooth_state', async () => {
+      await parkingValidationService.startParkingSession(mockGeofenceEvent);
+
+      parkingValidationService.recordBehavioralEvent(
+        'BLUETOOTH_DISCONNECT',
+        { bluetooth_state: 'DISCONNECTED' }
+      );
+
+      const sessions = parkingValidationService['activeSessions'];
+      const session = sessions.values().next().value;
+      expect(session?.events).toHaveLength(2);
+      expect(session?.events[1].event_type).toBe('BLUETOOTH_DISCONNECT');
+      expect(session?.events[1].bluetooth_state).toBe('DISCONNECTED');
+    });
+
+    it('should pass bluetooth_state to confidence score calculation', async () => {
+      (ParkingValidator.calculateConfidenceScore as jest.Mock).mockReturnValue(0.85);
+
+      await parkingValidationService.startParkingSession(mockGeofenceEvent);
+
+      parkingValidationService.recordBehavioralEvent(
+        'BLUETOOTH_DISCONNECT',
+        { bluetooth_state: 'DISCONNECTED', speed_mph: 0, accuracy_meters: 5 }
+      );
+
+      expect(ParkingValidator.calculateConfidenceScore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bluetoothState: 'DISCONNECTED',
+          eventType: 'BLUETOOTH_DISCONNECT',
+          speed: 0,
+          accuracy: 5,
+        })
+      );
     });
   });
 });

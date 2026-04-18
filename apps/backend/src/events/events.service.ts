@@ -36,6 +36,23 @@ export class EventsService {
     }
   }
 
+  /** Retrieves upcoming events within a time window using a DB query. */
+  async findUpcoming(windowEnd: Date): Promise<CampusEvent[]> {
+    try {
+      const now = new Date();
+      return await this.prisma.campusEvent.findMany({
+        where: {
+          start_time: { lte: windowEnd },
+          end_time: { gte: now },
+        },
+        orderBy: { start_time: 'asc' },
+      });
+    } catch (error) {
+      this.logger.error('Failed to fetch upcoming campus events', error);
+      throw error;
+    }
+  }
+
   /** Retrieves parking lot impacts for a specific event (closures, capacity changes). */
   async getImpacts(eventId: string): Promise<EventImpact[]> {
     try {

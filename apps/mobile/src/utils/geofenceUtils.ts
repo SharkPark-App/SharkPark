@@ -2,227 +2,88 @@
  * Geofence Setup Utilities
  * Convert parking lot data to privacy-focused geofence regions
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { GeofenceRegion } from '../types/location';
+import type { Geofence } from 'react-native-background-geolocation';
 import { ParkingLotResponse } from '../services/api/lots';
-import { GEOFENCE_CONSTANTS } from '../constants/geofencing';
-import { getLotPolygon } from '../data/lotPolygons';
 
 /**
- * Convert parking lot API data to geofence regions.
+ * Convert parking lot API data to SDK Geofence objects for BackgroundGeolocation.
  *
- * Prefers polygon geometry from lotPolygons.ts (real satellite-traced
- * perimeters) when available; falls back to the circular geofence from the
- * API if no polygon is defined for that lot.
+ * Uses polygon vertices from the API response (satellite-traced perimeters
+ * stored in the database); falls back to circular geofence when the polygon
+ * has fewer than 3 vertices.
  */
-export function createGeofenceRegionsFromLots(lots: ParkingLotResponse[]): GeofenceRegion[] {
+export function createSDKGeofencesFromLots(lots: ParkingLotResponse[]): Geofence[] {
   return lots
-    .filter(lot => {
-      // Only create geofences for lots with valid coordinates
-      return lot.center_lat && lot.center_lng && lot.geofence_radius;
-    })
+    .filter(lot => lot.center_lat && lot.center_lng && lot.geofence_radius)
     .map(lot => {
-      const polygon = getLotPolygon(lot.lot_id);
+      const polygon = lot.geofence_polygon;
+      const hasPolygon = Array.isArray(polygon) && polygon.length >= 3;
 
-      if (polygon) {
-        // Use the real satellite-traced polygon perimeter
-        return {
-          id: lot.lot_id,
-          name: lot.display_name || lot.lot_name,
-          geometry: {
-            type: 'polygon' as const,
-            coordinates: polygon.map(p => ({ latitude: p.lat, longitude: p.lng })),
-          },
-          notifyOnEntry: true,
-          notifyOnExit: true,
-        };
-      }
-
-      // Fallback: circular geofence from the API
-      return {
-        id: lot.lot_id,
-        name: lot.display_name || lot.lot_name,
-        geometry: {
-          type: 'circle' as const,
-          center: {
-            latitude: lot.center_lat,
-            longitude: lot.center_lng,
-          },
-          radius: lot.geofence_radius,
-        },
+      const base: Geofence = {
+        identifier: lot.lot_id,
+        latitude: lot.center_lat,
+        longitude: lot.center_lng,
+        radius: lot.geofence_radius,
         notifyOnEntry: true,
         notifyOnExit: true,
+        notifyOnDwell: true,
+        loiteringDelay: 300000, // 5 minutes — native DWELL = parking confirmation signal
+        extras: {
+          lot_name: lot.display_name || lot.lot_name,
+          lot_type: lot.lot_type,
+          capacity: lot.capacity,
+        },
       };
+
+      if (hasPolygon) {
+        // SDK polygon: vertices as [lat, lng] pairs.
+        // When vertices are set, the SDK uses polygon detection natively.
+        base.vertices = polygon.map(p => [p.lat, p.lng]);
+      }
+
+      return base;
     });
 }
 
 /**
- * Get center coordinates from a geofence region (handles both legacy and modern formats)
- */
-function getGeofenceCenter(region: GeofenceRegion): { latitude: number; longitude: number } | null {
-  if (region.geometry) {
-    // Modern format
-    if (region.geometry.type === 'circle' && region.geometry.center) {
-      return region.geometry.center;
-    } else if (region.geometry.type === 'polygon' && region.geometry.coordinates) {
-      return calculatePolygonCenter(region.geometry.coordinates);
-    }
-  } else {
-    // Legacy format
-    const legacyRegion = region as any;
-    if (legacyRegion.latitude && legacyRegion.longitude) {
-      return {
-        latitude: legacyRegion.latitude,
-        longitude: legacyRegion.longitude,
-      };
-    }
-  }
-  return null;
-}
-
-/**
- * Prioritize geofence regions for better performance
- * Limits to platform constraints and prioritizes by importance
- */
-export function prioritizeGeofenceRegions(
-  regions: GeofenceRegion[],
-  maxRegions: number = GEOFENCE_CONSTANTS.MAX_REGIONS_IOS, // iOS limit
-  userPreferences?: {
-    preferredLotTypes?: ('STUDENT' | 'EMPLOYEE')[];
-    nearbyOnly?: boolean;
-    userLocation?: { latitude: number; longitude: number };
-  }
-): GeofenceRegion[] {
-  let prioritized = [...regions];
-
-  // If user location is available, sort by distance
-  if (userPreferences?.nearbyOnly && userPreferences?.userLocation) {
-    prioritized = prioritized.sort((a, b) => {
-      const centerA = getGeofenceCenter(a);
-      const centerB = getGeofenceCenter(b);
-      
-      if (!centerA || !centerB) return 0;
-      
-      const distanceA = calculateDistance(
-        userPreferences.userLocation!.latitude,
-        userPreferences.userLocation!.longitude,
-        centerA.latitude,
-        centerA.longitude
-      );
-      const distanceB = calculateDistance(
-        userPreferences.userLocation!.latitude,
-        userPreferences.userLocation!.longitude,
-        centerB.latitude,
-        centerB.longitude
-      );
-      return distanceA - distanceB;
-    });
-  }
-
-  // Take only the top regions within platform limits
-  return prioritized.slice(0, maxRegions);
-}
-
-/**
- * Calculate distance between two points (Haversine formula)
- */
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const EARTH_RADIUS_METERS = 6371000; // Earth's radius in meters
-  const dLat = toRadians(lat2 - lat1);
-  const dLon = toRadians(lon2 - lon1);
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return EARTH_RADIUS_METERS * c; // Distance in meters
-}
-
-function toRadians(degrees: number): number {
-  const RADIANS_PER_DEGREE = Math.PI / 180;
-  return degrees * RADIANS_PER_DEGREE;
-}
-
-/**
- * Validate geofence region configuration (supports both legacy and modern formats)
+ * Validate geofence region configuration
  */
 export function validateGeofenceRegion(region: GeofenceRegion): boolean {
-  // Check required fields
   if (!region.id || !region.name) {
     console.warn('[GeofenceUtils] Region missing required fields:', region);
     return false;
   }
 
-  if (region.geometry) {
-    // Modern format validation
-    if (region.geometry.type === 'circle') {
-      if (!region.geometry.center || !region.geometry.radius) {
-        console.warn('[GeofenceUtils] Circle geofence missing center or radius:', region);
-        return false;
-      }
-      
-      const { latitude, longitude } = region.geometry.center;
-      const radius = region.geometry.radius;
-      
-      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-        console.warn('[GeofenceUtils] Invalid coordinates:', region.geometry.center);
-        return false;
-      }
-      
-      if (radius < 10 || radius > 500) {
-        console.warn('[GeofenceUtils] Invalid radius (should be 10-500m):', radius);
-        return false;
-      }
-      
-    } else if (region.geometry.type === 'polygon') {
-      return validatePolygonGeofence(region);
-    }
-  } else {
-    // Legacy format validation
-    const legacyRegion = region as any;
-    if (!legacyRegion.latitude || !legacyRegion.longitude || !legacyRegion.radius) {
-      console.warn('[GeofenceUtils] Legacy region missing required fields:', region);
-      return false;
-    }
-    
-    if (
-      legacyRegion.latitude < -90 || legacyRegion.latitude > 90 ||
-      legacyRegion.longitude < -180 || legacyRegion.longitude > 180
-    ) {
-      console.warn('[GeofenceUtils] Invalid legacy coordinates:', legacyRegion);
+  if (!region.geometry) {
+    console.warn('[GeofenceUtils] Region missing geometry:', region);
+    return false;
+  }
+
+  if (region.geometry.type === 'circle') {
+    if (!region.geometry.center || !region.geometry.radius) {
+      console.warn('[GeofenceUtils] Circle geofence missing center or radius:', region);
       return false;
     }
 
-    if (legacyRegion.radius < 10 || legacyRegion.radius > 500) {
-      console.warn('[GeofenceUtils] Invalid legacy radius (should be 10-500m):', legacyRegion);
+    const { latitude, longitude } = region.geometry.center;
+    const radius = region.geometry.radius;
+
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      console.warn('[GeofenceUtils] Invalid coordinates:', region.geometry.center);
       return false;
     }
+
+    if (radius < 10 || radius > 500) {
+      console.warn('[GeofenceUtils] Invalid radius (should be 10-500m):', radius);
+      return false;
+    }
+  } else if (region.geometry.type === 'polygon') {
+    return validatePolygonGeofence(region);
   }
 
   return true;
-}
-
-/**
- * Privacy-focused geofence configuration
- * Ensures optimal settings for anonymous tracking
- */
-export function getOptimalGeofenceConfig() {
-  return {
-    // Performance optimizations
-    distanceFilter: 50, // Only update every 50 meters
-    desiredAccuracy: 100, // 100m accuracy sufficient for parking lots
-    timeout: 15000, // 15 second timeout
-    maximumAge: 300000, // Cache location for 5 minutes
-    
-    // Privacy settings
-    anonymousMode: true, // Never store coordinates
-    backgroundTracking: false, // Require explicit consent
-    
-    // Battery optimization
-    useSignificantChanges: true, // iOS power saving
-    enableHighAccuracy: false, // Lower accuracy saves battery
-  };
 }
 
 /**
@@ -331,76 +192,19 @@ export function calculatePolygonArea(
   if (polygon.length < 3) return 0;
 
   const EARTH_RADIUS = 6371000; // Earth's radius in meters
+  const toRad = (deg: number) => deg * (Math.PI / 180);
   let area = 0;
 
   for (let i = 0; i < polygon.length; i++) {
     const j = (i + 1) % polygon.length;
-    const lat1 = toRadians(polygon[i].latitude);
-    const lat2 = toRadians(polygon[j].latitude);
-    const deltaLon = toRadians(polygon[j].longitude - polygon[i].longitude);
+    const lat1 = toRad(polygon[i].latitude);
+    const lat2 = toRad(polygon[j].latitude);
+    const deltaLon = toRad(polygon[j].longitude - polygon[i].longitude);
 
     area += deltaLon * (2 + Math.sin(lat1) + Math.sin(lat2));
   }
 
   return Math.abs(area) * EARTH_RADIUS * EARTH_RADIUS / 2;
-}
-
-/**
- * Convert parking lot with boundary coordinates to polygon geofence
- * @param lot - Parking lot data with boundary coordinates
- * @returns GeofenceRegion with polygon geometry
- */
-export function createPolygonGeofenceFromLot(
-  lot: ParkingLotResponse & {
-    boundary_coordinates?: Array<{ latitude: number; longitude: number }>;
-  }
-): GeofenceRegion {
-  if (!lot.boundary_coordinates || lot.boundary_coordinates.length < 3) {
-    throw new Error(`Invalid boundary coordinates for lot ${lot.lot_id}`);
-  }
-
-  return {
-    id: lot.lot_id,
-    name: lot.display_name || lot.lot_name,
-    geometry: {
-      type: 'polygon',
-      coordinates: lot.boundary_coordinates,
-    },
-    notifyOnEntry: true,
-    notifyOnExit: true,
-  };
-}
-
-/**
- * Convert legacy circular geofence to new format
- * @param legacyRegion - Old circular geofence region
- * @returns GeofenceRegion with circle geometry
- */
-export function legacyToModernGeofence(
-  legacyRegion: {
-    id: string;
-    name: string;
-    latitude: number;
-    longitude: number;
-    radius: number;
-    notifyOnEntry: boolean;
-    notifyOnExit: boolean;
-  }
-): GeofenceRegion {
-  return {
-    id: legacyRegion.id,
-    name: legacyRegion.name,
-    geometry: {
-      type: 'circle',
-      center: {
-        latitude: legacyRegion.latitude,
-        longitude: legacyRegion.longitude,
-      },
-      radius: legacyRegion.radius,
-    },
-    notifyOnEntry: legacyRegion.notifyOnEntry,
-    notifyOnExit: legacyRegion.notifyOnExit,
-  };
 }
 
 /**

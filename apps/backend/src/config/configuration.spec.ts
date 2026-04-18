@@ -124,6 +124,7 @@ describe('Configuration', () => {
       process.env.AZURE_CLIENT_ID = 'test-client-id';
       process.env.AZURE_TENANT_ID = 'test-tenant-id';
       process.env.DEVICE_HASH_SALT = 'test-salt';
+      process.env.DEVICE_EVENT_SECRET = 'test-secret';
 
       expect(() => validateConfig({})).not.toThrow();
     });

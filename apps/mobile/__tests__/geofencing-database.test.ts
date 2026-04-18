@@ -3,46 +3,52 @@
  * Proves that geofence events actually update the database
  */
 
-// Mock React Native modules first
-jest.mock('@react-native-community/geolocation', () => ({
-  getCurrentPosition: jest.fn(),
-  watchPosition: jest.fn(),
-  clearWatch: jest.fn(),
-  stopObserving: jest.fn(),
-  setRNConfiguration: jest.fn(),
-  requestAuthorization: jest.fn(),
+// Mock BackgroundGeolocation SDK
+jest.mock('react-native-background-geolocation', () => ({
+  __esModule: true,
+  default: {
+    ready: jest.fn().mockResolvedValue({ enabled: false }),
+    start: jest.fn().mockResolvedValue({}),
+    startGeofences: jest.fn().mockResolvedValue({}),
+    stop: jest.fn().mockResolvedValue({}),
+    getState: jest.fn().mockResolvedValue({}),
+    addGeofences: jest.fn().mockResolvedValue(undefined),
+    removeGeofences: jest.fn().mockResolvedValue(undefined),
+    getGeofences: jest.fn().mockResolvedValue([]),
+    getCurrentPosition: jest.fn().mockResolvedValue({}),
+    requestPermission: jest.fn().mockResolvedValue(4),
+    requestTemporaryFullAccuracy: jest.fn().mockResolvedValue(1),
+    getProviderState: jest.fn().mockResolvedValue({ accuracyAuthorization: 0 }),
+    removeListeners: jest.fn().mockResolvedValue(undefined),
+    onGeofence: jest.fn(() => ({ remove: jest.fn() })),
+    onLocation: jest.fn(() => ({ remove: jest.fn() })),
+    onActivityChange: jest.fn(() => ({ remove: jest.fn() })),
+    onMotionChange: jest.fn(() => ({ remove: jest.fn() })),
+    onProviderChange: jest.fn(() => ({ remove: jest.fn() })),
+    AuthorizationStatus: { Always: 4, WhenInUse: 3 },
+    AccuracyAuthorization: { Full: 0, Reduced: 1 },
+    DesiredAccuracy: { High: 0, Medium: 10, Low: 100 },
+    PersistMode: { None: 0, All: 2 },
+    LogLevel: { Verbose: 5, Off: 0 },
+    TriggerActivity: { InVehicle: 'in_vehicle', OnFoot: 'on_foot' },
+  },
 }));
 
-jest.mock('react-native', () => {
-  return {
-    Platform: { OS: 'ios' },
-    Alert: { alert: jest.fn() },
-    AppState: { currentState: 'active', addEventListener: jest.fn() },
-    NativeEventEmitter: class MockEventEmitter {
-      addListener = jest.fn();
-      removeListener = jest.fn();
-    },
-    NativeModules: {},
-    TurboModuleRegistry: {
-      getEnforcing: jest.fn(),
-      get: jest.fn(),
-    },
-  };
-});
+jest.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+}));
 
 import { lotsApi } from '../src/services/api';
 import locationService from '../src/services/locationService';
 import { GeofenceEvent } from '../src/types/location';
 import { UI_CONSTANTS } from '../src/constants/geofencing';
 
-// Mock the API to spy on database calls
 jest.mock('../src/services/api', () => ({
   lotsApi: {
     recordOccupancyEvent: jest.fn(),
   },
 }));
 
-// Helper function for waiting
 const wait = (ms: number = UI_CONSTANTS.TEST_ASYNC_WAIT) => new Promise<void>(resolve => setTimeout(() => resolve(), ms));
 
 describe('Geofencing Database Integration', () => {
@@ -52,16 +58,15 @@ describe('Geofencing Database Integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset singleton callbacks to prevent accumulation across tests
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (locationService as any)['geofenceCallbacks'] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (locationService as any)['locationCallbacks'] = [];
     mockRecordOccupancyEvent.mockResolvedValue({ event_id: 'mock-event-id', deduplicated: false });
   });
 
-  afterEach(() => {
-    // Clean up any listeners
-    locationService['onGeofenceEventListeners'] = [];
-  });
-
   it('should update database when ENTER event is triggered', async () => {
-    // Arrange: Set up a listener that will call the database
     const databaseListener = async (event: GeofenceEvent) => {
       if (event.eventType === 'ENTER') {
         await lotsApi.recordOccupancyEvent({
@@ -72,15 +77,11 @@ describe('Geofencing Database Integration', () => {
       }
     };
 
-    locationService.setOnGeofenceEvent(databaseListener);
-
-    // Act: Trigger a test geofence event
+    locationService.onGeofence(databaseListener);
     locationService.triggerTestGeofenceEvent('G1', 'ENTER');
 
-    // Wait for async operations to complete
     await wait(100);
 
-    // Assert: Database should have been called
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(1);
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({
       lotId: 'G1',
@@ -90,7 +91,6 @@ describe('Geofencing Database Integration', () => {
   });
 
   it('should update database when EXIT event is triggered', async () => {
-    // Arrange: Set up a listener that will call the database
     const databaseListener = async (event: GeofenceEvent) => {
       if (event.eventType === 'EXIT') {
         await lotsApi.recordOccupancyEvent({
@@ -101,15 +101,11 @@ describe('Geofencing Database Integration', () => {
       }
     };
 
-    locationService.setOnGeofenceEvent(databaseListener);
-
-    // Act: Trigger a test geofence event
+    locationService.onGeofence(databaseListener);
     locationService.triggerTestGeofenceEvent('G2', 'EXIT');
 
-    // Wait for async operations to complete
     await wait(100);
 
-    // Assert: Database should have been called
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(1);
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({
       lotId: 'G2',
@@ -119,26 +115,24 @@ describe('Geofencing Database Integration', () => {
   });
 
   it('should handle multiple events in sequence', async () => {
-    // Arrange: Set up a listener that will call the database for all events
     const databaseListener = async (event: GeofenceEvent) => {
-      await lotsApi.recordOccupancyEvent({
-        lotId: event.regionId,
-        eventType: event.eventType,
-        source: 'GEOFENCE',
-      });
+      if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+        await lotsApi.recordOccupancyEvent({
+          lotId: event.regionId,
+          eventType: event.eventType,
+          source: 'GEOFENCE',
+        });
+      }
     };
 
-    locationService.setOnGeofenceEvent(databaseListener);
+    locationService.onGeofence(databaseListener);
 
-    // Act: Trigger multiple events
     locationService.triggerTestGeofenceEvent('G1', 'ENTER');
     locationService.triggerTestGeofenceEvent('G1', 'EXIT');
     locationService.triggerTestGeofenceEvent('G2', 'ENTER');
 
-    // Wait for async operations to complete
     await wait(100);
 
-    // Assert: Database should have been called for each event
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(3);
     
     expect(mockRecordOccupancyEvent).toHaveBeenNthCalledWith(1, {
@@ -161,32 +155,28 @@ describe('Geofencing Database Integration', () => {
   });
 
   it('should handle database errors gracefully', async () => {
-    // Arrange: Mock database to throw an error
     mockRecordOccupancyEvent.mockRejectedValue(new Error('Database connection failed'));
-
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const databaseListener = async (event: GeofenceEvent) => {
-      try {
-        await lotsApi.recordOccupancyEvent({
-          lotId: event.regionId,
-          eventType: event.eventType,
-          source: 'GEOFENCE',
-        });
-      } catch (error) {
-        console.error('Failed to send occupancy event:', error);
+      if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+        try {
+          await lotsApi.recordOccupancyEvent({
+            lotId: event.regionId,
+            eventType: event.eventType,
+            source: 'GEOFENCE',
+          });
+        } catch (error) {
+          console.error('Failed to send occupancy event:', error);
+        }
       }
     };
 
-    locationService.setOnGeofenceEvent(databaseListener);
-
-    // Act: Trigger event that will fail
+    locationService.onGeofence(databaseListener);
     locationService.triggerTestGeofenceEvent('G1', 'ENTER');
 
-    // Wait for async operations to complete
     await wait(100);
 
-    // Assert: Database was called but error was handled
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(1);
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Failed to send occupancy event:',
@@ -197,34 +187,33 @@ describe('Geofencing Database Integration', () => {
   });
 
   it('should support multiple listeners updating database simultaneously', async () => {
-    // Arrange: Set up two different listeners that both update database
     const listener1 = async (event: GeofenceEvent) => {
-      await lotsApi.recordOccupancyEvent({
-        lotId: event.regionId,
-        eventType: event.eventType,
-        source: 'GEOFENCE',
-      });
+      if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+        await lotsApi.recordOccupancyEvent({
+          lotId: event.regionId,
+          eventType: event.eventType,
+          source: 'GEOFENCE',
+        });
+      }
     };
 
     const listener2 = async (event: GeofenceEvent) => {
-      // Second listener also updates database (simulating analytics)
-      await lotsApi.recordOccupancyEvent({
-        lotId: `analytics_${event.regionId}`,
-        eventType: event.eventType,
-        source: 'GEOFENCE',
-      });
+      if (event.eventType === 'ENTER' || event.eventType === 'EXIT') {
+        await lotsApi.recordOccupancyEvent({
+          lotId: `analytics_${event.regionId}`,
+          eventType: event.eventType,
+          source: 'GEOFENCE',
+        });
+      }
     };
 
-    locationService.setOnGeofenceEvent(listener1);
-    locationService.setOnGeofenceEvent(listener2);
+    locationService.onGeofence(listener1);
+    locationService.onGeofence(listener2);
 
-    // Act: Trigger one event
     locationService.triggerTestGeofenceEvent('G1', 'ENTER');
 
-    // Wait for async operations to complete
     await wait(100);
 
-    // Assert: Database should have been called by both listeners
     expect(mockRecordOccupancyEvent).toHaveBeenCalledTimes(2);
     
     expect(mockRecordOccupancyEvent).toHaveBeenCalledWith({

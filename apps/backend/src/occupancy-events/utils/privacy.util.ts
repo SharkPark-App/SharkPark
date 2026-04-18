@@ -23,6 +23,6 @@ export function hashDeviceId(deviceId: string): string {
 /** Generates unique event ID (timestamp + random suffix) */
 export function generateEventId(): string {
   const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 10);
+  const randomSuffix = randomBytes(5).toString('hex');
   return `${timestamp}-${randomSuffix}`;
 }

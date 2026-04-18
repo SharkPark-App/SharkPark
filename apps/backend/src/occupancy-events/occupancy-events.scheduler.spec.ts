@@ -14,6 +14,7 @@ describe('OccupancyEventsScheduler', () => {
   beforeEach(async () => {
     const mockOccupancyEventsService = {
       createSnapshots: jest.fn(),
+      cleanupStaleDeviceStates: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -98,6 +99,49 @@ describe('OccupancyEventsScheduler', () => {
       expect(errorSpy).toHaveBeenCalledWith(
         'Failed to create occupancy snapshots: Unknown error',
         undefined
+      );
+    });
+  });
+
+  describe('handleStaleCleanupCron', () => {
+    it('should call cleanupStaleDeviceStates with 18 hours and log success', async () => {
+      occupancyEventsService.cleanupStaleDeviceStates.mockResolvedValue({ cleaned: 5 });
+      const logSpy = jest.spyOn(scheduler['logger'], 'log');
+
+      await scheduler.handleStaleCleanupCron();
+
+      expect(occupancyEventsService.cleanupStaleDeviceStates).toHaveBeenCalledWith(18);
+      expect(logSpy).toHaveBeenCalledWith('Stale cleanup complete: 5 stale ENTER records cleaned');
+    });
+
+    it('should log starting message before cleanup', async () => {
+      occupancyEventsService.cleanupStaleDeviceStates.mockResolvedValue({ cleaned: 0 });
+      const logSpy = jest.spyOn(scheduler['logger'], 'log');
+
+      await scheduler.handleStaleCleanupCron();
+
+      expect(logSpy).toHaveBeenNthCalledWith(1, 'Starting stale device state cleanup...');
+    });
+
+    it('should handle cleanup error gracefully', async () => {
+      occupancyEventsService.cleanupStaleDeviceStates.mockRejectedValue(
+        new Error('Database unavailable')
+      );
+
+      await expect(scheduler.handleStaleCleanupCron()).resolves.not.toThrow();
+    });
+
+    it('should log error when cleanup fails', async () => {
+      const errorSpy = jest.spyOn(scheduler['logger'], 'error');
+      occupancyEventsService.cleanupStaleDeviceStates.mockRejectedValue(
+        new Error('Database unavailable')
+      );
+
+      await scheduler.handleStaleCleanupCron();
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Failed to clean up stale device states: Database unavailable',
+        expect.any(String)
       );
     });
   });
