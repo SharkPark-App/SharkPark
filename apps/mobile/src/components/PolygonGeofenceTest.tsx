@@ -40,8 +40,9 @@ export const PolygonGeofenceTest: React.FC = () => {
     setCurrentGeofenceResults([]);
 
     try {
-      // Add polygon geofences to location service
-      await locationService.addGeofenceRegions(polygonGeofences);
+      // Note: PolygonGeofenceTest operates on GeofenceRegion[] shape.
+      // The real geofence registration goes through EnhancedGeofencingProvider.
+      // This test component only simulates events via triggerTestGeofenceEvent.
 
       // Set up geofence event listener
       const handleGeofenceEvent = (event: any) => {
@@ -56,7 +57,7 @@ export const PolygonGeofenceTest: React.FC = () => {
         );
       };
 
-      locationService.setOnGeofenceEvent(handleGeofenceEvent);
+      locationService.onGeofence(handleGeofenceEvent);
 
       Alert.alert(
         'Polygon Geofence Testing Started',
@@ -73,7 +74,7 @@ export const PolygonGeofenceTest: React.FC = () => {
 
   const stopPolygonTesting = () => {
     setIsTestingPolygons(false);
-    locationService.stopLocationTracking();
+    locationService.stop();
     Alert.alert('Testing Stopped', 'Polygon geofence testing has been stopped.');
   };
 

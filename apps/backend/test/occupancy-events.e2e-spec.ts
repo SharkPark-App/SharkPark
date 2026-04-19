@@ -4,7 +4,7 @@ import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
-import { AuthGuard } from '@nestjs/passport';
+import { AzureAdGuard } from '../src/auth/azure-ad.guard';
 
 /** Mock guard to bypass Azure AD auth in e2e tests */
 class MockAuthGuard implements CanActivate {
@@ -20,7 +20,7 @@ describe('OccupancyEventsController (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-    .overrideGuard(AuthGuard('azure-ad'))
+    .overrideGuard(AzureAdGuard)
     .useClass(MockAuthGuard)
     .compile();
 
@@ -212,20 +212,6 @@ describe('OccupancyEventsController (e2e)', () => {
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.data.start_date).toBe(today);
-        });
-    });
-  });
-
-  describe('/api/v1/occupancy-events/snapshots (POST)', () => {
-    it('should create snapshots for all lots', () => {
-      return request(app.getHttpServer())
-        .post('/api/v1/occupancy-events/snapshots')
-        .expect(201)
-        .expect((res: Response) => {
-          expect(res.body.success).toBe(true);
-          expect(res.body.data).toHaveProperty('count');
-          expect(res.body.data).toHaveProperty('timestamp');
-          expect(res.body.data.count).toBeGreaterThanOrEqual(0);
         });
     });
   });

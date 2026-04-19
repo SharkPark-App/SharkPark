@@ -8,22 +8,16 @@ export const LOCATION_CONSTANTS = {
   // Distance filters (in meters)
   DISTANCE_FILTER_PRECISE: 5, // High precision for testing
   DISTANCE_FILTER_NORMAL: 50, // Battery-efficient for production
-  DISTANCE_FILTER_MINIMAL: 100, // Maximum battery saving
   
   // Accuracy settings (in meters)
-  ACCURACY_HIGH: 10, // High accuracy for testing
   ACCURACY_NORMAL: 100, // Good for parking lot detection
-  ACCURACY_LOW: 500, // Minimal accuracy
   
   // Timeouts (in milliseconds)
-  TIMEOUT_SHORT: 10000, // 10 seconds
   TIMEOUT_NORMAL: 15000, // 15 seconds
-  TIMEOUT_LONG: 30000, // 30 seconds
   
   // Cache settings (in milliseconds)
   CACHE_SHORT: 60000, // 1 minute
   CACHE_NORMAL: 300000, // 5 minutes
-  CACHE_LONG: 600000, // 10 minutes
 } as const;
 
 // Geofence radius settings
@@ -33,14 +27,6 @@ export const GEOFENCE_CONSTANTS = {
   RADIUS_MEDIUM: 50, // Standard parking lots
   RADIUS_LARGE: 100, // Large parking structures
   RADIUS_TEST: 8, // Testing/development radius
-  
-  // Platform limits
-  MAX_REGIONS_IOS: 20,
-  MAX_REGIONS_ANDROID: 100,
-  
-  // Performance thresholds
-  REGIONS_WARNING_THRESHOLD: 15, // Warn when approaching iOS limit
-  REGIONS_CRITICAL_THRESHOLD: 18, // Critical warning near iOS limit
 } as const;
 
 // Test coordinates and settings
@@ -91,18 +77,17 @@ export const UI_CONSTANTS = {
   TEST_ASYNC_WAIT_LONG: 100,
 } as const;
 
-// Privacy and compliance constants
-export const PRIVACY_CONSTANTS = {
-  // Data retention
-  LOG_RETENTION_DAYS: 7, // Keep debug logs for 7 days
-  EVENT_RETENTION_DAYS: 30, // Keep anonymous events for 30 days
-  
-  // Geographic precision limits
-  COORDINATE_PRECISION_DIGITS: 6, // Enough for meter-level accuracy
-  
-  // Anonymous event limits
-  MAX_EVENTS_PER_HOUR: 100, // Rate limiting for abuse prevention
-  MAX_EVENTS_PER_DAY: 1000,
+// Dynamic geofence loading configuration
+export const DYNAMIC_GEOFENCE = {
+  // Time after which E-lots open to students (24-hour format)
+  E_LOT_OPEN_HOUR: 17,           // 5 PM
+  E_LOT_OPEN_MINUTE: 30,         // :30
+
+  // Movement threshold to trigger dynamic recalculation (meters)
+  RECALCULATION_DISTANCE: 300,
+
+  // Campus proximity — only compute dynamic lots when within this radius (meters)
+  CAMPUS_RADIUS: 3000,           // 3 km from campus center
 } as const;
 
 // Accessibility constants

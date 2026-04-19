@@ -11,12 +11,14 @@ const config = {
   watchFolders: [
     path.resolve(__dirname, '../../node_modules'),
     path.resolve(__dirname, './node_modules'),
+    path.resolve(__dirname, '../../packages'),
   ],
   resolver: {
     nodeModulesPaths: [
       path.resolve(__dirname, './node_modules'),
       path.resolve(__dirname, '../../node_modules'),
     ],
+    unstable_enableSymlinks: true,
     disableHierarchicalLookup: false,
   },
   server: {

@@ -22,8 +22,6 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
-	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -32,6 +30,33 @@
 				<string>msauth.com.sharkpark.mobile</string>
 			</array>
 		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+		<string>citymapper</string>
+		<string>uber</string>
+		<string>lyft</string>
+		<string>transit</string>
+		<string>truckmap</string>
+		<string>waze</string>
+		<string>yandexnavi</string>
+		<string>moovit</string>
+		<string>yandextaxi</string>
+		<string>yandexmaps</string>
+		<string>kakaomap</string>
+		<string>tmap</string>
+		<string>szn-mapy</string>
+		<string>mapsme</string>
+		<string>osmandmaps</string>
+		<string>gett</string>
+		<string>nmap</string>
+		<string>dgis</string>
+		<string>lftgpas</string>
+		<string>sygic</string>
+    <string>tomtomgo</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
@@ -42,18 +67,37 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>SharkPark uses your location to automatically detect when you enter or leave campus parking lots, helping improve parking availability data for all students. Your specific location is never stored or shared - only anonymous parking lot entry/exit events.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SharkPark uses background location to detect parking lot entry and exit events even when the app is closed. This helps provide real-time parking data to the campus community. Your location data is processed locally and only anonymous parking events are shared.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>SharkPark needs background location access to detect parking lot usage patterns and provide accurate occupancy data. Your location is never stored - only anonymous entry/exit events are recorded.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SharkPark uses your location to automatically detect when you enter or leave campus parking lots, helping improve parking availability data for all students. Your specific location is never stored or shared - only anonymous parking lot entry/exit events.</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Ionicons.ttf</string>
+	</array>
+	<key>TSLocationManagerLicense</key>
+	<string></string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
+		<string>fetch</string>
+		<string>processing</string>
 	</array>
-	<key>RCTNewArchEnabled</key>
-	<true/>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.transistorsoft.fetch</string>
+	</array>
+	<key>NSMotionUsageDescription</key>
+	<string>SharkPark uses motion detection to determine when you have parked and when you are leaving, improving parking availability accuracy for all students.</string>
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>ParkingDetection</key>
+		<string>Precise location is needed to accurately detect when you enter and leave parking lots.</string>
+	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -76,5 +120,9 @@
 		<string>Inter-Regular.ttf</string>
 		<string>Inter-SemiBold.ttf</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>SharkPark uses Bluetooth state to improve parking detection accuracy by monitoring car connectivity patterns. This helps validate when you've actually parked your car.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>SharkPark monitors Bluetooth connectivity to enhance parking validation accuracy.</string>
 </dict>
 </plist>

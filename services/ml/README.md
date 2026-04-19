@@ -39,26 +39,30 @@ services/ml/
 │   ├── config.py              # Operating hours, snapshot settings
 │   ├── data/
 │   │   ├── synthetic.py       # Cold-start data generation
-│   │   └── real.py            # Real data loader from PostgreSQL
+│   │   └── db.py              # PostgreSQL read/write (snapshots, predictions)
 │   ├── features/
 │   │   ├── base.py            # Shared utilities (time encoding, validation)
 │   │   ├── short_term.py      # Lag features, momentum, current state
-│   │   └── long_term.py       # Historical baseline, semester patterns (planned)
+│   │   └── long_term.py       # Historical baseline + XGBoost deviation features
 │   ├── models/
 │   │   ├── short_term.py      # XGBoost regression with quantile CI
-│   │   ├── long_term.py       # Two-stage hybrid (planned, not yet implemented)
+│   │   ├── long_term.py       # Two-stage hybrid (baseline + XGBoost deviation)
 │   │   └── baselines.py       # Naive baselines for comparison
 │   ├── evaluation/
 │   │   ├── metrics.py         # MAE, RMSE, MAPE
 │   │   └── compare.py         # Model vs baseline vs production
-│   ├── promotion/
-│   │   └── registry.py        # MLflow registration, S3 export
 │   └── api/                   # (planned) FastAPI endpoints for local dev/debugging
 ├── scripts/
-│   ├── train.py               # Train a new model
-│   ├── evaluate.py            # Compare against baselines + production
-│   ├── promote.py             # Register winning model
-│   └── predict.py             # Batch inference, writes to PostgreSQL
+│   ├── train_short_term.py             # Train a new short-term model
+│   ├── evaluate_short_term.py          # Evaluate short-term candidate vs baselines + production
+│   ├── promote_short_term.py           # Register winning short-term model
+│   ├── predict_short_term.py           # Short-term batch inference, writes to PostgreSQL
+│   ├── check_short_term_predictions.py # Inspect predictions_short_term rows
+│   ├── train_long_term.py              # Train a new long-term model
+│   ├── evaluate_long_term.py           # Evaluate long-term candidate vs baselines + production
+│   ├── promote_long_term.py            # Register winning long-term model
+│   ├── predict_long_term.py            # Long-term batch inference, writes to PostgreSQL
+│   └── check_long_term_predictions.py  # Inspect predictions_long_term rows
 ├── data/                      # Generated data artifacts (gitignored parquets)
 ├── tests/                     # Unit and integration tests
 ├── mlruns/                    # MLflow tracking (gitignored)
@@ -68,39 +72,45 @@ services/ml/
 
 ## Setup
 
+**1. Install uv** (if not already installed):
+
+```bash
+# Windows (PowerShell):
+irm https://astral.sh/uv/install.ps1 | iex
+
+# macOS/Linux:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**2. Install dependencies:**
+
 ```bash
 cd services/ml
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-
-pip install -e ".[dev]"
+uv sync
 ```
+
+No activation needed — prefix all commands with `uv run` and it handles the environment automatically.
 
 
 ## Workflow
 
 ### 0. Generate synthetic data (cold-start)
 ```bash
-python -m src.data.synthetic                                        # Generate Fall 2025 (default)
-python -m src.data.synthetic --semester spring-2026                  # Generate Spring 2026
+uv run python -m src.data.synthetic                                        # → data/synthetic_fall-2025.parquet
+uv run python -m src.data.synthetic --semester spring-2026                  # → data/synthetic_spring-2026.parquet
 ```
 Generates synthetic occupancy snapshots for each parking lot at 15-minute intervals across the specified semester. Fetches lot metadata (IDs, capacities, types) from PostgreSQL and outputs a parquet file to `data/`.
 
 The `--semester` flag accepts `{term}-{year}` where year is the calendar year the term occurs in. Valid terms: `fall`, `spring`.
 
-> **Note:** You only need to run this once per semester. Re-run only if you change the synthetic data generator or want a different seed. To combine semesters, run once per semester with different `--output` paths and concatenate the parquets.
+> **Note:** One semester of synthetic data is sufficient for cold-start (patterns are identical across semesters). Multi-semester glob support exists for when real data accumulates and fall-vs-spring differences matter. Re-run only if you change the generator or want a different seed.
 
 Options:
 ```bash
-python -m src.data.synthetic --semester fall-2025 --preview 10      # Preview 10 sample records per lot type
-python -m src.data.synthetic --output data/custom.parquet           # Custom output filename
-python -m src.data.synthetic --max-records-per-lot 5000             # Downsample to fewer records per lot
-python -m src.data.synthetic --seed 123                             # Different random seed (default: 42)
+uv run python -m src.data.synthetic --semester fall-2025 --preview 10      # Preview 10 sample records per lot type
+uv run python -m src.data.synthetic --output data/custom.parquet           # Custom output filename
+uv run python -m src.data.synthetic --max-records-per-lot 5000             # Downsample to fewer records per lot
+uv run python -m src.data.synthetic --seed 123                             # Different random seed (default: 42)
 ```
 
 Requires PostgreSQL to be running with seeded lot data. 
@@ -110,32 +120,45 @@ Set `DATABASE_URL` for local PostgreSQL (default: `postgresql://sharkpark:sharkp
 ----
 ### 1. Train a model
 
+**Short-term:**
 ```bash
-python -m scripts.train
-python -m scripts.train --data-path data/custom.parquet
-python -m scripts.train --model-type long-term                          # (planned) Long-term model
+uv run python -m scripts.train_short_term                                                 # All data/synthetic_*.parquet files
+uv run python -m scripts.train_short_term --data-path data/synthetic_fall-2025.parquet    # Single file
+uv run python -m scripts.train_short_term --data-path "data/synthetic_*.parquet"          # Glob pattern (multiple semesters)
 ```
 
-Trains on synthetic data, logs experiment to `mlruns/`. Prints the MLflow run ID and metrics (MAE, RMSE, MAPE).
-
-> `--model-type` is planned — currently only `short-term` (default) is supported.
-
-(PLANNED) To mix real data from PostgreSQL with synthetic data:
+**Long-term:**
 ```bash
-python -m scripts.train --include-real                                  # All synthetic + all real
-python -m scripts.train --include-real --synthetic-ratio 0.3            # 30% synthetic, 70% real
-python -m scripts.train --include-real --real-start-date 2025-08-01     # Real data from a specific date
-python -m scripts.train --include-real --real-end-date 2025-12-01       # Real data up to a date
+uv run python -m scripts.train_long_term                                       # All data/synthetic_*.parquet files
+uv run python -m scripts.train_long_term --data-path data/synthetic_fall-2025.parquet
+```
+
+Trains on synthetic data, logs experiment to `mlruns/`. Prints the MLflow run ID and metrics.
+
+To mix real data from PostgreSQL with synthetic data:
+```bash
+uv run python -m scripts.train_short_term --include-real                                  # All synthetic + all real
+uv run python -m scripts.train_short_term --include-real --synthetic-weight 0.3            # Synthetic data at 30% influence
+uv run python -m scripts.train_short_term --include-real --real-start-date 2025-08-01     # Real data from a specific date
+uv run python -m scripts.train_short_term --include-real --real-end-date 2025-12-01       # Real data up to a date
 ```
 
 ----
 ### 2. Evaluate
 
+**Short-term:**
 ```bash
-python -m scripts.evaluate --run-id <mlflow-run-id>
-python -m scripts.evaluate --run-id <mlflow-run-id> --data-path data/custom.parquet
-python -m scripts.evaluate --run-id <mlflow-run-id> --model-type long-term  # (planned)
+uv run python -m scripts.evaluate_short_term --run-id <mlflow-run-id>
+uv run python -m scripts.evaluate_short_term --run-id <mlflow-run-id> --data-path data/custom.parquet  # override data
 ```
+
+**Long-term:**
+```bash
+uv run python -m scripts.evaluate_long_term --run-id <mlflow-run-id>
+uv run python -m scripts.evaluate_long_term --run-id <mlflow-run-id> --data-path data/custom.parquet
+```
+
+By default, downloads the training data artifact from the MLflow run. Use `--data-path` to override with a different dataset.
 
 Compares candidate model against:
 - **Baselines**: Persistence, majority class
@@ -150,41 +173,56 @@ Promotion criteria:
 ----
 ### 3. Promote (if candidate wins)
 
+**Short-term:**
 ```bash
-python -m scripts.promote --run-id <mlflow-run-id>
-python -m scripts.promote --run-id <mlflow-run-id> --model-type long-term   # (planned)
+uv run python -m scripts.promote_short_term --run-id <mlflow-run-id>
 
 # Later, when deploying to Lambda:
-python -m scripts.promote --run-id <mlflow-run-id> --export-s3
+uv run python -m scripts.promote_short_term --run-id <mlflow-run-id> --export-s3
 ```
 
-Registers the model in MLflow as `short-term-production` (or `long-term-production` when implemented) and transitions it to the Production stage.
+**Long-term:**
+```bash
+uv run python -m scripts.promote_long_term --run-id <mlflow-run-id>
+```
+
+Registers the model in MLflow as `short-term-production` or `long-term-production` and sets the production alias.
 
 -----
 ### 4. Predict (batch inference)
 
+**Short-term:**
 ```bash
-python -m scripts.predict                              # Write predictions to PostgreSQL (default)
-python -m scripts.predict --start-of-day               # Predict all hours (7-21)
-python -m scripts.predict --csv                        # Also write to local CSV
-python -m scripts.predict --csv --output data/preds.csv
-python -m scripts.predict --csv --format parquet
-python -m scripts.predict --model-type long-term       # (planned)
+uv run python -m scripts.predict_short_term                                        # Write predictions to PostgreSQL (default)
+uv run python -m scripts.predict_short_term --data-path data/custom.parquet        # Use parquet instead of DB
+uv run python -m scripts.predict_short_term --start-of-day                         # Predict all hours (7-21), use for scheduled/nightly runs
+uv run python -m scripts.predict_short_term --write-local                          # Also write to local CSV
+uv run python -m scripts.predict_short_term --write-local --output-path data/preds.csv
 ```
-- Loads the latest production model, builds inference features, and writes predictions to PostgreSQL (`predictions_short_term` table). 
-- Use `--csv` to also write a local file. Confidence intervals are generated via quantile regression (10th/90th percentile).
+
+**Long-term:**
+```bash
+uv run python -m scripts.predict_long_term                              # Write 7-day predictions to PostgreSQL
+uv run python -m scripts.predict_long_term --data-path data/custom.parquet
+uv run python -m scripts.predict_long_term --days-ahead 3               # Only next 3 days
+uv run python -m scripts.predict_long_term --write-local                # Also write to local CSV
+```
+- Loads the latest production model, builds inference features, and writes predictions to PostgreSQL (`predictions_short_term` or `predictions_long_term` table).
+- Use `--write-local` to also save a local CSV. Confidence intervals are generated via quantile regression (10th/90th percentile).
+
+> **Local dev:** Without `--data-path`, predict fetches live snapshots from PostgreSQL (last 2 hours). This requires the backend scheduler to be running. For local testing with synthetic data, always pass `--data-path`.
 ---
 ### 5. Rollback (planned)
 
 ```bash
-python -m scripts.promote --run-id <previous-run-id>
+uv run python -m scripts.promote_short_term --run-id <previous-run-id>
 ```
 
 ## Local Development
 
 MLflow UI:
 ```bash
-mlflow ui
+uv run mlflow ui
 # Open http://localhost:5000
 ```
 
@@ -245,11 +283,11 @@ Backend and ML never communicate directly. ML queries training data with native 
 | Model | Primary Metric | Target |
 |-------|----------------|--------|
 | Short-term | MAE | < 10% of lot capacity |
-| Long-term | MAE (horizon-stratified) | Day 1-2: <10%, Day 3-5: <15%, Day 6-7: <25% |
+| Long-term | MAE (horizon-stratified) | Day 1-2: <10%, Day 3-5: <15%, Day 6-7: <25% (planned; current gate: <15% flat) |
 
 Secondary metrics: RMSE, MAPE, day-ahead accuracy.
 
-Models must beat all naive baselines (persistence, majority class) on MAE as a hard gate before promotion criteria are evaluated. Historical average and same-day-last-week baselines will be added when long-term model is implemented.
+Models must beat all active baselines on MAE as a hard gate before promotion criteria are evaluated. Which baselines are active depends on real data coverage — see [Baseline validation gates](Model_Design.md#baseline-validation-gates) for details.
 
 ## Cold Start
 
@@ -282,16 +320,16 @@ The prediction logic (`src/models/`, `src/features/`) stays the same—only the 
 
 ```bash
 # Check for lint errors
-ruff check .
+uv run ruff check .
 
 # Auto-fix lint errors
-ruff check . --fix
+uv run ruff check . --fix
 
 # Format code
-ruff format .
+uv run ruff format .
 
 # Check formatting without changing files
-ruff format . --check
+uv run ruff format . --check
 ```
 
 ## Testing
@@ -299,18 +337,18 @@ ruff format . --check
 Run a specific test file:
 ```bash
 cd services/ml
-python -m pytest tests/data/test_synthetic.py -v
+uv run pytest tests/data/test_synthetic.py -v
 ```
 
 Run all tests:
 ```bash
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 Run tests with coverage report:
 ```bash
 # Terminal report showing coverage percentage
-python -m pytest tests/ --cov=src --cov=scripts --cov-report=term-missing
+uv run pytest tests/ --cov=src --cov=scripts --cov-report=term-missing
 ```
 
 ## Notes

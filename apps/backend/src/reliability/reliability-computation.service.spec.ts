@@ -9,6 +9,8 @@ describe('ReliabilityComputationService', () => {
   let prisma: {
     lot: { findFirst: jest.Mock; findMany: jest.Mock };
     occupancyEvent: { findMany: jest.Mock };
+    predictionShortTerm: { findMany: jest.Mock };
+    occupancySnapshot: { findFirst: jest.Mock };
   };
   let reliabilityService: jest.Mocked<ReliabilityService>;
 
@@ -49,6 +51,8 @@ describe('ReliabilityComputationService', () => {
     prisma = {
       lot: { findFirst: jest.fn(), findMany: jest.fn() },
       occupancyEvent: { findMany: jest.fn() },
+      predictionShortTerm: { findMany: jest.fn().mockResolvedValue([]) },
+      occupancySnapshot: { findFirst: jest.fn().mockResolvedValue(null) },
     };
 
     const mockReliabilityService = {

@@ -8,6 +8,7 @@ describe('WeatherController', () => {
 
   const mockWeatherService = {
     getCurrent: jest.fn(),
+    getWeatherImpact: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -67,6 +68,38 @@ describe('WeatherController', () => {
       if (result.data) {
         expect((result.data as unknown as { parking_impact_factor: number }).parking_impact_factor).toBe(1.25);
       }
+    });
+  });
+
+  describe('getWeatherImpact', () => {
+    it('should return weather impact data', async () => {
+      const mockImpact = {
+        factor: 1.15,
+        description: 'Weather impact: rain increases demand (+15% demand)',
+        conditions: 'light rain',
+        is_raining: true,
+        temperature_f: 65,
+      };
+
+      mockWeatherService.getWeatherImpact.mockResolvedValue(mockImpact);
+
+      const result = await controller.getWeatherImpact();
+
+      expect(result).toEqual({
+        success: true,
+        data: mockImpact,
+      });
+    });
+
+    it('should return null data when no weather available', async () => {
+      mockWeatherService.getWeatherImpact.mockResolvedValue(null);
+
+      const result = await controller.getWeatherImpact();
+
+      expect(result).toEqual({
+        success: true,
+        data: null,
+      });
     });
   });
 });

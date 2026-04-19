@@ -8,7 +8,8 @@ import {
 } from 'react-native';
 import { Text } from '../CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { useLotsList } from '../../hooks/useLotData';
 import { getOccupancyColor } from '../../utils/parkingUtils';
 import { lotsApi, LotRecommendation } from '../../services/api';
@@ -39,6 +40,7 @@ export function RecommendationModal({
   onClose,
   onSelectLot,
 }: RecommendationModalProps) {
+  const { colors, spacing, typography, isDark } = useTheme();
   const { lots, loading: lotsLoading } = useLotsList();
   const [step, setStep] = useState<Step>('favorites');
   const [sourceLotId, setSourceLotId] = useState<string | null>(null);
@@ -46,6 +48,8 @@ export function RecommendationModal({
   const [error, setError] = useState<string | null>(null);
   // Animated value: -1 = exiting left, 0 = centered, 1 = exiting right
   const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const styles = useMemo(() => getStyles(colors, spacing, typography, isDark), [colors, spacing, typography, isDark]);
 
   const favoriteLots = useMemo(() => {
     if (!favoriteLotIds || favoriteLotIds.length === 0) return [];
@@ -142,7 +146,7 @@ export function RecommendationModal({
     if (lotsLoading) {
       return (
         <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       );
     }
@@ -150,7 +154,7 @@ export function RecommendationModal({
     if (favoriteLots.length === 0) {
       return (
         <View style={styles.emptyContainer}>
-          <Icon name="star-outline" size={40} color={COLORS.mediumGray} />
+          <Icon name="star-outline" size={40} color={colors.mediumGray} />
           <Text style={styles.emptyTitle}>No Favorite Lots</Text>
           <Text style={styles.emptySubtext}>
             Star a lot from its forecast page to see it here and get personalized recommendations.
@@ -197,7 +201,7 @@ export function RecommendationModal({
                 onPress={() => handleFindAlternatives(lot.lot_id)}
                 activeOpacity={0.6}
               >
-                <Icon name="swap-horizontal" size={20} color={COLORS.secondary} />
+                <Icon name="swap-horizontal" size={20} color={isDark ? colors.primary : colors.secondary} />
                 <Text style={styles.altButtonText}>Alts</Text>
               </TouchableOpacity>
             </View>
@@ -210,7 +214,7 @@ export function RecommendationModal({
   // ─── Loading state ───
   const renderLoading = () => (
     <View style={styles.loaderContainer}>
-      <ActivityIndicator size="large" color={COLORS.primary} />
+      <ActivityIndicator size="large" color={colors.primary} />
       <Text style={styles.loadingText}>Finding alternatives…</Text>
     </View>
   );
@@ -220,7 +224,7 @@ export function RecommendationModal({
     if (error) {
       return (
         <View style={styles.emptyContainer}>
-          <Icon name="alert-circle-outline" size={40} color={COLORS.error} />
+          <Icon name="alert-circle-outline" size={40} color={colors.error} />
           <Text style={styles.emptyTitle}>Something went wrong</Text>
           <Text style={styles.emptySubtext}>{error}</Text>
         </View>
@@ -230,7 +234,7 @@ export function RecommendationModal({
     if (recommendations.length === 0) {
       return (
         <View style={styles.emptyContainer}>
-          <Icon name="car-outline" size={40} color={COLORS.mediumGray} />
+          <Icon name="car-outline" size={40} color={colors.mediumGray} />
           <Text style={styles.emptyTitle}>No Alternatives Found</Text>
           <Text style={styles.emptySubtext}>
             All similar lots are currently full. Try again later.
@@ -298,7 +302,7 @@ export function RecommendationModal({
           <View style={styles.header}>
             {step === 'alternatives' && (
               <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                <Icon name="arrow-back" size={20} color={COLORS.textPrimary} />
+                <Icon name="arrow-back" size={20} color={colors.textPrimary} />
               </TouchableOpacity>
             )}
             <Text style={styles.title}>{title}</Text>
@@ -335,13 +339,18 @@ export function RecommendationModal({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (
+  colors: ThemeColors, 
+  spacing: typeof SPACING, 
+  typography: typeof TYPOGRAPHY,
+  isDark: boolean
+) => StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: SPACING.xl,
+    padding: spacing.xl,
   },
   backdropPress: {
     position: 'absolute',
@@ -351,8 +360,8 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   modal: {
-    backgroundColor: COLORS.white,
-    borderRadius: SPACING.xl,
+    backgroundColor: colors.white,
+    borderRadius: spacing.xl,
     width: '100%',
     maxWidth: 448,
     height: 480,
@@ -365,19 +374,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: SPACING.xl,
+    padding: spacing.xl,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderGray,
+    borderBottomColor: colors.borderGray,
   },
   title: {
     flex: 1,
     fontSize: TYPOGRAPHY.fontSize.xl,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
   },
   backButton: {
     padding: 6,
-    marginRight: SPACING.md,
+    marginRight: spacing.md,
   },
   closeButton: {
     padding: 8,
@@ -385,24 +394,24 @@ const styles = StyleSheet.create({
   },
   closeIcon: {
     fontSize: 20,
-    color: COLORS.mediumGray,
+    color: colors.mediumGray,
   },
   scrollContent: {
-    padding: SPACING.lg,
+    padding: spacing.lg,
   },
   stepHint: {
-    fontSize: TYPOGRAPHY.fontSize.md,
-    color: COLORS.mediumGray,
-    marginBottom: SPACING.lg,
+    fontSize: typography.fontSize.md,
+    color: isDark? colors.darkGray : colors.mediumGray,
+    marginBottom: spacing.lg,
     textAlign: 'center',
   },
   lotRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.lightGray,
-    padding: SPACING.xl,
-    borderRadius: SPACING.md,
-    marginBottom: SPACING.md,
+    backgroundColor: colors.lightGray,
+    padding: spacing.xl,
+    borderRadius: spacing.md,
+    marginBottom: spacing.md,
   },
   infoContainer: {
     flex: 1,
@@ -410,13 +419,13 @@ const styles = StyleSheet.create({
   lotHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.md,
+    gap: spacing.md,
     marginBottom: 2,
   },
   lotName: {
     fontSize: 18,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
     flex: 1,
     flexShrink: 1,
   },
@@ -429,21 +438,21 @@ const styles = StyleSheet.create({
   pctBadgeText: {
     fontSize: 12,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    color: COLORS.white,
+    color: colors.white,
   },
   occupancyText: {
     fontSize: 14,
-    color: COLORS.mediumGray,
+    color: colors.mediumGray,
     marginVertical: 2,
   },
   reasonText: {
     fontSize: 13,
-    color: COLORS.secondary,
+    color: isDark ? colors.primary : colors.secondary,
     marginBottom: 4,
   },
   progressBarBg: {
     height: 8,
-    backgroundColor: COLORS.borderGray,
+    backgroundColor: colors.borderGray,
     borderRadius: 4,
     overflow: 'hidden',
     marginTop: 4,
@@ -455,49 +464,49 @@ const styles = StyleSheet.create({
   altButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    marginLeft: SPACING.md,
-    borderRadius: SPACING.md,
-    backgroundColor: COLORS.white,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginLeft: spacing.md,
+    borderRadius: spacing.md,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: COLORS.borderGray,
+    borderColor: colors.borderGray,
   },
   altButtonText: {
     fontSize: 11,
-    color: COLORS.secondary,
+    color: isDark ? colors.primary : colors.secondary,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginTop: 2,
   },
   arrow: {
     fontSize: 24,
-    color: COLORS.mediumGray,
-    marginLeft: SPACING.md,
+    color: colors.mediumGray,
+    marginLeft: spacing.md,
   },
   loaderContainer: {
     padding: 50,
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: SPACING.lg,
-    fontSize: TYPOGRAPHY.fontSize.md,
-    color: COLORS.mediumGray,
+    marginTop: spacing.lg,
+    fontSize: typography.fontSize.md,
+    color: colors.mediumGray,
   },
   emptyContainer: {
-    padding: SPACING.xxl,
+    padding: spacing.xxl,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
-    color: COLORS.darkGray,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.xs,
+    color: colors.darkGray,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
   },
   emptySubtext: {
-    fontSize: TYPOGRAPHY.fontSize.md,
-    color: COLORS.mediumGray,
+    fontSize: typography.fontSize.md,
+    color: colors.mediumGray,
     textAlign: 'center',
     lineHeight: 20,
   },

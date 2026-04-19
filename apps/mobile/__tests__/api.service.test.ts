@@ -36,3 +36,113 @@ describe('ApiError', () => {
     expect(error.stack).toBeDefined();
   });
 });
+
+describe('ApiService', () => {
+  const mockFetch = jest.fn();
+  const origFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    globalThis.fetch = mockFetch;
+    jest.clearAllMocks();
+  });
+
+  afterAll(() => {
+    globalThis.fetch = origFetch;
+  });
+
+  // Use a fresh import to get a real ApiService instance (not the mock)
+  // We test via the exported singleton
+  const { apiService } = jest.requireActual('../src/services/api/base') as typeof import('../src/services/api/base');
+
+  it('should make a GET request with correct URL and headers', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: { id: 1 } }),
+    });
+
+    const result = await apiService.get('/test');
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/test'),
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('should make a POST request with JSON body', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: {} }),
+    });
+
+    await apiService.post('/test', { key: 'value' });
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/test'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ key: 'value' }),
+      }),
+    );
+  });
+
+  it('should throw ApiError on non-OK response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      text: () => Promise.resolve('not found'),
+    });
+
+    await expect(apiService.post('/fail', {})).rejects.toThrow('HTTP 404');
+  });
+
+  it('should throw ApiError with status 0 on network failure', async () => {
+    mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await expect(apiService.post('/fail', {})).rejects.toMatchObject({ status: 0 });
+  });
+
+  it('should retry GET requests on server errors', async () => {
+    // First call fails with 500, second succeeds
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: () => Promise.resolve(''),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: 'ok' }),
+      });
+
+    const result = await apiService.get('/retry-test');
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(result.data).toBe('ok');
+  });
+
+  it('should make a PUT request', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: {} }),
+    });
+
+    await apiService.put('/test', { update: true });
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/test'),
+      expect.objectContaining({ method: 'PUT' }),
+    );
+  });
+
+  it('should make a DELETE request', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: {} }),
+    });
+
+    await apiService.delete('/test');
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/test'),
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+});

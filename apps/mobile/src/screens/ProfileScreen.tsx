@@ -6,9 +6,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SectionCard } from '../components/SectionCard';
 import { Header } from '../components';
-import { GeofencingTestButton } from '../components/GeofencingTestButton';
+// Dev-only components: loaded conditionally so Metro strips them from production bundles
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const GeofencingTestButton = __DEV__ ? require('../components/GeofencingTestButton').GeofencingTestButton : null;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ParkingValidationDebug = __DEV__ ? require('../components/ParkingValidationDebug').default : null;
 import useLocationService from '../hooks/useLocationService';
-import { useSimpleGeofencing } from '../context/SimpleGeofencingProvider';
+import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -22,24 +26,24 @@ const ProfileScreen: React.FC = () => {
 
   // Location service hook for permission checking
   const {
-    permissionStatus,
+    isTracking,
     requestPermissions,
   } = useLocationService();
 
-  // Geofencing status from background provider
-  const { isGeofencingActive, currentLotId } = useSimpleGeofencing();
+  // Geofencing status from enhanced provider
+  const { isGeofencingActive, currentLotId, currentValidationStatus, currentLeaveIntent, debugInfo } = useEnhancedGeofencing();
 
   // Initialize permissions check
   useEffect(() => {
     // Background geofencing will automatically start when permissions are granted
-    if (permissionStatus?.granted) {
+    if (isTracking) {
       // Location permissions granted, background geofencing available
     }
-  }, [permissionStatus]);
+  }, [isTracking]);
 
   // Show geofencing status to user
   const getGeofencingStatusText = () => {
-    if (!permissionStatus?.granted) {
+    if (!isTracking) {
       return 'Location access needed';
     }
     if (isGeofencingActive) {
@@ -176,8 +180,8 @@ const ProfileScreen: React.FC = () => {
                 </View>
               </View>
 
-              {!permissionStatus?.granted && (
-                <TouchableOpacity
+            {!isTracking && (
+              <TouchableOpacity 
                 style={[styles.settingsButton, { backgroundColor: colors.primary }]}
                   onPress={openLocationSettings}
                 >
@@ -189,13 +193,20 @@ const ProfileScreen: React.FC = () => {
 
               {currentLotId && (
               <View style={[styles.statusInfo, { backgroundColor: '#ecfdf5', borderColor: '#10b981' }]}>
-                  <Text style={[styles.statusText, { color: '#059669' }]}>
-                    📍 Currently in parking lot
-                  </Text>
-                </View>
-              )}
-            </View>
+                <Text style={[styles.statusText, { color: '#059669' }]}>
+                  📍 Currently in parking lot
+                </Text>
+              </View>
+            )}
+          </View>
+        </SectionCard>
+
+        {/* Parking Validation Debug - Development Only */}
+        {__DEV__ && ParkingValidationDebug && (
+          <SectionCard title="Parking Validation Debug">
+            <ParkingValidationDebug />
           </SectionCard>
+        )}
 
           {/* Appearance Settings */}
           <SectionCard title="Appearance">
@@ -256,8 +267,8 @@ const ProfileScreen: React.FC = () => {
           <Text style={[styles.logoutButtonText, { color: colors.errorText }]}>Logout</Text>
           </TouchableOpacity>
 
-          {/* Development Test Button */}
-          <GeofencingTestButton />
+        {/* Development Test Button */}
+        {__DEV__ && GeofencingTestButton && <GeofencingTestButton />}
         
         </ScrollView>
       </SafeAreaView>

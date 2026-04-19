@@ -8,11 +8,13 @@ import { PenetrationEstimationService } from '../lots/penetration-estimation.ser
 describe('OccupancyEventsService', () => {
   let service: OccupancyEventsService;
   let prisma: {
-    lot: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+    lot: { findFirst: jest.Mock; findUniqueOrThrow: jest.Mock; findMany: jest.Mock; update: jest.Mock };
     occupancyEvent: { create: jest.Mock; findMany: jest.Mock };
-    occupancySnapshot: { create: jest.Mock; findMany: jest.Mock };
+    occupancySnapshot: { create: jest.Mock; createMany: jest.Mock; findMany: jest.Mock };
     deviceState: { findUnique: jest.Mock; upsert: jest.Mock };
+    weather: { findFirst: jest.Mock };
     $transaction: jest.Mock;
+    $executeRaw: jest.Mock;
   };
   let mockReliabilityService: {
     computeReliabilitySummary: jest.Mock;
@@ -31,11 +33,13 @@ describe('OccupancyEventsService', () => {
 
   beforeEach(async () => {
     prisma = {
-      lot: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+      lot: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), findMany: jest.fn(), update: jest.fn() },
       occupancyEvent: { create: jest.fn(), findMany: jest.fn() },
-      occupancySnapshot: { create: jest.fn(), findMany: jest.fn() },
+      occupancySnapshot: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn() },
       deviceState: { findUnique: jest.fn(), upsert: jest.fn() },
+      weather: { findFirst: jest.fn() },
       $transaction: jest.fn(),
+      $executeRaw: jest.fn(),
     };
 
     mockReliabilityService = {
@@ -118,9 +122,7 @@ describe('OccupancyEventsService', () => {
       // No duplicate found
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(validDto);
 
@@ -135,14 +137,14 @@ describe('OccupancyEventsService', () => {
 
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(exitDto);
 
       expect(result.event_type).toBe('EXIT');
       expect(result.deduplicated).toBe(false);
+      // Atomic decrement via raw SQL GREATEST(current_occupancy - 1, 0)
+      expect(prisma.$executeRaw).toHaveBeenCalled();
     });
 
     it('should return deduplicated=true when duplicate detected', async () => {
@@ -153,27 +155,25 @@ describe('OccupancyEventsService', () => {
         lot_id: 'lot-uuid-1',
         last_event_type: 'ENTER',
       });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(validDto);
 
       expect(result.deduplicated).toBe(true);
-      // Transaction should NOT be called for duplicates
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      // Transaction IS called but dedup check inside returns early
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.occupancyEvent.create).not.toHaveBeenCalled();
     });
 
     it('should handle device hash consistently', async () => {
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result1 = await service.create(validDto);
 
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result2 = await service.create(validDto);
 
@@ -194,34 +194,28 @@ describe('OccupancyEventsService', () => {
       await expect(service.create(validDto)).rejects.toThrow('Lot G1 not found');
     });
 
-    it('should not decrement occupancy below 0 on EXIT', async () => {
+    it('should atomically prevent occupancy from going below 0 on EXIT', async () => {
       const zeroLot = { ...mockLot, current_occupancy: 0 };
       const exitDto = { ...validDto, event_type: 'EXIT' as const };
 
       prisma.lot.findFirst.mockResolvedValue(zeroLot);
       prisma.deviceState.findUnique.mockResolvedValue(null);
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
 
       const result = await service.create(exitDto);
 
       expect(result.deduplicated).toBe(false);
-      // lot.update should NOT be called because occupancy is already 0
-      expect(prisma.lot.update).not.toHaveBeenCalled();
+      // Atomic GREATEST(current_occupancy - 1, 0) handles the floor in a single statement
+      expect(prisma.$executeRaw).toHaveBeenCalled();
+      // No separate read+conditional — the DB handles it atomically
+      expect(prisma.lot.findUniqueOrThrow).not.toHaveBeenCalled();
     });
 
-    it('should handle checkDuplicate failure gracefully (not duplicate)', async () => {
+    it('should throw InternalServerError when transaction fails', async () => {
       prisma.lot.findFirst.mockResolvedValue(mockLot);
-      prisma.deviceState.findUnique.mockRejectedValue(new Error('Redis down'));
-      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<void>) => {
-        await fn(prisma);
-      });
+      prisma.$transaction.mockRejectedValue(new Error('Connection lost'));
 
-      const result = await service.create(validDto);
-
-      // Should proceed as non-duplicate when checkDuplicate fails
-      expect(result.deduplicated).toBe(false);
+      await expect(service.create(validDto)).rejects.toThrow('Failed to record occupancy event');
     });
   });
 
@@ -271,14 +265,11 @@ describe('OccupancyEventsService', () => {
   describe('getEventStats', () => {
     it('should calculate correct statistics', async () => {
       const mockLot = { id: 'lot-uuid-1', lot_id: 'G1' };
-      const mockEvents = [
-        { event_type: 'ENTER', timestamp: new Date(), device_hash: 'h1' },
-        { event_type: 'ENTER', timestamp: new Date(), device_hash: 'h2' },
-        { event_type: 'EXIT', timestamp: new Date(), device_hash: 'h3' },
-      ];
-
       prisma.lot.findFirst.mockResolvedValue(mockLot);
-      prisma.occupancyEvent.findMany.mockResolvedValue(mockEvents);
+      (prisma as any).occupancyEvent.groupBy = jest.fn().mockResolvedValue([
+        { event_type: 'ENTER', _count: { event_type: 2 } },
+        { event_type: 'EXIT', _count: { event_type: 1 } },
+      ]);
 
       const stats = await service.getEventStats('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
@@ -289,7 +280,7 @@ describe('OccupancyEventsService', () => {
 
     it('should handle empty events', async () => {
       prisma.lot.findFirst.mockResolvedValue({ id: 'lot-uuid-1', lot_id: 'G1' });
-      prisma.occupancyEvent.findMany.mockResolvedValue([]);
+      (prisma as any).occupancyEvent.groupBy = jest.fn().mockResolvedValue([]);
 
       const stats = await service.getEventStats('G1', '2026-02-07', '2026-02-07T23:59:59Z');
 
@@ -308,27 +299,33 @@ describe('OccupancyEventsService', () => {
 
       prisma.lot.findMany.mockResolvedValue(mockLots);
       prisma.occupancyEvent.findMany.mockResolvedValue([]);
-      prisma.occupancySnapshot.create.mockResolvedValue({});
+      prisma.occupancySnapshot.createMany.mockResolvedValue({ count: 2 });
+      prisma.weather.findFirst.mockResolvedValue({ id: 'weather-1' });
 
       const result = await service.createSnapshots();
 
       expect(result.count).toBe(2);
       expect(result.timestamp).toBeDefined();
-      expect(prisma.occupancySnapshot.create).toHaveBeenCalledTimes(2);
+      expect(prisma.occupancySnapshot.createMany).toHaveBeenCalledTimes(1);
       expect(mockPenetrationService.estimateForAllLots).toHaveBeenCalledWith(mockLots, expect.any(Date));
 
-      // Verify snapshot includes estimated_occupancy and penetration_rate_used
-      const firstCallData = prisma.occupancySnapshot.create.mock.calls[0][0].data;
-      expect(firstCallData.estimated_occupancy).toBe(50);
-      expect(firstCallData.penetration_rate_used).toBe(1);
-      expect(firstCallData.occupancy).toBe(50); // raw occupancy preserved
-      expect(firstCallData.available).toBe(50); // raw: capacity(100) - rawOccupancy(50)
-      expect(firstCallData.is_campus_open).toBe(true); // derived from estimate.isClosure
+      // Verify snapshot data includes estimated_occupancy and penetration_rate_used
+      const snapshotData = prisma.occupancySnapshot.createMany.mock.calls[0][0].data;
+      expect(snapshotData).toHaveLength(2);
+      expect(snapshotData[0].estimated_occupancy).toBe(50);
+      expect(snapshotData[0].penetration_rate_used).toBe(1);
+      expect(snapshotData[0].occupancy).toBe(50); // raw occupancy preserved
+      expect(snapshotData[0].available).toBe(50); // raw: capacity(100) - rawOccupancy(50)
+      expect(snapshotData[0].is_campus_open).toBe(true); // derived from estimate.isClosure
 
       // Academic calendar ML feature columns
-      expect(firstCallData.semester).toBeDefined();
-      expect(firstCallData.academic_period).toBeDefined();
-      expect(typeof firstCallData.week_of_semester).toBe('number');
+      expect(snapshotData[0].semester).toBeDefined();
+      expect(snapshotData[0].academic_period).toBeDefined();
+      expect(typeof snapshotData[0].week_of_semester).toBe('number');
+
+      // Weather context attached to each snapshot
+      expect(snapshotData[0].weather_id).toBe('weather-1');
+      expect(snapshotData[1].weather_id).toBe('weather-1');
     });
 
     it('should throw InternalServerErrorException on error', async () => {
@@ -367,6 +364,41 @@ describe('OccupancyEventsService', () => {
 
       await expect(service.getSnapshots('G1', '2026-02-07'))
         .rejects.toThrow('Failed to fetch snapshots for lot G1');
+    });
+  });
+
+  describe('cleanupStaleDeviceStates', () => {
+    it('should decrement occupancy and delete stale ENTER device states', async () => {
+      const staleStates = [
+        { id: 'ds-1', lot_id: 'lot-uuid-1', device_hash: 'hash-1' },
+        { id: 'ds-2', lot_id: 'lot-uuid-2', device_hash: 'hash-2' },
+      ];
+
+      (prisma as any).deviceState.findMany = jest.fn().mockResolvedValue(staleStates);
+      (prisma as any).deviceState.deleteMany = jest.fn().mockResolvedValue({ count: 2 });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+
+      const result = await service.cleanupStaleDeviceStates(18);
+
+      expect(result.cleaned).toBe(2);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+      expect((prisma as any).deviceState.deleteMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return cleaned:0 when no stale records exist', async () => {
+      (prisma as any).deviceState.findMany = jest.fn().mockResolvedValue([]);
+
+      const result = await service.cleanupStaleDeviceStates(18);
+
+      expect(result.cleaned).toBe(0);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should throw InternalServerErrorException on database error', async () => {
+      (prisma as any).deviceState.findMany = jest.fn().mockRejectedValue(new Error('Connection lost'));
+
+      await expect(service.cleanupStaleDeviceStates(18))
+        .rejects.toThrow('Failed to clean up stale device states');
     });
   });
 });

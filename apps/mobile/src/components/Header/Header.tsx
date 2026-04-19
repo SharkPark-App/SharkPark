@@ -90,6 +90,12 @@ const styles = StyleSheet.create({
     width: 44, // Match back button width for balance
     height: 44, // Match back button height for balance
   },
+  rightAction: {
+    width: 66, // Slight offset to pull button away from edge
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
 });
 
 export default Header;

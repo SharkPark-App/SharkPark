@@ -10,14 +10,22 @@ Run from services/ml/:
     python -m pytest tests/models/test_short_term.py -v
 """
 
-import os
 import tempfile
 
-import mlflow
 import numpy as np
 import pytest
 
 from src.models.short_term import ShortTermModel
+
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def _use_isolated_mlflow(isolated_mlflow):
+    """Ensure all tests in this module use isolated MLflow tracking."""
 
 
 # =============================================================================
@@ -150,17 +158,56 @@ class TestShortTermModel:
         test_features = result["test_features"]
         original_preds = model.predict(test_features)
 
-        # Point MLflow at a temp directory so artifacts don't
-        # pollute the real mlruns/ used during development
-        with tempfile.TemporaryDirectory() as tmpdir:
-            mlflow.set_tracking_uri(f"file:///{tmpdir.replace(os.sep, '/')}")
-
-            run_id = model.save_mlflow(metrics={"mae": 0.05})
-            loaded_model = ShortTermModel.load_mlflow(run_id)
+        run_id = model.save_mlflow(metrics={"mae": 0.05})
+        loaded_model = ShortTermModel.load_mlflow(run_id)
 
         # Predictions from loaded model should match the original
         loaded_preds = loaded_model.predict(test_features)
         np.testing.assert_array_almost_equal(original_preds, loaded_preds)
+
+    def test_train_includes_low_confidence_rows(self, synthetic_df):
+        """LOW-confidence rows must not be filtered — downweighting handled by cold-start weights"""
+        df = synthetic_df.copy()
+        df["confidence"] = "LOW"
+
+        model = ShortTermModel()
+        result = model.train(df)
+        assert result["train_size"] > 0
+
+    def test_predict_quantiles_cold_start_widens_intervals(self, synthetic_df):
+        """Cold-start lots should get wider confidence intervals."""
+        model = ShortTermModel()
+        result = model.train(synthetic_df)
+
+        if "test_features" not in result or result["test_features"].empty:
+            pytest.skip("No test features produced")
+
+        test_features = result["test_features"].copy()
+
+        # Baseline: cold-start flag set to False
+        test_features["is_cold_start"] = False
+        median_base, lower_base, upper_base = model.predict_quantiles(test_features)
+
+        # With cold-start flag set to True for all rows
+        test_features["is_cold_start"] = True
+        median_cs, lower_cs, upper_cs = model.predict_quantiles(test_features)
+
+        # Median should be unchanged
+        np.testing.assert_array_almost_equal(median_base, median_cs)
+
+        # Cold-start intervals should be at least as wide as baseline
+        spread_base = upper_base - lower_base
+        spread_cs = upper_cs - lower_cs
+        assert (spread_cs >= spread_base - 1e-9).all(), (
+            "Cold-start intervals should be wider than or equal to baseline"
+        )
+
+        # At least some intervals should actually be wider (where spread > 0)
+        has_spread = spread_base > 1e-6
+        if has_spread.any():
+            assert (spread_cs[has_spread] > spread_base[has_spread] + 1e-9).any(), (
+                "Expected some cold-start intervals to be strictly wider"
+            )
 
     def test_mlflow_save_before_train_raises(self):
         """save_mlflow on an untrained model should raise RuntimeError."""

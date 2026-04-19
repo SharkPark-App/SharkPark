@@ -15,6 +15,7 @@ import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { Header, ReliabilityMeter } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
+import { MapSelectModal } from '../components/Modals/MapSelectModal';
 import { useReliability } from '../hooks/useReliability';
 import useFavorites from '../hooks/useFavorites';
 
@@ -48,6 +49,7 @@ export function ShortTermForecastScreen() {
   const onBack = () => navigation.goBack();
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isReliabilityModalOpen, setIsReliabilityModalOpen] = useState(false);
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
 
   // For favorites
   const { addFavorite, removeFavorite, favoriteLots } = useFavorites();
@@ -181,7 +183,7 @@ export function ShortTermForecastScreen() {
       {/* Navigate Button (bottom right, symmetric to report button) */}
       <TouchableOpacity
         style={styles.fabNavigate}
-        onPress={() => { /* TODO: Add navigation logic here */ }}
+        onPress={() => setIsMapModalOpen(true)}
         activeOpacity={0.8}
       >
         <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} />
@@ -200,6 +202,14 @@ export function ShortTermForecastScreen() {
         isOpen={isReliabilityModalOpen}
         onClose={() => setIsReliabilityModalOpen(false)}
         reliability={reliability}
+      />
+
+      <MapSelectModal 
+        isVisible={isMapModalOpen} 
+        onClose={() => setIsMapModalOpen(false)}
+        lat={lot.center_lat} 
+        lon={lot.center_lng} 
+        title={lot.lot_name} 
       />
     </View>
   );

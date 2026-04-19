@@ -1,6 +1,8 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { loginWithAzure, logoutFromAzure, loadAuth, saveAuth, AuthResult } from '../auth/AzureAuth';
 
+export const geofenceLotFilterKey = (email: string) => `@geofence_lot_filter/${email}`;
+
 type AuthState = AuthResult;
 
 interface AuthContextType {
@@ -75,7 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Log unexpected errors but still clear local state
       if (__DEV__) console.error('[AuthContext] Azure logout error:', error);
     }
-    
+
     // Clear React state (local storage already cleared in logoutFromAzure)
     setUser(null);
     setIsAuthenticated(false);

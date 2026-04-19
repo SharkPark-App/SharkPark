@@ -3,8 +3,7 @@ Tests for shared feature engineering utilities (src.features.base).
 
 Covers:
     - Cyclical encoding (encode_cyclical, add_hour_encoding, add_day_encoding)
-    - Time extraction and bucketing
-    - Occupancy bucketing
+    - Time extraction
     - Data validation
     - Full base feature pipeline
 
@@ -20,10 +19,6 @@ from src.features.base import (
     add_hour_encoding,
     add_day_encoding,
     extract_time_components,
-    bucket_hour,
-    add_time_bucket,
-    bucket_occupancy_rate,
-    add_activity_level,
     validate_snapshot_data,
     prepare_base_features,
 )
@@ -132,77 +127,6 @@ class TestExtractTimeComponents:
 
 
 # =============================================================================
-# Time Bucketing
-# =============================================================================
-
-
-class TestBucketHour:
-    """Verify hour-to-time-period bucketing."""
-
-    @pytest.mark.parametrize(
-        "hour,expected",
-        [
-            (5, "early_morning"),
-            (7, "early_morning"),
-            (8, "morning"),
-            (10, "morning"),
-            (11, "midday"),
-            (13, "midday"),
-            (14, "afternoon"),
-            (16, "afternoon"),
-            (17, "evening"),
-            (20, "evening"),
-            (21, "night"),
-            (3, "night"),
-        ],
-    )
-    def test_bucket_boundaries(self, hour, expected):
-        assert bucket_hour(hour) == expected
-
-
-class TestAddTimeBucket:
-    """Verify DataFrame-level time bucketing."""
-
-    def test_adds_time_bucket_column(self):
-        df = pd.DataFrame({"hour": [9, 12, 18]})
-        result = add_time_bucket(df)
-        assert "time_bucket" in result.columns
-        assert list(result["time_bucket"]) == ["morning", "midday", "evening"]
-
-
-# =============================================================================
-# Occupancy Bucketing
-# =============================================================================
-
-
-class TestBucketOccupancyRate:
-    """Verify occupancy rate bucketing."""
-
-    @pytest.mark.parametrize(
-        "rate,expected",
-        [
-            (0.0, "LOW"),
-            (0.49, "LOW"),
-            (0.5, "MED"),
-            (0.74, "MED"),
-            (0.75, "HIGH"),
-            (1.0, "HIGH"),
-        ],
-    )
-    def test_bucket_boundaries(self, rate, expected):
-        assert bucket_occupancy_rate(rate) == expected
-
-
-class TestAddActivityLevel:
-    """Verify DataFrame-level activity level bucketing."""
-
-    def test_adds_activity_level_column(self):
-        df = pd.DataFrame({"occupancy_rate": [0.3, 0.6, 0.9]})
-        result = add_activity_level(df)
-        assert list(result["activity_level"]) == ["LOW", "MED", "HIGH"]
-
-
-# =============================================================================
 # Validation
 # =============================================================================
 
@@ -288,11 +212,14 @@ class TestPrepareBaseFeatures:
             "day_of_week",
             "date",
             "is_weekend",
-            "sin_hour",
-            "cos_hour",
-            "sin_day",
-            "cos_day",
-            "time_bucket",
         ]
         for col in expected_new_cols:
             assert col in result.columns, f"Missing column: {col}"
+
+    def test_pipeline_normalizes_timestamps(self, sample_snapshot_df):
+        sample_snapshot_df = sample_snapshot_df.copy()
+        sample_snapshot_df["timestamp"] = pd.to_datetime(
+            sample_snapshot_df["timestamp"]
+        ).dt.tz_localize("UTC")
+        result = prepare_base_features(sample_snapshot_df)
+        assert result["timestamp"].dt.tz is None

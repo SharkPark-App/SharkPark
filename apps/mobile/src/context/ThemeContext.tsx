@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useMemo, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -119,8 +120,33 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+const THEME_STORAGE_KEY = 'app_theme_mode';
+
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
+
+  useEffect(() => {
+    const loadSavedTheme = async () => {
+      try {
+        const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
+          setThemeMode(savedTheme);
+        }
+      } catch (error) {
+        console.error('[ThemeContext] Failed to load theme from storage:', error);
+      }
+    };
+    loadSavedTheme();
+  }, []);
+
+  const handleSetThemeMode = async (mode: ThemeMode) => {
+    try {
+      setThemeMode(mode);
+      await AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
+    } catch (error) {
+      console.error('[ThemeContext] Failed to save theme to storage:', error);
+    }
+  };
 
   // Use built-in React Native hook for system theme detection
   const systemColorScheme = useColorScheme();
@@ -135,7 +161,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const value = useMemo((): ThemeContextType => ({
     themeMode,
     isDark,
-    setThemeMode,
+    setThemeMode: handleSetThemeMode,
     colors,
     spacing: SPACING,
     typography: TYPOGRAPHY,

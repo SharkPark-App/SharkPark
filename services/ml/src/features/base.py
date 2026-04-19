@@ -4,7 +4,6 @@ Shared feature engineering utilities for SharkPark ML models.
 Contains common transformations used by both short-term and long-term models:
 - Cyclical time encoding
 - Data validation
-- Time bucketing
 """
 
 import logging
@@ -17,14 +16,11 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "normalize_timestamps",
+    "merge_real_synthetic",
     "encode_cyclical",
     "add_hour_encoding",
     "add_day_encoding",
     "extract_time_components",
-    "bucket_hour",
-    "add_time_bucket",
-    "bucket_occupancy_rate",
-    "add_activity_level",
     "validate_snapshot_data",
     "prepare_base_features",
 ]
@@ -42,6 +38,55 @@ def normalize_timestamps(df: pd.DataFrame, col: str = "timestamp") -> pd.DataFra
     if ts.dt.tz is not None:
         ts = ts.dt.tz_localize(None)
     df[col] = ts
+    return df
+
+
+# =============================================================================
+# Real / Synthetic Merging
+# =============================================================================
+
+
+def merge_real_synthetic(
+    df_real: pd.DataFrame,
+    df_synthetic: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Merge real and synthetic snapshot DataFrames, preferring real data.
+
+    Normalizes timestamps, deduplicates on 15-min (lot_id, slot) keys so that
+    real rows replace overlapping synthetic rows, then concatenates.
+
+    Args:
+        df_real: Real snapshot DataFrame (must not be empty).
+        df_synthetic: Synthetic snapshot DataFrame.
+
+    Returns:
+        Combined DataFrame with ``_source`` column set to ``"real"`` for real rows.
+    """
+    df_real = normalize_timestamps(df_real)
+    df_synthetic = normalize_timestamps(df_synthetic)
+
+    df_real["_source"] = "real"
+
+    df_real["_slot"] = df_real["timestamp"].dt.floor("15min")
+    df_synthetic["_slot"] = df_synthetic["timestamp"].dt.floor("15min")
+
+    real_keys = df_real[["lot_id", "_slot"]].drop_duplicates()
+    df_synthetic_filtered = (
+        df_synthetic.merge(
+            real_keys, on=["lot_id", "_slot"], how="left", indicator=True
+        )
+        .query('_merge == "left_only"')
+        .drop(columns=["_merge", "_slot"])
+    )
+    df_real = df_real.drop(columns=["_slot"])
+
+    dropped = len(df_synthetic) - len(df_synthetic_filtered)
+    if dropped:
+        logger.info("  Dropped %s synthetic rows replaced by real data", f"{dropped:,}")
+
+    df = pd.concat([df_real, df_synthetic_filtered], ignore_index=True)
+    logger.info("  Combined: %s rows", f"{len(df):,}")
     return df
 
 
@@ -142,103 +187,6 @@ def extract_time_components(
 
 
 # =============================================================================
-# Time Bucketing
-# =============================================================================
-
-
-def bucket_hour(hour: int) -> str:
-    """
-    Bucket hour into named time periods.
-
-    Args:
-        hour: Hour of day (0-23)
-
-    Returns:
-        Time period name: 'early_morning', 'morning', 'midday', 'afternoon', 'evening', 'night'
-    """
-    if 5 <= hour < 8:
-        return "early_morning"
-    elif 8 <= hour < 11:
-        return "morning"
-    elif 11 <= hour < 14:
-        return "midday"
-    elif 14 <= hour < 17:
-        return "afternoon"
-    elif 17 <= hour < 21:
-        return "evening"
-    else:
-        return "night"
-
-
-def add_time_bucket(df: pd.DataFrame, hour_col: str = "hour") -> pd.DataFrame:
-    """
-    Add time_bucket column based on hour.
-
-    Args:
-        df: DataFrame with hour column
-        hour_col: Name of the hour column
-
-    Returns:
-        DataFrame with time_bucket column added
-    """
-    df = df.copy()
-    df["time_bucket"] = df[hour_col].apply(bucket_hour)
-    return df
-
-
-# =============================================================================
-# Occupancy Bucketing
-# =============================================================================
-
-
-def bucket_occupancy_rate(rate: float) -> str:
-    """
-    Bucket occupancy rate into activity levels.
-
-    Matches fill_status logic from database schema:
-    - AVAILABLE: <60%
-    - FILLING: 60-80%
-    - NEARLY_FULL: 80-95%
-    - FULL: >=95%
-
-    For long-term predictions, we simplify to LOW/MED/HIGH:
-    - LOW: <50%
-    - MED: 50-75%
-    - HIGH: >=75%
-
-    Args:
-        rate: Occupancy rate (0.0 to 1.0)
-
-    Returns:
-        Activity level: 'LOW', 'MED', or 'HIGH'
-    """
-    if rate < 0.5:
-        return "LOW"
-    elif rate < 0.75:
-        return "MED"
-    else:
-        return "HIGH"
-
-
-def add_activity_level(
-    df: pd.DataFrame, rate_col: str = "occupancy_rate"
-) -> pd.DataFrame:
-    """
-    Add activity_level column based on occupancy rate.
-
-    Args:
-        df: DataFrame with occupancy_rate column
-        rate_col: Name of the occupancy rate column
-
-    Returns:
-        DataFrame with activity_level column added
-    """
-    df = df.copy()
-    df["activity_level"] = df[rate_col].apply(bucket_occupancy_rate)
-    return df
-
-
-# =============================================================================
 # Validation
 # =============================================================================
 
@@ -318,13 +266,12 @@ def prepare_base_features(
     min_confidence: Sequence[str] | None = ("HIGH", "MEDIUM"),
 ) -> pd.DataFrame:
     """
-    Apply base feature transformations used by both models.
+    Apply base feature transformations shared by both models.
 
     Pipeline:
-    1. Validate data
-    2. Extract time components
-    3. Add cyclical encodings
-    4. Add time bucket
+    1. Validate and clean data
+    2. Normalize timestamps (strip timezone)
+    3. Extract time components (hour, day_of_week, date, is_weekend)
 
     Args:
         df: Raw snapshot DataFrame
@@ -336,9 +283,7 @@ def prepare_base_features(
         DataFrame with base features added
     """
     df = validate_snapshot_data(df, min_confidence=min_confidence)
+    df = normalize_timestamps(df, col=timestamp_col)
     df = extract_time_components(df, timestamp_col)
-    df = add_hour_encoding(df)
-    df = add_day_encoding(df)
-    df = add_time_bucket(df)
 
     return df

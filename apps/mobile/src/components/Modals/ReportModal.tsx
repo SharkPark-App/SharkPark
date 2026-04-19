@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   View, Modal,
   TouchableOpacity,
@@ -6,8 +6,8 @@ import {
 } from 'react-native';
 import { Text } from '../CustomText';
 import { TextInput } from '../CustomTextInput';
-import { COLORS, TYPOGRAPHY } from '../../constants/theme';
-
+import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { TYPOGRAPHY } from '../../constants/theme';
 
 interface ReportModalProps {
   lotId: string;
@@ -26,6 +26,9 @@ export interface IncidentReport {
 export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalProps) {
   const [selectedType, setSelectedType] = useState<'blockage' | 'crash' | 'other' | null>(null);
   const [message, setMessage] = useState('');
+  const { colors } = useTheme();
+
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const handleSubmit = () => {
     if (!selectedType) return;
@@ -49,21 +52,21 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
       label: 'Blockage',
       description: 'Road or entrance blocked',
       icon: '🚧',
-      color: COLORS.lightGray,
+      color: colors.lightGray,
     },
     {
       id: 'crash' as const,
       label: 'Crash',
       description: 'Traffic accident',
       icon: '🚗',
-      color: COLORS.warningLight,
+      color: colors.warningLight,
     },
     {
       id: 'other' as const,
       label: 'Other',
       description: 'Custom incident report',
       icon: '⚠️',
-      color: COLORS.errorLight,
+      color: colors.errorLight,
     },
   ];
 
@@ -140,6 +143,7 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
                   value={message}
                   onChangeText={setMessage}
                   placeholder="Describe the incident..."
+                  placeholderTextColor={colors.darkGray}
                   multiline
                   numberOfLines={4}
                   textAlignVertical="top"
@@ -172,7 +176,9 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (
+  colors: ThemeColors
+) =>  StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)', // low opacity
@@ -190,7 +196,7 @@ const styles = StyleSheet.create({
 
   // Actual Modal
   modal: {
-    backgroundColor: COLORS.white,
+    backgroundColor: colors.white,
     borderRadius: 24,
     width: '100%',
     maxWidth: 448,
@@ -204,16 +210,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderGray,
+    borderBottomColor: colors.borderGray,
   },
   title: {
     fontSize: 18,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
   },
   subtitle: {
     fontSize: 14,
-    color: COLORS.gray,
+    color: colors.gray,
     marginTop: 2,
   },
   closeButton: {
@@ -222,7 +228,7 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     fontSize: 24,
-    color: COLORS.mediumGray,
+    color: colors.mediumGray,
   },
 
   // Modal content
@@ -238,12 +244,12 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
     marginBottom: 12,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   required: {
-    color: COLORS.error,
+    color: colors.error,
   },
   
   // Indicident Type
@@ -256,13 +262,13 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: COLORS.borderGray,
-    backgroundColor: COLORS.white,
+    borderColor: colors.borderGray,
+    backgroundColor: colors.white,
     gap: 16,
   },
   typeButtonSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.backgroundLight,
+    borderColor: colors.primary,
+    backgroundColor: colors.backgroundLight,
   },
 
   // Incident Sections
@@ -281,12 +287,12 @@ const styles = StyleSheet.create({
   },
   typeLabel: {
     fontSize: 16,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   typeDescription: {
     fontSize: 14,
-    color: COLORS.mediumGray,
+    color: colors.mediumGray,
     marginTop: 2,
   },
 
@@ -296,39 +302,40 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: COLORS.borderGray,
+    borderColor: colors.borderGray,
     justifyContent: 'center',
     alignItems: 'center',
   },
   radioSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary,
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
   },
   radioDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: COLORS.white,
+    backgroundColor: colors.white,
   },
 
   // Additional Details Section
   textArea: {
     borderWidth: 2,
-    borderColor: COLORS.borderGray,
+    borderColor: colors.borderGray,
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
+    color: colors.darkGray,
     minHeight: 100,
   },
   helperText: {
     fontSize: 14,
-    color: COLORS.mediumGray,
+    color: colors.mediumGray,
     marginTop: 8,
   },
 
   // Submit Button
   submitButton: {
-    backgroundColor: COLORS.black,
+    backgroundColor: colors.black,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -337,7 +344,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   submitButtonText: {
-    color: COLORS.white,
+    color: colors.white,
     fontSize: 16,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },

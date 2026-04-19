@@ -45,7 +45,7 @@ model Lot {
   geofence_radius     Float
   permit_types        String[]
   daily_permit_allowed Boolean @default(false)
-  daily_rate          Float?
+  daily_rate          Decimal? @db.Decimal(10, 2)
   hours_weekday       Json     // { open: string; close: string } | string
   hours_saturday      Json
   hours_sunday        Json
@@ -64,7 +64,7 @@ model Lot {
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
-  school              School   @relation(fields: [school_id], references: [id])
+  school              School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
   user_favorites      UserFavorite[]
   occupancy_events    OccupancyEvent[]
   occupancy_snapshots OccupancySnapshot[]
@@ -91,9 +91,10 @@ model User {
   last_login     DateTime?
   updated_at     DateTime @updatedAt
 
-  school         School   @relation(fields: [school_id], references: [id])
+  school         School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
   favorites      UserFavorite[]
 
+  @@index([school_id])
   @@map("users")
 }
 
@@ -113,17 +114,18 @@ model UserFavorite {
 // ─── Timeseries Tables ────────────────────────────────────
 
 model OccupancyEvent {
-  id          String    @id @default(cuid())
-  lot_id      String
-  event_type  EventType
-  device_hash String    // SHA-256 hash of device_id + salt
-  timestamp   DateTime
-  created_at  DateTime  @default(now())
+  id                String           @id @default(cuid())
+  lot_id            String
+  event_type        EventType
+  device_hash       String           // SHA-256 hash of device_id + salt
+  timestamp         DateTime
+  created_at        DateTime         @default(now())
 
-  lot Lot @relation(fields: [lot_id], references: [id])
+  lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
   @@index([lot_id, timestamp], name: "idx_events_lot_time")
   @@index([device_hash, lot_id], name: "idx_events_device")
+  @@index([timestamp, device_hash], name: "idx_events_time_device")
   @@map("occupancy_events")
 }
 
@@ -142,13 +144,17 @@ model OccupancySnapshot {
   estimated_occupancy    Int?     // Scaled-up occupancy estimate
   penetration_rate_used  Float?   // Effective penetration rate at snapshot time
 
+  // Weather context at snapshot time
+  weather_id        String?
+
   // ML feature columns (populated at write time by academic-calendar.ts)
   semester          String?         // "fall", "spring", "summer", "session", "break"
   academic_period   String?         // "early", "regular", "midterms", "late", "dead_week", "finals", "break"
   week_of_semester  Int?
   is_campus_open    Boolean         @default(true)
 
-  lot Lot @relation(fields: [lot_id], references: [id])
+  lot     Lot      @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  weather Weather? @relation(fields: [weather_id], references: [id], onDelete: SetNull)
 
   @@index([lot_id, timestamp], name: "idx_snapshots_lot_time")
   @@index([lot_id, timestamp, semester, academic_period], name: "idx_snapshots_training")
@@ -162,7 +168,7 @@ model DeviceState {
   last_event_type EventType
   updated_at      DateTime  @default(now())
 
-  lot Lot @relation(fields: [lot_id], references: [id])
+  lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
   @@unique([device_hash, lot_id])
   @@map("device_states")
@@ -181,9 +187,10 @@ model CampusEvent {
   expected_attendance Int
   created_at          DateTime        @default(now())
 
-  school  School        @relation(fields: [school_id], references: [id])
+  school  School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
   impacts EventImpact[]
 
+  @@index([school_id])
   @@map("campus_events")
 }
 
@@ -195,7 +202,7 @@ model EventImpact {
   expected_increase_percent Float
 
   event CampusEvent @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  lot   Lot         @relation(fields: [lot_id], references: [id])
+  lot   Lot         @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
   @@unique([event_id, lot_id])
   @@map("event_impacts")
@@ -214,7 +221,8 @@ model Weather {
   is_raining                Boolean
   created_at                DateTime @default(now())
 
-  school School @relation(fields: [school_id], references: [id])
+  school              School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  occupancy_snapshots OccupancySnapshot[]
 
   @@index([school_id, timestamp])
   @@map("weather")
@@ -232,7 +240,7 @@ model PredictionShortTerm {
   confidence_upper    Int
   model_version   String
 
-  lot Lot @relation(fields: [lot_id], references: [id])
+  lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
   @@index([lot_id, target_time], name: "idx_pred_short")
   @@map("predictions_short_term")
@@ -249,7 +257,7 @@ model PredictionLongTerm {
   confidence_upper    Int
   model_version   String
 
-  lot Lot @relation(fields: [lot_id], references: [id])
+  lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
   @@index([lot_id, target_date, target_hour], name: "idx_pred_long")
   @@map("predictions_long_term")

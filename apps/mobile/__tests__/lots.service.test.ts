@@ -1,16 +1,28 @@
 /**
  * Lots Service Tests
  */
-import lotsApi from '../src/services/api/lots';
+import lotsApi, { type ParkingLotResponse } from '../src/services/api/lots';
 import { apiService } from '../src/services/api/base';
+import { cacheService } from '../src/services/api/cache';
 
 // Mock the API service
 jest.mock('../src/services/api/base');
 const mockApiService = apiService as jest.Mocked<typeof apiService>;
 
+// Mock the cache service — pass-through by default (calls fetcher, wraps result)
+jest.mock('../src/services/api/cache');
+const mockCacheService = cacheService as jest.Mocked<typeof cacheService>;
+
 describe('LotsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: getOrFetch calls the fetcher and wraps the result
+    mockCacheService.getOrFetch.mockImplementation(
+      async (_key, fetcher) => {
+        const data = await fetcher();
+        return { data, source: 'network' as const, isStale: false };
+      },
+    );
   });
 
   describe('getAllLots', () => {
@@ -299,6 +311,110 @@ describe('LotsService', () => {
       mockApiService.get.mockRejectedValueOnce(new Error('HTTP 404: Not Found'));
 
       await expect(lotsApi.getRecommendedLots('INVALID')).rejects.toThrow('HTTP 404: Not Found');
+    });
+  });
+
+  describe('getForecast', () => {
+    const mockLot = {
+      lot_id: 'G1',
+      capacity: 100,
+      occupancy_rate: 0.5,
+      confidence: 'HIGH' as const,
+    } as unknown as ParkingLotResponse;
+
+    it('should return backend predictions when available', async () => {
+      const predictions = [
+        {
+          target_time: new Date().toISOString(),
+          predicted_occupancy: 60,
+          confidence_lower: 50,
+          confidence_upper: 70,
+        },
+      ];
+
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: { predictions },
+      });
+
+      const result = await lotsApi.getForecast(mockLot);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].occupancy).toBe(60);
+      expect(result[0].accuracy).toBe(95); // HIGH confidence
+    });
+
+    it('should fall back to local forecast when backend fails', async () => {
+      mockApiService.get.mockRejectedValueOnce(new Error('Service unavailable'));
+
+      const result = await lotsApi.getForecast(mockLot);
+
+      expect(result).toHaveLength(15);
+      result.forEach((entry) => {
+        expect(entry).toHaveProperty('time');
+        expect(entry).toHaveProperty('occupancy');
+        expect(entry).toHaveProperty('lowerBound');
+        expect(entry).toHaveProperty('upperBound');
+        expect(entry.occupancy).toBeGreaterThanOrEqual(0);
+        expect(entry.occupancy).toBeLessThanOrEqual(100);
+      });
+    });
+
+    it('should fall back when backend returns empty predictions', async () => {
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: { predictions: [] },
+      });
+
+      const result = await lotsApi.getForecast(mockLot);
+
+      expect(result).toHaveLength(15); // local heuristic generates 15 entries (7am–9pm)
+    });
+  });
+
+  describe('generateForecast', () => {
+    it('should generate 15 hourly forecasts', () => {
+      const lot = {
+        occupancy_rate: 0.5,
+        confidence: 'MEDIUM' as const,
+        capacity: 100,
+      } as unknown as ParkingLotResponse;
+
+      const forecast = lotsApi.generateForecast(lot);
+
+      expect(forecast).toHaveLength(15);
+      forecast.forEach((entry) => {
+        expect(entry.lowerBound).toBeLessThanOrEqual(entry.occupancy);
+        expect(entry.upperBound).toBeGreaterThanOrEqual(entry.occupancy);
+        expect(entry.accuracy).toBe(85); // MEDIUM confidence
+      });
+    });
+
+    it('should map confidence to accuracy', () => {
+      const low = lotsApi.generateForecast({ occupancy_rate: 0.5, confidence: 'LOW', capacity: 100 } as unknown as ParkingLotResponse);
+      const high = lotsApi.generateForecast({ occupancy_rate: 0.5, confidence: 'HIGH', capacity: 100 } as unknown as ParkingLotResponse);
+
+      expect(low[0].accuracy).toBe(70);
+      expect(high[0].accuracy).toBe(95);
+    });
+  });
+
+  describe('convertToUIFormat', () => {
+    it('should convert API lot to UI format', () => {
+      const apiLot = {
+        lot_id: 'G1',
+        display_name: 'Lot G1',
+        lot_name: 'G1',
+        occupancy_rate: 0.75,
+        lot_type: 'STUDENT',
+      } as unknown as ParkingLotResponse;
+
+      const result = lotsApi.convertToUIFormat(apiLot);
+
+      expect(result.id).toBe('G1');
+      expect(result.name).toBe('Lot G1');
+      expect(result.occupancy).toBe(75);
+      expect(result.category).toBe('student');
     });
   });
 });
