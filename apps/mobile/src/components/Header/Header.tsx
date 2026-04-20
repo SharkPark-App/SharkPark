@@ -19,11 +19,17 @@ const Header: React.FC<HeaderProps> = React.memo(
     return (
       <View style={[styles.container, { paddingTop: insets.top, backgroundColor: COLORS.primary }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <Icon
               name="arrow-back-circle-outline"
               size={32}
               color={COLORS.black}
+              accessible={false}
             />
           </TouchableOpacity>
         )}
@@ -34,7 +40,7 @@ const Header: React.FC<HeaderProps> = React.memo(
               {title}
             </Text>
           ) : logo ? (
-            <Image source={logo} style={styles.logo} resizeMode="contain" />
+            <Image source={logo} style={styles.logo} resizeMode="contain" accessible={false} importantForAccessibility="no" />
           ) : (
             <Text style={[styles.placeholderText, { color: COLORS.white }]}>
               🦈 SharkPark - Add logo.png to src/assets/images/

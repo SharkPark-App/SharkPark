@@ -84,11 +84,13 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
         <Animated.View style={[styles.modal, { transform: [{ translateY: slideAnim }] }]}>
           <View style={styles.header}>
             <Text style={styles.title}>Navigate to {title}</Text>
-            <TouchableOpacity 
-              onPress={handleClose} 
+            <TouchableOpacity
+              onPress={handleClose}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
             >
-              <Icon name="close" size={24} color={colors.textPrimary} />
+              <Icon name="close" size={24} color={colors.textPrimary} accessible={false} />
             </TouchableOpacity>
           </View>
 
@@ -98,8 +100,10 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
             keyExtractor={(item: MapApp) => item.id}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }: { item: MapApp }) => (
-              <TouchableOpacity 
-                style={styles.appItem} 
+              <TouchableOpacity
+                style={styles.appItem}
+                accessibilityRole="button"
+                accessibilityLabel={`Open in ${item.name}`}
                 onPress={async () => {
                   try {
                     await item.open();
@@ -120,7 +124,7 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
                   <Icon name="navigate-circle-outline" size={28} color={colors.darkGray} />
                 </View>
                 <Text style={styles.appName}>{item.name}</Text>
-                <Icon name="chevron-forward" size={20} color={colors.toggleGray} />
+                <Icon name="chevron-forward" size={20} color={colors.toggleGray} accessible={false} />
               </TouchableOpacity>
             )}
           />

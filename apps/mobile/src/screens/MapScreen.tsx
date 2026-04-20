@@ -55,6 +55,8 @@ const InteractiveLot: React.FC<{
       ]}
       onPress={() => onPress(lot)}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${lot.name} parking lot, ${lot.occupancy} percent full`}
     >
       <Text
         style={[
@@ -63,6 +65,7 @@ const InteractiveLot: React.FC<{
         ]}
         adjustsFontSizeToFit={true}
         numberOfLines={isSingleWord ? 1 : 3}
+        accessible={false}
       >{lot.name}</Text>
     </TouchableOpacity>
   );
@@ -70,15 +73,27 @@ const InteractiveLot: React.FC<{
 
 // Filter button component
 const FilterButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = ({ onPress, colors }) => (
-  <TouchableOpacity style={[styles.fab, styles.filterButton, { backgroundColor: colors.primary, shadowColor: colors.shadowDark }]} onPress={onPress} activeOpacity={0.8}>
-    <Icon name="filter" size={24} color={colors.white} />
+  <TouchableOpacity
+    style={[styles.fab, styles.filterButton, { backgroundColor: colors.primary, shadowColor: colors.shadowDark }]}
+    onPress={onPress}
+    activeOpacity={0.8}
+    accessibilityRole="button"
+    accessibilityLabel="Filter parking lots"
+  >
+    <Icon name="filter" size={24} color={colors.white} accessible={false} />
   </TouchableOpacity>
 );
 
 // Navigate button component
 const NavigateButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = ({ onPress, colors }) => (
-  <TouchableOpacity style={[styles.fab, { backgroundColor: colors.secondary, shadowColor: colors.shadowDark }]} onPress={onPress} activeOpacity={0.8}>
-    <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={colors.white} />
+  <TouchableOpacity
+    style={[styles.fab, { backgroundColor: colors.secondary, shadowColor: colors.shadowDark }]}
+    onPress={onPress}
+    activeOpacity={0.8}
+    accessibilityRole="button"
+    accessibilityLabel="View favorites and recommendations"
+  >
+    <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={colors.white} accessible={false} />
   </TouchableOpacity>
 );
 
@@ -250,6 +265,8 @@ const MapScreen: React.FC = () => {
                 source={campusMapImage}
                 style={styles.mapImage}
                 resizeMode="contain"
+                accessible={false}
+                importantForAccessibility="no"
               />
 
               {/* Interactive parking lot circles */}

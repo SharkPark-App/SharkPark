@@ -175,6 +175,8 @@ export function RecommendationModal({
                 style={styles.infoContainer}
                 onPress={() => handleSelectLot(lot.lot_id, lot.lot_name)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${lot.lot_name}, ${pct}% full`}
               >
                 <View style={styles.lotHeader}>
                   <Text style={styles.lotName}>{lot.lot_name}</Text>
@@ -200,6 +202,8 @@ export function RecommendationModal({
                 style={styles.altButton}
                 onPress={() => handleFindAlternatives(lot.lot_id)}
                 activeOpacity={0.6}
+                accessibilityRole="button"
+                accessibilityLabel={`Find alternatives to ${lot.lot_name}`}
               >
                 <Icon name="swap-horizontal" size={20} color={isDark ? colors.primary : colors.secondary} />
                 <Text style={styles.altButtonText}>Alts</Text>
@@ -259,6 +263,8 @@ export function RecommendationModal({
               style={styles.lotRow}
               onPress={() => handleSelectLot(rec.lot_id, rec.lot_name)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${rec.lot_name}, ${pct}% full`}
             >
               <View style={styles.infoContainer}>
                 <View style={styles.lotHeader}>
@@ -282,7 +288,7 @@ export function RecommendationModal({
                   />
                 </View>
               </View>
-              <Text style={styles.arrow}>›</Text>
+              <Text style={styles.arrow} accessible={false}>›</Text>
             </TouchableOpacity>
           );
         })}
@@ -301,13 +307,23 @@ export function RecommendationModal({
           {/* Header */}
           <View style={styles.header}>
             {step === 'alternatives' && (
-              <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                <Icon name="arrow-back" size={20} color={colors.textPrimary} />
+              <TouchableOpacity
+                onPress={handleBack}
+                style={styles.backButton}
+                accessibilityRole="button"
+                accessibilityLabel="Go back to favorites"
+              >
+                <Icon name="arrow-back" size={20} color={colors.textPrimary} accessible={false} />
               </TouchableOpacity>
             )}
             <Text style={styles.title}>{title}</Text>
-            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <Text style={styles.closeIcon}>✕</Text>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeButton}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Text style={styles.closeIcon} accessible={false}>✕</Text>
             </TouchableOpacity>
           </View>
 

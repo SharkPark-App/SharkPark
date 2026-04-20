@@ -89,8 +89,12 @@ export function ReliabilityModal({ isOpen, onClose, reliability }: ReliabilityMo
               <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
                 Data Reliability
               </Text>
-              <TouchableOpacity onPress={handleClose}>
-                <Icon name="close" size={24} color={colors.textPrimary} />
+              <TouchableOpacity
+                onPress={handleClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Icon name="close" size={24} color={colors.textPrimary} accessible={false} />
               </TouchableOpacity>
             </View>
 
@@ -119,7 +123,12 @@ export function ReliabilityModal({ isOpen, onClose, reliability }: ReliabilityMo
                 </Text>
                 <View style={styles.factorsList}>
                   {Object.entries(reliability.factors).map(([key, factor]) => (
-                    <View key={key} style={styles.factorRow}>
+                    <View
+                      key={key}
+                      style={styles.factorRow}
+                      accessible={true}
+                      accessibilityLabel={`${formatFactorName(key)}: ${Math.round(factor.normalizedValue * 100)}%`}
+                    >
                       <View style={styles.factorInfo}>
                         <Text style={[styles.factorName, { color: colors.textPrimary }]}>
                           {formatFactorName(key)}

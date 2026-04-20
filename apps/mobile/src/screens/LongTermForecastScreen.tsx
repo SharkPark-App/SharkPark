@@ -109,11 +109,16 @@ const LongTermForecastScreen: React.FC = () => {
               styles.lotPickerButton,
               { backgroundColor: colors.white, borderColor: colors.borderGray },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={`${getLotDisplayName(selectedLot).split('-')[0].trim()}, parking lot selector`}
+            accessibilityState={{ expanded: lotPickerOpen }}
+            accessibilityHint="Double tap to open lot selection"
           >
             <Text style={[styles.lotPickerText, { color: colors.black }]}>
               {getLotDisplayName(selectedLot).split('-')[0].trim()}
             </Text>
             <Text
+              accessible={false}
               style={{ color: colors.gray, fontSize: TYPOGRAPHY.fontSize.sm }}
             >
               {lotPickerOpen ? '▲' : '▼'}
@@ -144,6 +149,9 @@ const LongTermForecastScreen: React.FC = () => {
                       backgroundColor: colors.lightGray,
                     },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={lot.display_name || lot.lot_name}
+                  accessibilityState={{ selected: lot.lot_id === selectedLot }}
                 >
                   <Text
                     style={[
@@ -194,8 +202,11 @@ const LongTermForecastScreen: React.FC = () => {
                       : colors.borderGray,
                   },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${label}, ${month} ${dateNum}${hasEvent(date) ? ', has event' : ''}`}
+                accessibilityState={{ selected: isSelected }}
               >
-                {hasEvent(date) && <View style={styles.eventDot} />}
+                {hasEvent(date) && <View style={styles.eventDot} accessible={false} importantForAccessibility="no" />}
                 
                 <Text
                   style={[
@@ -228,7 +239,7 @@ const LongTermForecastScreen: React.FC = () => {
           })}
         </ScrollView>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: colors.mediumLightGray }]} />
         <EventBanner events={selectedDayEvents} />
         <HourlyChart data={forecast} />
       </ScrollView>
@@ -269,24 +280,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'red',
   },
   dayLabel: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
   dayNumber: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     marginTop: -2,
   },
   monthLabel: {
-    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontSize: TYPOGRAPHY.fontSize.xxs,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     marginTop: -3,
   },
   divider: {
     height: 1,
-    backgroundColor: '#E0E0E0',
     marginHorizontal: SPACING.lg,
-    marginVertical: SPACING.md,
+    marginVertical: SPACING.sm,
   },
   // Parking Lot Filter
   lotPickerContainer: {
@@ -307,7 +317,7 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xl,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
     textAlign: 'center' as const,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
     flex: 1,
   },
   // Dropdown styles
@@ -325,7 +335,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xl,
   },
   lotDropdownText: {
-    fontSize: TYPOGRAPHY.fontSize.md,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
 });

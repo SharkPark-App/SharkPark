@@ -93,8 +93,10 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
             <TouchableOpacity
               onPress={onClose}
               style={styles.closeButton}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
             >
-              <Text style={styles.closeButtonText}>✕</Text>
+              <Text style={styles.closeButtonText} accessible={false}>✕</Text>
             </TouchableOpacity>
           </View>
 
@@ -112,6 +114,9 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
                       styles.typeButton,
                       selectedType === type.id && styles.typeButtonSelected
                     ]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selectedType === type.id }}
+                    accessibilityLabel={`${type.label}: ${type.description}`}
                   >
                     <View style={[styles.iconContainer, { backgroundColor: type.color }]}>
                       <Text style={styles.icon}>{type.icon}</Text>
@@ -143,6 +148,8 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
                   value={message}
                   onChangeText={setMessage}
                   placeholder="Describe the incident..."
+                  accessibilityLabel="Additional details"
+                  accessibilityHint="Describe the incident"
                   placeholderTextColor={colors.darkGray}
                   multiline
                   numberOfLines={4}
@@ -166,6 +173,9 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
                 styles.submitButton,
                 (!selectedType || (selectedType === 'other' && !message.trim())) && styles.submitButtonDisabled
               ]}
+              accessibilityRole="button"
+              accessibilityLabel="Submit report"
+              accessibilityState={{ disabled: !selectedType || (selectedType === 'other' && !message.trim()) }}
             >
               <Text style={styles.submitButtonText}>Submit Report</Text>
             </TouchableOpacity>

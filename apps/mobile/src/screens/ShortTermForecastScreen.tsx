@@ -30,7 +30,13 @@ import type { MapStackScreenProps } from '../types/navigation';
 
 // Favorite button component
 const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => (
-  <TouchableOpacity onPress={onToggle} style={styles.favoriteButton}>
+  <TouchableOpacity
+    onPress={onToggle}
+    style={styles.favoriteButton}
+    accessibilityRole="button"
+    accessibilityLabel={isFavorite ? "Remove from favorites" : "Add to favorites"}
+    accessibilityState={{ selected: isFavorite }}
+  >
     <Icon name={isFavorite ? "star" : "star-outline"} size={28} color={isFavorite ? COLORS.black : COLORS.darkGray} />
   </TouchableOpacity>
 );
@@ -172,11 +178,15 @@ export function ShortTermForecastScreen() {
         style={styles.fab}
         onPress={() => setIsReportModalOpen(true)}
         activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel="Report an incident"
+        importantForAccessibility="yes"
       >
         <MaterialIcon
           name="warning"
           size={TYPOGRAPHY.fontSize.xxxxl}
           color={COLORS.white}
+          accessible={false}
         />
       </TouchableOpacity>
 
@@ -185,8 +195,11 @@ export function ShortTermForecastScreen() {
         style={styles.fabNavigate}
         onPress={() => setIsMapModalOpen(true)}
         activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel="Navigate to lot"
+        importantForAccessibility="yes"
       >
-        <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} />
+        <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} accessible={false} />
       </TouchableOpacity>
 
       {/* Incident Report Modal */}

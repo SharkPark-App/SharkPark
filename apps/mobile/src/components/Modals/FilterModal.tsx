@@ -71,6 +71,11 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
     );    
   };
 
+  const handleClose = () => {
+    setTempSelected(selectedLots);
+    onClose();
+  };
+
   const handleApply = () => {
     // pass local state to parent
     onApplyFilter(tempSelected);
@@ -91,11 +96,11 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
     <Modal
       visible={isOpen}
       transparent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.backdrop}>
         {/* Backdrop touchable (dismiss modal) */}
-        <Pressable style={styles.backdropPress} onPress={onClose} />
+        <Pressable style={styles.backdropPress} onPress={handleClose} />
         
         {/* Modal */}
         <View style={styles.modal}>
@@ -107,7 +112,7 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
                 <Text style={styles.sectionTitle}>General Lot</Text>
                 {/* Close (X) Button*/}
                 <TouchableOpacity 
-                  onPress={onClose} 
+                  onPress={handleClose}
                   style={styles.closeButton}
                   accessibilityLabel="Close filter modal"
                   accessibilityRole="button"

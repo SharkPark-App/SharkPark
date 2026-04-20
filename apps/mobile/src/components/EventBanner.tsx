@@ -15,8 +15,19 @@ export function EventBanner({ events }: EventBannerProps) {
   return (
     <View style={styles.container}>
       {events.map(event => (
-        <View key={event.id} style={styles.card}>
-          <View style={styles.icon}>
+        <View
+          key={event.id}
+          style={styles.card}
+          accessible={true}
+          accessibilityRole="text"
+          accessibilityLabel={[
+            event.name,
+            event.date.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' }),
+            event.location,
+            event.description,
+          ].filter(Boolean).join(', ')}
+        >
+          <View style={styles.icon} accessible={false} importantForAccessibility="no-hide-descendants">
             <Icon
               name="calendar-outline"
               size={TYPOGRAPHY.fontSize.xl}
@@ -71,17 +82,11 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
   details: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.xxs2,
     color: COLORS.warningTextSecondary,
-  },
-  impact: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningTextSecondary,
-    marginTop: SPACING.xs,
   },
   description: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningTextSecondary,
-    marginTop: SPACING.xs,
+    fontSize: TYPOGRAPHY.fontSize.xxs2,
+    color: COLORS.warningTextSecondary,    
   },
 });
