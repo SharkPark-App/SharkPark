@@ -11,6 +11,7 @@ import { WeatherModule } from './weather/weather.module';
 import { AuthModule } from './auth/auth.module';
 import { OccupancyEventsModule } from './occupancy-events/occupancy-events.module';
 import { ReliabilityModule } from './reliability/reliability.module';
+import { ShuttleTrackerModule } from './shuttle-tracker/shuttle-tracker.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ReliabilityModule } from './reliability/reliability.module';
     AuthModule,
     OccupancyEventsModule,
     ReliabilityModule,
+    ShuttleTrackerModule,
   ],
   controllers: [AppController],
   providers: [
