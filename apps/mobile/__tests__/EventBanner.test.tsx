@@ -2,38 +2,7 @@ import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import { EventBanner } from '../src/components/EventBanner';
 import type { Event } from '../src/types/ui';
-
-// ────────────────────── Helpers ──────────────────────
-
-/** Collect all string leaves from the rendered tree */
-function collectTexts(instance: ReactTestRenderer.ReactTestInstance): string[] {
-  const texts: string[] = [];
-  const walk = (node: ReactTestRenderer.ReactTestInstance) => {
-    if (typeof node === 'string') return;
-    if ((node.type as string) === 'Text') {
-      // Collect string children
-      const gather = (
-        children: ReactTestRenderer.ReactTestInstance['children'],
-      ) => {
-        (children ?? []).forEach(child => {
-          if (typeof child === 'string') texts.push(child);
-          else gather(child.children);
-        });
-      };
-      gather(node.children);
-      return;
-    }
-    (node.children ?? []).forEach(child => {
-      if (typeof child !== 'string') walk(child);
-    });
-  };
-  walk(instance);
-  return texts;
-}
-
-function hasText(texts: string[], substr: string): boolean {
-  return texts.some(t => t.includes(substr));
-}
+import { collectTexts, hasText } from './testUtils';
 
 // ────────────────────── Fixtures ──────────────────────
 
@@ -103,5 +72,66 @@ describe('EventBanner', () => {
     expect(hasText(texts, 'Event2')).toBe(true);
     expect(hasText(texts, 'Location A')).toBe(true);
     expect(hasText(texts, 'Location B')).toBe(true);
+  });
+});
+
+describe('EventBanner -- accessibility', () => {
+  it('event card has accessibilityRole="text"', () => {
+    const tree = render([makeEvent()]);
+    const card = tree.root.find(
+      node => (node.type as string) === 'View' && node.props.accessibilityRole === 'text' && node.props.accessible === true,
+    );
+    expect(card).toBeTruthy();
+  });
+
+  it('accessibilityLabel includes event name and location', () => {
+    const tree = render([makeEvent({ name: 'Test Event', location: 'The Pyramid' })]);
+    const card = tree.root.find(
+      node => (node.type as string) === 'View' && node.props.accessibilityRole === 'text' && node.props.accessible === true,
+    );
+    expect(card.props.accessibilityLabel).toContain('Test Event');
+    expect(card.props.accessibilityLabel).toContain('The Pyramid');
+  });
+
+  it('accessibilityLabel includes description when provided', () => {
+    const tree = render([makeEvent({ description: 'Expect heavy traffic.' })]);
+    const card = tree.root.find(
+      node => (node.type as string) === 'View' && node.props.accessibilityRole === 'text' && node.props.accessible === true,
+    );
+    expect(card.props.accessibilityLabel).toContain('Expect heavy traffic.');
+  });
+
+  it('accessibilityLabel omits description when absent', () => {
+    const tree = render([makeEvent({ description: undefined })]);
+    const card = tree.root.find(
+      node => (node.type as string) === 'View' && node.props.accessibilityRole === 'text' && node.props.accessible === true,
+    );
+    expect(card.props.accessibilityLabel).not.toContain('undefined');
+    expect(card.props.accessibilityLabel).not.toMatch(/,\s*$/);
+  });
+
+  it('icon is hidden from the accessibility tree', () => {
+    const tree = render([makeEvent()]);
+    const hiddenIcon = tree.root.find(
+      node => node.props.accessible === false && node.props.importantForAccessibility === 'no-hide-descendants',
+    );
+    expect(hiddenIcon).toBeTruthy();
+  });
+
+  it('multiple events each have their own accessible card', () => {
+    const tree = render([
+      makeEvent({ id: '1', name: 'Event A' }),
+      makeEvent({ id: '2', name: 'Event B' }),
+    ]);
+    const cards = tree.root.findAll(
+      node =>
+        (node.type as string) === 'View' &&
+        node.props.accessibilityRole === 'text' &&
+        node.props.accessible === true,
+    );
+    
+    expect(cards.length).toBe(2);
+    expect(cards[0].props.accessibilityLabel).toContain('Event A');
+    expect(cards[1].props.accessibilityLabel).toContain('Event B');
   });
 });

@@ -1,6 +1,6 @@
-import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import { HourlyChart } from '../src/components/HourlyChart';
+import { collectTexts, hasText, createRenderer } from './testUtils';
 
 // ────────────────────── Mocks ──────────────────────
 
@@ -39,34 +39,6 @@ jest.mock('react-native-gifted-charts', () => {
 
 // ────────────────────── Helpers ──────────────────────
 
-/** Collect all string leaves from the rendered tree */
-function collectTexts(instance: ReactTestRenderer.ReactTestInstance): string[] {
-  const texts: string[] = [];
-  const walk = (node: ReactTestRenderer.ReactTestInstance) => {
-    if (typeof node === 'string') return;
-    if ((node.type as string) === 'Text') {
-      const gather = (
-        children: ReactTestRenderer.ReactTestInstance['children'],
-      ) => {
-        (children ?? []).forEach(child => {
-          if (typeof child === 'string') texts.push(child);
-          else gather(child.children);
-        });
-      };
-      gather(node.children);
-      return;
-    }
-    (node.children ?? []).forEach(child => {
-      if (typeof child !== 'string') walk(child);
-    });
-  };
-  walk(instance);
-  return texts;
-}
-
-function hasText(texts: string[], substr: string): boolean {
-  return texts.some(t => t.includes(substr));
-}
 
 /** Build an ISO timestamp for today at the given hour */
 function isoAt(hour: number): string {
@@ -80,13 +52,7 @@ function currentHourData(occupancy: number, extra: object = {}) {
   return [{ time: isoAt(new Date().getHours()), occupancy, ...extra }];
 }
 
-function render(props: React.ComponentProps<typeof HourlyChart>) {
-  let tree!: ReactTestRenderer.ReactTestRenderer;
-  ReactTestRenderer.act(() => {
-    tree = ReactTestRenderer.create(<HourlyChart {...props} />);
-  });
-  return tree;
-}
+const render = createRenderer(HourlyChart);
 
 // ────────────────────── Tests ──────────────────────
 
@@ -187,5 +153,126 @@ describe('HourlyChart -- confidence interval', () => {
       data: currentHourData(60, { lowerBound: 55 }),
     });
     expect(hasText(collectTexts(tree.root), 'Expected Range:')).toBe(false);
+  });
+});
+
+describe('HourlyChart -- bar accessibility', () => {
+  it('bar overlays have accessibilityRole="button"', () => {
+    const tree = render({ data: [{ time: isoAt(3), occupancy: 50 }] });
+    const bars = tree.root.findAll(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+    expect(bars.length).toBeGreaterThan(0);
+  });
+
+  it('bar accessibility label includes time, occupancy percentage and status', () => {
+    const tree = render({ data: [{ time: isoAt(3), occupancy: 60 }] });
+    const bar = tree.root.find(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+    expect(bar.props.accessibilityLabel).toContain('3a');
+    expect(bar.props.accessibilityLabel).toContain('60 percent');
+    expect(bar.props.accessibilityLabel).toContain('Filling');
+  });
+
+  it('current hour bar label includes "current hour" label and value', () => {
+    const hour = new Date().getHours();
+    const expectedTime = hour === 0 ? '12a' : hour < 12 ? `${hour}a` : hour === 12 ? '12p' : `${hour - 12}p`;
+    const tree = render({ data: currentHourData(60) });
+    const bar = tree.root.find(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+    expect(bar.props.accessibilityLabel).toContain('current hour');
+    expect(bar.props.accessibilityLabel).toContain(expectedTime);
+    expect(bar.props.accessibilityLabel).toContain('60 percent');
+  });
+  
+  it('current hour bar starts selected', () => {
+    const tree = render({ data: currentHourData(60) });
+    const bar = tree.root.find(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+    expect(bar.props.accessibilityState).toMatchObject({ selected: true });
+  });
+
+  it('non-current bar starts unselected', () => {
+    const tree = render({ data: [{ time: isoAt(3), occupancy: 50 }] });
+    const bar = tree.root.find(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+    expect(bar.props.accessibilityState).toMatchObject({ selected: false });
+  });
+
+  it('pressing a bar selects it', () => {
+    const tree = render({ data: [{ time: isoAt(3), occupancy: 50 }] });
+    const bar = tree.root.find(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+
+    ReactTestRenderer.act(() => { bar.props.onPress(); });
+    const barAfter = tree.root.find(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+    expect(barAfter.props.accessibilityState).toMatchObject({ selected: true });
+  });
+
+  it('unselected bar accessibility hint says "view details"', () => {
+    const tree = render({ data: [{ time: isoAt(3), occupancy: 50 }] });
+    const bar = tree.root.find(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+    expect(bar.props.accessibilityHint).toContain('view details');
+  });
+
+  it('selected bar hint says "deselect"', () => {
+    const tree = render({ data: currentHourData(60) });
+    const bar = tree.root.find(
+      node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
+    );
+    expect(bar.props.accessibilityHint).toContain('deselect');
+  });
+
+  // Prevents the raw chart's unlabeled elements from being exposed to screen readers
+  it('BarChart is hidden from the accessibility tree', () => {
+    const tree = render({ data: [{ time: isoAt(3), occupancy: 50 }] });
+    const hidden = tree.root.find(
+      node => node.props.accessibilityElementsHidden === true,
+    );
+    expect(hidden).toBeTruthy();
+  });
+});
+
+describe('HourlyChart -- tooltip accessibility', () => {
+  it('tooltip has accessible live region', () => {
+    const tree = render({ data: currentHourData(60) });
+    const tooltip = tree.root.find(
+      node => node.props.accessibilityLiveRegion === 'polite',
+    );
+    expect(tooltip.props.accessible).toBe(true);
+  });
+
+  it('tooltip label includes current status', () => {
+    const tree = render({ data: currentHourData(60) });
+    const tooltip = tree.root.find(
+      node => node.props.accessibilityLiveRegion === 'polite',
+    );
+    expect(tooltip.props.accessibilityLabel).toContain('Filling');
+  });
+
+  it('tooltip label includes confidence range when bounds provided', () => {
+    const tree = render({ data: currentHourData(60, { lowerBound: 50, upperBound: 70 }) });
+    const tooltip = tree.root.find(
+      node => node.props.accessibilityLiveRegion === 'polite',
+    );
+    expect(tooltip.props.accessibilityLabel).toContain('50');
+    expect(tooltip.props.accessibilityLabel).toContain('70');
+  });
+
+  it('empty state container has accessibilityLabel', () => {
+    const tree = render({ data: [] });
+    const emptyState = tree.root.find(
+      node => node.props.accessibilityLabel === 'No forecast data available' && node.props.accessible === true,
+    );
+    expect(emptyState).toBeTruthy();
   });
 });
