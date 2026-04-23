@@ -52,6 +52,8 @@ function currentHourData(occupancy: number, extra: object = {}) {
   return [{ time: isoAt(new Date().getHours()), occupancy, ...extra }];
 }
 
+const nonCurrentHour = (new Date().getHours() + 12) % 24;
+
 const render = createRenderer(HourlyChart);
 
 // ────────────────────── Tests ──────────────────────
@@ -196,7 +198,7 @@ describe('HourlyChart -- bar accessibility', () => {
   });
 
   it('non-current bar starts unselected', () => {
-    const tree = render({ data: [{ time: isoAt(3), occupancy: 50 }] });
+    const tree = render({ data: [{ time: isoAt(nonCurrentHour), occupancy: 50 }] });
     const bar = tree.root.find(
       node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
     );
@@ -204,7 +206,7 @@ describe('HourlyChart -- bar accessibility', () => {
   });
 
   it('pressing a bar selects it', () => {
-    const tree = render({ data: [{ time: isoAt(3), occupancy: 50 }] });
+    const tree = render({ data: [{ time: isoAt(nonCurrentHour), occupancy: 50 }] });
     const bar = tree.root.find(
       node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
     );
@@ -217,7 +219,7 @@ describe('HourlyChart -- bar accessibility', () => {
   });
 
   it('unselected bar accessibility hint says "view details"', () => {
-    const tree = render({ data: [{ time: isoAt(3), occupancy: 50 }] });
+    const tree = render({ data: [{ time: isoAt(nonCurrentHour), occupancy: 50 }] });
     const bar = tree.root.find(
       node => node.props.accessibilityRole === 'button' && node.props.accessible === true,
     );
