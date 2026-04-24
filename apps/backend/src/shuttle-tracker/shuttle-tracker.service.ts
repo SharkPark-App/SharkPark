@@ -5,12 +5,6 @@ import { validateOrReject } from 'class-validator';
 import type { MapStop, MapRoute, MapShuttle } from './interfaces/shuttle-tracker.interface';
 import { PassioRouteDto, PassioShuttleDto, PassioStopDto } from './dto/passiogo.dto';
 
-// Stop coords are provided as floats, but route & shuttle coords are provided as strings
-interface RawRoutePoint {
-  lat: string;
-  lng: string;
-}
-
 /** Service for shuttle tracking - live route, stop, and shuttle updates */
 @Injectable()
 export class ShuttleTrackerService implements OnModuleInit {
@@ -50,8 +44,11 @@ export class ShuttleTrackerService implements OnModuleInit {
       if (!routesResponse.ok) throw new Error(`Routes API returned ${routesResponse.status}`);
       if (!stopsResponse.ok) throw new Error(`Stops API returned ${stopsResponse.status}`);
 
-      const rawRoutes: unknown[] = await routesResponse.json();
-      const rawMapData = await stopsResponse.json();
+      const rawRoutes = (await routesResponse.json()) as unknown[];
+      const rawMapData = (await stopsResponse.json()) as {
+        stops?: Record<string, unknown>;
+        routePoints?: Record<string, { lat: string; lng: string }[]>;
+      };
 
       /** Transform/validate stops */
       const rawStopsArray = Object.values(rawMapData.stops || {});
@@ -93,9 +90,9 @@ export class ShuttleTrackerService implements OnModuleInit {
       // Map routes to interface
       this.currentRoutes = validRoutes.map((routeData) => {
         const actualRouteId = routeData.myid; 
-        const rawPoints: RawRoutePoint[] = rawMapData.routePoints?.[actualRouteId] || [];
+        const rawPoints: { lat: string; lng: string }[] = rawMapData.routePoints?.[actualRouteId] || [];
         
-        const parsedCoordinates = rawPoints.map((point: RawRoutePoint) => ({
+        const parsedCoordinates = rawPoints.map((point: { lat: string; lng: string }) => ({
           latitude: parseFloat(point.lat),
           longitude: parseFloat(point.lng),
         }));
@@ -131,7 +128,9 @@ export class ShuttleTrackerService implements OnModuleInit {
         throw new Error(`Shuttles API returned HTTP ${shuttlesResponse.status}`);
       }
 
-      const rawShuttles = await shuttlesResponse.json();
+      const rawShuttles = (await shuttlesResponse.json()) as {
+        buses?: Record<string, unknown[]>;
+      };
       const shuttlesData = rawShuttles.buses || {};
 
       // One shuttle with ID -1 indicates that none are active (empty array shouldn't occur, but check regardless)

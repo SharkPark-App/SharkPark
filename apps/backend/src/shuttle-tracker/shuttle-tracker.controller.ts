@@ -21,6 +21,7 @@ export class ShuttleTrackerController {
   /** Get list of current routes */
   @Get('routes')
   getRoutes() {
+    const routes = this.shuttleTrackerService.getCurrentRoutes();
 
     return {
       success: true,
