@@ -117,9 +117,9 @@ class CarBluetoothModule(reactContext: ReactApplicationContext) :
     private fun checkInitialState() {
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: return
         // Check A2DP profile connection state
-        try {
-            adapter.getProfileProxy(reactApplicationContext, object : BluetoothProfile.ServiceListener {
-                override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+        adapter.getProfileProxy(reactApplicationContext, object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                try {
                     val devices = proxy.connectedDevices
                     if (devices.isNotEmpty()) {
                         isCarConnected = true
@@ -127,13 +127,14 @@ class CarBluetoothModule(reactContext: ReactApplicationContext) :
                             connectedProfiles.add("a2dp:${device.address}")
                         }
                     }
+                } catch (_: SecurityException) {
+                    // BLUETOOTH_CONNECT not granted at runtime — isCarConnected stays false
+                } finally {
                     adapter.closeProfileProxy(profile, proxy)
                 }
-                override fun onServiceDisconnected(profile: Int) {}
-            }, BluetoothProfile.A2DP)
-        } catch (_: SecurityException) {
-            // BLUETOOTH_CONNECT permission not granted — isCarConnected stays false
-        }
+            }
+            override fun onServiceDisconnected(profile: Int) {}
+        }, BluetoothProfile.A2DP)
     }
 
     // ── Event emission ────────────────────────────────────────────────────────
