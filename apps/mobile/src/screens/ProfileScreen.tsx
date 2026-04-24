@@ -111,7 +111,7 @@ const ProfileScreen: React.FC = () => {
       />
 
       {/* Scrollable Content */}
-      <SafeAreaView style={styles.scrollView}>
+      <SafeAreaView style={styles.scrollView} edges={['bottom']}>
         <ScrollView contentContainerStyle={styles.content}>
           {/* Notification Settings */}
           <SectionCard title="Notifications">

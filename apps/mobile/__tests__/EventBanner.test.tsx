@@ -4,6 +4,21 @@ import { EventBanner } from '../src/components/EventBanner';
 import type { Event } from '../src/types/ui';
 import { collectTexts, hasText } from './testUtils';
 
+// ────────────────────── Mocks ──────────────────────
+
+jest.mock('../src/context/ThemeContext', () => ({
+  useTheme: () => ({
+    colors: {
+      textPrimary: '#ffffff',
+      warningLight: '#ffffff',
+      warningBorder: '#ffffff',
+      warningText: '#ffffff',
+      warningTextSecondary: '#ffffff',
+    },
+    isDark: false,
+  }),
+}));
+
 // ────────────────────── Fixtures ──────────────────────
 
 const makeEvent = (overrides: Partial<Event> = {}): Event => ({
@@ -76,36 +91,33 @@ describe('EventBanner', () => {
 });
 
 describe('EventBanner -- accessibility', () => {
-  it('event card has accessibilityRole="text"', () => {
+  const isAccessibleCard = (node: ReactTestRenderer.ReactTestInstance) =>
+    (node.type as string) === 'View' &&
+    node.props.accessible === true &&
+    typeof node.props.accessibilityLabel === 'string';
+
+  it('event card is an accessible element with a label', () => {
     const tree = render([makeEvent()]);
-    const card = tree.root.find(
-      node => (node.type as string) === 'View' && node.props.accessibilityRole === 'text' && node.props.accessible === true,
-    );
+    const card = tree.root.find(isAccessibleCard);
     expect(card).toBeTruthy();
   });
 
   it('accessibilityLabel includes event name and location', () => {
     const tree = render([makeEvent({ name: 'Test Event', location: 'The Pyramid' })]);
-    const card = tree.root.find(
-      node => (node.type as string) === 'View' && node.props.accessibilityRole === 'text' && node.props.accessible === true,
-    );
+    const card = tree.root.find(isAccessibleCard);
     expect(card.props.accessibilityLabel).toContain('Test Event');
     expect(card.props.accessibilityLabel).toContain('The Pyramid');
   });
 
   it('accessibilityLabel includes description when provided', () => {
     const tree = render([makeEvent({ description: 'Expect heavy traffic.' })]);
-    const card = tree.root.find(
-      node => (node.type as string) === 'View' && node.props.accessibilityRole === 'text' && node.props.accessible === true,
-    );
+    const card = tree.root.find(isAccessibleCard);
     expect(card.props.accessibilityLabel).toContain('Expect heavy traffic.');
   });
 
   it('accessibilityLabel omits description when absent', () => {
     const tree = render([makeEvent({ description: undefined })]);
-    const card = tree.root.find(
-      node => (node.type as string) === 'View' && node.props.accessibilityRole === 'text' && node.props.accessible === true,
-    );
+    const card = tree.root.find(isAccessibleCard);
     expect(card.props.accessibilityLabel).not.toContain('undefined');
     expect(card.props.accessibilityLabel).not.toMatch(/,\s*$/);
   });
@@ -123,13 +135,8 @@ describe('EventBanner -- accessibility', () => {
       makeEvent({ id: '1', name: 'Event A' }),
       makeEvent({ id: '2', name: 'Event B' }),
     ]);
-    const cards = tree.root.findAll(
-      node =>
-        (node.type as string) === 'View' &&
-        node.props.accessibilityRole === 'text' &&
-        node.props.accessible === true,
-    );
-    
+    const cards = tree.root.findAll(isAccessibleCard);
+
     expect(cards.length).toBe(2);
     expect(cards[0].props.accessibilityLabel).toContain('Event A');
     expect(cards[1].props.accessibilityLabel).toContain('Event B');

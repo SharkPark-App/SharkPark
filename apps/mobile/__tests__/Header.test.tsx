@@ -12,6 +12,19 @@ jest.mock('../src/components/CustomText', () => ({
   Text: 'Text',
 }));
 
+jest.mock('../src/context/ThemeContext', () => ({
+  useTheme: () => ({
+    colors: {
+      primary: '#ffffff',
+      black: '#ffffff',
+      white: '#ffffff',
+      textPrimary: '#ffffff',
+      headerBackground: '#ffffff',
+    },
+    isDark: false,
+  }),
+}));
+
 const render = createRenderer(Header);
 
 // ────────────────────── Tests ──────────────────────
@@ -28,23 +41,17 @@ describe('Header -- title prop', () => {
   });
 });
 
-describe('Header -- logo prop', () => {
-  it('renders an Image when logo is provided', () => {
-    const tree = render({ logo: { uri: 'https://example.com/logo.png' } });
+describe('Header -- brand logo', () => {
+  it('renders the brand logo Image when no title is provided', () => {
+    const tree = render({});
     const images = tree.root.findAllByType('Image' as unknown as React.ElementType);
     expect(images.length).toBeGreaterThan(0);
   });
 
-  it('does not render placeholder text when logo is provided', () => {
-    const tree = render({ logo: { uri: 'https://example.com/logo.png' } });
-    expect(hasText(collectTexts(tree.root), 'SharkPark')).toBe(false);
-  });
-});
-
-describe('Header -- placeholder fallback', () => {
-  it('renders placeholder text when nothing is provided', () => {
-    const tree = render({});
-    expect(hasText(collectTexts(tree.root), 'SharkPark')).toBe(true);
+  it('does not render the brand logo Image when a title is provided', () => {
+    const tree = render({ title: 'Test' });
+    const images = tree.root.findAllByType('Image' as unknown as React.ElementType);
+    expect(images.length).toBe(0);
   });
 });
 

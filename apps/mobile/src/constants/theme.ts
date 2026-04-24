@@ -31,6 +31,7 @@ export const COLORS = {
   // Background colors
   backgroundLight: '#f5f5f5',
   yellowLight: '#fefce8',
+  headerDarkBg: '#374151',
 
   // Shadow
   shadowDark: '#000',

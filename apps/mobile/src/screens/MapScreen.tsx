@@ -18,7 +18,7 @@ import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
-import { TYPOGRAPHY, SPACING, SHADOWS, MAP } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, SPACING, SHADOWS, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -29,8 +29,6 @@ const { width: screenWidth } = Dimensions.get('window');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const campusMapImage = require('../assets/images/CSULB_map_transparent_unlabeled.webp') as ImageSourcePropType;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const logo = require('../assets/images/SharkParkV4.webp') as ImageSourcePropType;
 
 // Interactive lot component
 const InteractiveLot: React.FC<{
@@ -72,28 +70,28 @@ const InteractiveLot: React.FC<{
 };
 
 // Filter button component
-const FilterButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = ({ onPress, colors }) => (
+const FilterButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
   <TouchableOpacity
-    style={[styles.fab, styles.filterButton, { backgroundColor: colors.primary, shadowColor: colors.shadowDark }]}
+    style={[styles.fab, styles.filterButton, { backgroundColor: COLORS.primary, shadowColor: COLORS.shadowDark }]}
     onPress={onPress}
     activeOpacity={0.8}
     accessibilityRole="button"
     accessibilityLabel="Filter parking lots"
   >
-    <Icon name="filter" size={24} color={colors.white} accessible={false} />
+    <Icon name="filter" size={24} color={COLORS.white} accessible={false} />
   </TouchableOpacity>
 );
 
 // Navigate button component
-const NavigateButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = ({ onPress, colors }) => (
+const NavigateButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
   <TouchableOpacity
-    style={[styles.fab, { backgroundColor: colors.secondary, shadowColor: colors.shadowDark }]}
+    style={[styles.fab, { backgroundColor: COLORS.secondary, shadowColor: COLORS.shadowDark }]}
     onPress={onPress}
     activeOpacity={0.8}
     accessibilityRole="button"
     accessibilityLabel="View favorites and recommendations"
   >
-    <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={colors.white} accessible={false} />
+    <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} accessible={false} />
   </TouchableOpacity>
 );
 
@@ -246,9 +244,7 @@ const MapScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: colors.backgroundLight }]}>
       {/* Header */}
-      <Header
-        logo={logo}
-      />
+      <Header />
 
       <View style={{ flex: 1, overflow: 'hidden' }}>
         <GestureDetector gesture={composedGesture}>
@@ -285,11 +281,11 @@ const MapScreen: React.FC = () => {
 
 
       {/* Filter button - bottom left */}
-      <FilterButton onPress={handleFilterPress} colors={colors} />
+      <FilterButton onPress={handleFilterPress} />
 
       {/* Navigate button FAB - bottom right */}
       <View style={styles.navigateButtonContainer}>
-        <NavigateButton onPress={openRecommendationModal} colors={colors} />
+        <NavigateButton onPress={openRecommendationModal} />
       </View>
 
       {/* Filter Modal */}

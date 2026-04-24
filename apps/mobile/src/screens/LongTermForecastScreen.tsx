@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  ImageSourcePropType,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Header } from '../components';
@@ -34,8 +33,6 @@ function getNext7Days(): Date[] {
 
 const LongTermForecastScreen: React.FC = () => {
   const { colors } = useTheme();
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const logo = require('../assets/images/SharkParkV4.webp') as ImageSourcePropType;
 
   const { lots } = useLotsList();
   const LOT_ORDER = ['G', 'E'];
@@ -99,7 +96,7 @@ const LongTermForecastScreen: React.FC = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
-      <Header logo={logo} />
+      <Header />
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Lot Selection */}
         <View style={styles.lotPickerContainer}>

@@ -68,11 +68,11 @@ jest.mock('../src/hooks/useLotData', () => ({
 }));
 
 jest.mock('../src/components', () => ({
-  Header: ({ title, logo }: { title?: string; logo?: unknown }) => {
+  Header: ({ title }: { title?: string }) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Text, Image } = require('react-native');
-    if (logo) return <Image testID="header-logo" source={logo} />;
-    return <Text>{title}</Text>;
+    if (title) return <Text>{title}</Text>;
+    return <Image testID="header-logo" />;
   },
 }));
 

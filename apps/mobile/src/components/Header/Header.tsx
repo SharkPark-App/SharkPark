@@ -1,23 +1,31 @@
-import React from 'react';
-import { View, Image, StyleSheet, ImageSourcePropType, TouchableOpacity } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text } from '../CustomText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { COLORS, TYPOGRAPHY, SPACING } from '../../constants/theme';
+import { TYPOGRAPHY, SPACING } from '../../constants/theme';
+import { useTheme, ThemeColors } from '../../context/ThemeContext';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const BRAND_LOGO_LIGHT = require('../../assets/images/SharkParkV4.webp');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const BRAND_LOGO_DARK = require('../../assets/images/SharkParkV4_white.webp');
 
 interface HeaderProps {
-  logo?: ImageSourcePropType; // Image source - can be require() or URI
-  title?: string; // Optional title text to display instead of logo
+  title?: string; // Optional title text to display instead of the brand logo
   onBack?: () => void; // Optional back navigation function
   rightAction?: React.ReactNode; // Optional right-side action (e.g. favorite button)
 }
 
 const Header: React.FC<HeaderProps> = React.memo(
-  ({ logo, title, onBack, rightAction }) => {
+  ({ title, onBack, rightAction }) => {
     const insets = useSafeAreaInsets();
+    const { colors, isDark } = useTheme();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+    const brandLogo = isDark ? BRAND_LOGO_DARK : BRAND_LOGO_LIGHT;
 
     return (
-      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: COLORS.primary }]}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         {onBack && (
           <TouchableOpacity
             onPress={onBack}
@@ -28,7 +36,7 @@ const Header: React.FC<HeaderProps> = React.memo(
             <Icon
               name="arrow-back-circle-outline"
               size={32}
-              color={COLORS.black}
+              color={colors.black}
               accessible={false}
             />
           </TouchableOpacity>
@@ -36,15 +44,11 @@ const Header: React.FC<HeaderProps> = React.memo(
 
         <View style={styles.centerContent}>
           {title ? (
-          <Text style={[styles.titleText, { color: COLORS.textPrimary, paddingLeft: onBack ? 0 : SPACING.xxxl }]}>
+          <Text style={styles.titleText}>
               {title}
             </Text>
-          ) : logo ? (
-            <Image source={logo} style={styles.logo} resizeMode="contain" accessible={false} importantForAccessibility="no" />
           ) : (
-            <Text style={[styles.placeholderText, { color: COLORS.white }]}>
-              🦈 SharkPark - Add logo.png to src/assets/images/
-            </Text>
+            <Image source={brandLogo} style={styles.logo} resizeMode="contain" accessible={false} importantForAccessibility="no" />
           )}
         </View>
 
@@ -56,13 +60,16 @@ const Header: React.FC<HeaderProps> = React.memo(
 
 Header.displayName = 'Header';
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: colors.headerBackground,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderGray,
   },
   backButton: {
     padding: SPACING.sm,
@@ -86,22 +93,12 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xxl,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     alignSelf: 'flex-start',
-  },
-  placeholderText: {
-    fontSize: TYPOGRAPHY.fontSize.xl,
-    textAlign: 'center',
-    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    color: colors.textPrimary,
   },
   placeholder: {
     width: 44, // Match back button width for balance
     height: 44, // Match back button height for balance
   },
-  rightAction: {
-    width: 66, // Slight offset to pull button away from edge
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  }
 });
 
 export default Header;

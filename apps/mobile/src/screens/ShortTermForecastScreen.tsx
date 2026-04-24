@@ -29,17 +29,20 @@ import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
 import type { MapStackScreenProps } from '../types/navigation';
 
 // Favorite button component
-const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => (
-  <TouchableOpacity
-    onPress={onToggle}
-    style={styles.favoriteButton}
-    accessibilityRole="button"
-    accessibilityLabel={isFavorite ? "Remove from favorites" : "Add to favorites"}
-    accessibilityState={{ selected: isFavorite }}
-  >
-    <Icon name={isFavorite ? "star" : "star-outline"} size={28} color={isFavorite ? COLORS.black : COLORS.darkGray} />
-  </TouchableOpacity>
-);
+const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => {
+  const { colors } = useTheme();
+  return (
+    <TouchableOpacity
+      onPress={onToggle}
+      style={styles.favoriteButton}
+      accessibilityRole="button"
+      accessibilityLabel={isFavorite ? "Remove from favorites" : "Add to favorites"}
+      accessibilityState={{ selected: isFavorite }}
+    >
+      <Icon name={isFavorite ? "star" : "star-outline"} size={28} color={isFavorite ? colors.black : colors.darkGray} />
+    </TouchableOpacity>
+  );
+};
 
 // Navigation-aware component
 export function ShortTermForecastScreen() {

@@ -32,6 +32,7 @@ export type ThemeColors = {
   textPrimary: string;
   textFull: string;
   borderLight: string;
+  headerBackground: string;
 };
 
 // Extend existing colors with dark variants
@@ -76,6 +77,9 @@ const createThemeColors = (isDark: boolean): ThemeColors => {
       // Keep other colors
       yellowLight: '#451a03' as const, // Keep custom dark
       shadowDark: COLORS.shadowDark,
+
+      // Dark-mode header surface
+      headerBackground: COLORS.headerDarkBg,
     };
   }
   
@@ -106,6 +110,7 @@ const createThemeColors = (isDark: boolean): ThemeColors => {
     textPrimary: COLORS.textPrimary,
     textFull: COLORS.textFull,
     borderLight: COLORS.borderLight,
+    headerBackground: COLORS.primary,
   };
 };
 
