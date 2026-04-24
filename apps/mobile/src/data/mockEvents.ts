@@ -41,7 +41,7 @@ export const upcomingEvents: Event[] = [
     name: 'Graduation Ceremony',
     date: relativeDate(5, 9),
     location: 'Walter Pyramid',
-    affectedLots: ['Pyramid', 'G1', 'G2', 'G3', 'G14'],
+    affectedLots: ['PYR', 'G1', 'G2', 'G3', 'G14'],
     description: 'Commencement ceremony at the Pyramid. Lots near the stadium will be reserved for graduates and families. Consider using remote lots.',
     impact: 'high'
   },
@@ -59,7 +59,7 @@ export const upcomingEvents: Event[] = [
     name: 'Beach Volleyball Tournament',
     date: relativeDate(4, 11),
     location: 'Sand Courts',
-    affectedLots: ['G13', 'G14', 'Pyramid'],
+    affectedLots: ['G13', 'G14', 'PYR'],
     description: 'Regional collegiate beach volleyball tournament. Western lots near athletic facilities will be heavily used. Tournament runs until 6 PM.',
     impact: 'medium'
   },

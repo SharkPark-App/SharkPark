@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   View, Modal,
   TouchableOpacity, ScrollView,
@@ -24,6 +24,10 @@ interface LotOption {
 export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }: LotFilterModalProps) {  
   const { colors, spacing, typography } = useTheme();
   const [tempSelected, setTempSelected] = useState<string[]>(selectedLots);
+
+  useEffect(() => {
+    setTempSelected(selectedLots);
+  }, [isOpen, selectedLots]);
 
   const styles = useMemo(() => getStyles(colors, spacing, typography), [colors, spacing, typography]);
 

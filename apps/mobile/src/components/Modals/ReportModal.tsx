@@ -30,6 +30,12 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
 
   const styles = useMemo(() => getStyles(colors), [colors]);
 
+  const handleClose = () => {
+    setSelectedType(null);
+    setMessage('');
+    onClose();
+  };
+
   const handleSubmit = () => {
     if (!selectedType) return;
     if (selectedType === 'other' && !message.trim()) return;
@@ -41,9 +47,7 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
       timestamp: new Date(),
     });
 
-    setSelectedType(null);
-    setMessage('');
-    onClose();
+    handleClose();
   };
 
   const incidentTypes = [
@@ -74,13 +78,13 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
     <Modal
       visible={isOpen}
       transparent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.backdrop}>
         <TouchableOpacity 
           style={styles.backdropTouchable}
           activeOpacity={1}
-          onPress={onClose}
+          onPress={handleClose}
         />
         
         <View style={styles.modal}>
@@ -91,7 +95,7 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
               <Text style={styles.subtitle}>Parking Lot {lotId}</Text>
             </View>
             <TouchableOpacity
-              onPress={onClose}
+              onPress={handleClose}
               style={styles.closeButton}
               accessibilityRole="button"
               accessibilityLabel="Close"

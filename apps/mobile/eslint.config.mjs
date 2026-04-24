@@ -36,13 +36,13 @@ export default [
         paths: [{
           name: "react-native",
           importNames: ["Text", "TextInput"],
-          message: "Import Text from '@/components/CustomText' and TextInput from '@/components/CustomTextInput' instead."
+          message: "Import Text from 'src/components/CustomText' and TextInput from 'src/components/CustomTextInput' using a relative path (e.g. '../components/CustomText')."
         }]
       }]
     }
   },
   {
-    files: ["**/CustomText.tsx", "**/CustomTextInput.tsx"],
+    files: ["src/components/CustomText.tsx", "src/components/CustomTextInput.tsx"],
     rules: {
       "no-restricted-imports": "off"
     }
