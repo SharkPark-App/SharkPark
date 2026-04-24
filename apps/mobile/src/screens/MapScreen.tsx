@@ -2,33 +2,32 @@ import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
-  // Image,
   Dimensions,
   TouchableOpacity,
   Text,
-  // ImageSourcePropType,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Callout, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { getOccupancyColor } from '../utils/parkingUtils';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
 import { ParkingLotResponse } from '../services';
-import { TYPOGRAPHY, SPACING, /*MAP*/ } from '../constants/theme';
+import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
-// import { Gesture } from 'react-native-gesture-handler';
-// import { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
 import useFavorites from '../hooks/useFavorites';
+import { useTransitData } from '../hooks/useTransitData';
+import { ShuttleMarker } from '../components/MapMarkers/ShuttleMarker';
+import { StopModal } from '../components/Modals/StopModal';
+import type { MapStop } from '../types/transit';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-// const campusMapImage = require('../assets/images/CSULB_map_transparent_unlabeled.webp') as ImageSourcePropType;
 
 // Interactive lot component
 const InteractiveLot: React.FC<{
@@ -43,7 +42,7 @@ const InteractiveLot: React.FC<{
     <Marker
       coordinate={{ latitude: lot.center_lat, longitude: lot.center_lng }}
       onPress={() => onPress(lot)}
-      tracksViewChanges={false} // Performance optimization for custom markers
+      tracksViewChanges={false}
     >
       <View
         style={[
@@ -86,10 +85,19 @@ const MapScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   const { favoriteLots, refreshFavorites } = useFavorites();
   const { lots } = useLotsList();
+  const { routes, stops, shuttles } = useTransitData();
+
+  console.log('[MapScreen] Rendering with:', { 
+    isRoutesArray: Array.isArray(routes), 
+    isStopsArray: Array.isArray(stops), 
+    isShuttlesArray: Array.isArray(shuttles) 
+  });
 
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
+  const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
+  const [isStopModalOpen, setIsStopModalOpen] = useState(false);
 
   const handleLotPress = (lot: ParkingLotResponse) => {
     // Navigate to ShortTermForecastScreen with lot data
@@ -97,6 +105,11 @@ const MapScreen: React.FC = () => {
       lotId: lot.lot_id,
       lotName: lot.lot_name
     });
+  };
+
+  const handleStopPress = (stop: MapStop) => {
+    setSelectedStop(stop);
+    setIsStopModalOpen(true);
   };
 
   const handleFilterPress = () => {
@@ -130,6 +143,7 @@ const MapScreen: React.FC = () => {
     ? lots.filter(lot => selectedLots.includes(lot.lot_id))
     : lots;
 
+  // Intial map display centered around CSULB
   const initialRegion = {
     latitude: 33.7828,
     longitude: -118.1151,
@@ -155,12 +169,47 @@ const MapScreen: React.FC = () => {
           pitchEnabled={false}
           userInterfaceStyle={isDark ? 'dark' : 'light'}
         >
-          {filteredParkingLots.map((lot) => (
+          {filteredParkingLots?.map((lot) => (
             <InteractiveLot
               key={lot.lot_id}
               lot={lot}
               onPress={handleLotPress}
               colors={colors}
+            />
+          ))}
+          
+          {/* Draw route paths */}
+          {routes?.map((route) => (
+            <Polyline
+              key={route.id}
+              coordinates={route.coordinates}
+              strokeColor={route.color}
+              strokeWidth={4}
+              zIndex={1} 
+            />
+          ))}
+
+          {/* Draw stops */}
+          {stops?.map((stop) => (
+            <Marker
+              key={stop.id}
+              coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
+              title={stop.name}
+              pinColor={stop.color} 
+              zIndex={2}
+              stopPropagation={true}
+              onPress={() => handleStopPress(stop)}
+            >
+              <Callout tooltip ={true} />
+            </Marker>
+          ))}
+
+          {/* Draw live shuttles */}
+          {shuttles?.map((shuttle) => (
+            <ShuttleMarker 
+              key={shuttle.id} 
+              shuttle={shuttle} 
+              colors={colors} 
             />
           ))}
         </MapView>
@@ -189,6 +238,23 @@ const MapScreen: React.FC = () => {
         onClose={() => setIsRecommendationModalOpen(false)}
         onSelectLot={(id, name) => handleLotNavigation(id, name)}
       />
+
+      {/* Stop Arrivals Modal */}
+      {selectedStop && (
+      <StopModal
+        isOpen={isStopModalOpen}
+        onClose={() => setIsStopModalOpen(false)}
+        stopName={selectedStop.name}
+        colors={colors}
+        // TODO: Replace placeholder data with backend call & hook
+        arrivals={[
+          { route: '1', routeName: 'East Loop', abbreviation: 'E', color: '#c70faf', etaMinutes: 20 },
+          { route: '2', routeName: 'West Loop', abbreviation: 'W', color: '#333333', etaMinutes: 16 },
+          { route: '3', routeName: 'All Campus Tripper', abbreviation: 'AC', color: '#f39c12', etaMinutes: 17 },
+          { route: '4', routeName: 'Overflow', abbreviation: 'O', color: '#8e7a45', etaMinutes: null },
+        ]}
+      />
+    )}
     </View>
   );
 };

@@ -70,10 +70,3 @@ export const TYPOGRAPHY = {
     bold: '700' as const,
   },
 } as const;
-
-export const MAP = {
-  // The original map image size in pixels (square dimensions)
-  IMAGE_SIZE: 1098,
-  // Scale multiplier for map display size relative to screen width
-  SCALE_MULTIPLIER: 2.5,
-} as const;
