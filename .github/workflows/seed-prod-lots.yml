@@ -1,0 +1,54 @@
+name: Seed Production Lots
+
+# Runs the idempotent prod seed (schools + lots only, never touches occupancy)
+# whenever lot-data.ts is updated on main, or on manual dispatch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/backend/prisma/lot-data.ts'
+      - 'apps/backend/prisma/seed-prod.ts'
+      - '.github/workflows/seed-prod-lots.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you re-seeding production?'
+        required: false
+        default: 'Manual sync'
+
+concurrency:
+  group: seed-prod-lots
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    name: Seed prod (CSULB + 28 lots)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        working-directory: apps/backend
+        run: pnpm prisma generate
+
+      - name: Run idempotent prod seed
+        working-directory: apps/backend
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: pnpm db:seed:prod
