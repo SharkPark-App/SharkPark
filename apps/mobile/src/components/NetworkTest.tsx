@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { Text } from './CustomText';
 import { apiService } from '../services/api';
 import API_CONFIG from '../services/api/config';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
@@ -93,7 +94,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.textPrimary,
     marginBottom: SPACING.md,
   },
@@ -116,7 +117,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: COLORS.white,
     textAlign: 'center',
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.md,
   },
   result: {

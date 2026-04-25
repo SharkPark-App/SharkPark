@@ -4,7 +4,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Button, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, Button, Alert, ScrollView } from 'react-native';
+import { Text } from './CustomText';
 import useLocationService from '../hooks/useLocationService';
 import { useAllLotsData } from '../hooks/useAllLotsData';
 import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
@@ -282,7 +283,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: TYPOGRAPHY.fontSize.xxl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.black,
     marginBottom: SPACING.lg,
     textAlign: 'center',
@@ -299,7 +300,7 @@ const styles = StyleSheet.create({
   },
   statusLabel: {
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black,
   },
   statusText: {
@@ -310,7 +311,7 @@ const styles = StyleSheet.create({
   },
   statusValue: {
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
   },
   currentLotCard: {
     padding: SPACING.lg,
@@ -327,7 +328,7 @@ const styles = StyleSheet.create({
   },
   currentLotName: {
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.primary,
     marginBottom: SPACING.xs,
   },
@@ -343,7 +344,7 @@ const styles = StyleSheet.create({
   },
   infoTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black,
     marginBottom: SPACING.sm,
   },
@@ -369,7 +370,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black,
   },
   buttonContainer: {
@@ -385,7 +386,7 @@ const styles = StyleSheet.create({
   },
   errorTitle: {
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: '#dc2626',
     marginBottom: SPACING.sm,
   },

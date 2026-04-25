@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   Alert
 } from 'react-native';
+import { Text } from '../components/CustomText';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
+import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
+import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { Header, ReliabilityMeter } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
@@ -21,16 +22,27 @@ import useFavorites from '../hooks/useFavorites';
 import {getOccupancyColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
 import { LotAmenities } from '../components/LotAmenities';
+import { EventBanner } from '../components/EventBanner';
+import { upcomingEvents } from '../data/mockEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
 import type { MapStackScreenProps } from '../types/navigation';
 
 // Favorite button component
-const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => (
-  <TouchableOpacity onPress={onToggle} style={styles.favoriteButton}>
-    <Icon name={isFavorite ? "star" : "star-outline"} size={28} color={isFavorite ? COLORS.black : COLORS.darkGray} />
-  </TouchableOpacity>
-);
+const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => {
+  const { colors } = useTheme();
+  return (
+    <TouchableOpacity
+      onPress={onToggle}
+      style={styles.favoriteButton}
+      accessibilityRole="button"
+      accessibilityLabel={isFavorite ? "Remove from favorites" : "Add to favorites"}
+      accessibilityState={{ selected: isFavorite }}
+    >
+      <Icon name={isFavorite ? "star" : "star-outline"} size={28} color={isFavorite ? colors.black : colors.darkGray} />
+    </TouchableOpacity>
+  );
+};
 
 // Navigation-aware component
 export function ShortTermForecastScreen() {
@@ -38,7 +50,7 @@ export function ShortTermForecastScreen() {
   const route = useRoute<MapStackScreenProps<'Short Term Forecast'>['route']>();
   const { lotId } = route.params || { lotId: 'G1' };
   const { colors } = useTheme();
-  
+
   // Use the API hook instead of mock data
   const { lot, forecast, loading, error, refreshLot } = useLotData(lotId);
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
@@ -56,12 +68,14 @@ export function ShortTermForecastScreen() {
   // Show loading spinner while data is being fetched
   if (loading) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: colors.lightGray }]}>
-        <Header title="Short Term Forecast" onBack={onBack} />
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textPrimary }]}>
-          Loading lot data...
-        </Text>
+      <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
+        <Header title="Today's Forecast" onBack={onBack} />
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textPrimary }]}>
+            Loading lot data...
+          </Text>
+        </View>
       </View>
     );
   }
@@ -69,20 +83,22 @@ export function ShortTermForecastScreen() {
   // Show error state
   if (error) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: colors.lightGray }]}>
-        <Header title="Short Term Forecast" onBack={onBack} />
-        <Icon name="alert-circle-outline" size={48} color={colors.error} />
-        <Text style={[styles.errorText, { color: colors.error }]}>
-          {error}
-        </Text>
-        <TouchableOpacity 
-          style={[styles.retryButton, { backgroundColor: colors.primary }]}
-          onPress={refreshLot}
-        >
-          <Text style={[styles.retryButtonText, { color: colors.white }]}>
-            Retry
+      <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
+        <Header title="Today's Forecast" onBack={onBack} />
+        <View style={styles.centerContent}>
+          <Icon name="alert-circle-outline" size={48} color={colors.error} />
+          <Text style={[styles.errorText, { color: colors.error }]}>
+            {error}
           </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={refreshLot}
+          >
+            <Text style={[styles.retryButtonText, { color: colors.white }]}>
+              Retry
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -99,20 +115,11 @@ export function ShortTermForecastScreen() {
     );
   }
 
-  const getTodayEvents = () => {
-    const events = [];
-    
-    events.push({
-      name: 'Beach Volleyball Tournament',
-      time: '14:00',
-      location: 'Beach Courts',
-      impact: 'Increased traffic in G-lots',
-    });
-    
-    return events;
-  };
-
-  const todayEvents = getTodayEvents();
+  const today = new Date().toDateString();
+  const todayEvents = upcomingEvents.filter(e =>
+    e.date.toDateString() === today &&
+    (e.affectedLots.includes('all') || e.affectedLots.includes(lotId))
+  );
 
   // Try to (un-)favorite a lot dependent on current isFavorite status
   const toggleFavorite = async () => {
@@ -128,50 +135,37 @@ export function ShortTermForecastScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.lightGray }]}>  
-      {/* Top Banner w/ Favorite Button */}
-      <Header 
-        title="Short-Term Forecast" 
-        onBack={onBack} 
-        rightElement={
+    <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
+      {/* Top Banner & Favorite Button*/}
+      <Header
+        title="Today's Forecast"
+        onBack={onBack}
+        rightAction={
           <FavoriteButton isFavorite={isFavorite} onToggle={toggleFavorite} />
         }
       />
 
       <ScrollView style={styles.scrollView}>
         {/* Event Notifications */}
-        {todayEvents.length > 0 && (
-          <View style={styles.eventsContainer}>
-            {todayEvents.map((event, index) => (
-              <View key={index} style={styles.eventCard}>
-                <View style={styles.eventIcon}>
-                  <Text style={styles.eventIconText}>📅</Text>
-                </View>
-                <View style={styles.eventContent}>
-                  <Text style={styles.eventName}>{event.name}</Text>
-                  <Text style={styles.eventDetails}>{event.time} • {event.location}</Text>
-                  <Text style={styles.eventImpact}>{event.impact}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
+        <EventBanner events={todayEvents} />
 
         {/* Title Card w/ Lot Name and Occupancy */}
         <View style={[styles.lotHeaderCard, { backgroundColor: colors.white }]}>
           <Text style={[styles.lotName, { color: colors.textPrimary }]}>{lot.lot_name}</Text>
           <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
-            <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
+<Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
           </View>
 
           {/* Reliability Meter */}
           {!reliabilityLoading && reliability && (
-            <ReliabilityMeter
-              confidence={reliability.confidence}
-              isColdStart={reliability.isColdStart}
-              size="medium"
-              onPress={() => setIsReliabilityModalOpen(true)}
-            />
+            <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
+              <ReliabilityMeter
+                confidence={reliability.confidence}
+                isColdStart={reliability.isColdStart}
+                size="medium"
+                onPress={() => setIsReliabilityModalOpen(true)}
+              />
+            </View>
           )}
         </View>
 
@@ -183,12 +177,20 @@ export function ShortTermForecastScreen() {
       </ScrollView>
 
       {/* Report Button */}
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.fab}
         onPress={() => setIsReportModalOpen(true)}
         activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel="Report an incident"
+        importantForAccessibility="yes"
       >
-        <Text style={styles.fabIcon}>⚠️</Text>
+        <MaterialIcon
+          name="warning"
+          size={TYPOGRAPHY.fontSize.xxxxl}
+          color={COLORS.white}
+          accessible={false}
+        />
       </TouchableOpacity>
 
       {/* Navigate Button (bottom right, symmetric to report button) */}
@@ -196,8 +198,11 @@ export function ShortTermForecastScreen() {
         style={styles.fabNavigate}
         onPress={() => setIsMapModalOpen(true)}
         activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel="Navigate to lot"
+        importantForAccessibility="yes"
       >
-        <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} />
+        <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} accessible={false} />
       </TouchableOpacity>
 
       {/* Incident Report Modal */}
@@ -264,58 +269,15 @@ const styles = StyleSheet.create({
 
   retryButtonText: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     textAlign: 'center',
   },
 
-  // Event Card
-  eventsContainer: {
-    padding: SPACING.lg,
-    gap: SPACING.md,
-  },
-
-  eventCard: {
-    backgroundColor: COLORS.warningLight,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.warningBorder,
-    borderRadius: SPACING.md,
-    padding: SPACING.lg,
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-
-  eventIcon: {
-    marginTop: 2,
-  },
-  
-  eventIconText: {
-    fontSize: TYPOGRAPHY.fontSize.xl,
-  },
-  
-  eventContent: {
-    flex: 1,
-  },
-
-  eventName: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningText,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
-  },
-
-  eventDetails: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningTextSecondary,
-    marginTop: SPACING.xs,
-  },
-
-  eventImpact: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    color: COLORS.warningTextSecondary,
-    marginTop: SPACING.xs,
-  },
-
   favoriteButton: {
-    padding: SPACING.xs,
+    width: SPACING.xxxxl,
+    height: SPACING.xxxxl,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   // Title card + Status & Favorite Button
@@ -324,31 +286,32 @@ const styles = StyleSheet.create({
     padding: SPACING.xxxl,
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.lg,
-    shadowColor: COLORS.shadowDark,
-    shadowOffset: { width: 0, height: SPACING.xs },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: SPACING.sm,
+    ...SHADOWS.card,
     alignItems: 'center',
     gap: SPACING.sm,
   },
-  
+
   lotName: {
-    fontSize: TYPOGRAPHY.fontSize.xxxl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontSize: TYPOGRAPHY.fontSize.xxl,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     textAlign: 'center',
+    alignSelf: 'stretch',
   },
 
   statusBadge: {
-    paddingHorizontal: SPACING.xxxl,
+    alignSelf: 'center',
+    minWidth: TYPOGRAPHY.fontSize.xl * 5,
+    paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     borderRadius: SPACING.sm,
+    marginBottom: SPACING.md,
   },
 
   statusBadgeText: {
     fontSize: TYPOGRAPHY.fontSize.xl,
     color: COLORS.white,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    textAlign: 'center',
   },
 
   // Report Button
@@ -359,14 +322,10 @@ const styles = StyleSheet.create({
     width: 56, // Standard FAB size
     height: 56, // Standard FAB size
     borderRadius: 28, // Half of width/height for circle
-    backgroundColor: COLORS.error,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
-    alignItems: 'center',    
-    elevation: 3,
-    shadowColor: COLORS.shadowDark,
-    shadowOffset: { width: 0, height: SPACING.xs },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    alignItems: 'center',
+    ...SHADOWS.fab,
   },
   fabNavigate: {
     position: 'absolute',
@@ -375,14 +334,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 3,
-    shadowColor: COLORS.shadowDark,
-    shadowOffset: { width: 0, height: SPACING.xs },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    ...SHADOWS.fab,
   },
   fabIcon: {
     fontSize: TYPOGRAPHY.fontSize.xxl,

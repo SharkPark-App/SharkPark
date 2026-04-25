@@ -115,6 +115,10 @@
 	<key>UIAppFonts</key>
 	<array>
 		<string>Ionicons.ttf</string>
+		<string>Inter-Bold.ttf</string>
+		<string>Inter-Medium.ttf</string>
+		<string>Inter-Regular.ttf</string>
+		<string>Inter-SemiBold.ttf</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>SharkPark uses Bluetooth state to improve parking detection accuracy by monitoring car connectivity patterns. This helps validate when you've actually parked your car.</string>

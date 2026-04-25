@@ -1,263 +1,247 @@
-import React from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ImageSourcePropType, 
-  ScrollView, 
-  TouchableOpacity 
+import React, { useState, useMemo, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Header } from '../components';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { Text } from '../components/CustomText';
 import { useTheme } from '../context/ThemeContext';
+import { HourlyChart } from '../components/HourlyChart';
+import { lotsApi } from '../services/api';
+import { useLotsList } from '../hooks/useLotData';
+import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { upcomingEvents } from '../data/mockEvents';
-import { getOccupancyColor } from '../utils/parkingUtils';
+import { EventBanner } from '../components/EventBanner';
+
+const DEFAULT_LOT = 'G6';
+const LOT_ORDER = ['G', 'E'];
+
+/** Build an array of 7 dates starting from today */
+function getNext7Days(): Date[] {
+  const days: Date[] = [];
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    days.push(d);
+  }
+  return days;
+}
 
 const LongTermForecastScreen: React.FC = () => {
   const { colors } = useTheme();
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const logo = require('../assets/images/SharkParkV4.webp') as ImageSourcePropType;
-  
-  const [currentMonth, setCurrentMonth] = React.useState(new Date());
-  const [selectedDate, setSelectedDate] = React.useState<Date | null>(null);
-  
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
 
-    return { year, month,
-      daysInMonth: lastDay.getDate(),
-      startingDayOfWeek: firstDay.getDay(),
-    };
+  const { lots } = useLotsList();
+  const sortedLots = useMemo(
+    () =>
+      [...lots].sort((a, b) => {
+        const idxA = LOT_ORDER.indexOf(a.lot_id[0]);
+        const idxB = LOT_ORDER.indexOf(b.lot_id[0]);
+        const groupA = idxA >= 0 ? idxA : LOT_ORDER.length;
+        const groupB = idxB >= 0 ? idxB : LOT_ORDER.length;
+        if (groupA !== groupB) return groupA - groupB;
+        return a.lot_id.localeCompare(b.lot_id, undefined, { numeric: true });
+      }),
+    [lots],
+  );
+
+  const getLotDisplayName = (lotId: string) => {
+    const lot = lots.find(l => l.lot_id === lotId);
+    return lot?.display_name || lot?.lot_name || lotId;
   };
 
-  const { year, month, daysInMonth, startingDayOfWeek } =
-    getDaysInMonth(currentMonth);
-  
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthNames = [
-    'January','February','March','April','May','June',
-    'July','August','September','October','November','December',
-  ];
+  const days = useMemo(() => getNext7Days(), []);
 
-  const previousMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
-  const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [selectedLot, setSelectedLot] = useState(DEFAULT_LOT);
+  const [lotPickerOpen, setLotPickerOpen] = useState(false);
 
-  const isToday = (day: number) => {
-    const today = new Date();
-    return (
-      day === today.getDate() &&
-      month === today.getMonth() &&
-      year === today.getFullYear()
+  const hasEvent = (date: Date) =>
+    upcomingEvents.some(
+      e =>
+        (e.affectedLots.includes('all') ||
+          e.affectedLots.includes(selectedLot)) &&
+        e.date.toDateString() === date.toDateString(),
     );
-  };
 
-  const isPastDate = (day: number) => {
-    const today = new Date();
-    const dateToCheck = new Date(year, month, day);
-    today.setHours(0, 0, 0, 0);
-    dateToCheck.setHours(0, 0, 0, 0);
-    return dateToCheck < today;
-  };
-  
-  const hasEvent = (day: number) => {
-    return upcomingEvents.some(event => {
-      const eventDate = event.date;
-      return (
-        eventDate.getDate() === day &&
-        eventDate.getMonth() === month &&
-        eventDate.getFullYear() === year
-      );
+  useEffect(() => {
+    AsyncStorage.getItem('selectedLot').then(saved => {
+      if (saved) setSelectedLot(saved);
     });
-  };
+  }, []);
 
-  const getEventsForDate = (date: Date | null) => {
-    if (!date) return [];
-    return upcomingEvents
-      .filter(event => {
-        const eventDate = event.date;
-        return (
-          eventDate.getDate() === date.getDate() &&
-          eventDate.getMonth() === date.getMonth() &&
-          eventDate.getFullYear() === date.getFullYear()
-        );
-      })
-      .sort((a, b) => a.date.getTime() - b.date.getTime());
-  };
-  
-  // Mock function to generate general long-term forecast data
-  const generateForecastForDate = (date: Date) => {
-    const map = [25, 85, 88, 90, 87, 75, 30];
-    return map[date.getDay()];
-  };
-  
+  const activeLot = useMemo(
+    () => lots.find(l => l.lot_id === selectedLot),
+    [lots, selectedLot],
+  );
+
+  const forecast = useMemo(
+    () => (activeLot ? lotsApi.generateForecast(activeLot) : []),
+    // TODO: pass selectedDayIndex to generateForecast once real per-day API is wired in
+    [activeLot, selectedDayIndex],
+  );
+
+  const selectedDayEvents = useMemo(() => {
+    const selectedDate = days[selectedDayIndex];
+    return upcomingEvents.filter(
+      e =>
+        e.date.toDateString() === selectedDate.toDateString() &&
+        (e.affectedLots.includes('all') ||
+          e.affectedLots.includes(selectedLot)),
+    );
+  }, [days, selectedDayIndex, selectedLot]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
-      <Header 
-        logo={logo}
-      />
-      
-      <SafeAreaView style={styles.content}>
-        <ScrollView>
-          {/* Calendar */}
-          <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
-            {/* Calendar Header */}
-            <View style={styles.calendarHeader}>
-              <TouchableOpacity onPress={previousMonth} style={styles.navButton}>
-                <Text style={[styles.navIcon, { color: colors.mediumGray }]}>‹</Text>
-              </TouchableOpacity>
-
-              <Text style={[styles.monthTitle, { color: colors.textPrimary }]}>
-                {monthNames[month]} {year}
-              </Text>
-
-              <TouchableOpacity onPress={nextMonth} style={styles.navButton}>
-                <Text style={[styles.navIcon, { color: colors.mediumGray }]}>›</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Day Names */}
-            <View style={styles.dayNamesRow}>
-              {dayNames.map(day => (
-                <Text key={day} style={[styles.dayName, { color: colors.gray }]}>{day}</Text>
-              ))}
-            </View>
-
-            {/* Calendar Grid */}
-            <View style={styles.calendarGrid}>
-              {/* Empty date cells */}
-              {Array.from({ length: startingDayOfWeek }).map((_, index) => 
-                (<View key={`empty-${index}`} style={styles.dayCell} />
-              ))}
-
-              {/* Actual date cells */}
-              {Array.from({ length: daysInMonth }).map((_, index) => {
-                const day = index + 1;              
-                const forecast = generateForecastForDate(new Date(year, month, day));
-
-                const isSelected =
-                  selectedDate?.getDate() === day &&
-                  selectedDate?.getMonth() === month &&
-                  selectedDate?.getFullYear() === year;
-
-                const isPast = isPastDate(day);
-
-                return (
-                   <TouchableOpacity key={day}
-                    onPress={() => setSelectedDate(new Date(year, month, day))}
+      <Header />
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Lot Selection */}
+        <View style={styles.lotPickerContainer}>
+          <TouchableOpacity
+            onPress={() => setLotPickerOpen(!lotPickerOpen)}
+            style={[
+              styles.lotPickerButton,
+              { backgroundColor: colors.white, borderColor: colors.borderGray },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`${getLotDisplayName(selectedLot).split('-')[0].trim()}, parking lot selector`}
+            accessibilityState={{ expanded: lotPickerOpen }}
+            accessibilityHint="Double tap to open lot selection"
+          >
+            <Text style={[styles.lotPickerText, { color: colors.black }]}>
+              {getLotDisplayName(selectedLot).split('-')[0].trim()}
+            </Text>
+            <Text
+              accessible={false}
+              style={{ color: colors.gray, fontSize: TYPOGRAPHY.fontSize.sm }}
+            >
+              {lotPickerOpen ? '▲' : '▼'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Dropdown */}
+        {lotPickerOpen && (
+          <View
+            style={[
+              styles.lotDropdown,
+              { backgroundColor: colors.white, borderColor: colors.borderGray },
+            ]}
+          >
+            <ScrollView style={styles.lotDropdownScroll} nestedScrollEnabled>
+              {sortedLots.map(lot => (
+                <TouchableOpacity
+                  key={lot.lot_id}
+                  onPress={() => {
+                    setSelectedLot(lot.lot_id);
+                    AsyncStorage.setItem('selectedLot', lot.lot_id);
+                    setLotPickerOpen(false);
+                  }}
+                  style={[
+                    styles.lotDropdownItem,
+                    lot.lot_id === selectedLot && {
+                      backgroundColor: colors.lightGray,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={lot.display_name || lot.lot_name}
+                  accessibilityState={{ selected: lot.lot_id === selectedLot }}
+                >
+                  <Text
                     style={[
-                      styles.dayCell,
-                      isToday(day) && { backgroundColor: colors.lightGray, borderRadius: SPACING.md },
-                      isSelected && { borderWidth: 2, borderColor: colors.primary, borderRadius: SPACING.md },
+                      styles.lotDropdownText,
+                      {
+                        color:
+                          lot.lot_id === selectedLot
+                            ? colors.primary
+                            : colors.black,
+                      },
                     ]}
                   >
-                    <Text style={[
-                      styles.dayText,
-                      { color: colors.textPrimary },
-                      isPast && { opacity: 0.3 }
-                    ]}>{day}</Text>
-
-                    {!isPast && (
-                      <View style={[
-                        styles.occupancyBar,
-                        { backgroundColor: getOccupancyColor(forecast) }
-                      ]}/>
-                    )}
-
-                    {/* Event indicator */}
-                    {hasEvent(day) && <View style={[
-                      styles.eventDot,
-                      { backgroundColor: colors.error },
-                      isPast && { opacity: 0.3 }
-                    ]} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Selected Date Event Information */}
-          {selectedDate && getEventsForDate(selectedDate).length > 0 && (
-            <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark, marginTop: SPACING.lg }]}>
-              <Text style={[styles.cardTitle, { color: colors.textFull }]}>
-                {selectedDate.toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </Text>
-
-              {getEventsForDate(selectedDate).map((event, index) => (
-                <View key={event.id}>
-                  <View style={[styles.selectedEventCard, { borderLeftColor: colors.error }]}>
-                    <View style={styles.titleImpactRow}>
-                      <Text style={[styles.selectedEventName, { color: colors.textPrimary }]}>
-                        {event.name}
-                      </Text>
-
-                      <View style={[
-                        styles.impactBadge,
-                        { backgroundColor: event.impact === 'high' ? colors.error : colors.warningBorder }
-                      ]}>
-                        <Text style={[styles.impactBadgeText, { color: colors.white }]}>
-                          {event.impact.toUpperCase()} IMPACT
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.timeLocationRow}>
-                      <Text style={[styles.selectedEventTime, { color: colors.gray }]}>
-                        {event.date.toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true,
-                        })}
-                      </Text>
-
-                      <Text style={[styles.dividerText, { color: colors.gray }]}>•</Text>
-
-                      <Text style={[styles.selectedEventLocation, { color: colors.gray }]}>
-                        {event.location}
-                      </Text>
-                    </View>
-
-                    <Text style={[styles.selectedEventDescription, { color: colors.darkGray }]}>
-                      {event.description}
-                    </Text>
-
-                    {event.affectedLots && event.affectedLots.length > 0 && (
-                      <View style={styles.affectedLotsContainer}>
-                        <Text style={[styles.affectedLotsLabel, { color: colors.gray }]}>
-                          Affected Lots:
-                        </Text>
-                        <Text style={[styles.affectedLotsText, { color: colors.textPrimary }]}>
-                          {event.affectedLots.join(', ')}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {index < getEventsForDate(selectedDate).length - 1 && (
-                    <View style={[styles.eventDivider, { backgroundColor: colors.borderGray }]} />
-                  )}
-                </View>
+                    {lot.display_name || lot.lot_name}
+                  </Text>
+                </TouchableOpacity>
               ))}
-            </View>
-          )}
+            </ScrollView>
+          </View>
+        )}
 
-          {/* No Events Message */}
-          {selectedDate && getEventsForDate(selectedDate).length === 0 && (
-            <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark, marginTop: SPACING.lg }]}>
-              <Text style={[styles.noEventsText, { color: colors.gray }]}>
-                No events scheduled for this day.
-              </Text>
-            </View>
-          )}
+        {/* Day Selector */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dayRow}
+        >
+          {days.map((date, i) => {
+            const isSelected = i === selectedDayIndex;
+            const label =
+              i === 0
+                ? 'Today'
+                : date
+                    .toLocaleString('default', { weekday: 'short' })
+                    .toUpperCase();
+            const month = date.toLocaleString('default', { month: 'long' });
+            const dateNum = date.getDate();
+
+            return (
+              <TouchableOpacity
+                key={i}
+                onPress={() => setSelectedDayIndex(i)}
+                style={[
+                  styles.dayChip,
+                  {
+                    backgroundColor: isSelected ? colors.primary : colors.white,
+                    borderColor: isSelected
+                      ? colors.primary
+                      : colors.borderGray,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${label}, ${month} ${dateNum}${hasEvent(date) ? ', has event' : ''}`}
+                accessibilityState={{ selected: isSelected }}
+              >
+                {hasEvent(date) && <View style={styles.eventDot} accessible={false} importantForAccessibility="no" />}
+                
+                <Text
+                  style={[
+                    styles.dayLabel,
+                    { color: isSelected ? colors.white : colors.black },
+                  ]}
+                >
+                  {label}
+                </Text>
+
+                <Text
+                  style={[
+                    styles.dayNumber,
+                    { color: isSelected ? colors.white : colors.gray },
+                  ]}
+                >
+                  {dateNum}
+                </Text>
+
+                <Text
+                  style={[
+                    styles.monthLabel,
+                    { color: isSelected ? colors.white : colors.gray },
+                  ]}
+                >
+                  {month}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
-      </SafeAreaView>
+
+        <View style={[styles.divider, { backgroundColor: colors.mediumLightGray }]} />
+        <EventBanner events={selectedDayEvents} />
+        <HourlyChart data={forecast} />
+      </ScrollView>
+      <SafeAreaView style={styles.content} />
     </View>
   );
 };
@@ -269,148 +253,88 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  // Card styles
-  card: {
-    borderRadius: SPACING.lg,
-    padding: SPACING.xl,
-    margin: SPACING.xxxl,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardTitle: {
-    fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
-    marginBottom: SPACING.lg,
-  },
-  // Calendar Styles
-  calendarHeader: {
+  // Day of Week Filter
+  dayRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-  },
-  monthTitle: {
-    fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
-  },
-  navButton: {
-    padding: SPACING.xl,
-    margin: -SPACING.xl,
-  },
-  navIcon: {
-    fontSize: TYPOGRAPHY.fontSize.xxl,
-    paddingHorizontal: SPACING.md,
-  },
-  dayNamesRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.md,
-  },
-  dayName: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignContent: 'flex-start',
-  },
-  dayCell: {
-    width: `${100 / 7}%`,
-    height: 40,    
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING.xs,
-  },
-  dayText: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  eventDot: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  occupancyBar: {
-    width: 28,
-    height: 6,
-    borderRadius: 3,
-    marginTop: SPACING.xs,
-  },
-  // Selected event styles
-  selectedEventCard: {
-    borderLeftWidth: 4,
-    paddingLeft: SPACING.md,
-    paddingVertical: SPACING.md,
-  },
-  titleImpactRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.xl,
     gap: SPACING.md,
   },
-  selectedEventName: {
-    fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
-    flex: 1,
-    flexWrap: 'wrap',
+  dayChip: {
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: SPACING.lg,
+    borderWidth: 1,
+    ...SHADOWS.cardSubtle,
   },
-  timeLocationRow: {
+  eventDot: {
+    position: 'absolute' as const,
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'red',
+  },
+  dayLabel: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  dayNumber: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    marginTop: -2,
+  },
+  monthLabel: {
+    fontSize: TYPOGRAPHY.fontSize.xxs,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    marginTop: -3,
+  },
+  divider: {
+    height: 1,
+    marginHorizontal: SPACING.lg,
+    marginVertical: SPACING.sm,
+  },
+  // Parking Lot Filter
+  lotPickerContainer: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+  },
+  lotPickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.md,
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: SPACING.lg,
+    borderWidth: 1,
+    ...SHADOWS.card,
   },
-  selectedEventTime: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
+  lotPickerText: {
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    textAlign: 'center' as const,
+    paddingVertical: SPACING.sm,
+    flex: 1,
   },
-  dividerText: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    marginHorizontal: SPACING.md,
+  // Dropdown styles
+  lotDropdown: {
+    marginHorizontal: SPACING.lg,
+    borderRadius: SPACING.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
-  selectedEventLocation: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
+  lotDropdownScroll: {
+    maxHeight: 200,
   },
-  eventDivider: {
-    height: 1,
-    marginVertical: SPACING.md,
-    marginLeft: SPACING.md,
-  },
-  selectedEventDescription: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    lineHeight: 20,
-    marginBottom: SPACING.md,
-  },
-  affectedLotsContainer: {
-    marginBottom: SPACING.md,
-  },
-  affectedLotsLabel: {
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
-    marginBottom: SPACING.xs,
-  },
-  affectedLotsText: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  impactBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderRadius: SPACING.sm,
-  },
-  impactBadgeText: {
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
-  },
-  noEventsText: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    fontStyle: 'italic',
-    textAlign: 'center',
+  lotDropdownItem: {
     paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+  },
+  lotDropdownText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
 });
 

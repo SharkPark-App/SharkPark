@@ -32,6 +32,7 @@ jest.mock('../src/context/ThemeContext', () => ({
 
 import { LotAmenities } from '../src/components/LotAmenities';
 import type { ParkingLotResponse } from '../src/services/api/lots';
+import { collectTexts } from './testUtils';
 
 // ────────────────────── Helpers ──────────────────────
 
@@ -77,21 +78,6 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   effective_penetration_rate: 0.15,
   ...overrides,
 });
-
-/** Collect all text content from a rendered tree */
-function collectTexts(instance: ReactTestRenderer.ReactTestInstance): string[] {
-  const texts: string[] = [];
-  const walk = (node: ReactTestRenderer.ReactTestInstance) => {
-    if ((node.type as string) === 'Text' && typeof node.children?.[0] === 'string') {
-      texts.push(node.children[0]);
-    }
-    node.children?.forEach(child => {
-      if (typeof child !== 'string') walk(child);
-    });
-  };
-  walk(instance);
-  return texts;
-}
 
 /** Render inside act() — React 19 requires this */
 function renderLot(overrides: Partial<ParkingLotResponse> = {}) {

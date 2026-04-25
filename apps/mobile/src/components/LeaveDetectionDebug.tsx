@@ -5,7 +5,8 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { Text } from './CustomText';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import locationService from '../services/locationService';
@@ -237,7 +238,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: TYPOGRAPHY.fontSize.xxl || 24,
-    fontWeight: TYPOGRAPHY.fontWeight.bold || '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.primary || '#007AFF',
     textAlign: 'center',
     marginBottom: SPACING.xl,
@@ -250,13 +251,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg || 18,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black || '#333',
     marginBottom: SPACING.md,
   },
   subsectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.md || 16,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black || '#333',
     marginBottom: SPACING.sm,
     marginTop: SPACING.md,
@@ -274,7 +275,7 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: TYPOGRAPHY.fontSize.md || 16,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black || '#333',
   },
   statusBadge: {
@@ -287,7 +288,7 @@ const styles = StyleSheet.create({
   statusText: {
     color: COLORS.white,
     fontSize: TYPOGRAPHY.fontSize.sm || 14,
-    fontWeight: TYPOGRAPHY.fontWeight.bold || '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
   },
   confidenceBadge: {
     paddingHorizontal: SPACING.sm,
@@ -299,7 +300,7 @@ const styles = StyleSheet.create({
   confidenceText: {
     color: COLORS.white,
     fontSize: TYPOGRAPHY.fontSize.sm || 14,
-    fontWeight: TYPOGRAPHY.fontWeight.bold || '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
   },
   analysisGrid: {
     flexDirection: 'row',
@@ -322,7 +323,7 @@ const styles = StyleSheet.create({
   },
   analysisValue: {
     fontSize: TYPOGRAPHY.fontSize.lg || 18,
-    fontWeight: TYPOGRAPHY.fontWeight.bold || '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.black || '#333',
     textAlign: 'center',
   },
@@ -343,13 +344,13 @@ const styles = StyleSheet.create({
   },
   signalType: {
     fontSize: TYPOGRAPHY.fontSize.md || 16,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black || '#333',
     textTransform: 'capitalize',
   },
   signalConfidence: {
     fontSize: TYPOGRAPHY.fontSize.sm || 14,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.primary || '#007AFF',
   },
   signalTimestamp: {
@@ -377,7 +378,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: COLORS.white,
     fontSize: TYPOGRAPHY.fontSize.md || 16,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
   instructionsText: {
     fontSize: TYPOGRAPHY.fontSize.md || 16,

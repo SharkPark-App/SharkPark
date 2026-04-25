@@ -40,7 +40,7 @@ const MainTabNavigator: React.FC = () => {
         },
         tabBarLabelStyle: {
           fontSize: TYPOGRAPHY.fontSize.sm,
-          fontWeight: TYPOGRAPHY.fontWeight.semibold,
+          fontFamily: TYPOGRAPHY.fontFamily.semibold,
         },
       }}
     >

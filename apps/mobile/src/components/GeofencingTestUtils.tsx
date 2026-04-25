@@ -3,8 +3,10 @@
  * Tools for testing geofencing without physical movement
  */
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Button, Alert, TextInput } from 'react-native';
-import { COLORS, SPACING } from '../constants/theme';
+import { View, StyleSheet, Button, Alert } from 'react-native';
+import { Text } from './CustomText';
+import { TextInput } from './CustomTextInput';
+import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import locationService from '../services/locationService';
 import { 
   TEST_CONSTANTS,
@@ -123,7 +125,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.black,
     marginBottom: SPACING.lg,
     textAlign: 'center',
@@ -136,13 +138,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black,
     marginBottom: SPACING.md,
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black,
     marginBottom: SPACING.xs,
     marginTop: SPACING.sm,
@@ -179,7 +181,7 @@ const styles = StyleSheet.create({
   },
   infoTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: '#1565c0',
     marginBottom: SPACING.sm,
   },
