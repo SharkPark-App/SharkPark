@@ -1,6 +1,5 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
@@ -63,7 +62,6 @@ const isProduction = process.env.NODE_ENV === 'production';
             }),
       },
     }),
-    ScheduleModule.forRoot(),
     DatabaseModule,
     // Two named throttler buckets:
     //   `default` — short burst limit applied globally for safety (auth/mutations)

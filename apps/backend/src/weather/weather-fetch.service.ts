@@ -1,6 +1,5 @@
 /* eslint-disable no-undef -- Node 18+ global fetch */
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/database.module';
 
@@ -28,7 +27,12 @@ export class WeatherFetchService {
     this.lon = this.config.get<number>('weather.longitude', -118.1134);
   }
 
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  /**
+   * Fetch current weather from OpenWeatherMap and persist a row.
+   * Invoked by the `cron:weather` script (Fly cron Machine, every 30min);
+   * also exported as a regular service method so it can be triggered manually
+   * or from tests.
+   */
   async fetchWeather(): Promise<void> {
     if (!this.apiKey) {
       this.logger.warn('OPENWEATHER_API_KEY not set — skipping weather fetch');
