@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>mobile</string>
+	<string>SharkPark</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -28,6 +28,14 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>msauth.com.sharkpark.mobile</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.sharkpark.mobile</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>sharkpark</string>
 			</array>
 		</dict>
 	</array>
@@ -80,7 +88,7 @@
 		<string>Ionicons.ttf</string>
 	</array>
 	<key>TSLocationManagerLicense</key>
-	<string></string>
+	<string>$(BG_GEOLOCATION_LICENSE)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
@@ -122,7 +130,5 @@
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>SharkPark uses Bluetooth state to improve parking detection accuracy by monitoring car connectivity patterns. This helps validate when you've actually parked your car.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>SharkPark monitors Bluetooth connectivity to enhance parking validation accuracy.</string>
 </dict>
 </plist>

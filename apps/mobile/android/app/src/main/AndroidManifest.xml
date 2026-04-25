@@ -129,7 +129,7 @@
       android:supportsRtl="true">
       <meta-data
           android:name="com.transistorsoft.locationmanager.license"
-          android:value="" />
+          android:value="${BG_GEOLOCATION_LICENSE}" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
@@ -140,6 +140,27 @@
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+
+        <!-- Custom URL scheme: sharkpark://  -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="sharkpark" />
+        </intent-filter>
+
+        <!-- App Links (HTTPS): https://sharkpark.csulb.edu/...
+             Requires a Digital Asset Links file at:
+             https://sharkpark.csulb.edu/.well-known/assetlinks.json
+             Set android:autoVerify="true" to skip the disambiguation dialog. -->
+        <intent-filter android:autoVerify="true">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data
+                android:scheme="https"
+                android:host="sharkpark.csulb.edu" />
         </intent-filter>
       </activity>
     </application>
