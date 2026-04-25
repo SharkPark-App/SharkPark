@@ -12,8 +12,25 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
-  // Security headers (XSS, content-type sniffing, clickjacking, etc.)
-  app.use(helmet());
+  // Security headers. CSP is stricter in production: this is a JSON API, so
+  // we disallow all browser-loadable subresources by default.
+  app.use(
+    helmet({
+      contentSecurityPolicy: isProduction
+        ? {
+            useDefaults: false,
+            directives: {
+              defaultSrc: ["'none'"],
+              frameAncestors: ["'none'"],
+              baseUri: ["'none'"],
+              formAction: ["'none'"],
+            },
+          }
+        : false,
+      crossOriginResourcePolicy: { policy: 'same-site' },
+      referrerPolicy: { policy: 'no-referrer' },
+    }),
+  );
 
   app.setGlobalPrefix(API_PREFIX);
 
@@ -39,10 +56,24 @@ async function bootstrap() {
     }),
   );
 
+  // Fire OnModuleDestroy / OnApplicationShutdown on SIGTERM/SIGINT so Prisma
+  // closes its pg pool cleanly and Fly.io completes graceful shutdowns
+  // within its drain window.
+  app.enableShutdownHooks();
+
   const port = process.env.PORT || 3000;
   const host = process.env.HOST || '0.0.0.0';
   await app.listen(port, host);
 
+  // Belt-and-suspenders: explicit signal handlers in case something installs
+  // a default handler before us. Nest's enableShutdownHooks also listens.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      logger.log(`Received ${signal}, closing app...`);
+      void app.close().then(() => process.exit(0));
+    });
+  }
+
   logger.log(`SharkPark API running on http://localhost:${port}/${API_PREFIX} [${isProduction ? 'production' : 'development'}]`);
 }
-bootstrap();
+void bootstrap();

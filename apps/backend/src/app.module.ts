@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -15,6 +15,7 @@ import { AzureAdGuard } from './auth/azure-ad.guard';
 import { OccupancyEventsModule } from './occupancy-events/occupancy-events.module';
 import { ReliabilityModule } from './reliability/reliability.module';
 import { HealthModule } from './health/health.module';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, validateConfig } from './config/configuration';
 
 @Module({
@@ -44,4 +45,8 @@ import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, validate
     { provide: APP_GUARD, useExisting: AzureAdGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+  }
+}
