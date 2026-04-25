@@ -75,7 +75,8 @@ jobs:
       - name: Seed lots/school on preview branch (idempotent)
         working-directory: apps/backend
         env:
-          DATABASE_URL: ${{ steps.create_neon_branch.outputs.db_url_with_pooler }}
+          # Use unpooled URL — single short-lived connection, no pgbouncer needed for one-shot seed.
+          DATABASE_URL: ${{ steps.create_neon_branch.outputs.db_url }}
         run: pnpm db:seed:prod
 
       - name: Post schema diff comment to PR
