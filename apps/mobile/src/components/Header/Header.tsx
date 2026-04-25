@@ -44,7 +44,7 @@ const Header: React.FC<HeaderProps> = React.memo(
 
         <View style={styles.centerContent}>
           {title ? (
-          <Text style={styles.titleText}>
+          <Text style={[styles.titleText, !onBack && styles.titleTextStandalone]}>
               {title}
             </Text>
           ) : (
@@ -94,6 +94,9 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     alignSelf: 'flex-start',
     color: colors.textPrimary,
+  },
+  titleTextStandalone: {
+    paddingLeft: SPACING.xxxl,
   },
   placeholder: {
     width: 44, // Match back button width for balance

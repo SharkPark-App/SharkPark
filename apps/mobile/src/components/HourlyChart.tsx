@@ -22,13 +22,19 @@ export function HourlyChart({data, name}: HourlyChartProps) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const chartHeight = Math.round(screenHeight * 0.2);
 
-  // Calculate bar dimensions to fill the available container width
-  const chartWidth = screenWidth - SPACING.lg * 2 - SPACING.md * 2 - 20; // 20 for internal padding
+  // Fallback for first render; onLayout overrides once measured
+  const fallbackWidth = screenWidth - SPACING.lg * 2 - SPACING.md * 2;
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const measuredWidth = containerWidth ?? fallbackWidth;
+
   const barCount = data.length || 1;
   const barSpacing = 3;
   const initialSpacing = 6;
   // gifted-charts uses yAxisEmptyLabelWidth (10px) when hideYAxisText is true
   const yAxisLabelWidth = 10;
+  
+  // 20 accounts for BarChart's internal padding (spacing + gutter)
+  const chartWidth = measuredWidth - 20;
   const barWidth = Math.floor((chartWidth - barSpacing * barCount - initialSpacing) / barCount);
 
   /** Extracts the hour from an ISO 8601 timestamp*/
@@ -61,14 +67,21 @@ export function HourlyChart({data, name}: HourlyChartProps) {
           ? 'Filling'
           : 'Available';
 
-  // Track the selected bar; defaults to current hour
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(
-    currentIndex >= 0 ? currentIndex : null,
-  );
-
+  // Track the selected bar by time string
+  const currentTime = currentIndex >= 0 ? data[currentIndex].time : null;
+  const [selectedTime, setSelectedTime] = useState<string | null>(currentTime);
+  
   useEffect(() => {
-    setSelectedIndex(currentIndex >= 0 ? currentIndex : null);
-  }, [data, currentIndex]);
+    setSelectedTime(currentTime);
+  }, [currentTime]);
+
+  const selectedIndex = selectedTime
+    ? data.findIndex(item => item.time === selectedTime)
+    : -1;
+
+  const setSelectedIndex = (index: number | null) => {
+    setSelectedTime(index != null && index >= 0 ? data[index].time : null);
+  };
 
   const barData = data.map((item, index) => {
     const isCurrent = currentIndex >= 0 && index === currentIndex;
@@ -87,12 +100,6 @@ export function HourlyChart({data, name}: HourlyChartProps) {
         color: isCurrent ? colors.primary : colors.black,
         fontFamily: isCurrent ? TYPOGRAPHY.fontFamily.bold : TYPOGRAPHY.fontFamily.regular,
       },
-      onPress: () => setSelectedIndex(isSelected ? null : index),
-      accessibilityLabel: `${formatTime(item.time)}, ${item.occupancy} percent, ${getStatusLabel(item.occupancy)}${isCurrent ? ', current hour' : ''}${isSelected ? ', selected' : ''}`,
-      accessibilityHint: isSelected
-        ? 'Double tap to deselect'
-        : 'Double tap to view details',
-
       // Selected Bar Occupancy Label
       topLabelComponent: isSelected
         ? () => (
@@ -106,7 +113,7 @@ export function HourlyChart({data, name}: HourlyChartProps) {
     };
   });
 
-  const selectedData = selectedIndex != null ? data[selectedIndex] : null;
+  const selectedData = selectedIndex >= 0 ? data[selectedIndex] : null;
 
   return (
     <View style={[
@@ -148,7 +155,13 @@ export function HourlyChart({data, name}: HourlyChartProps) {
       )}
 
       {/* Chart -- shows empty or bar chart */}
-      <View style={styles.chartWrapper}>
+      <View
+        style={styles.chartWrapper}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          if (w !== containerWidth) setContainerWidth(w);
+        }}
+      >
         {data.length === 0 ? (
           <View
             style={[styles.emptyState, { height: chartHeight }]}

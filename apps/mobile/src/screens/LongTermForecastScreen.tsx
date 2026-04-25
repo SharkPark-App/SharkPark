@@ -18,6 +18,7 @@ import { upcomingEvents } from '../data/mockEvents';
 import { EventBanner } from '../components/EventBanner';
 
 const DEFAULT_LOT = 'G6';
+const LOT_ORDER = ['G', 'E'];
 
 /** Build an array of 7 dates starting from today */
 function getNext7Days(): Date[] {
@@ -35,7 +36,6 @@ const LongTermForecastScreen: React.FC = () => {
   const { colors } = useTheme();
 
   const { lots } = useLotsList();
-  const LOT_ORDER = ['G', 'E'];
   const sortedLots = useMemo(
     () =>
       [...lots].sort((a, b) => {
@@ -56,6 +56,10 @@ const LongTermForecastScreen: React.FC = () => {
 
   const days = useMemo(() => getNext7Days(), []);
 
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [selectedLot, setSelectedLot] = useState(DEFAULT_LOT);
+  const [lotPickerOpen, setLotPickerOpen] = useState(false);
+
   const hasEvent = (date: Date) =>
     upcomingEvents.some(
       e =>
@@ -63,9 +67,6 @@ const LongTermForecastScreen: React.FC = () => {
           e.affectedLots.includes(selectedLot)) &&
         e.date.toDateString() === date.toDateString(),
     );
-  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
-  const [selectedLot, setSelectedLot] = useState(DEFAULT_LOT);
-  const [lotPickerOpen, setLotPickerOpen] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem('selectedLot').then(saved => {
