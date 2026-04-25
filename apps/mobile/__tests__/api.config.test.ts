@@ -40,6 +40,13 @@ describe('API Configuration', () => {
     expect(ENDPOINTS.EVENTS).toBe('/events');
   });
 
+  it('should have auth verification endpoints', () => {
+    const { ENDPOINTS } = API_CONFIG;
+
+    expect(ENDPOINTS.AUTH_VERIFY_EMAIL).toBe('/auth/verify-email');
+    expect(ENDPOINTS.AUTH_RESEND_VERIFICATION).toBe('/auth/resend-verification');
+  });
+
   it('should generate dynamic endpoints correctly', () => {
     const { ENDPOINTS } = API_CONFIG;
     

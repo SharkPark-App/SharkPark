@@ -2,31 +2,38 @@ import { Platform } from 'react-native';
 
 /**
  * API Configuration for SharkPark Mobile App
- * Handles environment-specific API endpoints and configuration
+ *
+ * URL resolution priority (highest → lowest):
+ *   1. SHARKPARK_API_URL  — set this in a .env file at the repo root for local dev
+ *                           (e.g. SHARKPARK_API_URL=http://192.168.1.42:3000/api/v1)
+ *   2. Platform defaults  — Android emulator 10.0.2.2, iOS simulator localhost
+ *   3. Production URL     — used automatically in release builds (!__DEV__)
+ *
+ * For physical-device development:
+ *   echo "SHARKPARK_API_URL=http://<your-machine-ip>:3000/api/v1" >> .env
  */
 
-// Get the correct localhost IP based on platform and environment
-const getApiBaseUrl = () => {
-  if (!__DEV__) {
-    return 'https://api.sharkpark.csulb.edu/api/v1'; // Production
-  }
-  
-  if (Platform.OS === 'android') {
-    // Android emulator needs special IP to reach host machine
-    return 'http://10.0.2.2:3000/api/v1';
-  } else {
-    // iOS Development:
-    // - Simulator: localhost works fine
-    // - Physical Device: Update the IP below to your machine's local IP
-    // 
-    // To get your local IP: 
-    // 1. Run ./scripts/getLocalIp.sh in terminal
-    // 2. Or check System Preferences > Network > WiFi > Advanced > TCP/IP
-    // 3. Replace 'localhost' below with your actual IP
-    //
+// react-native-dotenv (or babel-plugin-transform-inline-environment-variables)
+// exposes process.env at build time. Falls back to undefined if not configured.
+declare const process: { env: Record<string, string | undefined> };
 
-    return 'http://localhost:3000/api/v1'; // Update with your machine's IP for physical devices
+const getApiBaseUrl = (): string => {
+  // 1. Explicit override (works for both simulator and physical device)
+  const envOverride = process?.env?.SHARKPARK_API_URL;
+  if (envOverride) return envOverride;
+
+  // 2. Production build
+  if (!__DEV__) {
+    return 'https://api.sharkpark.csulb.edu/api/v1';
   }
+
+  // 3. Development platform defaults
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:3000/api/v1';
+  }
+
+  // iOS simulator — localhost routes correctly
+  return 'http://localhost:3000/api/v1';
 };
 
 export const API_CONFIG = {
@@ -48,6 +55,9 @@ export const API_CONFIG = {
     USERS: '/users',
     WEATHER: '/weather',
     EVENTS: '/events',
+    // Auth / verification
+    AUTH_VERIFY_EMAIL: '/auth/verify-email',
+    AUTH_RESEND_VERIFICATION: '/auth/resend-verification',
   },
 
   // Default headers for all requests

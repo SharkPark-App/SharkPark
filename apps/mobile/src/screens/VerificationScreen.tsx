@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { authApi } from '../services/api';
 
 interface VerificationScreenProps {
   email: string;
@@ -57,12 +58,7 @@ export function VerificationScreen({ email, onBack, onVerificationSuccess }: Ver
 
     setIsLoading(true);
     try {
-      // TODO: Implement verification API call
-      
-      // Simulate API call
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
-      
-      // For demo purposes, accept any 6-digit code
+      await authApi.verifyEmail(email, codeToVerify);
       onVerificationSuccess();
     } catch {
       Alert.alert('Error', 'Invalid verification code. Please try again.');
@@ -78,10 +74,7 @@ export function VerificationScreen({ email, onBack, onVerificationSuccess }: Ver
     if (resendTimer > 0) return;
 
     try {
-      // TODO: Implement resend API call
-      
-      // Simulate API call
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+      await authApi.resendVerification(email);
       
       Alert.alert('Success', 'Verification code resent!');
       
