@@ -27,6 +27,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import sharkParkLogo from '../assets/images/SharkParkV4.webp';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -99,7 +100,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
     <View style={styles.slide}>
       {item.emoji === null ? (
         <Image
-          source={require('../assets/images/SharkParkV4.webp')}
+          source={sharkParkLogo}
           style={styles.logo}
           resizeMode="contain"
         />
