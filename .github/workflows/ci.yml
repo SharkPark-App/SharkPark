@@ -1,6 +1,9 @@
 name: CI
 on: [push, pull_request]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -25,13 +28,13 @@ jobs:
           --health-retries=10
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -83,13 +86,13 @@ jobs:
     needs: ci
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm

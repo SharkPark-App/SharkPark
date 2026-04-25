@@ -15,6 +15,12 @@ permissions:
   contents: read
   pull-requests: write
 
+env:
+  # Force third-party actions still on Node 20 (pnpm/action-setup,
+  # neondatabase/*) to run on Node 24. Remove once upstream releases
+  # Node-24 builds. See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   setup:
     name: Setup
@@ -52,13 +58,13 @@ jobs:
           api_key: ${{ secrets.NEON_API_KEY }}
           expires_at: ${{ env.EXPIRES_AT }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm

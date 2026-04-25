@@ -33,12 +33,26 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
+const rawConnectionString = process.env.DATABASE_URL;
+if (!rawConnectionString) {
   console.error('[seed-prod] DATABASE_URL is not set. Aborting.');
   process.exit(1);
 }
 
+/**
+ * Normalize sslmode to `verify-full` to silence pg's deprecation warning
+ * about treating `require`/`prefer`/`verify-ca` as aliases for `verify-full`
+ * in pg v9. Neon issues real certs, so verify-full is the correct mode.
+ */
+function normalizeSslMode(url: string): string {
+  if (/[?&]sslmode=verify-full(\b|&)/i.test(url)) return url;
+  if (/[?&]sslmode=(require|prefer|verify-ca)\b/i.test(url)) {
+    return url.replace(/([?&])sslmode=(require|prefer|verify-ca)\b/i, '$1sslmode=verify-full');
+  }
+  return url + (url.includes('?') ? '&' : '?') + 'sslmode=verify-full';
+}
+
+const connectionString = normalizeSslMode(rawConnectionString);
 const pool = new pg.Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
