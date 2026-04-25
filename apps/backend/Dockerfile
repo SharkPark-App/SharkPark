@@ -46,6 +46,11 @@ COPY packages/utils/package.json packages/utils/
 ENV SKIP_LOCAL_INFRA=1
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter @sharkpark/backend... --prod
+# Generated Prisma client lives in node_modules/.prisma/client. The build
+# stage runs `prisma generate` against full deps, but the pruned prod tree
+# doesn't get the generated files unless we regenerate here.
+COPY apps/backend/prisma apps/backend/prisma
+RUN pnpm --filter @sharkpark/backend exec prisma generate
 
 # ─── Runtime image ─────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
@@ -78,6 +83,9 @@ COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/dist ./apps/backend/d
 COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/prisma ./apps/backend/prisma
 COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/cron ./apps/backend/cron
 COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/package.json ./apps/backend/package.json
+# prisma.config.ts is required at runtime by `prisma migrate deploy` (Prisma 7+).
+# It reads DATABASE_URL from env and exposes it as datasource.url.
+COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
 
 USER nodejs
 WORKDIR /app/apps/backend
