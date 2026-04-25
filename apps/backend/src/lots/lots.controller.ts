@@ -10,6 +10,7 @@ import {
   ParseIntPipe,
   BadRequestException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { LotsService } from './lots.service';
 import type { GetLotsQueryParams } from './interfaces/parking-lot.interface';
 import { Public } from '../auth/public.decorator';
@@ -22,9 +23,14 @@ import { Public } from '../auth/public.decorator';
  * snapshot scheduler, so a short edge cache is safe. Each read endpoint
  * declares its own Cache-Control so Cloudflare can serve hot reads while the
  * origin recomputes in the background.
+ *
+ * Throttling: uses the relaxed `read` bucket (600 req/min) instead of the
+ * default 20 req/10s, since hundreds of mobile clients share a single
+ * campus NAT IP.
  */
 @Public()
 @Controller('lots')
+@Throttle({ read: { ttl: 60_000, limit: 600 } })
 export class LotsController {
   constructor(private readonly lotsService: LotsService) {}
 

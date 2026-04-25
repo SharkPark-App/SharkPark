@@ -1,16 +1,23 @@
 import 'dotenv/config';
+// MUST be the first non-builtin import — initializes Sentry before any other
+// module is required so its instrumentation hooks attach properly.
+import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { API_PREFIX } from './constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
-  const logger = new Logger('Bootstrap');
   const isProduction = process.env.NODE_ENV === 'production';
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Swap Nest's default ConsoleLogger for nestjs-pino. JSON in prod, pretty
+  // in dev (transport configured in AppModule).
+  app.useLogger(app.get(PinoLogger));
+  const logger = new Logger('Bootstrap');
 
   // Security headers. CSP is stricter in production: this is a JSON API, so
   // we disallow all browser-loadable subresources by default.
