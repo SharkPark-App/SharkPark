@@ -15,7 +15,7 @@
  */
 
 import 'dotenv/config';
-import { PrismaClient, UserType, CampusEventType, ImpactLevel, EventType } from '@prisma/client';
+import { PrismaClient, UserType, CampusEventType, ImpactLevel, EventType, ConfidenceLevel } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
