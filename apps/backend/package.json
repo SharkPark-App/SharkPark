@@ -12,6 +12,8 @@
     "cron:snapshot": "node dist/scripts/snapshot.js",
     "cron:cleanup": "node dist/scripts/cleanup-device-states.js",
     "cron:weather": "node dist/scripts/fetch-weather.js",
+    "db:seed": "prisma db seed",
+    "db:seed:prod": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed-prod.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "jest --config ./jest.config.js",
