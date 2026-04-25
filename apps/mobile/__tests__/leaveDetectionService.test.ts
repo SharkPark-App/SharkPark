@@ -151,14 +151,15 @@ describe('LeaveDetectionService', () => {
       );
     });
 
-    it('registers callbacks and starts behavioral collection', async () => {
+    it('registers callbacks on the session and starts behavioral collection', async () => {
       await service.startLeaveMonitoring(enterEvent(), callbacks);
 
       expect(mockStartCollection).toHaveBeenCalledWith(
         expect.objectContaining({ onMetricsCollected: expect.any(Function) }),
         'leaveDetection',
       );
-      expect(service['callbacks']).toBe(callbacks);
+      const session = service['activeSessions'].values().next().value!;
+      expect(session.callbacks).toBe(callbacks);
     });
 
     it('stores optional parkedLocation on the session', async () => {
@@ -612,11 +613,17 @@ describe('LeaveDetectionService', () => {
   // -------------------------------------------------------------------------
 
   describe('updateLocation', () => {
-    it('delegates location data to the shared behavioral collector', () => {
+    it('does NOT delegate to the shared behavioral collector (provider handles that)', () => {
       const loc = { latitude: 33.78, longitude: -118.11, accuracy: 8, speed: 2.5, altitude: null, heading: null };
       service.updateLocation(loc);
 
-      expect(mockUpdateLocation).toHaveBeenCalledWith(loc);
+      expect(mockUpdateLocation).not.toHaveBeenCalled();
+    });
+
+    it('stores latest position for movement direction analysis', () => {
+      service.updateLocation({ latitude: 33.78, longitude: -118.11, accuracy: 8, speed: 2.5, altitude: null, heading: null });
+
+      expect((service as unknown as { lastLocation: { latitude: number; longitude: number } }).lastLocation).toEqual({ latitude: 33.78, longitude: -118.11 });
     });
   });
 

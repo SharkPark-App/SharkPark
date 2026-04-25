@@ -22,17 +22,19 @@ interface ParkingSession {
   status: 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 }
 
-interface ValidationEventWithMetadata extends ValidationEvent {
-  sessionId: string;
-  lotId: string;
-}
-
 class ParkingValidationService {
   private activeSessions = new Map<string, ParkingSession>();
-  private eventBuffer: ValidationEventWithMetadata[] = [];
-  private isCollectingData = false;
+  private sessionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private behavioralCollector = sharedBehavioralCollector;
   private initPromise: Promise<void>;
+  private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingPersistSessionIds = new Set<string>();
+
+  // Debounce interval for AsyncStorage writes (reduces I/O during active collection)
+  private readonly PERSIST_DEBOUNCE_MS = 30_000;
+
+  // Maximum session duration before auto-cancellation (4 hours)
+  private readonly SESSION_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
   // Event listeners
   private validationCompleteListeners: ((analysis: ValidationAnalysis, lotId: string) => void)[] = [];
@@ -60,7 +62,12 @@ class ParkingValidationService {
     };
 
     this.activeSessions.set(sessionId, session);
-    this.isCollectingData = true;
+
+    // Auto-cancel stale sessions after timeout to prevent resource leaks
+    const timer = setTimeout(() => {
+      this.cancelStaleSession(sessionId);
+    }, this.SESSION_TIMEOUT_MS);
+    this.sessionTimers.set(sessionId, timer);
     
     // Start collecting location and movement data
     this.startDataCollection(sessionId, geofenceEvent.regionId);
@@ -88,12 +95,13 @@ class ParkingValidationService {
       return null;
     }
 
+    // Clear the session timeout timer
+    this.clearSessionTimer(activeSession.sessionId);
+
     // Add final exit event
     const exitEvent = this.createValidationEvent('GEOFENCE_EXIT', activeSession.sessionId, geofenceEvent.regionId);
     activeSession.events.push(exitEvent);
     
-    this.isCollectingData = false;
-    this.behavioralCollector.stopCollection('parkingValidation');
     activeSession.status = 'COMPLETED';
     
     // Analyze the behavioral patterns
@@ -112,6 +120,11 @@ class ParkingValidationService {
     // Clean up session
     this.activeSessions.delete(activeSession.sessionId);
     await this.removePersistedSession(activeSession.sessionId);
+
+    // Stop collecting if no active sessions remain
+    if (this.findAnyActiveSession() === undefined) {
+      this.behavioralCollector.stopCollection('parkingValidation');
+    }
     
     return analysis;
   }
@@ -128,7 +141,7 @@ class ParkingValidationService {
       raw_data?: Record<string, unknown>;
     } = {}
   ): void {
-    if (!this.isCollectingData || this.activeSessions.size === 0) {
+    if (this.activeSessions.size === 0) {
       return;
     }
 
@@ -143,8 +156,8 @@ class ParkingValidationService {
           session.events = session.events.slice(-50);
         }
         
-        // Persist updated session
-        this.persistSession(session);
+        // Debounced persist — coalesces rapid writes from behavioral metrics
+        this.debouncedPersistSession(session.sessionId);
       }
     });
   }
@@ -189,7 +202,6 @@ class ParkingValidationService {
   // --- Private Methods ---
 
   private startDataCollection(sessionId: string, lotId: string): void {
-    this.isCollectingData = true;
     
     // Start real behavioral data collection
     this.behavioralCollector.startCollection({
@@ -275,8 +287,8 @@ class ParkingValidationService {
     // Add all events to the session
     session.events.push(...events);
 
-    // Persist the updated session
-    this.persistSession(session);
+    // Debounced persist — coalesces rapid writes from behavioral metrics
+    this.debouncedPersistSession(sessionId);
 
     if (__DEV__) console.log(`[ParkingValidation] Added ${events.length} real behavioral events to session ${sessionId}`);
   }
@@ -293,7 +305,7 @@ class ParkingValidationService {
     } = {}
   ): ValidationEvent {
     return {
-      id: `${sessionId}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      id: `${sessionId}-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, '0')).join('')}`,
       event_type: eventType,
       timestamp: new Date(),
       speed_mph: metadata.speed_mph ?? null,
@@ -322,6 +334,52 @@ class ParkingValidationService {
     });
   }
 
+  private debouncedPersistSession(sessionId: string): void {
+    this.pendingPersistSessionIds.add(sessionId);
+    if (this.persistDebounceTimer) return; // already scheduled
+    this.persistDebounceTimer = setTimeout(() => {
+      this.persistDebounceTimer = null;
+      const ids = [...this.pendingPersistSessionIds];
+      this.pendingPersistSessionIds.clear();
+      for (const id of ids) {
+        const session = this.activeSessions.get(id);
+        if (session) this.persistSession(session);
+      }
+    }, this.PERSIST_DEBOUNCE_MS);
+  }
+
+  private clearSessionTimer(sessionId: string): void {
+    const timer = this.sessionTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.sessionTimers.delete(sessionId);
+    }
+  }
+
+  private cancelStaleSession(sessionId: string): void {
+    const session = this.activeSessions.get(sessionId);
+    if (!session || session.status !== 'ACTIVE') return;
+
+    if (__DEV__) console.warn(`[ParkingValidation] Session ${sessionId} timed out, cancelling`);
+
+    session.status = 'CANCELLED';
+    this.activeSessions.delete(sessionId);
+    this.sessionTimers.delete(sessionId);
+    this.removePersistedSession(sessionId);
+
+    // Stop collecting if no active sessions remain
+    if (this.findAnyActiveSession() === undefined) {
+      this.behavioralCollector.stopCollection('parkingValidation');
+    }
+  }
+
+  private findAnyActiveSession(): ParkingSession | undefined {
+    for (const session of this.activeSessions.values()) {
+      if (session.status === 'ACTIVE') return session;
+    }
+    return undefined;
+  }
+
   private findActiveSessionByLotId(lotId: string): ParkingSession | undefined {
     for (const session of this.activeSessions.values()) {
       if (session.lotId === lotId && session.status === 'ACTIVE') {
@@ -332,7 +390,7 @@ class ParkingValidationService {
   }
 
   private generateSessionId(): string {
-    return `parking-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    return `parking-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, '0')).join('')}`;
   }
 
   private notifyValidationComplete(analysis: ValidationAnalysis, lotId: string): void {
@@ -382,10 +440,17 @@ class ParkingValidationService {
           if (sessionAge > maxAge || session.status !== 'ACTIVE') {
             await AsyncStorage.removeItem(key);
           } else {
-            // Restore active session
+            // Restore active session and restart data collection + safety timeout.
+            // The timeout accounts for time already elapsed since the session started.
             this.activeSessions.set(session.sessionId, session);
             if (session.status === 'ACTIVE') {
-              this.isCollectingData = true;
+              const remainingMs = Math.max(0, this.SESSION_TIMEOUT_MS - sessionAge);
+              const timer = setTimeout(() => {
+                this.cancelStaleSession(session.sessionId);
+              }, remainingMs);
+              this.sessionTimers.set(session.sessionId, timer);
+
+              this.startDataCollection(session.sessionId, session.lotId);
             }
           }
         }
@@ -414,26 +479,12 @@ class ParkingValidationService {
 
     return {
       activeSessions: this.activeSessions.size,
-      isCollectingData: this.isCollectingData,
+      isCollectingData: this.findAnyActiveSession() !== undefined,
       sessions: sessionInfo
     };
   }
 
-  /**
-   * Update location data for behavioral analysis
-   * This should be called from the main location tracking service to avoid conflicts
-   */
-  updateLocation(locationData: {
-    latitude: number;
-    longitude: number;
-    accuracy: number;
-    speed: number | null;
-    altitude?: number | null;
-    heading?: number | null;
-  }): void {
-    // Pass location data to behavioral collector for speed and movement analysis
-    this.behavioralCollector.updateLocation(locationData);
-  }
+
 }
 
 // Export singleton instance

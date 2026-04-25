@@ -9,14 +9,13 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'rea
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import parkingValidationService from '../services/parkingValidationService';
-import { useBehavioralDataCollection } from '../services/behavioralDataCollector';
+import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
 import type { BehavioralMetrics } from '../services/behavioralDataCollector';
 import locationService from '../services/locationService';
 import { ValidationStatus } from '../validation';
 
 export const ParkingValidationDebug: React.FC = () => {
   const { currentLotId, currentValidationStatus, debugInfo } = useEnhancedGeofencing();
-  const { getCurrentMetrics } = useBehavioralDataCollection();
   const [refreshKey, setRefreshKey] = useState(0);
   const [currentMetrics, setCurrentMetrics] = useState<BehavioralMetrics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
@@ -38,7 +37,7 @@ export const ParkingValidationDebug: React.FC = () => {
   const fetchCurrentMetrics = async () => {
     setMetricsLoading(true);
     try {
-      const metrics = await getCurrentMetrics();
+      const metrics = await sharedBehavioralCollector.getCurrentMetrics();
       setCurrentMetrics(metrics);
     } catch (error) {
       console.warn('[ParkingValidationDebug] Failed to fetch metrics:', error);

@@ -22,11 +22,34 @@ jest.mock('@react-native-community/netinfo', () => ({
   },
 }));
 
-jest.mock('@react-native-community/geolocation', () => ({
-  watchPosition: jest.fn(),
-  clearWatch: jest.fn(),
-  getCurrentPosition: jest.fn(),
-  setRNConfiguration: jest.fn(),
+jest.mock('react-native-background-geolocation', () => ({
+  __esModule: true,
+  default: {
+    ready: jest.fn().mockResolvedValue({ enabled: false }),
+    start: jest.fn().mockResolvedValue({}),
+    startGeofences: jest.fn().mockResolvedValue({}),
+    stop: jest.fn().mockResolvedValue({}),
+    getState: jest.fn().mockResolvedValue({}),
+    addGeofences: jest.fn().mockResolvedValue(undefined),
+    removeGeofences: jest.fn().mockResolvedValue(undefined),
+    getGeofences: jest.fn().mockResolvedValue([]),
+    getCurrentPosition: jest.fn().mockResolvedValue({}),
+    requestPermission: jest.fn().mockResolvedValue(4),
+    requestTemporaryFullAccuracy: jest.fn().mockResolvedValue(1),
+    getProviderState: jest.fn().mockResolvedValue({ accuracyAuthorization: 0 }),
+    removeListeners: jest.fn().mockResolvedValue(undefined),
+    onGeofence: jest.fn(() => ({ remove: jest.fn() })),
+    onLocation: jest.fn(() => ({ remove: jest.fn() })),
+    onActivityChange: jest.fn(() => ({ remove: jest.fn() })),
+    onMotionChange: jest.fn(() => ({ remove: jest.fn() })),
+    onProviderChange: jest.fn(() => ({ remove: jest.fn() })),
+    AuthorizationStatus: { Always: 4, WhenInUse: 3, Denied: 1, NotDetermined: 0 },
+    AccuracyAuthorization: { Full: 0, Reduced: 1 },
+    DesiredAccuracy: { High: 0, Medium: 10, Low: 100 },
+    PersistMode: { None: 0, All: 2 },
+    LogLevel: { Verbose: 5, Off: 0 },
+    TriggerActivity: { InVehicle: 'in_vehicle', OnFoot: 'on_foot' },
+  },
 }));
 
 jest.mock('react-native-device-info', () => ({

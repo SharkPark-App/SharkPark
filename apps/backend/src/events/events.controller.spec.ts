@@ -8,6 +8,7 @@ describe('EventsController', () => {
 
   const mockEventsService = {
     findAll: jest.fn(),
+    findUpcoming: jest.fn(),
     getImpacts: jest.fn(),
   };
 
@@ -58,6 +59,29 @@ describe('EventsController', () => {
       await controller.getAllEvents('SPORTS');
 
       expect(service.findAll).toHaveBeenCalledWith('SPORTS');
+    });
+  });
+
+  describe('getUpcomingEvents', () => {
+    it('should return upcoming events within default window', async () => {
+      const now = new Date();
+      const mockUpcoming = [
+        {
+          event_id: 'game-1',
+          event_name: 'Basketball Game',
+          start_time: new Date(now.getTime() + 3600000),
+          end_time: new Date(now.getTime() + 7200000),
+        },
+      ];
+
+      mockEventsService.findUpcoming.mockResolvedValue(mockUpcoming);
+
+      const result = await controller.getUpcomingEvents();
+
+      expect(result.success).toBe(true);
+      expect(result.window_hours).toBe(24);
+      expect(result.count).toBe(1);
+      expect(result.data[0].event_name).toBe('Basketball Game');
     });
   });
 

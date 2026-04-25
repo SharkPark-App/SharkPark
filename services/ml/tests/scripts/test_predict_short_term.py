@@ -1,5 +1,5 @@
 """
-Tests for the prediction script (scripts/predict.py).
+Tests for the prediction script (scripts/predict_short_term.py).
 
 Covers:
     - Prediction output matches expected schema columns
@@ -18,9 +18,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scripts.predict import _build_prediction_df, predict
-from scripts.train import train
-from scripts.promote import promote
+from scripts.predict_short_term import _build_prediction_df, predict
+from scripts.train_short_term import train
+from scripts.promote_short_term import promote
 
 
 # =============================================================================
@@ -166,7 +166,7 @@ class TestPredictErrorPaths:
 class TestPredictEndToEnd:
     """Verify predict.py loads production model and generates output."""
 
-    @patch("src.data.db.write_predictions", return_value=0)
+    @patch("src.data.db.write_short_term_predictions", return_value=0)
     def test_predict_writes_output(self, mock_write, trained_and_promoted):
         """predict() should write predictions to DB and local file."""
         info = trained_and_promoted

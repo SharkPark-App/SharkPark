@@ -35,6 +35,8 @@ const InteractiveLot: React.FC<{
   onPress: (lot: ParkingLotResponse) => void;
   colors: ThemeColors;
 }> = ({ lot, onPress, colors }) => {
+  const occupancyColor = getOccupancyColor(lot.occupancy);
+  const isSingleWord = !lot.name.trim().includes(' ');
   const occupancyColor = getOccupancyColor(lot.occupancy_rate * 100);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
   
@@ -123,6 +125,8 @@ const MapScreen: React.FC = () => {
   const handleApplyFilter = (filteredLots: string[]) => {
     setSelectedLots(filteredLots);
     setIsFilterModalOpen(false);
+    // Filter is visual-only — does NOT affect geofence registration.
+    // Geofences are registered for all lots at startup based on user type (see geoHelpers).
   };
 
   // Redirect to Short-Term Forecast Screen of the lot selected within the navigation modal

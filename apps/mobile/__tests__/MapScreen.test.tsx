@@ -79,6 +79,17 @@ jest.mock('../src/components/Modals/FilterModal', () => ({
   LotFilterModal: () => null,
 }));
 
+jest.mock('../src/context/AuthContext', () => ({
+  useAuth: () => ({
+    user: { userId: 'test@student.csulb.edu', displayName: 'Test User' },
+    isAuthenticated: true,
+    isLoading: false,
+    login: jest.fn(),
+    logout: jest.fn(),
+    refreshSession: jest.fn(),
+  }),
+}));
+
 jest.mock('../src/components/Modals/RecommendationModal', () => ({
   RecommendationModal: (props: { isOpen: boolean; favoriteLotIds: string[]; onClose: () => void; onSelectLot: (id: string, name: string) => void }) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports

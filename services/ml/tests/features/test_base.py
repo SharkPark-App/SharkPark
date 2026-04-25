@@ -3,8 +3,7 @@ Tests for shared feature engineering utilities (src.features.base).
 
 Covers:
     - Cyclical encoding (encode_cyclical, add_hour_encoding, add_day_encoding)
-    - Time extraction and bucketing
-    - Occupancy bucketing
+    - Time extraction
     - Data validation
     - Full base feature pipeline
 
@@ -20,8 +19,6 @@ from src.features.base import (
     add_hour_encoding,
     add_day_encoding,
     extract_time_components,
-    add_time_bucket,
-    add_activity_level,
     validate_snapshot_data,
     prepare_base_features,
 )
@@ -130,35 +127,6 @@ class TestExtractTimeComponents:
 
 
 # =============================================================================
-# Time Bucketing
-# =============================================================================
-
-
-class TestAddTimeBucket:
-    """Verify DataFrame-level time bucketing."""
-
-    def test_adds_time_bucket_column(self):
-        df = pd.DataFrame({"hour": [9, 12, 18]})
-        result = add_time_bucket(df)
-        assert "time_bucket" in result.columns
-        assert list(result["time_bucket"]) == ["morning", "midday", "evening"]
-
-
-# =============================================================================
-# Occupancy Bucketing
-# =============================================================================
-
-
-class TestAddActivityLevel:
-    """Verify DataFrame-level activity level bucketing."""
-
-    def test_adds_activity_level_column(self):
-        df = pd.DataFrame({"occupancy_rate": [0.3, 0.6, 0.9]})
-        result = add_activity_level(df)
-        assert list(result["activity_level"]) == ["LOW", "MED", "HIGH"]
-
-
-# =============================================================================
 # Validation
 # =============================================================================
 
@@ -244,11 +212,14 @@ class TestPrepareBaseFeatures:
             "day_of_week",
             "date",
             "is_weekend",
-            "sin_hour",
-            "cos_hour",
-            "sin_day",
-            "cos_day",
-            "time_bucket",
         ]
         for col in expected_new_cols:
             assert col in result.columns, f"Missing column: {col}"
+
+    def test_pipeline_normalizes_timestamps(self, sample_snapshot_df):
+        sample_snapshot_df = sample_snapshot_df.copy()
+        sample_snapshot_df["timestamp"] = pd.to_datetime(
+            sample_snapshot_df["timestamp"]
+        ).dt.tz_localize("UTC")
+        result = prepare_base_features(sample_snapshot_df)
+        assert result["timestamp"].dt.tz is None

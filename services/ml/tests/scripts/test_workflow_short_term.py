@@ -12,10 +12,10 @@ from unittest.mock import patch
 import mlflow
 import pytest
 
-from scripts.train import train
-from scripts.evaluate import evaluate
-from scripts.promote import promote
-from scripts.predict import predict
+from scripts.train_short_term import train
+from scripts.evaluate_short_term import evaluate
+from scripts.promote_short_term import promote
+from scripts.predict_short_term import predict
 
 
 # =============================================================================
@@ -43,7 +43,7 @@ def workflow_env(synthetic_df, tmp_path, isolated_mlflow):
 class TestFullWorkflow:
     """Verify the complete train → evaluate → promote → predict pipeline."""
 
-    @patch("src.data.db.write_predictions", return_value=0)
+    @patch("src.data.db.write_short_term_predictions", return_value=0)
     def test_train_evaluate_promote_predict(
         self, mock_write, workflow_env
     ):

@@ -11,9 +11,11 @@ import {
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { OccupancyEventsService } from './occupancy-events.service';
 import { CreateOccupancyEventDto } from './dto/create-occupancy-event.dto';
+import { Public } from '../auth/public.decorator';
+import { HmacGuard } from '../auth/hmac.guard';
 
 /** Controller for anonymous occupancy event logging from mobile geofencing */
 @Controller('occupancy-events')
@@ -21,7 +23,10 @@ export class OccupancyEventsController {
   constructor(private readonly occupancyEventsService: OccupancyEventsService) {}
 
   /** Records an anonymous ENTER/EXIT event for a parking lot */
+  @Public()
+  @UseGuards(HmacGuard)
   @Post()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.CREATED)
   async createEvent(@Body() createEventDto: CreateOccupancyEventDto) {
     const result = await this.occupancyEventsService.create(createEventDto);
@@ -36,6 +41,7 @@ export class OccupancyEventsController {
   }
 
   /** Get events for a lot within a date range */
+  @Public()
   @Get('lots/:lotId')
   @HttpCode(HttpStatus.OK)
   async getEventsByLot(
@@ -75,6 +81,7 @@ export class OccupancyEventsController {
   }
 
   /** Get event statistics (enter/exit counts) for a lot */
+  @Public()
   @Get('lots/:lotId/stats')
   @HttpCode(HttpStatus.OK)
   async getEventStats(
@@ -105,21 +112,8 @@ export class OccupancyEventsController {
     };
   }
 
-  /** Manually trigger snapshot creation (normally called by scheduler) */
-  @UseGuards(AuthGuard('azure-ad'))
-  @Post('snapshots')
-  @HttpCode(HttpStatus.CREATED)
-  async createSnapshots() {
-    const result = await this.occupancyEventsService.createSnapshots();
-    
-    return {
-      success: true,
-      message: `Created ${result.count} occupancy snapshots`,
-      data: result,
-    };
-  }
-
   /** Get snapshots for a lot on a given date */
+  @Public()
   @Get('snapshots/:lotId')
   @HttpCode(HttpStatus.OK)
   async getSnapshots(

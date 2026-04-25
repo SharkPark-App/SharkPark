@@ -46,25 +46,19 @@ export class OccupancyEventsService {
       throw new NotFoundException(`Lot ${dto.lot_id} not found`);
     }
 
-    // Check for duplicate event (same device, same lot, same event type)
-    const isDuplicate = await this.checkDuplicate(lot.id, deviceHash, dto.event_type);
-
-    if (isDuplicate) {
-      this.logger.warn(
-        `Duplicate ${dto.event_type} event ignored for lot ${dto.lot_id} from device ${deviceHash.substring(0, 8)}...`
-      );
-      return {
-        event_id: eventId,
-        lot_id: dto.lot_id,
-        event_type: dto.event_type,
-        recorded_at: now,
-        deduplicated: true,
-      };
-    }
-
     try {
-      // Use a transaction for atomicity: store event + update occupancy + update device state
-      await this.prisma.$transaction(async (tx) => {
+      // Perform dedup check + event recording inside a single transaction
+      // to prevent concurrent requests from the same device slipping through.
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Check for duplicate event inside the transaction
+        const deviceState = await tx.deviceState.findUnique({
+          where: { device_hash_lot_id: { device_hash: deviceHash, lot_id: lot.id } },
+        });
+
+        if (deviceState && deviceState.last_event_type === dto.event_type) {
+          return { deduplicated: true } as const;
+        }
+
         // Store the basic occupancy event
         await tx.occupancyEvent.create({
           data: {
@@ -76,13 +70,13 @@ export class OccupancyEventsService {
         });
 
         // Update lot occupancy atomically
-        const increment = dto.event_type === 'ENTER' ? 1 : -1;
-        if (dto.event_type === 'EXIT' && lot.current_occupancy <= 0) {
-          this.logger.warn(`Cannot decrement occupancy below 0 for lot ${dto.lot_id}`);
+        if (dto.event_type === 'EXIT') {
+          // Atomic decrement with floor at 0 — eliminates read-then-write race condition
+          await tx.$executeRaw`UPDATE lots SET current_occupancy = GREATEST(current_occupancy - 1, 0), updated_at = NOW() WHERE id = ${lot.id}`;
         } else {
           await tx.lot.update({
             where: { id: lot.id },
-            data: { current_occupancy: { increment } },
+            data: { current_occupancy: { increment: 1 } },
           });
         }
 
@@ -92,7 +86,22 @@ export class OccupancyEventsService {
           update: { last_event_type: dto.event_type as EventType, updated_at: new Date() },
           create: { device_hash: deviceHash, lot_id: lot.id, last_event_type: dto.event_type as EventType },
         });
+
+        return { deduplicated: false } as const;
       });
+
+      if (result.deduplicated) {
+        this.logger.warn(
+          `Duplicate ${dto.event_type} event ignored for lot ${dto.lot_id} from device ${deviceHash.substring(0, 8)}...`
+        );
+        return {
+          event_id: eventId,
+          lot_id: dto.lot_id,
+          event_type: dto.event_type,
+          recorded_at: now,
+          deduplicated: true,
+        };
+      }
 
       this.logger.log(
         `Recorded ${dto.event_type} event for lot ${dto.lot_id} (device: ${deviceHash.substring(0, 8)}...)`
@@ -112,6 +121,55 @@ export class OccupancyEventsService {
   }
 
   /**
+   * Cleans up stale DeviceState records where an ENTER was recorded but no
+   * EXIT ever arrived (app killed, phone died, permissions revoked, etc.).
+   *
+   * For each stale record, decrements the lot's occupancy and deletes the
+   * DeviceState row. The GREATEST(current_occupancy - 1, 0) floor prevents
+   * negative occupancy.
+   *
+   * Called by the scheduler at 3 AM daily (Pacific).
+   */
+  async cleanupStaleDeviceStates(maxAgeHours: number = 18): Promise<{ cleaned: number }> {
+    const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+
+    try {
+      // Find all ENTER device states older than the cutoff
+      const staleStates = await this.prisma.deviceState.findMany({
+        where: {
+          last_event_type: 'ENTER',
+          updated_at: { lt: cutoff },
+        },
+        select: { id: true, lot_id: true, device_hash: true },
+      });
+
+      if (staleStates.length === 0) {
+        return { cleaned: 0 };
+      }
+
+      // Batch: aggregate decrements per lot, then delete all stale records in one transaction
+      const decrementsByLot = new Map<string, number>();
+      const staleIds = staleStates.map((s) => {
+        decrementsByLot.set(s.lot_id, (decrementsByLot.get(s.lot_id) ?? 0) + 1);
+        return s.id;
+      });
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const [lotId, count] of decrementsByLot) {
+          await tx.$executeRaw`UPDATE lots SET current_occupancy = GREATEST(current_occupancy - ${count}, 0), updated_at = NOW() WHERE id = ${lotId}`;
+        }
+        await tx.deviceState.deleteMany({ where: { id: { in: staleIds } } });
+      });
+
+      this.logger.log(`Cleaned up ${staleStates.length} stale ENTER device states (older than ${maxAgeHours}h)`);
+      return { cleaned: staleStates.length };
+    } catch (error) {
+      this.logger.error('Failed to clean up stale device states', error);
+      throw new InternalServerErrorException('Failed to clean up stale device states');
+    }
+  }
+
+  /**
    * Retrieves events for a specific lot within a date range.
    */
   async findByLot(
@@ -120,6 +178,7 @@ export class OccupancyEventsService {
     endDate: string,
     limit: number = 1000,
   ): Promise<OccupancyEvent[]> {
+    const cappedLimit = Math.min(limit, 1000);
     try {
       const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
       if (!lot) return [];
@@ -133,7 +192,7 @@ export class OccupancyEventsService {
           },
         },
         orderBy: { timestamp: 'asc' },
-        take: limit,
+        take: cappedLimit,
       });
     } catch (error) {
       this.logger.error(`Failed to fetch events for lot ${lotId}`, error);
@@ -145,19 +204,46 @@ export class OccupancyEventsService {
    * Gets event statistics for a lot over a time period.
    */
   async getEventStats(lotId: string, startDate: string, endDate: string): Promise<EventStats> {
-    const events = await this.findByLot(lotId, startDate, endDate);
+    try {
+      const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+      if (!lot) {
+        return {
+          lot_id: lotId,
+          start_date: startDate,
+          end_date: endDate,
+          total_enters: 0,
+          total_exits: 0,
+          net_change: 0,
+        };
+      }
 
-    const totalEnters = events.filter(e => e.event_type === 'ENTER').length;
-    const totalExits = events.filter(e => e.event_type === 'EXIT').length;
+      const counts = await this.prisma.occupancyEvent.groupBy({
+        by: ['event_type'],
+        where: {
+          lot_id: lot.id,
+          timestamp: {
+            gte: new Date(startDate),
+            lte: new Date(endDate),
+          },
+        },
+        _count: { event_type: true },
+      });
 
-    return {
-      lot_id: lotId,
-      start_date: startDate,
-      end_date: endDate,
-      total_enters: totalEnters,
-      total_exits: totalExits,
-      net_change: totalEnters - totalExits,
-    };
+      const totalEnters = counts.find(c => c.event_type === 'ENTER')?._count.event_type ?? 0;
+      const totalExits = counts.find(c => c.event_type === 'EXIT')?._count.event_type ?? 0;
+
+      return {
+        lot_id: lotId,
+        start_date: startDate,
+        end_date: endDate,
+        total_enters: totalEnters,
+        total_exits: totalExits,
+        net_change: totalEnters - totalExits,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to fetch event stats for lot ${lotId}`, error);
+      throw new InternalServerErrorException(`Failed to fetch event stats for lot ${lotId}`);
+    }
   }
 
   /**
@@ -186,49 +272,60 @@ export class OccupancyEventsService {
       const [weekOfSemester, periodType] = getWeekOfSemester(schoolTime);
       const academicPeriod = periodType;
 
+      // Attach the latest weather record so each snapshot captures conditions at write time
+      const latestWeather = schoolId
+        ? await this.prisma.weather.findFirst({
+            where: { school_id: schoolId },
+            orderBy: { timestamp: 'desc' },
+          })
+        : null;
+
       let count = 0;
-      for (const lot of lots) {
+
+      // Gather reliability input for all lots in parallel (avoids N+1 DB calls)
+      const reliabilityInputs = await Promise.all(
+        lots.map((lot) => this.reliabilityComputationService.gatherReliabilityInput(lot.lot_id, lot)),
+      );
+
+      // Build snapshot data array
+      const snapshotData = lots.map((lot, i) => {
         const estimate = estimates.get(lot.id);
         const rawOccupancy = lot.current_occupancy || 0;
         const estimatedOccupancy = estimate ? estimate.estimatedOccupancy : rawOccupancy;
         const capacity = lot.capacity || 100;
 
-        // Snapshot stores raw occupancy/available/rate for ML consistency;
-        // estimated_occupancy is the separate scaled-up field
         const rawAvailable = Math.max(0, capacity - rawOccupancy);
         const rawOccupancyRate = capacity > 0 ? rawOccupancy / capacity : 0;
 
-        // Compute confidence using ReliabilityComputationService (single source of truth)
-        const reliabilityInput = await this.reliabilityComputationService.gatherReliabilityInput(lot.lot_id, lot);
         const reliabilityScore = this.reliabilityService.computeReliabilitySummary(
           lot.lot_id,
-          reliabilityInput,
+          reliabilityInputs[i],
         );
-        const confidence = reliabilityScore.confidence;
 
-        await this.prisma.occupancySnapshot.create({
-          data: {
-            lot_id: lot.id,
-            timestamp: now,
-            occupancy: rawOccupancy,
-            available: rawAvailable,
-            occupancy_rate: Math.round(rawOccupancyRate * 1000) / 1000,
-            confidence,
-            reliability_score: reliabilityScore.score,
-            is_cold_start: reliabilityScore.isColdStart,
-            semester,
-            academic_period: academicPeriod,
-            week_of_semester: weekOfSemester,
-            is_campus_open: estimate ? !estimate.isClosure : true,
-            estimated_occupancy: estimatedOccupancy,
-            penetration_rate_used: estimate
-              ? Math.round(estimate.effectiveRate * 10000) / 10000
-              : null,
-          },
-        });
+        return {
+          lot_id: lot.id,
+          timestamp: now,
+          occupancy: rawOccupancy,
+          available: rawAvailable,
+          occupancy_rate: Math.round(rawOccupancyRate * 1000) / 1000,
+          confidence: reliabilityScore.confidence,
+          reliability_score: reliabilityScore.score,
+          is_cold_start: reliabilityScore.isColdStart,
+          semester,
+          academic_period: academicPeriod,
+          week_of_semester: weekOfSemester,
+          is_campus_open: estimate ? !estimate.isClosure : true,
+          estimated_occupancy: estimatedOccupancy,
+          penetration_rate_used: estimate
+            ? Math.round(estimate.effectiveRate * 10000) / 10000
+            : null,
+          weather_id: latestWeather?.id ?? null,
+        };
+      });
 
-        count++;
-      }
+      // Batch insert all snapshots in a single query
+      const result = await this.prisma.occupancySnapshot.createMany({ data: snapshotData });
+      count = result.count;
 
       this.logger.log(`Created ${count} occupancy snapshots at ${timestamp}`);
       return { count, timestamp };
@@ -260,31 +357,6 @@ export class OccupancyEventsService {
     } catch (error) {
       this.logger.error(`Failed to fetch snapshots for lot ${lotId} on ${date}`, error);
       throw new InternalServerErrorException(`Failed to fetch snapshots for lot ${lotId}`);
-    }
-  }
-
-  /**
-   * Checks if this event is a duplicate (same event type as last event from this device).
-   * Accepts the lot's internal (cuid) ID directly to avoid redundant DB lookups.
-   */
-  private async checkDuplicate(
-    lotInternalId: string,
-    deviceHash: string,
-    eventType: 'ENTER' | 'EXIT',
-  ): Promise<boolean> {
-    try {
-      const deviceState = await this.prisma.deviceState.findUnique({
-        where: { device_hash_lot_id: { device_hash: deviceHash, lot_id: lotInternalId } },
-      });
-
-      if (!deviceState) {
-        return false; // First event from this device for this lot
-      }
-
-      return deviceState.last_event_type === eventType;
-    } catch (error) {
-      this.logger.warn(`Failed to check duplicate for lot ${lotInternalId}, proceeding anyway`, error);
-      return false;
     }
   }
 }

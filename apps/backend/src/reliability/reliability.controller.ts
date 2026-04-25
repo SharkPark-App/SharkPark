@@ -2,12 +2,14 @@ import { Controller, Get, Param, Logger } from '@nestjs/common';
 import { ReliabilityService } from './reliability.service';
 import { ReliabilityComputationService } from './reliability-computation.service';
 import { ReliabilityScore, ReliabilityScoreSummary, ReliabilityWeights, ReliabilityThresholds } from './interfaces';
+import { Public } from '../auth/public.decorator';
 
 interface ApiResponse<T> {
   success: boolean;
   data: T;
 }
 
+@Public()
 @Controller('reliability')
 export class ReliabilityController {
   private readonly logger = new Logger(ReliabilityController.name);

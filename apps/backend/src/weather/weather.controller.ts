@@ -1,10 +1,12 @@
 import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
 import { WeatherService } from './weather.service';
+import { Public } from '../auth/public.decorator';
 
 /**
  * Provides current weather data for parking demand correlation.
  * Weather affects parking patterns (rain = higher demand for covered lots).
  */
+@Public()
 @Controller('weather')
 export class WeatherController {
   constructor(private readonly weatherService: WeatherService) {}
@@ -16,6 +18,16 @@ export class WeatherController {
     return {
       success: true,
       data: weather,
+    };
+  }
+
+  @Get('impact')
+  @HttpCode(HttpStatus.OK)
+  async getWeatherImpact() {
+    const impact = await this.weatherService.getWeatherImpact();
+    return {
+      success: true,
+      data: impact,
     };
   }
 }

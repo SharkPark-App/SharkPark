@@ -20,13 +20,6 @@ target 'mobile' do
   # Required for react-native-app-auth with bridgeless mode
   pod 'AppAuth', :modular_headers => true
 
-  # TODO(tech-debt): react-native-bluetooth-status v1.5.1 (last published May 2020)
-  # is essentially unmaintained. It depends only on the legacy `React` pod (no
-  # Fabric / TurboModule support) and has no recent activity.  We should migrate
-  # to @react-native-community/bluetooth-state-manager or implement CoreBluetooth
-  # monitoring directly before this library becomes a blocker on a React Native
-  # Fabric-only build.  Tracked in: <issue-link>
-
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.

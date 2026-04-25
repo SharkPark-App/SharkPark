@@ -11,11 +11,13 @@ import {
 } from '@nestjs/common';
 import { LotsService } from './lots.service';
 import type { GetLotsQueryParams } from './interfaces/parking-lot.interface';
+import { Public } from '../auth/public.decorator';
 
 /**
  * Handles parking lot queries including filtering, individual lot details,
  * historical occupancy data, and campus-wide occupancy summaries.
  */
+@Public()
 @Controller('lots')
 export class LotsController {
   constructor(private readonly lotsService: LotsService) {}
@@ -123,6 +125,32 @@ export class LotsController {
       date: targetDate,
       count: history.length,
       data: history,
+    };
+  }
+
+  @Get(':id/predictions/short-term')
+  @HttpCode(HttpStatus.OK)
+  async getShortTermPredictions(@Param('id') id: string) {
+    const predictions = await this.lotsService.getShortTermPredictions(id.toUpperCase());
+
+    return {
+      success: true,
+      ...predictions,
+    };
+  }
+
+  @Get(':id/predictions/long-term')
+  @HttpCode(HttpStatus.OK)
+  async getLongTermPredictions(
+    @Param('id') id: string,
+    @Query('days', new ParseIntPipe({ optional: true })) days?: number,
+  ) {
+    const cappedDays = days && days >= 1 && days <= 14 ? days : 7;
+    const predictions = await this.lotsService.getLongTermPredictions(id.toUpperCase(), cappedDays);
+
+    return {
+      success: true,
+      ...predictions,
     };
   }
 }

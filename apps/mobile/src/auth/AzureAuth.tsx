@@ -191,71 +191,68 @@ const syncUserWithBackend = async (idToken: string, userEmail: string): Promise<
  * Falls back to local-only logout if Azure logout fails
  */
 export const logoutFromAzure = async (idToken?: string): Promise<void> => {
-  try {
-    log('[AzureAuth] Logging out from Azure AD...');
+  let userCancelled = false;
 
-    // If we have an idToken, try to do a proper Azure AD logout
-    if (idToken) {
-      try {
-        // Create logout-specific config with only required fields for end session
-        // Note: We use serviceConfiguration ONLY (no issuer) to avoid discovery conflicts
-        // See: https://github.com/FormidableLabs/react-native-app-auth/blob/main/docs/docs/providers/microsoft.md
-        const logoutConfig = {
-          clientId: config.clientId,
-          serviceConfiguration: config.serviceConfiguration,
-          iosPrefersEphemeralSession: config.iosPrefersEphemeralSession,
-        };
-        
-        log('[AzureAuth] Logout config:', JSON.stringify(logoutConfig, null, 2));
-        
-        await logout(logoutConfig, {
-          idToken,
-          postLogoutRedirectUrl: REDIRECT_URL,
-        });
-        log('[AzureAuth] Azure AD logout successful');
-      } catch (logoutError) {
-        // Azure AD logout can fail for various reasons (network, cancelled, etc.)
-        // We still want to clear local auth state
-        const errorMessage = (logoutError as Error).message || '';
-        
-        // Check if user explicitly cancelled the logout
-        if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
-          log('[AzureAuth] User cancelled logout');
-          // User cancelled - don't clear local state
-          throw logoutError;
-        }
-        
+  // If we have an idToken, try to do a proper Azure AD logout
+  if (idToken) {
+    try {
+      // Create logout-specific config with only required fields for end session
+      // Note: We use serviceConfiguration ONLY (no issuer) to avoid discovery conflicts
+      // See: https://github.com/FormidableLabs/react-native-app-auth/blob/main/docs/docs/providers/microsoft.md
+      const logoutConfig = {
+        clientId: config.clientId,
+        serviceConfiguration: config.serviceConfiguration,
+        iosPrefersEphemeralSession: config.iosPrefersEphemeralSession,
+      };
+      
+      log('[AzureAuth] Logout config:', JSON.stringify(logoutConfig, null, 2));
+      
+      await logout(logoutConfig, {
+        idToken,
+        postLogoutRedirectUrl: REDIRECT_URL,
+      });
+      log('[AzureAuth] Azure AD logout successful');
+    } catch (logoutError) {
+      const errorMessage = (logoutError as Error).message || '';
+      
+      // Check if user explicitly cancelled the logout
+      if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
+        log('[AzureAuth] User cancelled logout');
+        userCancelled = true;
+      } else if (errorMessage.includes('error -3') || errorMessage.includes('org.openid.appauth.general')) {
         // AppAuth error -3 (OIDErrorCodeUserCanceledAuthorizationFlow) is expected with Azure AD
-        // The logout endpoint clears the session but doesn't redirect back properly
-        // This is a known Azure AD quirk - the logout still worked
-        if (errorMessage.includes('error -3') || errorMessage.includes('org.openid.appauth.general')) {
-          log('[AzureAuth] Azure AD session cleared (browser dismissed - this is expected)');
-          // Continue to clear local state - logout was successful
-        } else {
-          // For unexpected errors, log as warning but continue to clear local state
-          if (__DEV__) {
-            console.warn('[AzureAuth] Azure AD logout encountered an issue, clearing local state:', logoutError);
-          }
+        // on iOS. The logout endpoint clears the session but doesn't redirect back properly.
+        log('[AzureAuth] Azure AD session cleared (browser dismissed - this is expected)');
+      } else if (Platform.OS === 'android') {
+        // Android Chrome Custom Tabs may throw on end-session; the server-side
+        // session is still invalidated — continue to clear local state.
+        log('[AzureAuth] Android logout error (continuing with local cleanup):', errorMessage);
+      } else {
+        if (__DEV__) {
+          console.warn('[AzureAuth] Azure AD logout encountered an issue, clearing local state:', logoutError);
         }
       }
-    } else {
-      log('[AzureAuth] No idToken available, performing local logout only');
     }
+  } else {
+    log('[AzureAuth] No idToken available, performing local logout only');
+  }
 
-    // Always clear local auth state
+  // If the user explicitly cancelled, do NOT clear local state
+  if (userCancelled) {
+    throw new Error('User cancelled');
+  }
+
+  // Always clear local auth state — wrapped in try/catch so a Keychain
+  // error on Android never prevents the React state from being reset.
+  try {
     await clearAuth();
     log('[AzureAuth] Local auth state cleared');
-
-  } catch (error) {
-    // Re-throw cancellation errors
-    const errorMessage = (error as Error).message || '';
-    if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
-      throw error;
-    }
+  } catch (clearError) {
     if (__DEV__) {
-      console.error('[AzureAuth] Logout error:', error);
+      console.error('[AzureAuth] Failed to clear Keychain, forcing reset:', clearError);
     }
-    throw error;
+    // Best-effort: try once more with a slight delay (Android Keystore race)
+    try { await clearAuth(); } catch { /* ignored */ }
   }
 };
 

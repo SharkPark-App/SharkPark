@@ -11,10 +11,11 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BehavioralMetrics, sharedBehavioralCollector } from './behavioralDataCollector';
+import { haversineDistance } from '../utils/geoHelpers';
 import { GeofenceEvent } from '../types/location';
 
 export interface LeaveIntentSignal {
-  type: 'WALKING_TO_CAR' | 'BLUETOOTH_RECONNECT' | 'SPEED_INCREASE' | 'MOVEMENT_PATTERN' | 'TIME_BASED';
+  type: 'WALKING_TO_CAR' | 'BLUETOOTH_RECONNECT' | 'SPEED_INCREASE' | 'MOVEMENT_PATTERN' | 'TIME_BASED' | 'ACTIVITY_VEHICLE';
   confidence: number; // 0-1 scale
   timestamp: Date;
   metadata: {
@@ -22,6 +23,8 @@ export interface LeaveIntentSignal {
     bluetooth_state?: string;
     movement_direction?: 'TOWARD_CAR' | 'AWAY_FROM_CAR' | 'UNKNOWN';
     time_since_park?: number; // minutes
+    activity_type?: string;
+    activity_confidence?: number;
     raw_data?: Record<string, unknown>;
   };
 }
@@ -51,6 +54,7 @@ export interface LeaveSession {
   status: 'MONITORING' | 'INTENT_DETECTED' | 'LEAVING' | 'COMPLETED';
   signals: LeaveIntentSignal[];
   lastAnalysis?: LeaveIntentAnalysis;
+  callbacks?: LeaveDetectionCallbacks;
 }
 
 interface LeaveDetectionCallbacks {
@@ -62,9 +66,16 @@ interface LeaveDetectionCallbacks {
 class LeaveDetectionService {
   private activeSessions = new Map<string, LeaveSession>();
   private behavioralCollector = sharedBehavioralCollector;
-  private isMonitoring = false;
-  private callbacks: LeaveDetectionCallbacks | null = null;
   private initPromise: Promise<void>;
+  private lastLocation: { latitude: number; longitude: number } | null = null;
+  private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingPersistSessionIds = new Set<string>();
+
+  // Debounce interval for AsyncStorage writes (reduces I/O during active collection)
+  private readonly PERSIST_DEBOUNCE_MS = 30_000;
+
+  // Minimum interval between signals of the same type to prevent duplicate emissions (60s)
+  private readonly SIGNAL_DEDUP_INTERVAL_MS = 60 * 1000;
 
   // Leave detection thresholds
   private readonly INTENT_PROBABILITY_THRESHOLD = 0.6;
@@ -90,7 +101,6 @@ class LeaveDetectionService {
       return '';
     }
 
-    this.callbacks = callbacks;
     const sessionId = this.generateSessionId();
     
     const session: LeaveSession = {
@@ -99,7 +109,8 @@ class LeaveDetectionService {
       startTime: new Date(),
       parkedLocation,
       status: 'MONITORING',
-      signals: []
+      signals: [],
+      callbacks,
     };
 
     this.activeSessions.set(sessionId, session);
@@ -127,8 +138,6 @@ class LeaveDetectionService {
       return null;
     }
 
-    this.isMonitoring = false;
-    this.behavioralCollector.stopCollection('leaveDetection');
     session.status = 'COMPLETED';
 
     // Final analysis
@@ -141,12 +150,20 @@ class LeaveDetectionService {
       signal_count: finalAnalysis.primary_signals.length
     });
 
-    // Notify callbacks
-    this.callbacks?.onLeaveConfirmed(session.sessionId, session.lotId);
+    // Notify the session's own callbacks
+    session.callbacks?.onLeaveConfirmed(session.sessionId, session.lotId);
 
     // Clean up
     this.activeSessions.delete(session.sessionId);
     await this.removePersistedSession(session.sessionId);
+
+    // Only stop behavioral collection when the LAST monitoring session finishes
+    const hasRemainingMonitoring = [...this.activeSessions.values()].some(
+      s => s.status === 'MONITORING'
+    );
+    if (!hasRemainingMonitoring) {
+      this.behavioralCollector.stopCollection('leaveDetection');
+    }
 
     return finalAnalysis;
   }
@@ -167,8 +184,6 @@ class LeaveDetectionService {
   // --- Private Methods ---
 
   private startDataCollection(sessionId: string): void {
-    this.isMonitoring = true;
-
     // Start behavioral data collection
     this.behavioralCollector.startCollection({
       onMetricsCollected: (metrics: BehavioralMetrics) => {
@@ -176,7 +191,8 @@ class LeaveDetectionService {
       },
       onError: (error: string) => {
         if (__DEV__) console.error('[LeaveDetection] Behavioral data collection error:', error);
-        this.callbacks?.onError(error);
+        const session = this.activeSessions.get(sessionId);
+        session?.callbacks?.onError(error);
       }
     }, 'leaveDetection');
   }
@@ -216,7 +232,7 @@ class LeaveDetectionService {
       if (metrics.speed_mph >= this.WALKING_SPEED_RANGE[0] && 
           metrics.speed_mph <= this.WALKING_SPEED_RANGE[1]) {
         
-        const movementDirection = this.analyzeMovementDirection(session, metrics);
+        const movementDirection = this.analyzeMovementDirection(session);
         
         signals.push({
           type: 'WALKING_TO_CAR',
@@ -272,8 +288,15 @@ class LeaveDetectionService {
       });
     }
 
+    // Deduplicate: skip signal types that were already emitted within the dedup window
+    const dedupedSignals = signals.filter(signal => {
+      const lastOfType = [...session.signals].reverse().find(s => s.type === signal.type);
+      if (!lastOfType) return true;
+      return (currentTime.getTime() - lastOfType.timestamp.getTime()) >= this.SIGNAL_DEDUP_INTERVAL_MS;
+    });
+
     // Add signals to session
-    session.signals.push(...signals);
+    session.signals.push(...dedupedSignals);
 
     // Analyze current intent
     const analysis = this.analyzeLeaveIntent(session);
@@ -281,13 +304,13 @@ class LeaveDetectionService {
 
     // Check if we should notify about leave intent
     if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
-      this.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+      session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
     }
 
-    // Persist updated session
-    this.persistSession(session);
+    // Debounced persist — coalesces rapid writes from behavioral metrics
+    this.debouncedPersistSession(session.sessionId);
 
-    if (__DEV__) console.log(`[LeaveDetection] Added ${signals.length} signals. Intent probability: ${Math.round(analysis.intent_probability * 100)}%`);
+    if (__DEV__) console.log(`[LeaveDetection] Added ${dedupedSignals.length}/${signals.length} signals (deduped). Intent probability: ${Math.round(analysis.intent_probability * 100)}%`);
   }
 
   private analyzeLeaveIntent(session: LeaveSession): LeaveIntentAnalysis {
@@ -303,21 +326,35 @@ class LeaveDetectionService {
       return this.createEmptyAnalysis(sessionDuration);
     }
 
-    // Weight different signal types
+    // Weight different signal types (reweighted for activity recognition)
     const signalWeights: Record<LeaveIntentSignal['type'], number> = {
-      'BLUETOOTH_RECONNECT': 0.4,   // Strongest indicator
-      'SPEED_INCREASE': 0.3,        // Strong indicator  
-      'WALKING_TO_CAR': 0.2,        // Moderate indicator
-      'MOVEMENT_PATTERN': 0.15,     // Moderate indicator
-      'TIME_BASED': 0.1             // Weak indicator
+      'ACTIVITY_VEHICLE': 0.35,    // Strongest — native SDK vehicle detection
+      'BLUETOOTH_RECONNECT': 0.25, // Strong — reconnected to car
+      'SPEED_INCREASE': 0.20,      // Strong — driving speed detected
+      'WALKING_TO_CAR': 0.10,      // Moderate — walking toward parked location
+      'MOVEMENT_PATTERN': 0.05,    // Weak — general movement
+      'TIME_BASED': 0.05           // Weak — time-based probability
     };
 
-    // Calculate weighted probability
+    // Calculate weighted probability.
+    // Bluetooth corroboration: BLUETOOTH_RECONNECT alone is unreliable (could be
+    // AirPods, headphones, etc.). Only count it when accompanied by at least one
+    // other signal type (e.g. WALKING_TO_CAR, SPEED_INCREASE, ACTIVITY_VEHICLE).
+    const hasCorroboratingSignal = recentSignals.some(s =>
+      s.type !== 'BLUETOOTH_RECONNECT' && s.type !== 'TIME_BASED'
+    );
+
     let totalWeight = 0;
     let weightedScore = 0;
 
     recentSignals.forEach(signal => {
-      const weight = signalWeights[signal.type] || 0.1;
+      let weight = signalWeights[signal.type] || 0.1;
+
+      // Downweight uncorroborated Bluetooth to near-zero
+      if (signal.type === 'BLUETOOTH_RECONNECT' && !hasCorroboratingSignal) {
+        weight = 0.02; // Effectively ignored without corroboration
+      }
+
       totalWeight += weight;
       weightedScore += signal.confidence * weight;
     });
@@ -337,10 +374,11 @@ class LeaveDetectionService {
     // Estimate leave time based on signals
     let estimatedLeaveTime: number | undefined;
     if (intentProbability > 0.7) {
+      const activityVehicle = recentSignals.find(s => s.type === 'ACTIVITY_VEHICLE');
       const bluetoothReconnect = recentSignals.find(s => s.type === 'BLUETOOTH_RECONNECT');
       const speedIncrease = recentSignals.find(s => s.type === 'SPEED_INCREASE');
       
-      if (speedIncrease) estimatedLeaveTime = 1; // Already driving
+      if (speedIncrease || activityVehicle) estimatedLeaveTime = 1; // Already driving
       else if (bluetoothReconnect) estimatedLeaveTime = 3; // Getting in car
       else estimatedLeaveTime = 5; // Walking to car
     }
@@ -360,24 +398,26 @@ class LeaveDetectionService {
   }
 
   private analyzeMovementDirection(
-    session: LeaveSession, 
-    metrics: BehavioralMetrics
+    session: LeaveSession
   ): 'TOWARD_CAR' | 'AWAY_FROM_CAR' | 'UNKNOWN' {
-    // If we don't have parked location, we can't determine direction
-    if (!session.parkedLocation || !metrics.raw_data) {
+    // Compute actual distance between current position and parked location.
+    // If the user is getting closer, they're walking toward their car.
+    if (!session.parkedLocation || !this.lastLocation) {
       return 'UNKNOWN';
     }
 
-    // This is a simplified version - in reality you'd need more sophisticated
-    // location tracking to determine if movement is toward the parked location
-    // For now, we'll use movement patterns and speed as indicators
-    
-    if (metrics.speed_mph && metrics.speed_mph >= 2 && metrics.speed_mph <= 4) {
-      // Walking speed - assume toward car if we've been parked a while
-      const sessionDuration = (Date.now() - session.startTime.getTime()) / (1000 * 60);
-      return sessionDuration > 15 ? 'TOWARD_CAR' : 'UNKNOWN';
-    }
+    const distanceToCar = haversineDistance(
+      this.lastLocation.latitude,
+      this.lastLocation.longitude,
+      session.parkedLocation.latitude,
+      session.parkedLocation.longitude,
+    );
 
+    // Within 50m of parked location → likely approaching car
+    if (distanceToCar < 50) return 'TOWARD_CAR';
+    // More than 200m away → likely walking away
+    if (distanceToCar > 200) return 'AWAY_FROM_CAR';
+    // In between → ambiguous
     return 'UNKNOWN';
   }
 
@@ -405,10 +445,24 @@ class LeaveDetectionService {
   }
 
   private generateSessionId(): string {
-    return `leave-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    return `leave-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(5)), b => b.toString(16).padStart(2, '0')).join('')}`;
   }
 
   // --- Persistence Methods ---
+
+  private debouncedPersistSession(sessionId: string): void {
+    this.pendingPersistSessionIds.add(sessionId);
+    if (this.persistDebounceTimer) return; // already scheduled
+    this.persistDebounceTimer = setTimeout(() => {
+      this.persistDebounceTimer = null;
+      const ids = [...this.pendingPersistSessionIds];
+      this.pendingPersistSessionIds.clear();
+      for (const id of ids) {
+        const session = this.activeSessions.get(id);
+        if (session) this.persistSession(session);
+      }
+    }, this.PERSIST_DEBOUNCE_MS);
+  }
 
   private async persistSession(session: LeaveSession): Promise<void> {
     try {
@@ -416,6 +470,7 @@ class LeaveDetectionService {
         `leave_session_${session.sessionId}`,
         JSON.stringify({
           ...session,
+          callbacks: undefined, // functions are not serializable
           startTime: session.startTime.toISOString(),
           signals: session.signals.map(signal => ({
             ...signal,
@@ -458,6 +513,11 @@ class LeaveDetectionService {
           const age = Date.now() - session.startTime.getTime();
           if (age < 24 * 60 * 60 * 1000) {
             this.activeSessions.set(session.sessionId, session);
+            // Restart data collection for active sessions (callbacks will be
+            // reattached by the provider via reattachCallbacks).
+            if (session.status === 'MONITORING') {
+              this.startDataCollection(session.sessionId);
+            }
           } else {
             // Clean up old sessions
             await AsyncStorage.removeItem(key);
@@ -472,6 +532,20 @@ class LeaveDetectionService {
   }
 
   /**
+   * Re-attach live callbacks to restored sessions for a given lot.
+   * Called by the provider after cold-start restore so that
+   * onLeaveIntentDetected / onLeaveConfirmed actually fire.
+   */
+  async reattachCallbacks(lotId: string, callbacks: LeaveDetectionCallbacks): Promise<void> {
+    await this.initPromise;
+    const session = this.findActiveSessionByLotId(lotId);
+    if (session) {
+      session.callbacks = callbacks;
+      if (__DEV__) console.log(`[LeaveDetection] Reattached callbacks for lot ${lotId} (session ${session.sessionId})`);
+    }
+  }
+
+  /**
    * Get debug info about current state
    */
   getDebugInfo(): {
@@ -481,7 +555,7 @@ class LeaveDetectionService {
   } {
     return {
       activeSessions: this.activeSessions.size,
-      isMonitoring: this.isMonitoring,
+      isMonitoring: [...this.activeSessions.values()].some(s => s.status === 'MONITORING'),
       sessions: Array.from(this.activeSessions.values()).map(session => ({
         sessionId: session.sessionId,
         lotId: session.lotId,
@@ -492,8 +566,12 @@ class LeaveDetectionService {
   }
 
   /**
-   * Update location data for behavioral analysis
-   * This should be called from the main location tracking service to avoid conflicts
+   * Update location data for behavioral analysis.
+   * Stores the latest position for movement direction analysis (haversine TOWARD_CAR).
+   *
+   * NOTE: The behavioral collector is called directly by the provider’s
+   * handleLocationUpdate — do NOT forward here (it would triple-fire
+   * collectAndSendMetrics, inflating signal counts and battery usage).
    */
   updateLocation(locationData: {
     latitude: number;
@@ -503,8 +581,135 @@ class LeaveDetectionService {
     altitude?: number | null;
     heading?: number | null;
   }): void {
-    // Pass location data to behavioral collector for speed and movement analysis
-    this.behavioralCollector.updateLocation(locationData);
+    // Track latest position for movement direction analysis
+    this.lastLocation = { latitude: locationData.latitude, longitude: locationData.longitude };
+  }
+
+  /**
+   * Process SDK onActivityChange events for leave detection.
+   * Emits ACTIVITY_VEHICLE signal when in_vehicle activity is detected.
+   */
+  processActivityChange(activity: string, confidence: number): void {
+    const currentTime = new Date();
+
+    for (const session of this.activeSessions.values()) {
+      if (session.status !== 'MONITORING') continue;
+
+      const sessionDuration = (currentTime.getTime() - session.startTime.getTime()) / (1000 * 60);
+      if (sessionDuration < this.MIN_MONITORING_TIME) continue;
+
+      // in_vehicle/automotive → strong leave indicator
+      const lowerActivity = activity.toLowerCase();
+      if (lowerActivity === 'in_vehicle' || lowerActivity === 'automotive') {
+        const normalizedConfidence = Math.min(confidence, 100) / 100;
+        const signal: LeaveIntentSignal = {
+          type: 'ACTIVITY_VEHICLE',
+          confidence: normalizedConfidence,
+          timestamp: currentTime,
+          metadata: {
+            activity_type: activity,
+            activity_confidence: confidence,
+            time_since_park: sessionDuration,
+          },
+        };
+
+        // Dedup: skip if same type emitted within dedup window
+        const lastOfType = [...session.signals].reverse().find(s => s.type === 'ACTIVITY_VEHICLE');
+        if (lastOfType && (currentTime.getTime() - lastOfType.timestamp.getTime()) < this.SIGNAL_DEDUP_INTERVAL_MS) {
+          continue;
+        }
+
+        session.signals.push(signal);
+
+        const analysis = this.analyzeLeaveIntent(session);
+        session.lastAnalysis = analysis;
+
+        if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
+          session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+        }
+
+        this.debouncedPersistSession(session.sessionId);
+
+        if (__DEV__) {
+          console.log(`[LeaveDetection] ACTIVITY_VEHICLE signal: ${activity} (${confidence}%) for lot ${session.lotId}`);
+        }
+      }
+
+      // on_foot/walking → emit WALKING_TO_CAR signal
+      if (lowerActivity === 'on_foot' || lowerActivity === 'walking') {
+        const normalizedConfidence = Math.min(confidence, 100) / 100;
+        const signal: LeaveIntentSignal = {
+          type: 'WALKING_TO_CAR',
+          confidence: normalizedConfidence * 0.7,
+          timestamp: currentTime,
+          metadata: {
+            activity_type: activity,
+            activity_confidence: confidence,
+            movement_direction: sessionDuration > 15 ? 'TOWARD_CAR' : 'UNKNOWN',
+            time_since_park: sessionDuration,
+          },
+        };
+
+        const lastOfType = [...session.signals].reverse().find(s => s.type === 'WALKING_TO_CAR');
+        if (lastOfType && (currentTime.getTime() - lastOfType.timestamp.getTime()) < this.SIGNAL_DEDUP_INTERVAL_MS) {
+          continue;
+        }
+
+        session.signals.push(signal);
+
+        const analysis = this.analyzeLeaveIntent(session);
+        session.lastAnalysis = analysis;
+
+        if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
+          session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+        }
+
+        this.debouncedPersistSession(session.sessionId);
+      }
+    }
+  }
+
+  /**
+   * Process SDK onMotionChange events for leave detection.
+   */
+  processMotionChange(isMoving: boolean): void {
+    // Motion change is supplementary — triggers re-analysis of existing signals
+    if (!isMoving) return; // Only care about transitioning TO moving
+
+    const currentTime = new Date();
+
+    for (const session of this.activeSessions.values()) {
+      if (session.status !== 'MONITORING') continue;
+
+      const sessionDuration = (currentTime.getTime() - session.startTime.getTime()) / (1000 * 60);
+      if (sessionDuration < this.MIN_MONITORING_TIME) continue;
+
+      const signal: LeaveIntentSignal = {
+        type: 'MOVEMENT_PATTERN',
+        confidence: 0.4,
+        timestamp: currentTime,
+        metadata: {
+          time_since_park: sessionDuration,
+          raw_data: { motion_change: 'stationary_to_moving' },
+        },
+      };
+
+      const lastOfType = [...session.signals].reverse().find(s => s.type === 'MOVEMENT_PATTERN');
+      if (lastOfType && (currentTime.getTime() - lastOfType.timestamp.getTime()) < this.SIGNAL_DEDUP_INTERVAL_MS) {
+        continue;
+      }
+
+      session.signals.push(signal);
+
+      const analysis = this.analyzeLeaveIntent(session);
+      session.lastAnalysis = analysis;
+
+      if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
+        session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+      }
+
+      this.debouncedPersistSession(session.sessionId);
+    }
   }
 }
 

@@ -56,6 +56,7 @@
 		<string>dgis</string>
 		<string>lftgpas</string>
 		<string>sygic</string>
+    <string>tomtomgo</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
@@ -78,10 +79,25 @@
 	<array>
 		<string>Ionicons.ttf</string>
 	</array>
+	<key>TSLocationManagerLicense</key>
+	<string></string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
+		<string>fetch</string>
+		<string>processing</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.transistorsoft.fetch</string>
+	</array>
+	<key>NSMotionUsageDescription</key>
+	<string>SharkPark uses motion detection to determine when you have parked and when you are leaving, improving parking availability accuracy for all students.</string>
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>ParkingDetection</key>
+		<string>Precise location is needed to accurately detect when you enter and leave parking lots.</string>
+	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

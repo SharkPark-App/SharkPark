@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { OccupancyEventsController } from './occupancy-events.controller';
 import { OccupancyEventsService } from './occupancy-events.service';
 
@@ -20,6 +21,7 @@ describe('OccupancyEventsController', () => {
       controllers: [OccupancyEventsController],
       providers: [
         { provide: OccupancyEventsService, useValue: mockService },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('') } },
       ],
     }).compile();
 
@@ -157,21 +159,6 @@ describe('OccupancyEventsController', () => {
       expect(service.getEventStats).toHaveBeenCalled();
       const [, startDate] = service.getEventStats.mock.calls[0];
       expect(startDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    });
-  });
-
-  describe('createSnapshots', () => {
-    it('should trigger snapshot creation', async () => {
-      service.createSnapshots.mockResolvedValue({
-        count: 25,
-        timestamp: '2026-02-07T14:30:00.000Z',
-      });
-
-      const result = await controller.createSnapshots();
-
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Created 25 occupancy snapshots');
-      expect(result.data.count).toBe(25);
     });
   });
 
