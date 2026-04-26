@@ -4,10 +4,13 @@ import { LotsModule } from '../lots/lots.module';
 import { AuthModule } from '../auth/auth.module';
 import { OccupancyEventsController } from './occupancy-events.controller';
 import { OccupancyEventsService } from './occupancy-events.service';
-import { OccupancyEventsScheduler } from './occupancy-events.scheduler';
 
-/** Module for anonymous occupancy events - geofencing ENTER/EXIT + 15-min snapshots for ML.
- *  ScheduleModule.forRoot() is registered once globally in AppModule. */
+/**
+ * Module for anonymous occupancy events - geofencing ENTER/EXIT + 15-min
+ * snapshots for ML. Snapshot generation and stale-state cleanup run as
+ * out-of-process Fly cron Machines (see src/scripts/{snapshot,cleanup-device-states}.ts);
+ * the API process no longer carries an in-process scheduler.
+ */
 @Module({
   imports: [
     forwardRef(() => ReliabilityModule),
@@ -15,7 +18,7 @@ import { OccupancyEventsScheduler } from './occupancy-events.scheduler';
     AuthModule,
   ],
   controllers: [OccupancyEventsController],
-  providers: [OccupancyEventsService, OccupancyEventsScheduler],
+  providers: [OccupancyEventsService],
   exports: [OccupancyEventsService],
 })
 export class OccupancyEventsModule {}

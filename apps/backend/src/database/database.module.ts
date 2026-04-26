@@ -19,7 +19,10 @@ import pg from 'pg';
  */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  private readonly pool: pg.Pool;
+  // Exposed (read-only) so cron scripts can grab a dedicated client for
+  // pg_advisory_lock without going through Prisma. Do not call .end() on
+  // this from outside; lifecycle is owned by onModuleDestroy.
+  readonly pool: pg.Pool;
   readonly readPool: pg.Pool;
   private readonly hasDedicatedReader: boolean;
   private readonly logger = new Logger(PrismaService.name);
