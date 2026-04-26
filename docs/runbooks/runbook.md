@@ -96,9 +96,14 @@ are slow-changing; occupancy events are valuable for ML training but not
 business-critical. We accept the trade for $0/mo backup cost.
 
 **Free-tier caveats:**
-- Cold-start adds ~3s to the first request after `app` autostops (configured
-  trade for ~$5/mo savings). Bump `min_machines_running = 1` in
-  [fly.toml](../../apps/backend/fly.toml) if users complain.
+- **Cold-start: ~10s** for the first request after `app` autostops (measured
+  2026-04-26 against `/api/v1/health/ready` after ~30 min idle: TTFB 10.7s,
+  total 10.7s). Breakdown: Fly machine boot ~1-2s + Node/Nest startup ~3-5s
+  + Prisma connect to Neon (which may also be cold-starting the pooled
+  endpoint) ~3-5s. **Warm steady-state p50: ~0.20s, p95: ~0.28s.**
+  This is the configured trade for ~$5/mo savings. Bump
+  `min_machines_running = 1` in [fly.toml](../../apps/backend/fly.toml) if
+  users complain. Re-measure with [`scripts/measure-cold-start.sh`](../../scripts/measure-cold-start.sh).
 - Neon free tier suspends the compute after ~5 min idle. The pooled endpoint
   is always reachable; the direct endpoint can return `compute is starting`.
   Migrations always go through the pooled endpoint (see deploy.yml).
