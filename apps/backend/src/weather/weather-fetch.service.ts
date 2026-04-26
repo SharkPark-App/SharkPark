@@ -48,7 +48,7 @@ export class WeatherFetchService {
         return;
       }
 
-      const data: OpenWeatherResponse = await response.json();
+      const data = (await response.json()) as OpenWeatherResponse;
 
       const school = await this.prisma.school.findFirst();
       if (!school) {
