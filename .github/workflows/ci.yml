@@ -50,6 +50,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      # Security gate: block on known high+ vulnerabilities. Production deps only —
+      # devDependencies (jest, eslint, etc.) are not shipped, and Dependabot
+      # opens PRs for them on its own weekly cadence.
+      - name: Audit production dependencies (high+)
+        run: pnpm audit --prod --audit-level=high
+
       - name: Run database migrations
         run: pnpm db:deploy
 
