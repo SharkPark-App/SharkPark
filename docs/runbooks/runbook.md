@@ -322,10 +322,17 @@ verify row counts, then promote the branch.
 
 The first Monday of each month (calendar reminder), the on-call engineer:
 
-1. **Restore drill** (15 min): pick yesterday's R2 dump, restore it to a
-   throwaway Neon branch following [restore.md](./restore.md), verify row
-   counts match, delete the branch. **Validates RTO/RPO** for the
-   "DB corruption" scenario.
+1. **Restore drill** (5 min): the
+   [restore-test workflow](../../.github/workflows/restore-test.yml) runs
+   automatically every Sunday and proves the backup → restore loop works
+   end-to-end. **Check that the latest run succeeded.** If it didn't,
+   investigate before doing anything else — a broken backup pipeline that
+   no one notices is the worst possible failure mode.
+
+   Once a quarter, also do a **manual** restore following
+   [restore.md](./restore.md) end-to-end. This keeps procedural muscle
+   memory fresh — when you actually need to restore at 2 AM, you don't
+   want it to be the first time you've typed `pg_restore`.
 
 2. **Rollback drill** (5 min): trigger a no-op redeploy of the
    second-to-last release via `flyctl deploy --image <previous-image>`,
