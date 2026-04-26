@@ -229,4 +229,29 @@ describe('LotsController (e2e)', () => {
         });
     });
   });
+
+  // ACCESS-1: lock the public-tier contract.
+  // Per the reciprocity access model, map data and lot details MUST be
+  // reachable with no Authorization header and no x-device-id. This is what
+  // boot-into-public-map and "browse before sign-in" depend on. If a future
+  // change accidentally puts these behind a guard, this block fails fast.
+  describe('ACCESS-1: public tier (no auth, no device header)', () => {
+    const noAuth = (path: string) =>
+      request(app.getHttpServer())
+        .get(path)
+        // Explicitly assert nothing is sent — supertest defaults already do
+        // this, but we strip any inherited headers to make the contract
+        // unambiguous.
+        .set('Authorization', '')
+        .set('x-device-id', '');
+
+    it('GET /lots is public', () =>
+      noAuth('/api/v1/lots').expect(200));
+
+    it('GET /lots/:id is public', () =>
+      noAuth('/api/v1/lots/G1').expect(200));
+
+    it('GET /lots/:id (404 path) does not require auth', () =>
+      noAuth('/api/v1/lots/INVALID').expect(404));
+  });
 });
