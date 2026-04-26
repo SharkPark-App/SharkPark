@@ -50,6 +50,17 @@ export class OccupancyEventsService {
       // Perform dedup check + event recording inside a single transaction
       // to prevent concurrent requests from the same device slipping through.
       const result = await this.prisma.$transaction(async (tx) => {
+        // Bump the contributor ping FIRST, before the dedup check. Even a
+        // deduplicated POST proves the device is alive and reporting, so it
+        // earns reciprocity access. ContributorGuard reads last_seen_at to
+        // gate live-occupancy / forecast endpoints.
+        const pingNow = new Date();
+        await tx.contributorPing.upsert({
+          where: { device_hash: deviceHash },
+          update: { last_seen_at: pingNow },
+          create: { device_hash: deviceHash, last_seen_at: pingNow },
+        });
+
         // Check for duplicate event inside the transaction
         const deviceState = await tx.deviceState.findUnique({
           where: { device_hash_lot_id: { device_hash: deviceHash, lot_id: lot.id } },
