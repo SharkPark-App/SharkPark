@@ -75,19 +75,21 @@ jobs:
       # sourcemaps. The release ID is then injected into the running container
       # via a staged Fly secret so the next deploy picks it up atomically.
       #
-      # Skips gracefully if SENTRY_AUTH_TOKEN is not configured (e.g. on
-      # forks). The deploy continues either way — Sentry tagging is
-      # observability, not a deploy gate.
+      # Required GitHub secrets (deploy fails loudly if any are missing —
+      # release tagging is a release-engineering correctness requirement,
+      # not optional observability):
+      #   SENTRY_AUTH_TOKEN  Internal-integration token, scopes:
+      #                      project:releases + org:read
+      #   SENTRY_ORG         Sentry organization slug
+      #   SENTRY_PROJECT     Sentry project slug (e.g. sharkpark-backend)
       - name: Compute release identifier
         id: release
         run: echo "id=sharkpark-backend@$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
       - name: Build backend (for sourcemaps)
-        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         run: pnpm --filter @sharkpark/backend run build
 
       - name: Create Sentry release & upload sourcemaps
-        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         uses: getsentry/action-release@v3
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -101,7 +103,6 @@ jobs:
           ignore_missing: true
 
       - name: Stage SENTRY_RELEASE on Fly
-        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         # --stage defers the restart so the next `flyctl deploy` applies the
         # secret atomically with the new image. Without --stage, the running
         # instance would restart twice.
