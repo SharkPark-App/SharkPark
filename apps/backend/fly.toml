@@ -16,10 +16,12 @@ primary_region = 'lax'
   dockerfile = 'Dockerfile'
 
 [deploy]
-  # Run pending Prisma migrations against Neon before swapping in the new
-  # release. `prisma` is a runtime dep so the CLI is on the pruned image.
+  # Migrations run from the GitHub Actions runner (see .github/workflows/deploy.yml)
+  # before flyctl deploy. The CI runner has stable connectivity to Neon's pooler,
+  # whereas the release_command machine on Fly intermittently fails to reach the
+  # direct endpoint when the Neon compute is suspended. The deploy workflow's
+  # concurrency group serializes deploys, so we don't need Prisma's advisory lock.
   strategy = 'rolling'
-  release_command = 'npx prisma migrate deploy'
 
 [env]
   HOST = '0.0.0.0'
