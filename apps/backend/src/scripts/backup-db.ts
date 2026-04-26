@@ -49,7 +49,13 @@ void runCronJob('backup-db', async ({ logger }) => {
       '--compress=0', // we gzip the stream ourselves
       dbUrl,
     ],
-    { stdio: ['ignore', 'pipe', 'pipe'] },
+    {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // Neon URLs use sslmode=verify-full. The runtime image doesn't ship a
+      // ~/.postgresql/root.crt, so point libpq at the OS trust store
+      // (Debian's ca-certificates bundle) instead.
+      env: { ...process.env, PGSSLROOTCERT: 'system' },
+    },
   );
 
   // Capture stderr for diagnostics; pg_dump emits informational messages here.
