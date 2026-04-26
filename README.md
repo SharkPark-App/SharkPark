@@ -113,7 +113,7 @@ The mobile app uses a provider-based architecture:
 
 ### Privacy-first data collection
 
-We never store personal location data. The mobile app generates a random UUID once, stores it locally in secure storage, and sends it with each event. The backend hashes it with SHA-256 and a salt before persisting — the raw ID is never written to the database. Only the lot ID (which lot was entered/exited) is stored, never GPS coordinates. Data retention is limited: anonymous events are purged after 30 days, logs after 7 days. Rate limits cap events at 100/hour and 1,000/day per device to prevent abuse.
+We never store personal location data. The mobile app generates a random UUID once, stores it locally in secure storage, and sends it with each event. The backend hashes it with SHA-256 and a salt before persisting — the raw ID is never written to the database. Only the lot ID (which lot was entered/exited) is stored, never GPS coordinates. Data retention is limited: anonymous raw events are purged after 30 days by a daily cron, logs after 7 days. Rate limits cap events at 100/hour and 1,000/day per device to prevent abuse.
 
 ### Atomic occupancy updates
 

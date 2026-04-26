@@ -23,3 +23,10 @@
 
 # Verify newest backup parses cleanly. Mondays at 4 AM Pacific (after Sunday backup).
 0 4 * * 1     node /app/apps/backend/dist/scripts/verify-latest-backup.js
+
+# Prune raw occupancy_events older than RETENTION_DAYS (default 30, per the
+# privacy promise in README.md). occupancy_snapshots are kept permanently.
+# Daily at 4 AM Pacific, after the 2 AM backup so the deleted rows are
+# present in the latest dump. Skips Mondays so it doesn't race
+# verify-latest-backup; the next day's run catches up.
+0 4 * * 0,2-6 node /app/apps/backend/dist/scripts/prune-old-data.js
