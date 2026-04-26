@@ -6,18 +6,22 @@ import { PrismaService } from '../database/database.module';
 describe('UsersService', () => {
   let service: UsersService;
   let prisma: {
-    user: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
+    user: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; delete: jest.Mock };
     userFavorite: { findMany: jest.Mock; upsert: jest.Mock; deleteMany: jest.Mock };
     lot: { findFirst: jest.Mock };
     school: { findFirst: jest.Mock };
+    auditEvent: { create: jest.Mock };
+    $transaction: jest.Mock;
   };
 
   beforeEach(async () => {
     prisma = {
-      user: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+      user: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
       userFavorite: { findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
       lot: { findFirst: jest.fn() },
       school: { findFirst: jest.fn() },
+      auditEvent: { create: jest.fn() },
+      $transaction: jest.fn().mockImplementation((ops: unknown[]) => Promise.all(ops)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -330,6 +334,49 @@ describe('UsersService', () => {
 
       await expect(service.removeFavorite('test@csulb.edu', 'G1'))
         .rejects.toThrow('DB delete error');
+    });
+  });
+
+  describe('deleteUser', () => {
+    it('should throw NotFoundException when the user does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(service.deleteUser('ghost@csulb.edu')).rejects.toThrow(NotFoundException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should write the audit row and delete the user in one transaction', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-uuid',
+        email: 'bye@csulb.edu',
+        user_type: 'STUDENT',
+      });
+      prisma.auditEvent.create.mockReturnValue('audit-op');
+      prisma.user.delete.mockReturnValue('delete-op');
+
+      await service.deleteUser('bye@csulb.edu');
+
+      expect(prisma.auditEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          event_type: 'USER_DELETED',
+          actor_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          metadata: { user_type: 'STUDENT' },
+        }),
+      });
+      expect(prisma.user.delete).toHaveBeenCalledWith({ where: { email: 'bye@csulb.edu' } });
+      expect(prisma.$transaction).toHaveBeenCalledWith(['audit-op', 'delete-op']);
+    });
+
+    it('should not include the raw email in the audit row', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u', email: 'private@csulb.edu', user_type: 'EMPLOYEE',
+      });
+      prisma.auditEvent.create.mockReturnValue('a');
+      prisma.user.delete.mockReturnValue('d');
+
+      await service.deleteUser('private@csulb.edu');
+
+      const call = prisma.auditEvent.create.mock.calls[0][0];
+      expect(JSON.stringify(call)).not.toContain('private@csulb.edu');
     });
   });
 });
