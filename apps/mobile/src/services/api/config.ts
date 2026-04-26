@@ -24,7 +24,7 @@ const getApiBaseUrl = (): string => {
 
   // 2. Production build
   if (!__DEV__) {
-    return 'https://api.sharkpark.csulb.edu/api/v1';
+    return 'https://api.sharkpark.app/api/v1';
   }
 
   // 3. Development platform defaults
@@ -55,9 +55,6 @@ export const API_CONFIG = {
     USERS: '/users',
     WEATHER: '/weather',
     EVENTS: '/events',
-    // Auth / verification
-    AUTH_VERIFY_EMAIL: '/auth/verify-email',
-    AUTH_RESEND_VERIFICATION: '/auth/resend-verification',
   },
 
   // Default headers for all requests

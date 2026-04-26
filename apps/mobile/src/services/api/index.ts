@@ -22,19 +22,14 @@ export type {
   LotRecommendation,
 } from './lots';
 
-// Auth service
-export { authApi } from './auth';
-
 // Import for default export
 import API_CONFIG from './config';
 import { apiService } from './base';
 import { lotsApi } from './lots';
-import { authApi } from './auth';
 
 // Re-export everything as default object
 export default {
   config: API_CONFIG,
   base: apiService,
   lots: lotsApi,
-  auth: authApi,
 };
