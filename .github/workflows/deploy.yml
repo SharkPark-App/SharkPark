@@ -26,5 +26,4 @@ jobs:
       - uses: actions/checkout@v5
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy
-        working-directory: apps/backend
-        run: flyctl deploy --remote-only --config fly.toml
+        run: flyctl deploy --remote-only --config apps/backend/fly.toml --dockerfile apps/backend/Dockerfile
