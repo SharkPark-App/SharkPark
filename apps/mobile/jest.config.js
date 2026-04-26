@@ -16,6 +16,10 @@ module.exports = {
 
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/', '__tests__/testUtils\\.ts$'],
+  // GitHub Actions runners are noticeably slower than local; the default 5s
+  // jest timeout occasionally trips RN ReactTestRenderer.act flows that
+  // schedule multiple effects (e.g. RecommendationModal "Alts" flow).
+  testTimeout: 30000,
   // Coverage configuration
   coverageDirectory: './coverage',
   collectCoverageFrom: [

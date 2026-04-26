@@ -6,16 +6,21 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { SentryExceptionCaptured } from '@sentry/nestjs';
 import { Request, Response } from 'express';
 
 /**
  * Global exception filter that standardizes error responses across the API.
  * Logs all errors and includes stack traces in development mode.
+ *
+ * `@SentryExceptionCaptured()` reports unhandled exceptions to Sentry while
+ * still allowing this filter to control the HTTP response shape.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  @SentryExceptionCaptured()
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
