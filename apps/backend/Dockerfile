@@ -54,8 +54,19 @@ RUN pnpm --filter @sharkpark/backend exec prisma generate
 
 # ─── Runtime image ─────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+# postgresql-client-17 is needed by the daily backup cron (pg_dump streams
+# Neon → R2). Neon runs PG17, and pg_dump must be ≥ the server version, so
+# we install from the PGDG apt repo (Debian bookworm only ships PG15).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssl ca-certificates dumb-init curl \
+ && apt-get install -y --no-install-recommends openssl ca-certificates dumb-init curl gnupg \
+ && install -d /usr/share/postgresql-common/pgdg \
+ && curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends postgresql-client-17 \
+ && apt-get purge -y --auto-remove gnupg \
  && rm -rf /var/lib/apt/lists/*
 
 # supercronic — runs the cron process group on Fly. Static binary, ~7MB.
