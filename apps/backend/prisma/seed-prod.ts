@@ -33,13 +33,27 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
+const rawConnectionString = process.env.DATABASE_URL;
+if (!rawConnectionString) {
   console.error('[seed-prod] DATABASE_URL is not set. Aborting.');
   process.exit(1);
 }
 
-const pool = new pg.Pool({ connectionString });
+/**
+ * `sslrootcert=system` is a libpq feature (uses the OS CA bundle). node-postgres
+ * doesn't recognize it and tries to fs.readFileSync('system') → ENOENT. Strip
+ * it: Node's TLS already trusts system roots by default, so verify-full still
+ * does full chain + hostname verification.
+ */
+function stripLibpqOnlyParams(url: string): string {
+  const u = new URL(url);
+  if (u.searchParams.get('sslrootcert') === 'system') {
+    u.searchParams.delete('sslrootcert');
+  }
+  return u.toString();
+}
+
+const pool = new pg.Pool({ connectionString: stripLibpqOnlyParams(rawConnectionString) });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -85,7 +99,7 @@ function lotNeedsUpdate(
 
 async function seedProd() {
   console.log('[seed-prod] SharkPark production seed (idempotent)\n');
-  console.log(`[seed-prod] DATABASE host: ${new URL(connectionString!).host}\n`);
+  console.log(`[seed-prod] DATABASE host: ${new URL(rawConnectionString!).host}\n`);
 
   // ── 1. Upsert School ───────────────────────────────────────
   const beforeSchool = await prisma.school.findUnique({
