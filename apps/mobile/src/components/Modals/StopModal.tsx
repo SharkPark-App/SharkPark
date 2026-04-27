@@ -1,25 +1,20 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { ThemeColors } from '../../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../../constants/theme';
+import { RouteArrival } from '../../types/transit';
 
 /**
  * Stop Modal that appears upon stop selection.
  */
-export interface RouteArrival {
-  route: string;
-  routeName: string;
-  abbreviation: string;
-  color: string;
-  etaMinutes: number | null;
-}
 
 interface StopModalProps {
   isOpen: boolean;
   onClose: () => void;
   stopName: string;
   arrivals: RouteArrival[];
+  isLoading: boolean;
   colors: ThemeColors;
 }
 
@@ -27,7 +22,8 @@ export const StopModal: React.FC<StopModalProps> = ({
   isOpen, 
   onClose, 
   stopName, 
-  arrivals, 
+  arrivals,
+  isLoading,
   colors,
 }) => {
   return (
@@ -59,11 +55,16 @@ export const StopModal: React.FC<StopModalProps> = ({
 
             {/* Arrivals List */}
             <View style={styles.arrivalsContainer}>
-              {arrivals.length === 0 ? (
+              {isLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={[styles.loadingText, { color: colors.darkGray }]}>Fetching live ETAs...</Text>
+                </View>
+              ) : arrivals.length === 0 ? (
                 <Text style={[styles.emptyText, { color: colors.darkGray }]}>No upcoming arrivals.</Text>
               ) : (
-                arrivals.map((arrival, index) => (
-                  <View key={`${arrival.route}-${index}`} style={styles.arrivalRow}>
+                arrivals.map((arrival) => (
+                  <View key={arrival.routeId} style={styles.arrivalRow}>
                     
                     {/* Badge and Route Name */}
                     <View style={styles.routeInfo}>
@@ -83,7 +84,6 @@ export const StopModal: React.FC<StopModalProps> = ({
                 ))
               )}
             </View>
-
           </View>
         </TouchableWithoutFeedback>
       </TouchableOpacity>
@@ -177,5 +177,13 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: SPACING.sm,
+  },
+  loadingContainer: {
+    padding: SPACING.xl,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: SPACING.md,
+    fontSize: TYPOGRAPHY.fontSize.md,
   }
 });

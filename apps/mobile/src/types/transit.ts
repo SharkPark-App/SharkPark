@@ -1,3 +1,5 @@
+/** Reflections of rsepective backend types */
+
 export interface MapStop {
   id: string;
   name: string;
@@ -22,4 +24,12 @@ export interface MapShuttle {
   heading: number;
   paxLoad: number;
   capacity: number;
+}
+
+export interface RouteArrival {
+  routeId: string;
+  routeName: string;
+  abbreviation: string;
+  color: string;
+  etaMinutes: number | null;
 }

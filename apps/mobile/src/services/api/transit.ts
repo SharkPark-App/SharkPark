@@ -1,5 +1,5 @@
 import { apiService } from './base';
-import { MapRoute, MapStop, MapShuttle } from '../../types/transit';
+import { MapRoute, MapStop, MapShuttle, RouteArrival } from '../../types/transit';
 
 export const TransitService = {
   
@@ -20,6 +20,16 @@ export const TransitService = {
 
   async getLiveShuttles(): Promise<MapShuttle[]> {
     const response = await apiService.get<MapShuttle[]>('/transit/shuttles');  
+    return response.data;
+  },
+
+  async getStopETAs(stopId: string): Promise<RouteArrival[]> {
+    const response = await apiService.get<RouteArrival[]>(`/transit/etas?stopId=${stopId}`);
+
+    if (__DEV__) {
+      console.log(`[transitService] Retrieved Stop ${stopId} Data:`, response.data);
+    }
+
     return response.data;
   }
 };

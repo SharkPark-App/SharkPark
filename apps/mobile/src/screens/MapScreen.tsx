@@ -21,7 +21,8 @@ import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
 import useFavorites from '../hooks/useFavorites';
 import { useTransitData } from '../hooks/useTransitData';
-import { ShuttleMarker } from '../components/MapMarkers/ShuttleMarker';
+import { useStopETAs } from '../hooks/useStopETAs';
+import { ShuttleMarker } from '../components/Map/ShuttleMarker';
 import { StopModal } from '../components/Modals/StopModal';
 import type { MapStop } from '../types/transit';
 
@@ -35,8 +36,6 @@ const InteractiveLot: React.FC<{
   onPress: (lot: ParkingLotResponse) => void;
   colors: ThemeColors;
 }> = ({ lot, onPress, colors }) => {
-  const occupancyColor = getOccupancyColor(lot.occupancy);
-  const isSingleWord = !lot.name.trim().includes(' ');
   const occupancyColor = getOccupancyColor(lot.occupancy_rate * 100);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
   
@@ -100,6 +99,7 @@ const MapScreen: React.FC = () => {
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
   const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
+  const { arrivals, isLoading: stopLoading } = useStopETAs(selectedStop?.id);
 
   const handleLotPress = (lot: ParkingLotResponse) => {
     // Navigate to ShortTermForecastScreen with lot data
@@ -112,6 +112,11 @@ const MapScreen: React.FC = () => {
   const handleStopPress = (stop: MapStop) => {
     setSelectedStop(stop);
     setIsStopModalOpen(true);
+  };
+
+  const handleStopModalClose = () => {
+    setIsStopModalOpen(false);
+    setTimeout(() => setSelectedStop(null), 300);
   };
 
   const handleFilterPress = () => {
@@ -247,16 +252,11 @@ const MapScreen: React.FC = () => {
       {selectedStop && (
       <StopModal
         isOpen={isStopModalOpen}
-        onClose={() => setIsStopModalOpen(false)}
+        onClose={handleStopModalClose}
         stopName={selectedStop.name}
+        arrivals={arrivals}
+        isLoading={stopLoading}
         colors={colors}
-        // TODO: Replace placeholder data with backend call & hook
-        arrivals={[
-          { route: '1', routeName: 'East Loop', abbreviation: 'E', color: '#c70faf', etaMinutes: 20 },
-          { route: '2', routeName: 'West Loop', abbreviation: 'W', color: '#333333', etaMinutes: 16 },
-          { route: '3', routeName: 'All Campus Tripper', abbreviation: 'AC', color: '#f39c12', etaMinutes: 17 },
-          { route: '4', routeName: 'Overflow', abbreviation: 'O', color: '#8e7a45', etaMinutes: null },
-        ]}
       />
     )}
     </View>
