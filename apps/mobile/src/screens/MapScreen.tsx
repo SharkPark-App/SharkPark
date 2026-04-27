@@ -36,7 +36,7 @@ const InteractiveLot: React.FC<{
   onPress: (lot: ParkingLotResponse) => void;
   colors: ThemeColors;
 }> = ({ lot, onPress, colors }) => {
-  const occupancyColor = getOccupancyColor(lot.occupancy_rate * 100);
+  const occupancyColor = getOccupancyColor(lot.current_occupancy);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
   
   return (
@@ -55,7 +55,7 @@ const InteractiveLot: React.FC<{
           }
         ]}
         accessibilityRole="button"
-        accessibilityLabel={`${lot.lot_name} parking lot, ${lot.occupancy_rate * 100} percent full`}
+        accessibilityLabel={`${lot.lot_name} parking lot, ${lot.current_occupancy} percent full`}
       >
         <Text
           style={[styles.lotText, { color: colors.white }]}

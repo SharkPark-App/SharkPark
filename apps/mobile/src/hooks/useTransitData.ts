@@ -43,13 +43,19 @@ export const useTransitData = () => {
     path: API_CONFIG.SOCKET_URL,
   });
 
-    socket.on('connect', () => {
-      console.log('[useTransitData] Socket connection success:', socket.id);
-    });
+    if (__DEV__) {
+      socket.on('connect', () => {
+        console.log('[useTransitData] Socket connection success:', socket.id);
+      });
 
-    socket.on('disconnect', (reason) => {
-      console.log('[useTransitData] Socket disconnected. Reason:', reason);
-    });
+      socket.on('disconnect', (reason) => {
+        console.log('[useTransitData] Socket disconnected. Reason:', reason);
+      });
+
+      socket.on('connect_error', (error) => {
+        console.warn('[useTransitData] Socket connection error:', error.message);
+      });
+    }
 
     // Merge live shuttle updates into existing state
     socket.on('shuttle_update', (updates: ShuttleLocationUpdate[]) => {
@@ -73,10 +79,6 @@ export const useTransitData = () => {
 
         return updatedShuttles;
       });
-    });
-
-    socket.on('connect_error', (error) => {
-      console.warn('[useTransitData] Socket connection error:', error.message);
     });
 
     return () => {
