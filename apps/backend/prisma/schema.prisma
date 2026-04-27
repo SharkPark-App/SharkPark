@@ -263,6 +263,24 @@ model PredictionLongTerm {
   @@map("predictions_long_term")
 }
 
+// ─── Audit log ────────────────────────────────────────────
+// Append-only event log for compliance-relevant actions (account deletion,
+// data export, etc.). actor_hash is SHA-256 of the email so the row carries
+// no reversible PII after the user is deleted, satisfying GDPR right-to-erasure
+// while still letting us prove "an account at this hash was deleted at T".
+
+model AuditEvent {
+  id          String         @id @default(cuid())
+  event_type  AuditEventType
+  actor_hash  String         // SHA-256(email + AUDIT_HASH_SALT)
+  metadata    Json?          // event-type-specific structured fields, no PII
+  created_at  DateTime       @default(now())
+
+  @@index([event_type, created_at], name: "idx_audit_type_time")
+  @@index([actor_hash, created_at], name: "idx_audit_actor_time")
+  @@map("audit_events")
+}
+
 // ─── Enums ────────────────────────────────────────────────
 
 enum LotType {
@@ -297,4 +315,9 @@ enum ImpactLevel {
   LOW
   MEDIUM
   HIGH
+}
+
+enum AuditEventType {
+  USER_DELETED
+  USER_DATA_EXPORTED
 }
