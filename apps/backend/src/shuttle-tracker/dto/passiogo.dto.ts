@@ -132,6 +132,8 @@ export class PassioEtaDto {
   @IsString()
   busName!: string;
 
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => PassioEtaStopDetailDto)
   theStop!: PassioEtaStopDetailDto;
