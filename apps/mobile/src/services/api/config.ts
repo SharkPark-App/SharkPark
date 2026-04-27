@@ -1,26 +1,25 @@
 import { Platform } from 'react-native';
+import { SHARKPARK_API_URL } from '@env';
 
 /**
  * API Configuration for SharkPark Mobile App
  *
  * URL resolution priority (highest → lowest):
- *   1. SHARKPARK_API_URL  — set this in a .env file at the repo root for local dev
- *                           (e.g. SHARKPARK_API_URL=http://192.168.1.42:3000/api/v1)
+ *   1. SHARKPARK_API_URL  — set in apps/mobile/.env (see .env.example).
+ *                           Inlined into the JS bundle at build time by
+ *                           react-native-dotenv (see babel.config.js). After
+ *                           changing .env, restart Metro with --reset-cache.
  *   2. Platform defaults  — Android emulator 10.0.2.2, iOS simulator localhost
  *   3. Production URL     — used automatically in release builds (!__DEV__)
  *
  * For physical-device development:
- *   echo "SHARKPARK_API_URL=http://<your-machine-ip>:3000/api/v1" >> .env
+ *   cp apps/mobile/.env.example apps/mobile/.env
+ *   # then edit .env to point SHARKPARK_API_URL at your machine's LAN IP
  */
-
-// react-native-dotenv (or babel-plugin-transform-inline-environment-variables)
-// exposes process.env at build time. Falls back to undefined if not configured.
-declare const process: { env: Record<string, string | undefined> };
 
 const getApiBaseUrl = (): string => {
   // 1. Explicit override (works for both simulator and physical device)
-  const envOverride = process?.env?.SHARKPARK_API_URL;
-  if (envOverride) return envOverride;
+  if (SHARKPARK_API_URL) return SHARKPARK_API_URL;
 
   // 2. Production build
   if (!__DEV__) {
