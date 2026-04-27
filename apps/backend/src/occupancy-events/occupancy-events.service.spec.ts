@@ -12,6 +12,7 @@ describe('OccupancyEventsService', () => {
     occupancyEvent: { create: jest.Mock; findMany: jest.Mock };
     occupancySnapshot: { create: jest.Mock; createMany: jest.Mock; findMany: jest.Mock };
     deviceState: { findUnique: jest.Mock; upsert: jest.Mock };
+    contributorPing: { upsert: jest.Mock };
     weather: { findFirst: jest.Mock };
     $transaction: jest.Mock;
     $executeRaw: jest.Mock;
@@ -37,6 +38,7 @@ describe('OccupancyEventsService', () => {
       occupancyEvent: { create: jest.fn(), findMany: jest.fn() },
       occupancySnapshot: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn() },
       deviceState: { findUnique: jest.fn(), upsert: jest.fn() },
+      contributorPing: { upsert: jest.fn() },
       weather: { findFirst: jest.fn() },
       $transaction: jest.fn(),
       $executeRaw: jest.fn(),
@@ -130,6 +132,36 @@ describe('OccupancyEventsService', () => {
       expect(result.event_type).toBe('ENTER');
       expect(result.deduplicated).toBe(false);
       expect(result.event_id).toBeDefined();
+    });
+
+    // ACCESS-4: every successful POST /occupancy-events must bump the
+    // ContributorPing.last_seen_at for the device — that's how the
+    // ContributorGuard knows the device is currently contributing.
+    it('should upsert ContributorPing on a fresh event', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+
+      await service.create(validDto);
+
+      expect(prisma.contributorPing.upsert).toHaveBeenCalledWith({
+        where: { device_hash: expect.any(String) },
+        update: { last_seen_at: expect.any(Date) },
+        create: { device_hash: expect.any(String), last_seen_at: expect.any(Date) },
+      });
+    });
+
+    it('should still upsert ContributorPing even when the event is deduplicated', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue({
+        device_hash: 'h', lot_id: mockLot.id, last_event_type: 'ENTER',
+      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+
+      const result = await service.create(validDto);
+
+      expect(result.deduplicated).toBe(true);
+      expect(prisma.contributorPing.upsert).toHaveBeenCalled();
     });
 
     it('should create an event and decrement occupancy for EXIT', async () => {

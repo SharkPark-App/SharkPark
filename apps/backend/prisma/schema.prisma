@@ -281,6 +281,22 @@ model AuditEvent {
   @@map("audit_events")
 }
 
+// ─── Reciprocity / contributor tracking ───────────────────
+// Tracks which devices have recently sent occupancy events, so the
+// ContributorGuard can grant access to live-occupancy / forecast endpoints
+// only to devices that are actively contributing data. One row per device
+// hash; bumped on every POST /occupancy-events (including deduplicated ones,
+// which still prove the device is alive and reporting).
+
+model ContributorPing {
+  device_hash    String   @id           // SHA-256(salt:device_id) — same hash used in OccupancyEvent
+  first_seen_at  DateTime @default(now())
+  last_seen_at   DateTime @default(now())
+
+  @@index([last_seen_at], name: "idx_contributor_last_seen")
+  @@map("contributor_pings")
+}
+
 // ─── Enums ────────────────────────────────────────────────
 
 enum LotType {
