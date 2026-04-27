@@ -4,7 +4,9 @@ import { ShuttleTrackerService } from './shuttle-tracker.service';
 
 @Injectable()
 export class ShuttleTrackerScheduler {
-  constructor(private readonly shuttleTrackerService: ShuttleTrackerService) {}
+  constructor(
+    private readonly shuttleTrackerService: ShuttleTrackerService
+  ) {}
 
   // Update shuttle locations every minute (maximum frequency is 10 seconds)
   @Cron(CronExpression.EVERY_10_SECONDS)

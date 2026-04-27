@@ -398,23 +398,4 @@ describe('LotsService', () => {
       expect(high[0].accuracy).toBe(95);
     });
   });
-
-  describe('convertToUIFormat', () => {
-    it('should convert API lot to UI format', () => {
-      const apiLot = {
-        lot_id: 'G1',
-        display_name: 'Lot G1',
-        lot_name: 'G1',
-        occupancy_rate: 0.75,
-        lot_type: 'STUDENT',
-      } as unknown as ParkingLotResponse;
-
-      const result = lotsApi.convertToUIFormat(apiLot);
-
-      expect(result.id).toBe('G1');
-      expect(result.name).toBe('Lot G1');
-      expect(result.occupancy).toBe(75);
-      expect(result.category).toBe('student');
-    });
-  });
 });

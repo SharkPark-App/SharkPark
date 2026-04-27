@@ -2,7 +2,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
-import type { MapStop, MapRoute, MapShuttle } from './interfaces/shuttle-tracker.interface';
+import type { MapStop, MapRoute, MapShuttle, RouteArrival } from './interfaces/shuttle-tracker.interface';
 import { PassioRouteDto, PassioShuttleDto, PassioStopDto } from './dto/passiogo.dto';
 
 /** Service for shuttle tracking - live route, stop, and shuttle updates */
@@ -41,8 +41,8 @@ export class ShuttleTrackerService implements OnModuleInit {
         })
       ]);
 
-      if (!routesResponse.ok) throw new Error(`Routes API returned ${routesResponse.status}`);
-      if (!stopsResponse.ok) throw new Error(`Stops API returned ${stopsResponse.status}`);
+      if (!routesResponse.ok) throw new Error(`Routes request returned ${routesResponse.status}`);
+      if (!stopsResponse.ok) throw new Error(`Stops request returned ${stopsResponse.status}`);
 
       const rawRoutes = (await routesResponse.json()) as unknown[];
       const rawMapData = (await stopsResponse.json()) as {
@@ -125,7 +125,7 @@ export class ShuttleTrackerService implements OnModuleInit {
       });
       
       if (!shuttlesResponse.ok) {
-        throw new Error(`Shuttles API returned HTTP ${shuttlesResponse.status}`);
+        throw new Error(`Shuttles request returned HTTP ${shuttlesResponse.status}`);
       }
 
       const rawShuttles = (await shuttlesResponse.json()) as {
@@ -169,9 +169,70 @@ export class ShuttleTrackerService implements OnModuleInit {
         paxLoad: shuttle.paxLoad || 0,
         capacity: shuttle.totalCap || 0, 
       }));
-
     } catch (error) {
       this.logger.error('Failed to fetch shuttle data:', error);
+    }
+  }
+
+  /**
+   * Retrieve shuttle ETAs
+   */
+  async getStopETAs(stopId: string): Promise<RouteArrival[]> {
+    try {
+      // TODO: verify that this fetch works with active busses en route
+      const etaResponse = await fetch(`https://passiogo.com/mapGetData.php?eta=1&stopIds=${stopId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ s0: 4163, sA: 1 }),
+      });
+
+      if (!etaResponse.ok) {
+        throw new Error(`ETA request returned HTTP ${etaResponse.status}`);
+      }
+
+      const rawJson = (await etaResponse.json()) as { 
+        ETAs?: Record<string, { eta?: string | number }[]> 
+      };
+      const etasDict = rawJson.ETAs || {};
+
+      if (this.currentRoutes.length === 0) return [];
+
+      const arrivals = this.currentRoutes.map(route => {
+        let etaVal: number | null = null;
+
+        const routeArrivals = etasDict[route.id];
+
+        // Get the first arrival if it exists
+        if (routeArrivals && Array.isArray(routeArrivals) && routeArrivals.length > 0) {
+          const firstArrival = routeArrivals[0];
+          const rawEta = firstArrival.eta;
+          
+          // Only parse ETA if it is a number
+          if (typeof rawEta === 'string' || typeof rawEta === 'number') {
+            const parsed = parseInt(String(rawEta), 10);
+            if (!isNaN(parsed)) {
+              etaVal = parsed;
+            }
+          }
+        }
+
+        return {
+          routeId: route.id,
+          routeName: route.name,
+          abbreviation: route.shortName,
+          color: route.color,
+          etaMinutes: etaVal,
+        };
+      });
+
+      // Filter out nulls (no active buses) and sort from closest to furthest
+      return arrivals
+        .filter(arrival => arrival.etaMinutes !== null)
+        .sort((a, b) => (a.etaMinutes as number) - (b.etaMinutes as number));
+
+    } catch (error) {
+      this.logger.error(`Failed to fetch ETAs for stop ${stopId}`, error);
+      return []; 
     }
   }
 }
