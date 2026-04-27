@@ -433,4 +433,55 @@ describe('OccupancyEventsService', () => {
         .rejects.toThrow('Failed to clean up stale device states');
     });
   });
+
+  describe('pruneOldData', () => {
+    it('should delete occupancy_events older than the cutoff (snapshots untouched)', async () => {
+      (prisma as any).occupancyEvent.deleteMany = jest.fn().mockResolvedValue({ count: 42 });
+      (prisma as any).occupancySnapshot.deleteMany = jest.fn();
+
+      const before = Date.now();
+      const result = await service.pruneOldData(30);
+      const after = Date.now();
+
+      expect(result.events_deleted).toBe(42);
+      expect((prisma as any).occupancyEvent.deleteMany).toHaveBeenCalledTimes(1);
+      // Snapshots are permanent per docs — must never be touched here
+      expect((prisma as any).occupancySnapshot.deleteMany).not.toHaveBeenCalled();
+
+      const cutoffMs = new Date(result.cutoff).getTime();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      expect(cutoffMs).toBeGreaterThanOrEqual(before - thirtyDaysMs);
+      expect(cutoffMs).toBeLessThanOrEqual(after - thirtyDaysMs);
+
+      const call = (prisma as any).occupancyEvent.deleteMany.mock.calls[0][0];
+      expect(call.where.timestamp.lt.toISOString()).toBe(result.cutoff);
+    });
+
+    it('should default to 30 days when called with no argument', async () => {
+      (prisma as any).occupancyEvent.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+
+      const before = Date.now();
+      const result = await service.pruneOldData();
+      const cutoffMs = new Date(result.cutoff).getTime();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      expect(cutoffMs).toBeLessThanOrEqual(before - thirtyDaysMs + 1000);
+      expect(cutoffMs).toBeGreaterThanOrEqual(before - thirtyDaysMs - 1000);
+    });
+
+    it('should reject retentionDays < 1', async () => {
+      (prisma as any).occupancyEvent.deleteMany = jest.fn();
+
+      await expect(service.pruneOldData(0)).rejects.toThrow('retentionDays must be >= 1');
+      await expect(service.pruneOldData(-5)).rejects.toThrow('retentionDays must be >= 1');
+      await expect(service.pruneOldData(NaN)).rejects.toThrow('retentionDays must be >= 1');
+      expect((prisma as any).occupancyEvent.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw InternalServerErrorException on database error', async () => {
+      (prisma as any).occupancyEvent.deleteMany = jest.fn().mockRejectedValue(new Error('Connection lost'));
+
+      await expect(service.pruneOldData(30))
+        .rejects.toThrow('Failed to prune old occupancy data');
+    });
+  });
 });

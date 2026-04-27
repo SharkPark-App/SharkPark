@@ -39,7 +39,7 @@ AWS serverless architecture with **Aurora PostgreSQL Serverless v2** as the prim
 
 - ✅ Single-table `current_occupancy` counter on lots (fast reads, atomic increments)
 - ✅ Device hash deduplication for geofence events
-- ✅ 90-day retention for raw events (scheduled `DELETE` instead of TTL)
+- ✅ 30-day retention for raw events (scheduled `DELETE` instead of TTL)
 - ✅ 15-minute snapshot aggregation schedule (via `@nestjs/schedule` cron)
 - ✅ Privacy-first approach (SHA-256 device hashing, no PII in events)
 
@@ -502,7 +502,7 @@ WHERE l.school_id = 'csulb';
 | Table | Retention | Strategy |
 |-------|-----------|----------|
 | `lots`, `users`, `schools` | Permanent | Core data |
-| `occupancy_events` | 90 days | Scheduled `DELETE WHERE timestamp < NOW() - INTERVAL '90 days'` |
+| `occupancy_events` | 30 days | Daily cron `DELETE WHERE timestamp < NOW() - INTERVAL '30 days'` (`apps/backend/src/scripts/prune-old-data.ts`, override with `RETENTION_DAYS` env). Honors README privacy promise; snapshots already carry the aggregated history needed for ML. |
 | `occupancy_snapshots` | Permanent | Primary ML training source (archival to S3 optional at Tier 2) |
 | `predictions_short_term` | Overwritten each cycle | UPSERT every 15 min |
 | `predictions_long_term` | Overwritten daily | UPSERT daily |
