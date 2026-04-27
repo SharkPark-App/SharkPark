@@ -14,7 +14,7 @@ from psycopg2.extras import execute_values
 from sqlalchemy import create_engine, text
 from cuid2 import cuid_wrapper
 
-from src.config import DATABASE_URL
+from src.config import DATABASE_URL, WEATHER_MAX_AGE_HOURS
 
 _generate_cuid = cuid_wrapper()
 
@@ -23,6 +23,7 @@ __all__ = [
     "get_lot_id_map",
     "get_total_lot_count",
     "fetch_recent_snapshots",
+    "fetch_latest_weather",
     "load_real_snapshots",
     "load_historical_snapshots",
     "write_short_term_predictions",
@@ -129,6 +130,80 @@ def fetch_recent_snapshots(lookback_hours: int = 2) -> pd.DataFrame:
                 f"Snapshot rows contain lot IDs not found in lot_id_map: {unknown_ids}"
             )
         return df
+
+
+def fetch_latest_weather():
+    """
+    Fetch the most recent weather observation from the `weather` table.
+
+    Returns the row as a `WeatherSnapshot` (defined in
+    `src.postprocess.weather_adjustment`) or None when the table is empty
+    or unreachable.
+
+    Returns:
+        WeatherSnapshot | None
+    """
+    from src.postprocess.weather_adjustment import WeatherSnapshot
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(
+                    """
+                    SELECT timestamp, temperature_f, feels_like_f,
+                           humidity_percent, wind_speed_mph, conditions,
+                           precipitation_probability, is_raining
+                    FROM weather
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                    """
+                )
+            )
+            row = result.fetchone()
+    except Exception as exc:
+        # Predictions must still ship if the weather table is unavailable.
+        # Adjustment layer treats None as NO_WEATHER_DATA (no-op).
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Could not fetch latest weather row (%s); skipping adjustment.", exc
+        )
+        return None
+
+    if row is None:
+        return None
+
+    # weather staleness gate
+    if WEATHER_MAX_AGE_HOURS > 0:
+        from datetime import datetime, timezone
+        import logging
+
+        row_ts = row[0]
+
+        # Normalize naive timestamps
+        if row_ts.tzinfo is None:
+            row_ts = row_ts.replace(tzinfo=timezone.utc)
+
+        age_hours = (datetime.now(timezone.utc) - row_ts).total_seconds() / 3600.0
+        if age_hours > WEATHER_MAX_AGE_HOURS:
+            logging.getLogger(__name__).warning(
+                "Latest weather row is %.1fh old (max %.1fh); skipping adjustment.",
+                age_hours,
+                WEATHER_MAX_AGE_HOURS,
+            )
+            return None
+
+    return WeatherSnapshot(
+        timestamp=row[0],
+        temperature_f=float(row[1]),
+        feels_like_f=float(row[2]),
+        humidity_percent=float(row[3]),
+        wind_speed_mph=float(row[4]),
+        conditions=row[5] or "",
+        precipitation_probability=float(row[6]),
+        is_raining=bool(row[7]),
+    )
 
 
 def load_real_snapshots(
