@@ -597,7 +597,7 @@ GitHub Push → GitHub Actions → Build & Test → CDK Deploy
 ## Local Development
 
 ```bash
-# Start local PostgreSQL + LocalStack (S3 for ML artifacts)
+# Start local PostgreSQL 17 + MinIO (S3-compatible, mirrors prod Neon + R2)
 docker-compose -f docker/docker-compose.yml up -d
 
 # Run database migrations
@@ -621,8 +621,8 @@ Mobile App (iOS Simulator)
 NestJS Backend (localhost:3000)
     │
     ▼
-PostgreSQL (localhost:5432)    ←── docker-compose
-LocalStack S3 (localhost:4566) ←── ML artifacts (Tier 2+)
+PostgreSQL 17 (localhost:5433)  ←── docker-compose (mirrors Neon prod)
+MinIO S3 (localhost:9000)        ←── ML artifacts + DB backups (mirrors R2)
 ```
 
 ---

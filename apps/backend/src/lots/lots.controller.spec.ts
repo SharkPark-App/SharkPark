@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { LotsController } from './lots.controller';
 import { LotsService } from './lots.service';
+import { ContributorGuard } from '../auth/contributor.guard';
 
 describe('LotsController', () => {
   let controller: LotsController;
@@ -23,7 +24,13 @@ describe('LotsController', () => {
           useValue: mockLotsService,
         },
       ],
-    }).compile();
+    })
+      // ContributorGuard depends on PrismaService which isn't wired in this
+      // unit-test module. The guard's behavior is covered by its own spec
+      // and by the e2e suite; here we just need the controller to resolve.
+      .overrideGuard(ContributorGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<LotsController>(LotsController);
     service = module.get<LotsService>(LotsService);
