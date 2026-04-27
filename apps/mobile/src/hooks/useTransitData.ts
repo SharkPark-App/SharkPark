@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
-import { MapRoute, MapStop, MapShuttle } from '../types/transit';
+import { useState, useEffect, useCallback } from 'react';
+import { MapRoute, MapStop, MapShuttle, ShuttleLocationUpdate } from '../types/transit';
+import { API_CONFIG } from '../services';
 import { TransitService } from '../services/api/transit';
+import { io } from 'socket.io-client';
 
 export const useTransitData = () => {
   const [routes, setRoutes] = useState<MapRoute[]>([]);
@@ -21,21 +23,65 @@ export const useTransitData = () => {
     loadRoutesAndStops();
   }, []);
 
-  // Refresh shuttles (every 10 seconds as per backend)
+  // Fetch static/non-live shuttle data
+  const loadInitialShuttles = useCallback(async () => {
+    try {
+      const initialData = await TransitService.getLiveShuttles();
+      setShuttles(initialData);
+    } catch (error) {
+      console.error('Error loading initial shuttles:', error);
+    }
+  }, []);
+
   useEffect(() => {
-    const loadShuttles = async () => {
-      try {
-        const liveShuttles = await TransitService.getLiveShuttles();
-        setShuttles(liveShuttles);
-      } catch (error) {
-        console.error('Error loading live shuttles:', error);
-      }
+    loadInitialShuttles();
+  }, [loadInitialShuttles]);
+
+  useEffect(() => {
+    const socket = io(API_CONFIG.SHUTTLE_URL, {
+    transports: ['websocket'],
+    path: API_CONFIG.SOCKET_URL,
+  });
+
+    socket.on('connect', () => {
+      console.log('[useTransitData] Socket connection success:', socket.id);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('[useTransitData] Socket disconnected. Reason:', reason);
+    });
+
+    // Merge live shuttle updates into existing state
+    socket.on('shuttle_update', (updates: ShuttleLocationUpdate[]) => {
+      setShuttles((prevShuttles) => {
+        const updatedShuttles = [...prevShuttles];
+
+        updates.forEach((update) => {
+          // Get existing shuttle
+          const index = updatedShuttles.findIndex((s) => s.id === update.id);
+          
+          if (index !== -1) {
+            // Perform update (coords/heading)
+            updatedShuttles[index] = {
+              ...updatedShuttles[index],
+              latitude: update.latitude,
+              longitude: update.longitude,
+              heading: update.heading,
+            };
+          }
+        });
+
+        return updatedShuttles;
+      });
+    });
+
+    socket.on('connect_error', (error) => {
+      console.warn('[useTransitData] Socket connection error:', error.message);
+    });
+
+    return () => {
+      socket.disconnect(); 
     };
-
-    loadShuttles(); // Initial fetch
-    const intervalId = setInterval(loadShuttles, 10000); // Poll w/ delay
-
-    return () => clearInterval(intervalId); // Cleanup
   }, []);
 
   return { routes, stops, shuttles };

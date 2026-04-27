@@ -1791,36 +1791,6 @@ PODS:
   - react-native-app-auth (8.1.0):
     - AppAuth (>= 1.7.6)
     - React-Core
-  - react-native-bluetooth-status (1.5.1):
-    - React
-  - react-native-geolocation (3.4.0):
-    - boost
-    - DoubleConversion
-    - fast_float
-    - fmt
-    - glog
-    - hermes-engine
-    - RCT-Folly
-    - RCT-Folly/Fabric
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - SocketRocket
-    - Yoga
   - react-native-maps (1.27.2):
     - react-native-maps/Maps (= 1.27.2)
   - react-native-maps/Generated (1.27.2):
@@ -2593,7 +2563,7 @@ PODS:
     - Yoga
   - RNDeviceInfo (15.0.2):
     - React-Core
-  - RNGestureHandler (2.29.1):
+  - RNGestureHandler (2.30.0):
     - boost
     - DoubleConversion
     - fast_float
@@ -2800,6 +2770,63 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNSVG (15.15.4):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - RNSVG/common (= 15.15.4)
+    - SocketRocket
+    - Yoga
+  - RNSVG/common (15.15.4):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - RNVectorIcons (10.3.0):
     - boost
     - DoubleConversion
@@ -2967,8 +2994,6 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../../../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-app-auth (from `../../../node_modules/react-native-app-auth`)
-  - react-native-bluetooth-status (from `../../../node_modules/react-native-bluetooth-status`)
-  - "react-native-geolocation (from `../../../node_modules/@react-native-community/geolocation`)"
   - react-native-maps (from `../../../node_modules/react-native-maps`)
   - "react-native-netinfo (from `../../../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../../../node_modules/react-native-safe-area-context`)
@@ -3011,6 +3036,7 @@ DEPENDENCIES:
   - RNKeychain (from `../../../node_modules/react-native-keychain`)
   - RNReanimated (from `../../../node_modules/react-native-reanimated`)
   - RNScreens (from `../../../node_modules/react-native-screens`)
+  - RNSVG (from `../../../node_modules/react-native-svg`)
   - RNVectorIcons (from `../../../node_modules/react-native-vector-icons`)
   - RNWorklets (from `../../../node_modules/react-native-worklets`)
   - SocketRocket (~> 0.7.1)
@@ -3107,10 +3133,6 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-app-auth:
     :path: "../../../node_modules/react-native-app-auth"
-  react-native-bluetooth-status:
-    :path: "../../../node_modules/react-native-bluetooth-status"
-  react-native-geolocation:
-    :path: "../../../node_modules/@react-native-community/geolocation"
   react-native-maps:
     :path: "../../../node_modules/react-native-maps"
   react-native-netinfo:
@@ -3195,6 +3217,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native-reanimated"
   RNScreens:
     :path: "../../../node_modules/react-native-screens"
+  RNSVG:
+    :path: "../../../node_modules/react-native-svg"
   RNVectorIcons:
     :path: "../../../node_modules/react-native-vector-icons"
   RNWorklets:
@@ -3245,8 +3269,6 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 06d59c448da7e34eb05b3fb2189e12f6a30fec57
   React-microtasksnativemodule: d1ee999dc9052e23f6488b730fa2d383a4ea40e5
   react-native-app-auth: e21c8ee920876b960e38c9381971bd189ebea06b
-  react-native-bluetooth-status: 0cef06a3bb1db870798b9b72873ac2b1c6bb110f
-  react-native-geolocation: 95e48fe2687e5a8280103085372fa62c2297c5d6
   react-native-maps: b5af575a371e57847c6d8490e726c08036f7c80f
   react-native-netinfo: a0be8c77f8420a60ddf07eb87be1a36f02a1bd65
   react-native-safe-area-context: c00143b4823773bba23f2f19f85663ae89ceb460
@@ -3285,10 +3307,11 @@ SPEC CHECKSUMS:
   RNBackgroundGeolocation: 68017f04ca292cfdde26becac33ae801157c91fb
   RNCAsyncStorage: 29f0230e1a25f36c20b05f65e2eb8958d6526e82
   RNDeviceInfo: 4c852998208b60dc192ae3529e5867817719ad1e
-  RNGestureHandler: e1cf8ef3f11045536eed6bd4f132b003ef5f9a5f
+  RNGestureHandler: f97d19585553412302394c42495cdaf499589d34
   RNKeychain: a2c134ab796272c3d605e035ab727591000b30f3
   RNReanimated: c1fba3e1de4822ab65275311e2838835624f6465
   RNScreens: afaf526a9c804c3b4503f950cf3e67ed81e29ada
+  RNSVG: f7d420ab4c3d766bf3e9c1a4fa7900021311a47a
   RNVectorIcons: 791f13226ec4a3fd13062eda9e892159f0981fae
   RNWorklets: fbf7aeabcfcc73ab57d8304d050dce3243d4baed
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
@@ -3296,6 +3319,6 @@ SPEC CHECKSUMS:
   TSLocationManager: d0e8ec5c1467782d3eef1d90fbca4a42e98bb287
   Yoga: 689c8e04277f3ad631e60fe2a08e41d411daf8eb
 
-PODFILE CHECKSUM: 80eadb5d9ec6dbae1caba1f7cd18edddd4525904
+PODFILE CHECKSUM: 736a38a77d92260209c907b6a3f460b3cd4f9097
 
 COCOAPODS: 1.16.2

@@ -1,11 +1,12 @@
 import { apiService } from './base';
 import { MapRoute, MapStop, MapShuttle, RouteArrival } from '../../types/transit';
+import { API_CONFIG } from './config'
 
 export const TransitService = {
   
   async getRoutesAndStops(): Promise<{ routes: MapRoute[], stops: MapStop[] }> {
-    const routesResponse = await apiService.get<MapRoute[]>('/transit/routes');
-    const stopsResponse = await apiService.get<MapStop[]>('/transit/stops');
+    const routesResponse = await apiService.get<MapRoute[]>(API_CONFIG.ENDPOINTS.TRANSIT_ROUTES);
+    const stopsResponse = await apiService.get<MapStop[]>(API_CONFIG.ENDPOINTS.TRANSIT_STOPS);
     
     if (__DEV__) {
       console.log('[transitService] Routes Data:', routesResponse.data);
@@ -19,12 +20,12 @@ export const TransitService = {
   },
 
   async getLiveShuttles(): Promise<MapShuttle[]> {
-    const response = await apiService.get<MapShuttle[]>('/transit/shuttles');  
+    const response = await apiService.get<MapShuttle[]>(API_CONFIG.ENDPOINTS.TRANSIT_SHUTTLES);  
     return response.data;
   },
 
   async getStopETAs(stopId: string): Promise<RouteArrival[]> {
-    const response = await apiService.get<RouteArrival[]>(`/transit/etas?stopId=${stopId}`);
+    const response = await apiService.get<RouteArrival[]>(API_CONFIG.ENDPOINTS.TRANSIT_ETAS(stopId));
 
     if (__DEV__) {
       console.log(`[transitService] Retrieved Stop ${stopId} Data:`, response.data);

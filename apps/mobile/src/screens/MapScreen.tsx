@@ -104,12 +104,6 @@ const MapScreen: React.FC = () => {
   const { lots } = useLotsList();
   const { routes, stops, shuttles } = useTransitData();
 
-  console.log('[MapScreen] Rendering with:', { 
-    isRoutesArray: Array.isArray(routes), 
-    isStopsArray: Array.isArray(stops), 
-    isShuttlesArray: Array.isArray(shuttles) 
-  });
-
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);

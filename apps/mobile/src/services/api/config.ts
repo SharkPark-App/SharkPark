@@ -17,6 +17,9 @@ import { SHARKPARK_API_URL } from '@env';
  *   # then edit .env to point SHARKPARK_API_URL at your machine's LAN IP
  */
 
+// replace this with real IP if not using simulator
+const IOS_IP = '192.168.1.113';
+
 const getApiBaseUrl = (): string => {
   // 1. Explicit override (works for both simulator and physical device)
   if (SHARKPARK_API_URL) return SHARKPARK_API_URL;
@@ -32,12 +35,30 @@ const getApiBaseUrl = (): string => {
   }
 
   // iOS simulator — localhost routes correctly
-  return 'http://localhost:3000/api/v1';
+  return `http://${IOS_IP}:3000/api/v1`;
 };
+
+const getShuttleUrl = (): string => {
+  // Production build
+  if (!__DEV__) {
+    return 'http://api.sharkpark.app/shuttles';
+  }
+
+  // Android
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:3000/shuttles';
+  }
+
+  // iOS
+  return `http://${IOS_IP}:3000/shuttles`;
+}
 
 export const API_CONFIG = {
   // Base URL for the backend API
   BASE_URL: getApiBaseUrl(),
+
+  SHUTTLE_URL: getShuttleUrl(),
+  SOCKET_URL: '/api/v1/socket.io/',
 
   TIMEOUT: 30000,
 
@@ -50,6 +71,10 @@ export const API_CONFIG = {
     LOT_RECOMMENDATIONS: (id: string) => `/lots/${id}/recommendations`,
     LOT_PREDICTIONS_SHORT: (id: string) => `/lots/${id}/predictions/short-term`,
     LOT_PREDICTIONS_LONG: (id: string) => `/lots/${id}/predictions/long-term`,
+    TRANSIT_SHUTTLES: '/transit/shuttles',
+    TRANSIT_ROUTES: '/transit/routes',
+    TRANSIT_STOPS: '/transit/stops',
+    TRANSIT_ETAS: (id: string) => `/transit/etas/${id}`,
     OCCUPANCY_EVENTS: '/occupancy-events',
     USERS: '/users',
     WEATHER: '/weather',

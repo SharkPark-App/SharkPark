@@ -26,6 +26,14 @@ export interface MapShuttle {
   capacity: number;
 }
 
+export interface ShuttleLocationUpdate {
+  id: string;
+  latitude: number;
+  longitude: number;
+  heading: number;
+  paxLoad: number;
+}
+
 export interface RouteArrival {
   routeId: string;
   routeName: string;
