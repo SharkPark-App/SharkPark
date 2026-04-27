@@ -2,7 +2,8 @@
  * Simple test to verify car Bluetooth detection
  */
 import React, { useState, useEffect } from 'react';
-import { View, Text, Button, Alert } from 'react-native';
+import { View, Button, Alert } from 'react-native';
+import { Text } from './CustomText';
 import carBluetooth from '../services/carBluetooth';
 
 export const BluetoothTest: React.FC = () => {

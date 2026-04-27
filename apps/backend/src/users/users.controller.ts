@@ -105,4 +105,32 @@ export class UsersController {
       data: user,
     };
   }
+
+  /**
+   * Hard-deletes the caller's account (App Store Guideline 5.1.1(v) requirement
+   * for any app with login). Cascades to favorites; writes a USER_DELETED
+   * audit row with a hashed actor identifier (no reversible PII).
+   *
+   * Mobile clients should call DELETE /users/me; the explicit :userId form
+   * exists for parity with the rest of the controller and is IDOR-protected.
+   */
+  @Delete('me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMe(@Req() req: AuthenticatedRequest): Promise<void> {
+    const email = req.user?.email;
+    if (!email) {
+      throw new ForbiddenException('Authenticated user email missing');
+    }
+    await this.usersService.deleteUser(email);
+  }
+
+  @Delete(':userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteUser(
+    @Req() req: AuthenticatedRequest,
+    @Param('userId') userId: string,
+  ): Promise<void> {
+    this.assertOwner(req, userId);
+    await this.usersService.deleteUser(userId);
+  }
 }

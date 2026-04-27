@@ -1,10 +1,13 @@
 import { useState, useMemo } from 'react';
 import {
-  View, Text, Modal,
-  TouchableOpacity, TextInput,
+  View, Modal,
+  TouchableOpacity,
   ScrollView, StyleSheet,
 } from 'react-native';
+import { Text } from '../CustomText';
+import { TextInput } from '../CustomTextInput';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { TYPOGRAPHY } from '../../constants/theme';
 
 interface ReportModalProps {
   lotId: string;
@@ -27,6 +30,12 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
 
   const styles = useMemo(() => getStyles(colors), [colors]);
 
+  const handleClose = () => {
+    setSelectedType(null);
+    setMessage('');
+    onClose();
+  };
+
   const handleSubmit = () => {
     if (!selectedType) return;
     if (selectedType === 'other' && !message.trim()) return;
@@ -38,9 +47,7 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
       timestamp: new Date(),
     });
 
-    setSelectedType(null);
-    setMessage('');
-    onClose();
+    handleClose();
   };
 
   const incidentTypes = [
@@ -71,13 +78,13 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
     <Modal
       visible={isOpen}
       transparent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.backdrop}>
         <TouchableOpacity 
           style={styles.backdropTouchable}
           activeOpacity={1}
-          onPress={onClose}
+          onPress={handleClose}
         />
         
         <View style={styles.modal}>
@@ -88,15 +95,17 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
               <Text style={styles.subtitle}>Parking Lot {lotId}</Text>
             </View>
             <TouchableOpacity
-              onPress={onClose}
+              onPress={handleClose}
               style={styles.closeButton}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
             >
-              <Text style={styles.closeButtonText}>✕</Text>
+              <Text style={styles.closeButtonText} accessible={false}>✕</Text>
             </TouchableOpacity>
           </View>
 
           {/* Modal Content */}
-          <ScrollView style={styles.content}>
+          <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
             {/* Incident Type Selection */}
             <View style={styles.section}>
               <Text style={styles.label}>Select Incident Type</Text>
@@ -109,6 +118,9 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
                       styles.typeButton,
                       selectedType === type.id && styles.typeButtonSelected
                     ]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selectedType === type.id }}
+                    accessibilityLabel={`${type.label}: ${type.description}`}
                   >
                     <View style={[styles.iconContainer, { backgroundColor: type.color }]}>
                       <Text style={styles.icon}>{type.icon}</Text>
@@ -140,6 +152,8 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
                   value={message}
                   onChangeText={setMessage}
                   placeholder="Describe the incident..."
+                  accessibilityLabel="Additional details"
+                  accessibilityHint="Describe the incident"
                   placeholderTextColor={colors.darkGray}
                   multiline
                   numberOfLines={4}
@@ -163,6 +177,9 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
                 styles.submitButton,
                 (!selectedType || (selectedType === 'other' && !message.trim())) && styles.submitButtonDisabled
               ]}
+              accessibilityRole="button"
+              accessibilityLabel="Submit report"
+              accessibilityState={{ disabled: !selectedType || (selectedType === 'other' && !message.trim()) }}
             >
               <Text style={styles.submitButtonText}>Submit Report</Text>
             </TouchableOpacity>
@@ -211,7 +228,7 @@ const getStyles = (
   },
   title: {
     fontSize: 18,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: colors.textPrimary,
   },
   subtitle: {
@@ -231,7 +248,10 @@ const getStyles = (
   // Modal content
   content: {
     paddingHorizontal: 24,
+  },
+  contentContainer: {
     paddingVertical: 24,
+    paddingBottom: 48,
   },
   section: {
     marginBottom: 24,
@@ -240,7 +260,7 @@ const getStyles = (
     fontSize: 16,
     color: colors.textPrimary,
     marginBottom: 12,
-    fontWeight: '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   required: {
     color: colors.error,
@@ -282,7 +302,7 @@ const getStyles = (
   typeLabel: {
     fontSize: 16,
     color: colors.textPrimary,
-    fontWeight: '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   typeDescription: {
     fontSize: 14,
@@ -340,6 +360,6 @@ const getStyles = (
   submitButtonText: {
     color: colors.white,
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
 });

@@ -1,72 +1,75 @@
-import React from 'react';
-import { View, Image, Text, StyleSheet, ImageSourcePropType, TouchableOpacity } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text } from '../CustomText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { TYPOGRAPHY, SPACING } from '../../constants/theme';
-import { useTheme } from '../../context/ThemeContext';
+import { useTheme, ThemeColors } from '../../context/ThemeContext';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const BRAND_LOGO_LIGHT = require('../../assets/images/SharkParkV4.webp');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const BRAND_LOGO_DARK = require('../../assets/images/SharkParkV4_white.webp');
 
 interface HeaderProps {
-  logo?: ImageSourcePropType; // Image source - can be require() or URI
-  title?: string; // Optional title text to display instead of logo
+  title?: string; // Optional title text to display instead of the brand logo
   onBack?: () => void; // Optional back navigation function
-  rightElement?: React.ReactNode; // Optional right-side element (e.g. button)
+  rightAction?: React.ReactNode; // Optional right-side action (e.g. favorite button)
 }
 
-const Header: React.FC<HeaderProps> = React.memo(({ logo, title, onBack, rightElement }) => {
-  // Always call hooks in the same order
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  
-  return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.primary }]}>
-      {/* Placeholder to balance the rightElement for centered content */}
-      {onBack ? (
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={[styles.backIcon, { color: colors.black }]}>←</Text>
-        </TouchableOpacity>
-      ) : rightElement ? (
-        <View style={styles.placeholder} />
-      ) : null}
-      
-      <View style={styles.centerContent}>
-        {title ? (
-          <Text style={[styles.titleText, { color: colors.textPrimary }]}>
-            {title}
-          </Text>
-        ) : logo ? (
-          <Image 
-            source={logo} 
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        ) : (
-          <Text style={[styles.placeholderText, { color: colors.white }]}>
-            🦈 SharkPark - Add logo.png to src/assets/images/
-          </Text>
+const Header: React.FC<HeaderProps> = React.memo(
+  ({ title, onBack, rightAction }) => {
+    const insets = useSafeAreaInsets();
+    const { colors, isDark } = useTheme();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+    const brandLogo = isDark ? BRAND_LOGO_DARK : BRAND_LOGO_LIGHT;
+
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {onBack && (
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Icon
+              name="arrow-back-circle-outline"
+              size={32}
+              color={colors.black}
+              accessible={false}
+            />
+          </TouchableOpacity>
         )}
-      </View>
-      
-      {/* Placeholder to balance the back button for centered content */}
-      {rightElement ? (
-        <View style={styles.rightAction}>
-          {rightElement}
+
+        <View style={styles.centerContent}>
+          {title ? (
+          <Text style={[styles.titleText, !onBack && styles.titleTextStandalone]}>
+              {title}
+            </Text>
+          ) : (
+            <Image source={brandLogo} style={styles.logo} resizeMode="contain" accessible={false} importantForAccessibility="no" />
+          )}
         </View>
-      ) : onBack ? (
-        <View style={styles.placeholder} />
-      ) : null}
-    </View>
-  );
+
+        {/* Right action or placeholder to balance the back button */}
+        {rightAction ?? (onBack && <View style={styles.placeholder} />)}
+      </View>
+    );
 });
 
 Header.displayName = 'Header';
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 100, // Consistent header height
+    backgroundColor: colors.headerBackground,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderGray,
   },
   backButton: {
     padding: SPACING.sm,
@@ -74,10 +77,7 @@ const styles = StyleSheet.create({
     height: 44, // Standard touch target size
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  backIcon: {
-    fontSize: TYPOGRAPHY.fontSize.xxxl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    marginRight: 10,
   },
   centerContent: {
     flex: 1,
@@ -91,29 +91,17 @@ const styles = StyleSheet.create({
   },
   titleText: {
     fontSize: TYPOGRAPHY.fontSize.xxl,
-    textAlign: 'left',
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
-    fontFamily: 'System',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     alignSelf: 'flex-start',
-    paddingLeft: SPACING.xxl,
-    paddingTop: SPACING.xxxl - SPACING.xs, // 30px equivalent
-    minHeight: 90, // Match logo height
+    color: colors.textPrimary,
   },
-  placeholderText: {
-    fontSize: TYPOGRAPHY.fontSize.xl,
-    textAlign: 'center',
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+  titleTextStandalone: {
+    paddingLeft: SPACING.xxxl,
   },
   placeholder: {
     width: 44, // Match back button width for balance
     height: 44, // Match back button height for balance
   },
-  rightAction: {
-    width: 66, // Slight offset to pull button away from edge
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  }
 });
 
 export default Header;

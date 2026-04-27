@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
-  View, Text, Modal,
+  View, Modal,
   TouchableOpacity, ScrollView,
   StyleSheet, Pressable,
 } from 'react-native';
+import { Text } from '../CustomText';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 
@@ -23,6 +24,10 @@ interface LotOption {
 export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }: LotFilterModalProps) {  
   const { colors, spacing, typography } = useTheme();
   const [tempSelected, setTempSelected] = useState<string[]>(selectedLots);
+
+  useEffect(() => {
+    setTempSelected(selectedLots);
+  }, [isOpen, selectedLots]);
 
   const styles = useMemo(() => getStyles(colors, spacing, typography), [colors, spacing, typography]);
 
@@ -57,7 +62,6 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
     { id: 'E9', label: 'E9', category: 'employee' },
     { id: 'E10', label: 'E10', category: 'employee' },
     { id: 'E11', label: 'E11', category: 'employee' },
-    { id: 'E12', label: 'E12', category: 'employee' },
   ];
 
   const allLots = [...generalLots, ...employeeLots];
@@ -69,6 +73,11 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
         // both return respective array
         prev.filter(id => id !== lotId) : [...prev, lotId]
     );    
+  };
+
+  const handleClose = () => {
+    setTempSelected(selectedLots);
+    onClose();
   };
 
   const handleApply = () => {
@@ -91,11 +100,11 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
     <Modal
       visible={isOpen}
       transparent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.backdrop}>
         {/* Backdrop touchable (dismiss modal) */}
-        <Pressable style={styles.backdropPress} onPress={onClose} />
+        <Pressable style={styles.backdropPress} onPress={handleClose} />
         
         {/* Modal */}
         <View style={styles.modal}>
@@ -107,7 +116,7 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
                 <Text style={styles.sectionTitle}>General Lot</Text>
                 {/* Close (X) Button*/}
                 <TouchableOpacity 
-                  onPress={onClose} 
+                  onPress={handleClose}
                   style={styles.closeButton}
                   accessibilityLabel="Close filter modal"
                   accessibilityRole="button"
@@ -240,13 +249,13 @@ const getStyles = (
   sectionTitle: {
     color: colors.textPrimary,
     fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamily.medium,
   },
   sectionTitleEmployee: {
     color: colors.mediumGray,
     fontSize: typography.fontSize.xl,
     marginBottom: spacing.xl,
-    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamily.medium,
   },
   closeButton: {
     padding: spacing.sm,
@@ -255,7 +264,7 @@ const getStyles = (
   closeIcon: {
     color: colors.mediumGray,
     fontSize: spacing.xxl,
-    fontWeight: typography.fontWeight.light,
+    fontFamily: typography.fontFamily.regular,
   },
   grid: {
     flexDirection: 'row',
@@ -284,7 +293,7 @@ const getStyles = (
   checkmark: {
     color: colors.white,
     fontSize: 20,
-    fontWeight: 'bold',
+    fontFamily: typography.fontFamily.bold,
   },
   lotLabel: {
     color: colors.textPrimary,
@@ -314,7 +323,7 @@ const getStyles = (
   clearButtonText: {
     color: colors.textPrimary,
     fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamily.medium,
   },
   applyButton: {
     flex: 1,
@@ -326,6 +335,6 @@ const getStyles = (
   applyButtonText: {
     color: colors.white,
     fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamily.semibold,
   },
 });

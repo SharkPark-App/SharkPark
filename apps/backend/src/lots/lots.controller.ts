@@ -1,6 +1,7 @@
 import { 
   Controller, 
   Get, 
+  Header,
   Param, 
   Query, 
   HttpCode, 
@@ -8,22 +9,36 @@ import {
   ParseBoolPipe,
   ParseIntPipe,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { LotsService } from './lots.service';
 import type { GetLotsQueryParams } from './interfaces/parking-lot.interface';
 import { Public } from '../auth/public.decorator';
+import { ContributorGuard } from '../auth/contributor.guard';
 
 /**
  * Handles parking lot queries including filtering, individual lot details,
  * historical occupancy data, and campus-wide occupancy summaries.
+ *
+ * Cache strategy: occupancy changes are written every ~15 minutes by the
+ * snapshot scheduler, so a short edge cache is safe. Each read endpoint
+ * declares its own Cache-Control so Cloudflare can serve hot reads while the
+ * origin recomputes in the background.
+ *
+ * Throttling: uses the relaxed `read` bucket (600 req/min) instead of the
+ * default 20 req/10s, since hundreds of mobile clients share a single
+ * campus NAT IP.
  */
 @Public()
 @Controller('lots')
+@Throttle({ read: { ttl: 60_000, limit: 600 } })
 export class LotsController {
   constructor(private readonly lotsService: LotsService) {}
 
   @Get()
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=60')
   async getAllLots(
     @Query('type') type?: 'STUDENT' | 'EMPLOYEE',
     @Query('available_only', new ParseBoolPipe({ optional: true })) availableOnly?: boolean,
@@ -55,7 +70,9 @@ export class LotsController {
   }
 
   @Get('summary')
+  @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=60')
   async getOccupancySummary() {
     const summary = await this.lotsService.getOccupancySummary();
 
@@ -67,6 +84,7 @@ export class LotsController {
 
   @Get(':id')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=60')
   async getLot(@Param('id') id: string) {
     const lot = await this.lotsService.findOne(id.toUpperCase());
 
@@ -77,7 +95,9 @@ export class LotsController {
   }
 
   @Get(':id/recommendations')
+  @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120')
   async getRecommendations(
     @Param('id') id: string,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
@@ -99,6 +119,7 @@ export class LotsController {
 
   @Get(':id/history')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=300, s-maxage=600')
   async getLotHistory(
     @Param('id') id: string,
     @Query('date') date?: string,
@@ -129,7 +150,9 @@ export class LotsController {
   }
 
   @Get(':id/predictions/short-term')
+  @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=180')
   async getShortTermPredictions(@Param('id') id: string) {
     const predictions = await this.lotsService.getShortTermPredictions(id.toUpperCase());
 
@@ -140,7 +163,9 @@ export class LotsController {
   }
 
   @Get(':id/predictions/long-term')
+  @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=600, s-maxage=1800')
   async getLongTermPredictions(
     @Param('id') id: string,
     @Query('days', new ParseIntPipe({ optional: true })) days?: number,

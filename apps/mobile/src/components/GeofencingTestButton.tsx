@@ -5,8 +5,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports */
 
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { COLORS } from '../constants/theme';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { Text } from './CustomText';
+import { COLORS, TYPOGRAPHY } from '../constants/theme';
 import locationService from '../services/locationService';
 
 interface GeofencingTestButtonProps {
@@ -91,7 +92,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: '#92400e',
     marginBottom: 8,
     textAlign: 'center',
@@ -121,6 +122,6 @@ const styles = StyleSheet.create({
   buttonText: {
     color: 'white',
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
 });

@@ -5,7 +5,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { Text } from './CustomText';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import parkingValidationService from '../services/parkingValidationService';
@@ -288,7 +289,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: TYPOGRAPHY.fontSize.xxl || 24,
-    fontWeight: TYPOGRAPHY.fontWeight.bold || '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.primary || '#007AFF',
     textAlign: 'center',
     marginBottom: SPACING.xl,
@@ -301,13 +302,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg || 18,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black || '#000000',
     marginBottom: SPACING.md,
   },
   subsectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.md || 16,
-    fontWeight: TYPOGRAPHY.fontWeight.medium || '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     color: COLORS.darkGray || '#333333',
     marginTop: SPACING.md,
     marginBottom: SPACING.sm,
@@ -324,7 +325,7 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: TYPOGRAPHY.fontSize.md || 16,
-    fontWeight: TYPOGRAPHY.fontWeight.medium || '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     color: COLORS.black || '#000000',
   },
   statusBadge: {
@@ -334,7 +335,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: TYPOGRAPHY.fontSize.sm || 14,
-    fontWeight: TYPOGRAPHY.fontWeight.medium || '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     color: '#ffffff',
   },
   analysisGrid: {
@@ -358,7 +359,7 @@ const styles = StyleSheet.create({
   },
   analysisValue: {
     fontSize: TYPOGRAPHY.fontSize.lg || 18,
-    fontWeight: TYPOGRAPHY.fontWeight.bold || '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.primary || '#007AFF',
   },
   metadataSection: {
@@ -369,7 +370,7 @@ const styles = StyleSheet.create({
   },
   metadataTitle: {
     fontSize: TYPOGRAPHY.fontSize.md || 16,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black || '#000000',
     marginBottom: SPACING.sm,
   },
@@ -398,7 +399,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontSize: TYPOGRAPHY.fontSize.md || 16,
-    fontWeight: TYPOGRAPHY.fontWeight.medium || '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     color: '#ffffff',
   },
   instructionText: {
@@ -419,7 +420,7 @@ const styles = StyleSheet.create({
   },
   deviceTitle: {
     fontSize: TYPOGRAPHY.fontSize.sm || 14,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold || '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.black || '#000000',
     marginBottom: SPACING.xs,
   },

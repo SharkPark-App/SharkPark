@@ -38,4 +38,18 @@ describe('HealthController', () => {
       expect.arrayContaining([expect.any(Function), expect.any(Function)]),
     );
   });
+
+  it('live() returns ok without calling any health indicator', () => {
+    const result = controller.live();
+    expect(result).toEqual({ status: 'ok' });
+    expect(healthCheckService.check).not.toHaveBeenCalled();
+  });
+
+  it('ready() runs the database + memory checks', async () => {
+    const result = await controller.ready();
+    expect(result.status).toBe('ok');
+    expect(healthCheckService.check).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.any(Function), expect.any(Function)]),
+    );
+  });
 });

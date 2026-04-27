@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -9,6 +8,7 @@ import {
   Image,
   ImageSourcePropType,
 } from 'react-native';
+import { Text } from '../components/CustomText';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   },
   sendButtonText: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
 
   // Help Section

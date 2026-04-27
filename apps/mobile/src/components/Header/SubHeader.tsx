@@ -1,5 +1,6 @@
 // components/SubHeader.tsx
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { Text } from '../CustomText';
 import { COLORS, TYPOGRAPHY, SPACING } from '../../constants/theme';
 
 interface SubHeaderProps {
@@ -40,11 +41,11 @@ const styles = StyleSheet.create({
   backIcon: {
     fontSize: TYPOGRAPHY.fontSize.xxxxl,
     color: COLORS.mediumGray,
-    fontWeight: TYPOGRAPHY.fontWeight.regular,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
   },
   title: {
     fontSize: TYPOGRAPHY.fontSize.xxl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     paddingTop: SPACING.md,
     color: COLORS.textPrimary,
   },

@@ -435,7 +435,7 @@ All data lives in a single PostgreSQL database (Aurora PostgreSQL Serverless v2 
 |-------|---------|----------|
 | `lots`, `users`, `campus_events`, etc. | Operational data | Permanent |
 | `occupancy_snapshots` | 15-min snapshots with ML feature columns | Permanent (archive older data to S3) |
-| `occupancy_events` | Raw ENTER/EXIT events | Permanent (archive older data to S3) |
+| `occupancy_events` | Raw ENTER/EXIT events | 30 days (daily prune cron, see infrastructure/README.md) |
 | `predictions_short_term` | Short-term predictions (hourly by lot) | Overwritten each cycle |
 | `predictions_long_term` | Week-ahead predictions (7 days × hourly by lot) | Overwritten daily |
 
