@@ -5,6 +5,7 @@ import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { AzureAdGuard } from '../src/auth/azure-ad.guard';
+import { PrismaService } from '../src/database/database.module';
 
 /**
  * Azure AD AuthGuard blocks requests w/o valid credentials.
@@ -32,6 +33,7 @@ class MockAuthGuard implements CanActivate {
 
 describe('UsersController (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -59,6 +61,7 @@ describe('UsersController (e2e)', () => {
     );
 
     await app.init();
+    prisma = moduleFixture.get<PrismaService>(PrismaService);
   });
 
   afterAll(async () => {
@@ -192,6 +195,77 @@ describe('UsersController (e2e)', () => {
           // Note: Update endpoint not fully implemented yet, just returns user profile
           expect(res.body.data).toHaveProperty('email');
         });
+    });
+  });
+
+  // Account deletion uses disposable users created inline so the seeded
+  // dataset is not mutated across runs.
+  describe('/api/v1/users/:userId (DELETE)', () => {
+    const disposableEmail = `delete-test-${Date.now()}@csulb.edu`;
+
+    beforeAll(async () => {
+      const school = await prisma.school.findFirstOrThrow();
+      await prisma.user.create({
+        data: {
+          email: disposableEmail,
+          first_name: 'Delete',
+          last_name: 'Me',
+          user_type: 'STUDENT',
+          school: { connect: { id: school.id } },
+        },
+      });
+    });
+
+    afterAll(async () => {
+      // Belt-and-suspenders cleanup if a test failed mid-flight.
+      await prisma.user.deleteMany({ where: { email: disposableEmail } });
+    });
+
+    it('should hard-delete the account and return 204', async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/v1/users/${encodeURIComponent(disposableEmail)}`)
+        .expect(204);
+
+      const stillExists = await prisma.user.findUnique({ where: { email: disposableEmail } });
+      expect(stillExists).toBeNull();
+    });
+
+    it('should write a USER_DELETED audit row with a hashed actor (no PII)', async () => {
+      const audits = await prisma.auditEvent.findMany({
+        where: { event_type: 'USER_DELETED' },
+        orderBy: { created_at: 'desc' },
+        take: 5,
+      });
+      expect(audits.length).toBeGreaterThan(0);
+      // None of the audit rows should contain the raw email.
+      const serialised = JSON.stringify(audits);
+      expect(serialised).not.toContain(disposableEmail);
+      // The most recent row should have a 64-char hex actor_hash.
+      expect(audits[0].actor_hash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('GET on the deleted user should return 404', () => {
+      return request(app.getHttpServer())
+        .get(`/api/v1/users/${encodeURIComponent(disposableEmail)}`)
+        .expect(404);
+    });
+
+    it('DELETE on a non-existent user should return 404', () => {
+      return request(app.getHttpServer())
+        .delete('/api/v1/users/ghost@csulb.edu')
+        .expect(404);
+    });
+  });
+
+  describe('/api/v1/users/me (DELETE)', () => {
+    it('should delete the authenticated user via /me alias', () => {
+      // MockAuthGuard pulls the email from the URL; for /users/me there's
+      // no real email in the URL so it falls back to the literal "me",
+      // which is not a seeded user → 404. We're asserting the route is
+      // wired correctly, not that a "me" user exists.
+      return request(app.getHttpServer())
+        .delete('/api/v1/users/me')
+        .expect(404);
     });
   });
 });

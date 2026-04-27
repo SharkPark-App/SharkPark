@@ -1,6 +1,23 @@
+# Local-dev infrastructure for SharkPark.
+#
+# Mirrors production as closely as is reasonable on a single laptop:
+#   postgres:17-alpine   →  Neon Postgres 17 (us-west-2, pooled)
+#   minio + mc-init      →  Cloudflare R2 (S3-compatible)
+#
+# Why MinIO instead of LocalStack?
+#   - R2 is S3-compatible; MinIO implements the same API surface natively
+#     and behaves the way our prod backup/restore code expects (multipart
+#     uploads, pre-signed URLs, etc.).
+#   - Much lighter (~30MB image vs ~1GB), starts in <2s.
+#   - Buckets and access pattern match prod 1:1, so the same SDK config
+#     (just swap endpoint + creds) works in either environment.
+#
+# Bring up:   docker compose -f docker/docker-compose.yml up -d
+# Tear down:  docker compose -f docker/docker-compose.yml down [-v]
+
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: sharkpark-postgres
     environment:
       POSTGRES_USER: sharkpark
@@ -16,20 +33,41 @@ services:
       timeout: 2s
       retries: 10
 
-  localstack:
-    image: localstack/localstack
-    container_name: sharkpark-localstack
+  minio:
+    image: minio/minio:latest
+    container_name: sharkpark-minio
+    command: server /data --console-address ":9001"
     environment:
-      - SERVICES=s3
-      - AWS_DEFAULT_REGION=us-west-2
-      - EDGE_PORT=4566
+      MINIO_ROOT_USER: sharkpark
+      MINIO_ROOT_PASSWORD: sharkpark-local-dev
     ports:
-      - "4566:4566"
+      - "9000:9000"   # S3 API (matches R2 endpoint usage)
+      - "9001:9001"   # Web console (http://localhost:9001)
+    volumes:
+      - miniodata:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 2s
       retries: 20
 
+  # One-shot init: creates the buckets that prod expects so backup/restore
+  # scripts work locally without manual setup. Exits 0 once buckets exist.
+  minio-init:
+    image: minio/mc:latest
+    container_name: sharkpark-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 sharkpark sharkpark-local-dev &&
+      mc mb --ignore-existing local/sharkpark-backups &&
+      mc mb --ignore-existing local/sharkpark-ml-exports &&
+      echo '[OK] MinIO buckets ready: sharkpark-backups, sharkpark-ml-exports'
+      "
+    restart: "no"
+
 volumes:
   pgdata:
+  miniodata:
