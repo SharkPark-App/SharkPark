@@ -1,32 +1,38 @@
 import { Platform } from 'react-native';
+import { SHARKPARK_API_URL } from '@env';
 
 /**
  * API Configuration for SharkPark Mobile App
- * Handles environment-specific API endpoints and configuration
+ *
+ * URL resolution priority (highest → lowest):
+ *   1. SHARKPARK_API_URL  — set in apps/mobile/.env (see .env.example).
+ *                           Inlined into the JS bundle at build time by
+ *                           react-native-dotenv (see babel.config.js). After
+ *                           changing .env, restart Metro with --reset-cache.
+ *   2. Platform defaults  — Android emulator 10.0.2.2, iOS simulator localhost
+ *   3. Production URL     — used automatically in release builds (!__DEV__)
+ *
+ * For physical-device development:
+ *   cp apps/mobile/.env.example apps/mobile/.env
+ *   # then edit .env to point SHARKPARK_API_URL at your machine's LAN IP
  */
 
-// Get the correct localhost IP based on platform and environment
-const getApiBaseUrl = () => {
-  if (!__DEV__) {
-    return 'https://api.sharkpark.csulb.edu/api/v1'; // Production
-  }
-  
-  if (Platform.OS === 'android') {
-    // Android emulator needs special IP to reach host machine
-    return 'http://10.0.2.2:3000/api/v1';
-  } else {
-    // iOS Development:
-    // - Simulator: localhost works fine
-    // - Physical Device: Update the IP below to your machine's local IP
-    // 
-    // To get your local IP: 
-    // 1. Run ./scripts/getLocalIp.sh in terminal
-    // 2. Or check System Preferences > Network > WiFi > Advanced > TCP/IP
-    // 3. Replace 'localhost' below with your actual IP
-    //
+const getApiBaseUrl = (): string => {
+  // 1. Explicit override (works for both simulator and physical device)
+  if (SHARKPARK_API_URL) return SHARKPARK_API_URL;
 
-    return 'http://localhost:3000/api/v1'; // Update with your machine's IP for physical devices
+  // 2. Production build
+  if (!__DEV__) {
+    return 'https://api.sharkpark.app/api/v1';
   }
+
+  // 3. Development platform defaults
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:3000/api/v1';
+  }
+
+  // iOS simulator — localhost routes correctly
+  return 'http://localhost:3000/api/v1';
 };
 
 export const API_CONFIG = {
