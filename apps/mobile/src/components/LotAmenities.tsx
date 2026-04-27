@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { Text } from './CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import type { ParkingLotResponse } from '../services/api/lots';
 
@@ -67,11 +68,11 @@ function AmenityChip({
         },
       ]}
     >
-      <Icon
-        name={icon}
-        size={14}
-        color={available ? '#16a34a' : colors.gray}
-      />
+      <Icon 
+      name={icon} 
+      size={14} 
+      color={available ? '#16a34a' : colors.gray}
+       />
       <Text
         style={[
           chipStyles.label,
@@ -243,14 +244,11 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: SPACING.lg,
     padding: SPACING.xl,
-    shadowOffset: { width: 0, height: SPACING.xs },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: SPACING.sm,
+    ...SHADOWS.card,
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSize.xl,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginBottom: SPACING.lg,
   },
 });
@@ -267,7 +265,7 @@ const rowStyles = StyleSheet.create({
   },
   label: {
     fontSize: TYPOGRAPHY.fontSize.md,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     marginLeft: SPACING.md,
     flex: 1,
   },
@@ -296,6 +294,6 @@ const chipStyles = StyleSheet.create({
   },
   label: {
     fontSize: TYPOGRAPHY.fontSize.sm,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
 });

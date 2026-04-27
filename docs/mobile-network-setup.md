@@ -8,7 +8,7 @@ This guide helps team members configure the mobile app to connect to the local b
 ### 1. Start Backend Services
 ```bash
 # From project root
-docker-compose -f docker/docker-compose.yml up -d  # Start DynamoDB & LocalStack
+docker-compose -f docker/docker-compose.yml up -d  # Start PostgreSQL 17 + MinIO
 pnpm db:setup     # Create database tables (first time only)
 pnpm db:seed      # Seed with test data (first time only)
 cd apps/backend && pnpm dev  # Start backend API

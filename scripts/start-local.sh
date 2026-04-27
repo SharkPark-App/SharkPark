@@ -3,7 +3,7 @@ set -e
 
 # ── 1. Start Docker containers ──────────────────────────────────────
 docker compose -f docker/docker-compose.yml up -d
-echo "[OK] Local infra up (PostgreSQL + LocalStack)"
+echo "[OK] Local infra up (PostgreSQL 17 + MinIO)"
 
 # ── 2. Wait for PostgreSQL to accept connections ────────────────────
 echo "[..] Waiting for PostgreSQL..."

@@ -1,0 +1,34 @@
+# Backend-specific dockerignore (used when building from monorepo root with
+# `-f apps/backend/Dockerfile .`). Root .dockerignore also applies.
+
+# Mobile (huge — never needed for backend image)
+apps/mobile
+
+# ML service
+services
+
+# Backend artifacts that must never bake into the image
+apps/backend/dist
+apps/backend/coverage
+apps/backend/.turbo
+apps/backend/node_modules
+apps/backend/test
+apps/backend/**/*.spec.ts
+apps/backend/**/*.test.ts
+apps/backend/jest.config.js
+apps/backend/jest-e2e.js
+apps/backend/tsconfig.spec.json
+apps/backend/tsconfig.eslint.json
+apps/backend/eslint.config.mjs
+apps/backend/README.md
+
+# Local infra
+docker
+infrastructure
+scripts
+docs
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store

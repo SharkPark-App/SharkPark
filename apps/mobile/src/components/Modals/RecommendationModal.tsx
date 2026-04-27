@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
-  View, Text, Modal,
+  View, Modal,
   TouchableOpacity, ScrollView,
   StyleSheet, Pressable,
   ActivityIndicator,
   Animated,
 } from 'react-native';
+import { Text } from '../CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
@@ -174,6 +175,8 @@ export function RecommendationModal({
                 style={styles.infoContainer}
                 onPress={() => handleSelectLot(lot.lot_id, lot.lot_name)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${lot.lot_name}, ${pct}% full`}
               >
                 <View style={styles.lotHeader}>
                   <Text style={styles.lotName}>{lot.lot_name}</Text>
@@ -199,6 +202,8 @@ export function RecommendationModal({
                 style={styles.altButton}
                 onPress={() => handleFindAlternatives(lot.lot_id)}
                 activeOpacity={0.6}
+                accessibilityRole="button"
+                accessibilityLabel={`Find alternatives to ${lot.lot_name}`}
               >
                 <Icon name="swap-horizontal" size={20} color={isDark ? colors.primary : colors.secondary} />
                 <Text style={styles.altButtonText}>Alts</Text>
@@ -258,6 +263,8 @@ export function RecommendationModal({
               style={styles.lotRow}
               onPress={() => handleSelectLot(rec.lot_id, rec.lot_name)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${rec.lot_name}, ${pct}% full`}
             >
               <View style={styles.infoContainer}>
                 <View style={styles.lotHeader}>
@@ -281,7 +288,7 @@ export function RecommendationModal({
                   />
                 </View>
               </View>
-              <Text style={styles.arrow}>›</Text>
+              <Text style={styles.arrow} accessible={false}>›</Text>
             </TouchableOpacity>
           );
         })}
@@ -300,13 +307,23 @@ export function RecommendationModal({
           {/* Header */}
           <View style={styles.header}>
             {step === 'alternatives' && (
-              <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                <Icon name="arrow-back" size={20} color={colors.textPrimary} />
+              <TouchableOpacity
+                onPress={handleBack}
+                style={styles.backButton}
+                accessibilityRole="button"
+                accessibilityLabel="Go back to favorites"
+              >
+                <Icon name="arrow-back" size={20} color={colors.textPrimary} accessible={false} />
               </TouchableOpacity>
             )}
             <Text style={styles.title}>{title}</Text>
-            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <Text style={styles.closeIcon}>✕</Text>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeButton}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Text style={styles.closeIcon} accessible={false}>✕</Text>
             </TouchableOpacity>
           </View>
 
@@ -379,8 +396,8 @@ const getStyles = (
   },
   title: {
     flex: 1,
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.semibold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: colors.textPrimary,
   },
   backButton: {
@@ -423,7 +440,7 @@ const getStyles = (
   },
   lotName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: colors.textPrimary,
     flex: 1,
     flexShrink: 1,
@@ -436,7 +453,7 @@ const getStyles = (
   },
   pctBadgeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: colors.white,
   },
   occupancyText: {
@@ -474,7 +491,7 @@ const getStyles = (
   altButtonText: {
     fontSize: 11,
     color: isDark ? colors.primary : colors.secondary,
-    fontWeight: '600',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginTop: 2,
   },
   arrow: {
@@ -497,8 +514,8 @@ const getStyles = (
     justifyContent: 'center',
   },
   emptyTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.semibold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: colors.darkGray,
     marginTop: spacing.lg,
     marginBottom: spacing.xs,

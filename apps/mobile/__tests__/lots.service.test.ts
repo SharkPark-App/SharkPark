@@ -349,7 +349,7 @@ describe('LotsService', () => {
 
       const result = await lotsApi.getForecast(mockLot);
 
-      expect(result).toHaveLength(20);
+      expect(result).toHaveLength(15);
       result.forEach((entry) => {
         expect(entry).toHaveProperty('time');
         expect(entry).toHaveProperty('occupancy');
@@ -368,12 +368,12 @@ describe('LotsService', () => {
 
       const result = await lotsApi.getForecast(mockLot);
 
-      expect(result).toHaveLength(20); // local heuristic generates 20 entries
+      expect(result).toHaveLength(15); // local heuristic generates 15 entries (7am–9pm)
     });
   });
 
   describe('generateForecast', () => {
-    it('should generate 20 hourly forecasts', () => {
+    it('should generate 15 hourly forecasts', () => {
       const lot = {
         occupancy_rate: 0.5,
         confidence: 'MEDIUM' as const,
@@ -382,7 +382,7 @@ describe('LotsService', () => {
 
       const forecast = lotsApi.generateForecast(lot);
 
-      expect(forecast).toHaveLength(20);
+      expect(forecast).toHaveLength(15);
       forecast.forEach((entry) => {
         expect(entry.lowerBound).toBeLessThanOrEqual(entry.occupancy);
         expect(entry.upperBound).toBeGreaterThanOrEqual(entry.occupancy);

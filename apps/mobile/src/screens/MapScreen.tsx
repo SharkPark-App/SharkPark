@@ -4,8 +4,8 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
-  Text,
 } from 'react-native';
+import { Text } from '../components/CustomText';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -17,6 +17,7 @@ import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
 import { ParkingLotResponse } from '../services';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, SPACING, SHADOWS, MAP } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
 import useFavorites from '../hooks/useFavorites';
@@ -54,12 +55,15 @@ const InteractiveLot: React.FC<{
             shadowColor: colors.shadowDark,
           }
         ]}
-      >
+        accessibilityRole="button"
+      accessibilityLabel={`${lot.name} parking lot, ${lot.occupancy} percent full`}
+    >
         <Text
           style={[styles.lotText, { color: colors.white }]}
           adjustsFontSizeToFit={true}
           numberOfLines={isSingleWord ? 1 : 3}
-        >
+          accessible={false}
+      >
           {lot.lot_name}
         </Text>
       </View>
@@ -68,16 +72,28 @@ const InteractiveLot: React.FC<{
 };
 
 // Filter button component
-const FilterButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = ({ onPress, colors }) => (
-  <TouchableOpacity style={[styles.fab, styles.filterButton, { backgroundColor: colors.primary, shadowColor: colors.shadowDark }]} onPress={onPress} activeOpacity={0.8}>
-    <Icon name="filter" size={TYPOGRAPHY.fontSize.xxl} color={colors.white} />
+const FilterButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
+  <TouchableOpacity
+    style={[styles.fab, styles.filterButton, { backgroundColor: COLORS.primary, shadowColor: COLORS.shadowDark }]}
+    onPress={onPress}
+    activeOpacity={0.8}
+    accessibilityRole="button"
+    accessibilityLabel="Filter parking lots"
+  >
+    <Icon name="filter" size={24} color={COLORS.white} accessible={false} />
   </TouchableOpacity>
 );
 
 // Navigate button component
-const NavigateButton: React.FC<{ onPress: () => void; colors: ThemeColors }> = ({ onPress, colors }) => (
-  <TouchableOpacity style={[styles.fab, { backgroundColor: colors.secondary, shadowColor: colors.shadowDark }]} onPress={onPress} activeOpacity={0.8}>
-    <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={colors.white} />
+const NavigateButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
+  <TouchableOpacity
+    style={[styles.fab, { backgroundColor: COLORS.secondary, shadowColor: COLORS.shadowDark }]}
+    onPress={onPress}
+    activeOpacity={0.8}
+    accessibilityRole="button"
+    accessibilityLabel="View favorites and recommendations"
+  >
+    <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} accessible={false} />
   </TouchableOpacity>
 );
 
@@ -163,9 +179,7 @@ const MapScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: colors.backgroundLight }]}>
       {/* Header */}
-      <Header 
-        title="Map View"
-      />
+      <Header />
 
       <View style={styles.mapContainer}>
         <MapView
@@ -222,14 +236,45 @@ const MapScreen: React.FC = () => {
             />
           ))}
         </MapView>
+      <View style={{ flex: 1, overflow: 'hidden' }}>
+        <GestureDetector gesture={composedGesture}>
+          <Animated.View
+            style={[styles.mapContainer, animatedStyle]}
+            onLayout={(e) => {
+              containerWidth.value = e.nativeEvent.layout.width;
+              containerHeight.value = e.nativeEvent.layout.height;
+            }}
+          >
+            {/* Campus map background */}
+            <View style={styles.mapImageContainer}>
+              <Image
+                source={campusMapImage}
+                style={styles.mapImage}
+                resizeMode="contain"
+                accessible={false}
+                importantForAccessibility="no"
+              />
+
+              {/* Interactive parking lot circles */}
+              {filteredParkingLots.map((lot) => (
+                <InteractiveLot
+                  key={lot.id}
+                  lot={lot}
+                  onPress={handleLotPress}
+                  colors={colors}
+                />
+              ))}
+            </View>
+          </Animated.View>
+        </GestureDetector>
       </View>
 
       {/* Filter button - bottom left */}
-      <FilterButton onPress={handleFilterPress} colors={colors} />
+      <FilterButton onPress={handleFilterPress} />
 
       {/* Navigate button FAB - bottom right */}
       <View style={styles.navigateButtonContainer}>
-        <NavigateButton onPress={openRecommendationModal} colors={colors} />
+        <NavigateButton onPress={openRecommendationModal} />
       </View>
 
       {/* Filter Modal */}
@@ -293,7 +338,7 @@ const styles = StyleSheet.create({
   },
   lotText: {
     fontSize: TYPOGRAPHY.fontSize.xxs,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     textAlign: 'center',
   },
   fab: {
@@ -302,13 +347,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: {
-      width: 0,
-      height: SPACING.sm,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    ...SHADOWS.fab,
   },
   filterButton: {
     position: 'absolute',
