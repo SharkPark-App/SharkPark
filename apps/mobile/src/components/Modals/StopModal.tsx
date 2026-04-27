@@ -76,9 +76,9 @@ export const StopModal: React.FC<StopModalProps> = ({
               ) : arrivals.length === 0 ? (
                 <Text style={[styles.emptyText, { color: colors.darkGray }]}>No upcoming arrivals.</Text>
               ) : (
-                arrivals.map((arrival) => (
+                arrivals.map((arrival, index) => (
                   <View
-                    key={arrival.routeId}
+                    key={`${arrival.routeId}-${index}`}
                     style={styles.arrivalRow}
                     accessible={true}
                     accessibilityLabel={`Route ${arrival.routeName}. ${arrival.etaMinutes !== null ? `Arriving in ${arrival.etaMinutes} minutes` : 'No vehicles currently active'}.`}
@@ -86,8 +86,8 @@ export const StopModal: React.FC<StopModalProps> = ({
                     
                     {/* Badge and Route Name */}
                     <View style={styles.routeInfo}>
-                      <View style={[styles.routeBadge, { backgroundColor: arrival.color }]}>
-                        <Text style={styles.badgeText}>{arrival.abbreviation} accessible={false} </Text>
+                      <View style={[styles.routeBadge, { backgroundColor: arrival.color }]} accessible={false}>
+                        <Text style={styles.badgeText}>{arrival.abbreviation} </Text>
                       </View>
                       <Text style={[styles.routeName, { color: colors.textPrimary }]} accessible={false}>
                         {arrival.routeName}

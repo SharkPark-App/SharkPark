@@ -3,7 +3,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
 import type { MapStop, MapRoute, MapShuttle, RouteArrival } from './interfaces/shuttle-tracker.interface';
-import { PassioRouteDto, PassioShuttleDto, PassioStopDto } from './dto/passiogo.dto';
+import { PassioRouteDto, PassioShuttleDto, PassioStopDto, PassioEtaDto } from './dto/passiogo.dto';
 
 /** Service for shuttle tracking - live route, stop, and shuttle updates */
 @Injectable()
@@ -191,44 +191,44 @@ export class ShuttleTrackerService implements OnModuleInit {
       }
 
       const rawJson = (await etaResponse.json()) as { 
-        ETAs?: Record<string, { eta?: string | number }[]> 
+        ETAs?: Record<string, PassioEtaDto[]> 
       };
+
       const etasDict = rawJson.ETAs || {};
+      const stopArrivals = etasDict[stopId]; 
 
-      if (this.currentRoutes.length === 0) return [];
+      if (!stopArrivals || !Array.isArray(stopArrivals)) return [];
+      const arrivals: RouteArrival[] = [];
 
-      const arrivals = this.currentRoutes.map(route => {
+      for (const arrival of stopArrivals) {
+        if (arrival.eta === 'no vehicles') continue;
+
         let etaVal: number | null = null;
-
-        const routeArrivals = etasDict[route.id];
-
-        // Get the first arrival if it exists
-        if (routeArrivals && Array.isArray(routeArrivals) && routeArrivals.length > 0) {
-          const firstArrival = routeArrivals[0];
-          const rawEta = firstArrival.eta;
-          
-          // Only parse ETA if it is a number
-          if (typeof rawEta === 'string' || typeof rawEta === 'number') {
-            const parsed = parseInt(String(rawEta), 10);
-            if (!isNaN(parsed)) {
-              etaVal = parsed;
-            }
-          }
+        
+        if (typeof arrival.eta === 'string') {
+          // Find first sequence of digits
+          const match = arrival.eta.match(/\d+/);
+          if (match) etaVal = parseInt(match[0], 10);
+        } else if (typeof arrival.eta === 'number') {
+          etaVal = arrival.eta;
         }
 
-        return {
-          routeId: route.id,
-          routeName: route.name,
-          abbreviation: route.shortName,
-          color: route.color,
-          etaMinutes: etaVal,
-        };
-      });
+        if (etaVal === null || !arrival.routeId) continue;
 
-      // Filter out nulls (no active buses) and sort from closest to furthest
-      return arrivals
-        .filter(arrival => arrival.etaMinutes !== null)
-        .sort((a, b) => (a.etaMinutes as number) - (b.etaMinutes as number));
+        // Match w/ cached routes if possible
+        const matchingRoute = this.currentRoutes.find(r => r.id === arrival.routeId);
+
+        arrivals.push({
+          routeId: arrival.routeId,
+          routeName: matchingRoute ? matchingRoute.name : (arrival.theStop?.routeName || 'Unknown Route'),
+          abbreviation: matchingRoute ? matchingRoute.shortName : (arrival.theStop?.shortName || ''),
+          color: matchingRoute ? matchingRoute.color : (arrival.bg || '#ffffff'), 
+          etaMinutes: etaVal,
+        });
+      }
+
+      // Sort from closest to furthest ETA
+      return arrivals.sort((a, b) => (a.etaMinutes as number) - (b.etaMinutes as number));
 
     } catch (error) {
       this.logger.error(`Failed to fetch ETAs for stop ${stopId}`, error);
