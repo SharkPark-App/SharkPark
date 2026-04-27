@@ -101,10 +101,27 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private cleanup() {
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
     if (this.ws) {
       this.ws.removeAllListeners();
-      this.ws.close();
+      
+      // Swallow error if close() is called during connection establishment
+      this.ws.on('error', () => {});
+      
+      try {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.close();
+        } else {
+          this.ws.terminate(); 
+        }
+      } catch {
+        this.logger.debug('Safely caught error during WebSocket teardown');
+      }
+      
       this.ws = null;
     }
   }
