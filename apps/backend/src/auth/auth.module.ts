@@ -3,13 +3,14 @@ import { PassportModule } from '@nestjs/passport';
 import { UsersModule } from '../users/users.module';
 import { AzureADStrategy } from './azure.strategy';
 import { AzureAdGuard } from './azure-ad.guard';
+import { ContributorGuard } from './contributor.guard';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule.register({ defaultStrategy: 'azure-ad' }),
   ],
-  providers: [AzureADStrategy, AzureAdGuard],
-  exports: [PassportModule, AzureAdGuard],
+  providers: [AzureADStrategy, AzureAdGuard, ContributorGuard],
+  exports: [PassportModule, AzureAdGuard, ContributorGuard],
 })
 export class AuthModule {}

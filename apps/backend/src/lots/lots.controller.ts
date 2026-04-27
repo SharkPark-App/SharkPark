@@ -9,11 +9,13 @@ import {
   ParseBoolPipe,
   ParseIntPipe,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { LotsService } from './lots.service';
 import type { GetLotsQueryParams } from './interfaces/parking-lot.interface';
 import { Public } from '../auth/public.decorator';
+import { ContributorGuard } from '../auth/contributor.guard';
 
 /**
  * Handles parking lot queries including filtering, individual lot details,
@@ -68,6 +70,7 @@ export class LotsController {
   }
 
   @Get('summary')
+  @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=60')
   async getOccupancySummary() {
@@ -92,6 +95,7 @@ export class LotsController {
   }
 
   @Get(':id/recommendations')
+  @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120')
   async getRecommendations(
@@ -146,6 +150,7 @@ export class LotsController {
   }
 
   @Get(':id/predictions/short-term')
+  @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=180')
   async getShortTermPredictions(@Param('id') id: string) {
@@ -158,6 +163,7 @@ export class LotsController {
   }
 
   @Get(':id/predictions/long-term')
+  @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'public, max-age=600, s-maxage=1800')
   async getLongTermPredictions(
