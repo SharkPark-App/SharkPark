@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { Text } from '../CustomText';
 import { Callout } from 'react-native-maps';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { ThemeColors } from '../../context/ThemeContext';
@@ -33,39 +34,43 @@ export const CustomCallout: React.FC<CustomCalloutProps> = ({ shuttle, colors })
       <View style={styles.calloutWrapper}>
         
         {/* Main Card */}
-        <View style={[styles.card, { backgroundColor: colors.backgroundLight, shadowColor: colors.shadowDark }]}>
+        <View
+          style={[styles.card, { backgroundColor: colors.backgroundLight, shadowColor: colors.shadowDark }]}
+          accessible={true}
+          accessibilityLabel={`${shuttle.busName} on route ${shuttle.route}. Occupancy: ${loadText}, ${loadPercent} percent full.`}
+        >
           
           {/* Bus ID and Close Icon */}
           <View style={styles.headerRow}>
             <View style={styles.iconTextGroup}>
               {/* Bus Icon in container */}
               <View style={[styles.iconBadge, { backgroundColor: colors.textPrimary }]}>
-                <Icon name="bus" size={18} color={colors.backgroundLight} />
+                <Icon name="bus" size={18} color={colors.backgroundLight} accessible={false} />
               </View>
-              <Text style={[styles.shuttleNameText, { color: colors.textPrimary }]}>
+              <Text style={[styles.shuttleNameText, { color: colors.textPrimary }]} accessible={false}>
                 {shuttle.busName}
               </Text>
             </View>
             
-            <Icon name="close" size={24} color={colors.darkGray} />
+            <Icon name="close" size={24} color={colors.darkGray} accessible={false} />
           </View>
 
           {/* Route Row */}
           <View style={styles.routeRow}>
             <View style={[styles.iconBadge, { backgroundColor: colors.borderLight }]}>
-              <Icon name="navigate" size={18} color={colors.textPrimary} />
+              <Icon name="navigate" size={18} color={colors.textPrimary} accessible={false} />
             </View>
-            <Text style={[styles.routeText, { color: colors.textPrimary }]}>
+            <Text style={[styles.routeText, { color: colors.textPrimary }]} accessible={false}>
               {' Route: '} {shuttle.route}
             </Text>
           </View>
 
           {/* Passenger Load Row */}
-          <Text style={[styles.loadTextBold, { color: colors.textPrimary }]}>
+          <Text style={[styles.loadTextBold, { color: colors.textPrimary }]} accessible={false}>
             {loadText} ({loadPercent}%)
           </Text>
 
-          <Text style={[styles.loadTextBase, { color: colors.darkGray }]}>
+          <Text style={[styles.loadTextBase, { color: colors.darkGray }]} accessible={false}>
             {shuttle.paxLoad} / {shuttle.capacity} passengers
           </Text>
 

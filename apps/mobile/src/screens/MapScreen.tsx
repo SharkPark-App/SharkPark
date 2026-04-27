@@ -16,8 +16,7 @@ import { LotFilterModal } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
 import { ParkingLotResponse } from '../services';
-import { TYPOGRAPHY, SPACING } from '../constants/theme';
-import { COLORS, TYPOGRAPHY, SPACING, SHADOWS, MAP } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { MapStackParamList } from '../types/navigation';
 import useFavorites from '../hooks/useFavorites';
@@ -56,14 +55,14 @@ const InteractiveLot: React.FC<{
           }
         ]}
         accessibilityRole="button"
-      accessibilityLabel={`${lot.name} parking lot, ${lot.occupancy} percent full`}
-    >
+        accessibilityLabel={`${lot.lot_name} parking lot, ${lot.occupancy_rate * 100} percent full`}
+      >
         <Text
           style={[styles.lotText, { color: colors.white }]}
           adjustsFontSizeToFit={true}
           numberOfLines={isSingleWord ? 1 : 3}
           accessible={false}
-      >
+        >
           {lot.lot_name}
         </Text>
       </View>
@@ -222,6 +221,9 @@ const MapScreen: React.FC = () => {
               zIndex={2}
               stopPropagation={true}
               onPress={() => handleStopPress(stop)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel={`Shuttle stop: ${stop.name}`}
             >
               <Callout tooltip ={true} />
             </Marker>
@@ -236,37 +238,6 @@ const MapScreen: React.FC = () => {
             />
           ))}
         </MapView>
-      <View style={{ flex: 1, overflow: 'hidden' }}>
-        <GestureDetector gesture={composedGesture}>
-          <Animated.View
-            style={[styles.mapContainer, animatedStyle]}
-            onLayout={(e) => {
-              containerWidth.value = e.nativeEvent.layout.width;
-              containerHeight.value = e.nativeEvent.layout.height;
-            }}
-          >
-            {/* Campus map background */}
-            <View style={styles.mapImageContainer}>
-              <Image
-                source={campusMapImage}
-                style={styles.mapImage}
-                resizeMode="contain"
-                accessible={false}
-                importantForAccessibility="no"
-              />
-
-              {/* Interactive parking lot circles */}
-              {filteredParkingLots.map((lot) => (
-                <InteractiveLot
-                  key={lot.id}
-                  lot={lot}
-                  onPress={handleLotPress}
-                  colors={colors}
-                />
-              ))}
-            </View>
-          </Animated.View>
-        </GestureDetector>
       </View>
 
       {/* Filter button - bottom left */}
@@ -321,7 +292,6 @@ const styles = StyleSheet.create({
     height: screenHeight,
   },
   lotCircle: {
-    position: 'absolute',
     width: 40,
     height: 40,
     borderRadius: 20,

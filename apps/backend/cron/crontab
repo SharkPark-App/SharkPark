@@ -15,6 +15,9 @@
 # Fetch CSULB-area weather from OpenWeather. Every 30 min.
 */30 * * * *  node /app/apps/backend/dist/scripts/fetch-weather.js
 
+# Fetch routes and stops from PassioGO!. Daily at 12 AM Pacific.
+0 0 * * *     node /app/apps/backend/dist/scripts/fetch-routes-stops.js
+
 # Purge stale device-state rows. Daily at 3 AM Pacific.
 0 3 * * *     node /app/apps/backend/dist/scripts/cleanup-device-states.js
 

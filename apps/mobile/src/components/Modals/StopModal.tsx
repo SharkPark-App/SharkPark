@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
+import { Text } from '../CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { ThemeColors } from '../../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../../constants/theme';
@@ -44,8 +45,13 @@ export const StopModal: React.FC<StopModalProps> = ({
               </View>
 
               <View style={styles.headerActions}>
-                <TouchableOpacity onPress={onClose} style={styles.iconButton}>
-                  <Icon name="close" size={28} color={colors.darkGray} />
+                <TouchableOpacity
+                  onPress={onClose}
+                  style={styles.iconButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close stop details"
+                >
+                  <Icon name="close" size={28} color={colors.darkGray} accessible={false} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -57,27 +63,39 @@ export const StopModal: React.FC<StopModalProps> = ({
             <View style={styles.arrivalsContainer}>
               {isLoading ? (
                 <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                  <Text style={[styles.loadingText, { color: colors.darkGray }]}>Fetching live ETAs...</Text>
+                  <ActivityIndicator
+                    size="large"
+                    color={colors.primary}
+                    accessible={true}
+                    accessibilityLabel="Loading arrival times"
+                  />
+                  <Text style={[styles.loadingText, { color: colors.darkGray }]} accessible={false}>
+                    Fetching live ETAs...
+                  </Text>
                 </View>
               ) : arrivals.length === 0 ? (
                 <Text style={[styles.emptyText, { color: colors.darkGray }]}>No upcoming arrivals.</Text>
               ) : (
                 arrivals.map((arrival) => (
-                  <View key={arrival.routeId} style={styles.arrivalRow}>
+                  <View
+                    key={arrival.routeId}
+                    style={styles.arrivalRow}
+                    accessible={true}
+                    accessibilityLabel={`Route ${arrival.routeName}. ${arrival.etaMinutes !== null ? `Arriving in ${arrival.etaMinutes} minutes` : 'No vehicles currently active'}.`}
+                  >
                     
                     {/* Badge and Route Name */}
                     <View style={styles.routeInfo}>
                       <View style={[styles.routeBadge, { backgroundColor: arrival.color }]}>
-                        <Text style={styles.badgeText}>{arrival.abbreviation}</Text>
+                        <Text style={styles.badgeText}>{arrival.abbreviation} accessible={false} </Text>
                       </View>
-                      <Text style={[styles.routeName, { color: colors.textPrimary }]}>
+                      <Text style={[styles.routeName, { color: colors.textPrimary }]} accessible={false}>
                         {arrival.routeName}
                       </Text>
                     </View>
 
                     {/* ETA */}
-                    <Text style={[styles.etaText, { color: colors.textPrimary }]}>
+                    <Text style={[styles.etaText, { color: colors.textPrimary }]} accessible={false}>
                       {arrival.etaMinutes !== null ? `${arrival.etaMinutes} min` : 'no vehicles'}
                     </Text>
                   </View>

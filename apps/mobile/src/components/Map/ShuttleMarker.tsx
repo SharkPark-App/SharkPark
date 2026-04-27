@@ -23,6 +23,9 @@ export const ShuttleMarker: React.FC<ShuttleMarkerProps> = ({ shuttle, colors })
       zIndex={4}
       anchor={{ x: 0.5, y: 0.5 }}
       flat={true} // TODO: find fix for Apple MapKit
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel={`Shuttle bus: ${shuttle.busName} on route ${shuttle.route}`}
     >
       {/* Rotate full marker (circle & arrow) */}
       <View style={[styles.shuttleMarkerContainer, { transform: [{ rotate: `${heading}deg` }] }]}>
