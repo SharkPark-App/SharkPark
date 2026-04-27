@@ -68,5 +68,47 @@ jobs:
           pnpm db:deploy
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # ─── Sentry release tagging (P10.94) ────────────────────────────────
+      # Build backend locally to produce dist/ + .js.map files, then create
+      # a Sentry release tagged `sharkpark-backend@<short-sha>` and upload
+      # sourcemaps. The release ID is then injected into the running container
+      # via a staged Fly secret so the next deploy picks it up atomically.
+      #
+      # Required GitHub secrets (deploy fails loudly if any are missing —
+      # release tagging is a release-engineering correctness requirement,
+      # not optional observability):
+      #   SENTRY_AUTH_TOKEN  Internal-integration token, scopes:
+      #                      project:releases + org:read
+      #   SENTRY_ORG         Sentry organization slug
+      #   SENTRY_PROJECT     Sentry project slug (e.g. sharkpark-backend)
+      - name: Compute release identifier
+        id: release
+        run: echo "id=sharkpark-backend@$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Build backend (for sourcemaps)
+        run: pnpm --filter @sharkpark/backend run build
+
+      - name: Create Sentry release & upload sourcemaps
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        with:
+          environment: production
+          version: ${{ steps.release.outputs.id }}
+          sourcemaps: ./apps/backend/dist
+          url_prefix: "~/dist"
+          ignore_missing: true
+
+      - name: Stage SENTRY_RELEASE on Fly
+        # --stage defers the restart so the next `flyctl deploy` applies the
+        # secret atomically with the new image. Without --stage, the running
+        # instance would restart twice.
+        run: |
+          flyctl secrets set --stage --config apps/backend/fly.toml \
+            SENTRY_RELEASE="${{ steps.release.outputs.id }}"
+
       - name: Deploy
         run: flyctl deploy --remote-only --config apps/backend/fly.toml --dockerfile apps/backend/Dockerfile
