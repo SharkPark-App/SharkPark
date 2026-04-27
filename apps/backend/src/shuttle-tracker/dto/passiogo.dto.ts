@@ -56,7 +56,7 @@ export class PassioShuttleDto {
   busName!: string;
 
   @IsString()
-  color!: string;
+  color?: string;
 
   @IsString()
   routeId!: string;

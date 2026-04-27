@@ -5,7 +5,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { ThemeColors } from '../../context/ThemeContext';
 import { TYPOGRAPHY } from '../../constants/theme';
 import type { MapShuttle } from '../../types/transit';
-import { CustomCallout } from './ShuttleCallout';
+import { ShuttleCallout } from './ShuttleCallout';
 
 interface ShuttleMarkerProps {
   shuttle: MapShuttle;
@@ -25,7 +25,7 @@ export const ShuttleMarker: React.FC<ShuttleMarkerProps> = ({ shuttle, colors })
       flat={true} // TODO: find fix for Apple MapKit
       accessible={true}
       accessibilityRole="button"
-      accessibilityLabel={`Shuttle bus: ${shuttle.busName} on route ${shuttle.route}`}
+      accessibilityLabel={`Shuttle: ${shuttle.busName} on route ${shuttle.route}`}
     >
       {/* Rotate full marker (circle & arrow) */}
       <View style={[styles.shuttleMarkerContainer, { transform: [{ rotate: `${heading}deg` }] }]}>
@@ -55,7 +55,7 @@ export const ShuttleMarker: React.FC<ShuttleMarkerProps> = ({ shuttle, colors })
       </View>
 
       {/* Shuttle callout */}
-      <CustomCallout shuttle={shuttle} colors={colors} />
+      <ShuttleCallout shuttle={shuttle} colors={colors} />
     </Marker>
   );
 };

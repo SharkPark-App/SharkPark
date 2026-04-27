@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Text } from '../components/CustomText';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import MapView, { Marker, Callout, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { getOccupancyColor } from '../utils/parkingUtils';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
@@ -99,6 +99,7 @@ const NavigateButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
 const MapScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
+  const isFocused = useIsFocused();
   const { favoriteLots, refreshFavorites } = useFavorites();
   const { lots } = useLotsList();
   const { routes, stops, shuttles } = useTransitData();
@@ -189,6 +190,7 @@ const MapScreen: React.FC = () => {
           showsUserLocation={true}
           showsMyLocationButton={true}
           pitchEnabled={false}
+          moveOnMarkerPress={false}
           userInterfaceStyle={isDark ? 'dark' : 'light'}
         >
           {filteredParkingLots?.map((lot) => (
@@ -201,7 +203,7 @@ const MapScreen: React.FC = () => {
           ))}
           
           {/* Draw route paths */}
-          {routes?.map((route) => (
+          {isFocused && routes?.map((route) => (
             <Polyline
               key={route.id}
               coordinates={route.coordinates}
@@ -212,25 +214,34 @@ const MapScreen: React.FC = () => {
           ))}
 
           {/* Draw stops */}
-          {stops?.map((stop) => (
+          {isFocused && stops?.map((stop) => (
             <Marker
               key={stop.id}
               coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
-              title={stop.name}
-              pinColor={stop.color} 
               zIndex={2}
               stopPropagation={true}
               onPress={() => handleStopPress(stop)}
               accessible={true}
               accessibilityRole="button"
               accessibilityLabel={`Shuttle stop: ${stop.name}`}
+              tracksViewChanges={false} // Locks the snapshot so MapKit doesn't constantly re-render
             >
-              <Callout tooltip ={true} />
+              {/* Custom Stop Circle */}
+              <View
+                style={[
+                  styles.stopCircle,
+                  {
+                    backgroundColor: stop.color,
+                    // dynamically apply a gray border for dark mode, white for light mode
+                    borderColor: colors.white, 
+                  }
+                ]}
+              />
             </Marker>
           ))}
 
           {/* Draw live shuttles */}
-          {shuttles?.map((shuttle) => (
+          {isFocused && shuttles?.map((shuttle) => (
             <ShuttleMarker 
               key={shuttle.id} 
               shuttle={shuttle} 
@@ -310,6 +321,19 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xxs,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     textAlign: 'center',
+  },
+  stopCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   fab: {
     width: 56,

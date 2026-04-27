@@ -17,11 +17,11 @@ export interface MapRoute {
 export interface MapShuttle {
   id: string;
   busName: string;
-  color: string;
+  color?: string;
   route: string;
   latitude: number;
   longitude: number;
-  heading: number;
+  heading?: number;
   paxLoad: number;
   capacity: number;
 }

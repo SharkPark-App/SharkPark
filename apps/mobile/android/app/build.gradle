@@ -71,6 +71,13 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// Maps API Key (Google Maps SDK; needed by react-native-maps for Android only)
+Properties properties = new Properties()
+if (rootProject.file("local.properties").exists()) {
+    properties.load(rootProject.file("local.properties").newDataInputStream())
+}
+def mapsApiKey = properties.getProperty("MAPS_API_KEY", "")
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -85,7 +92,8 @@ android {
         versionName "1.0.0"
 
         manifestPlaceholders = [
-            appAuthRedirectScheme: 'msauth'
+            appAuthRedirectScheme: 'msauth',
+            MAPS_API_KEY: mapsApiKey
         ]
     }
     signingConfigs {

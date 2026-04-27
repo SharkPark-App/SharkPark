@@ -7,7 +7,7 @@ import { ThemeColors } from '../../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../../constants/theme';
 import { MapShuttle } from '../../types/transit';
 
-interface CustomCalloutProps {
+interface ShuttleCalloutProps {
   shuttle: MapShuttle;
   colors: ThemeColors;
 }
@@ -26,7 +26,7 @@ const getPassengerLoadInfo = (pax: number, cap: number) => {
   return { text, percent };
 };
 
-export const CustomCallout: React.FC<CustomCalloutProps> = ({ shuttle, colors }) => {
+export const ShuttleCallout: React.FC<ShuttleCalloutProps> = ({ shuttle, colors }) => {
   const { text: loadText, percent: loadPercent } = getPassengerLoadInfo(shuttle.paxLoad, shuttle.capacity);
 
   return (
