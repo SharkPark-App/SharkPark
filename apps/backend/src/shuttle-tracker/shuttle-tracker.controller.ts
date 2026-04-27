@@ -1,4 +1,4 @@
-import { Controller, Get, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { ShuttleTrackerService } from './shuttle-tracker.service';
 import { Public } from '../auth/public.decorator';
 
@@ -48,12 +48,8 @@ export class ShuttleTrackerController {
 
   /** Get list of ETAs for shuttles on route to specified stop */
   @Public()
-  @Get('etas')
-  async getETAs(@Query('stopId') stopId: string) {
-    if (!stopId) {
-      throw new BadRequestException('stopId query parameter is required');
-    }
-
+  @Get('etas/:stopId')
+  async getETAs(@Param('stopId') stopId: string) {
     const etas = await this.shuttleTrackerService.getStopETAs(stopId);
 
     return {

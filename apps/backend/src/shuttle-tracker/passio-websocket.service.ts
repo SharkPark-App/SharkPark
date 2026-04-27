@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import WebSocket from 'ws';
+import { ShuttleTrackerGateway } from './shuttle-tracker.gateway';
+import { PassioLiveShuttleDto } from './dto/passiogo.dto';
 
 @Injectable()
 export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
@@ -7,10 +9,19 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly PASSIO_WS_URL = 'wss://passio3.com/';
-  
   // CSULB specification
-  private readonly HANDSHAKE_PAYLOAD = JSON.stringify({ s0: 4163, sA: 1 });
+  private readonly HANDSHAKE_PAYLOAD = JSON.stringify({
+    subscribe: 'location',
+    userId: [4163],
+    filter: {
+      outOfService: 0
+    },
+    // Essential fields
+    field: ['busId', 'latitude', 'longitude', 'course', 'paxLoad', 'more']
+  });
 
+  constructor(private readonly shuttleGateway: ShuttleTrackerGateway) {}
+  
   onModuleInit() {
     this.connect();
   }
@@ -24,10 +35,10 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     this.ws = new WebSocket(this.PASSIO_WS_URL);
 
     this.ws.on('open', () => {
-      this.logger.log('Connected to PassioGo. Sending subscription handshake...');
-      
+      this.logger.log('Connected to PassioGO!. Sending subscription handshake...');
       // Establish connection for CSULB transit
       if (this.ws?.readyState === WebSocket.OPEN) {
+        this.logger.log('Subscription handshake established.');
         this.ws.send(this.HANDSHAKE_PAYLOAD);
       }
     });
@@ -36,7 +47,6 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
       try {
         const parsedData = JSON.parse(data.toString()) as Record<string, unknown>;
         
-        // Only handle data if it exists
         if (this.hasActiveShuttles(parsedData)) {
            this.handleShuttleUpdate(parsedData);
         } else {
@@ -59,12 +69,28 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private handleShuttleUpdate(data: Record<string, unknown>) {
-    // TODO: get shape of payload once shuttles are running
-    this.logger.log('LIVE SHUTTLE DATA RECEIVED:', JSON.stringify(data).substring(0, 100) + '...');
+    try {
+      const liveData = data as unknown as PassioLiveShuttleDto;
+
+      // Transform for frontend
+      const locationUpdate = {
+        id: liveData.busId.toString(), // Standardize ID as a string
+        latitude: liveData.latitude,
+        longitude: liveData.longitude,
+        heading: liveData.course,      // Map course -> heading
+        paxLoad: liveData.paxLoad,
+      };
+
+      // Broadcast data (batching happens later)
+      this.shuttleGateway.broadcastShuttles([locationUpdate]);
+      
+    } catch (error) {
+      this.logger.error('Failed to process live location payload', error);
+    }
   }
 
   private hasActiveShuttles(data: Record<string, unknown>): boolean {
-    return Object.keys(data).length > 0; 
+    return data !== null && typeof data === 'object' && Object.keys(data).length > 0;
   }
 
   private scheduleReconnect() {

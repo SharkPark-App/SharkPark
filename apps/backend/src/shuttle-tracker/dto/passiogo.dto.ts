@@ -1,6 +1,6 @@
 
-import { IsString, IsNumber, IsOptional, IsDefined } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsString, IsNumber, IsOptional, IsDefined, ValidateNested, IsObject } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 /** DTO for recieving and validating PassioGO! stop data */
 export class PassioStopDto {
@@ -56,7 +56,7 @@ export class PassioShuttleDto {
   busName!: string;
 
   @IsString()
-  color?: string;
+  color!: string;
 
   @IsString()
   routeId!: string;
@@ -82,4 +82,57 @@ export class PassioShuttleDto {
   @IsNumber()
   @Transform(({ value }) => parseInt(value, 10))
   totalCap?: number;
+}
+
+/** DTO for validating the shuttle telemetry stream (essential data) */
+export class PassioLiveShuttleDto {
+  @IsNumber()
+  busId!: number; 
+
+  @IsNumber()
+  latitude!: number;
+
+  @IsNumber()
+  longitude!: number;
+
+  @IsNumber()
+  course!: number;
+
+  @IsNumber()
+  paxLoad!: number;
+
+  @IsOptional()
+  @IsObject()
+  more?: Record<string, unknown>;
+}
+
+/** DTO for nested stop details within a PassioGO! ETA payload */
+export class PassioEtaStopDetailDto {
+  @IsOptional()
+  @IsString()
+  routeName?: string;
+
+  @IsOptional()
+  @IsString()
+  shortName?: string;
+}
+
+/** DTO for receiving and validating PassioGO! ETAs for a given stop */
+export class PassioEtaDto {
+  @IsDefined()
+  eta!: string | number;
+
+  @IsString()
+  routeId!: string;
+
+  @IsOptional()
+  @IsString()
+  bg?: string;
+
+  @IsString()
+  busName!: string;
+
+  @ValidateNested()
+  @Type(() => PassioEtaStopDetailDto)
+  theStop!: PassioEtaStopDetailDto;
 }
