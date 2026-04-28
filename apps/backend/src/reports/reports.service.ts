@@ -26,7 +26,7 @@ export class ReportsService {
 
     return await this.prisma.report.create({
       data: {
-        lot_id: dto.lotId,
+        lot_id: lot.id,
         type: typeMapping[dto.type],
         message: dto.message?.trim() || null,
       },
