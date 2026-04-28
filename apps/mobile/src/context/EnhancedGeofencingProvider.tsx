@@ -23,7 +23,6 @@ import { lotsApi } from '../services/api';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
-import { useAuth } from './AuthContext';
 
 interface EnhancedGeofencingContextType {
   isGeofencingActive: boolean;
@@ -41,9 +40,6 @@ interface EnhancedGeofencingContextType {
 const EnhancedGeofencingContext = createContext<EnhancedGeofencingContextType | undefined>(undefined);
 
 export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  
-  const { user } = useAuth();
-
   // Track current parking state
   const currentZones = useRef<Set<string>>(new Set());
   const [currentLotId, setCurrentLotId] = useState<string | null>(null);
@@ -751,7 +747,10 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       removeBtConnect.remove();
       parkingValidationService.removeValidationListener(validationListener);
     };
-  }, [user?.userId]); // Re-initialize when user changes (e.g. logout → login as different type)
+    // Geofencing is device-scoped per the access-tier model; identity changes
+    // (sign-in / sign-out) do not affect which lots are registered, so this
+    // effect runs once on mount.
+  }, []);
 
   const contextValue: EnhancedGeofencingContextType = useMemo(() => {
     const pvDebug = parkingValidationService.getDebugInfo();
