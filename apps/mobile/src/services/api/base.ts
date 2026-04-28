@@ -1,8 +1,15 @@
 /**
  * API Base Service
- * Provides common HTTP request functionality with error handling and retry logic
+ * Provides common HTTP request functionality with error handling and retry logic.
+ *
+ * Every request is decorated with the device-credential headers required by
+ * the backend access-tier model (see services/api/deviceCredentials.ts):
+ *   - `x-device-id` on every request (ContributorGuard)
+ *   - `X-SharkPark-Signature` + `X-SharkPark-Timestamp` on every POST/PUT
+ *     with a body (HmacGuard, currently only enforced on POST /occupancy-events)
  */
 import API_CONFIG from './config';
+import { buildAuthHeaders } from './deviceCredentials';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -95,10 +102,15 @@ class ApiService {
 
     const { signal, timerId } = this.createTimeoutSignal();
 
+    // Body may already be a string (post/put serialise before calling makeRequest).
+    const bodyForSigning = typeof options.body === 'string' ? options.body : undefined;
+    const authHeaders = await buildAuthHeaders({ body: bodyForSigning });
+
     const requestOptions: RequestInit = {
       ...options,
       headers: {
         ...this.defaultHeaders,
+        ...authHeaders,
         ...options.headers,
       },
       signal,

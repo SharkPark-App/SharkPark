@@ -216,7 +216,7 @@ describe('UsersService', () => {
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
-    it('should create a STUDENT user when email contains @student', async () => {
+    it('should create a STUDENT user when email ends with @student.csulb.edu', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
       prisma.school.findFirst.mockResolvedValue({ id: 'school-uuid', short_name: 'CSULB' });
 
@@ -256,7 +256,7 @@ describe('UsersService', () => {
       });
     });
 
-    it('should create an EMPLOYEE user when email does not contain @student', async () => {
+    it('should create an EMPLOYEE user when email does not end with @student.csulb.edu', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
       prisma.school.findFirst.mockResolvedValue({ id: 'school-uuid', short_name: 'CSULB' });
 
@@ -281,6 +281,35 @@ describe('UsersService', () => {
           user_type: 'EMPLOYEE',
         }),
       });
+    });
+
+    it('should classify lookalike subdomains as EMPLOYEE (not STUDENT)', async () => {
+      // Guards against the prior `email.includes('@student')` bug, which would
+      // mis-classify e.g. @student-affairs.csulb.edu or @student.foo.com.
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.school.findFirst.mockResolvedValue({ id: 'school-uuid', short_name: 'CSULB' });
+
+      const lookalikes = [
+        'admin@student-affairs.csulb.edu',
+        'attacker@student.foo.com',
+        'bob@studentaffairs.csulb.edu',
+      ];
+
+      for (const email of lookalikes) {
+        prisma.user.create.mockResolvedValueOnce({
+          id: 'uuid',
+          email,
+          first_name: 'X',
+          last_name: 'Y',
+          user_type: 'EMPLOYEE',
+          phone: null,
+          notification_preferences: {},
+          created_at: new Date(),
+          last_login: new Date(),
+        });
+        const result = await service.findOrCreateUser(email, 'X', 'Y');
+        expect(result.user_type).toBe('EMPLOYEE');
+      }
     });
 
     it('should throw when default school (CSULB) is not found', async () => {

@@ -18,7 +18,7 @@ import parkingValidationService from '../services/parkingValidationService';
 import leaveDetectionService, { LeaveIntentAnalysis } from '../services/leaveDetectionService';
 import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
 import carBluetooth from '../services/carBluetooth';
-import { classifyUser, isOnCampus } from '../utils/geoHelpers';
+import { isOnCampus } from '../utils/geoHelpers';
 import { lotsApi } from '../services/api';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
@@ -667,18 +667,14 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
         const allLots = await lotsApi.getAllLots();
 
-        const userEmail = user?.userId ?? '';
-        const userType = classifyUser(userEmail);
-
         if (__DEV__) {
-          console.log(`[EnhancedGeofencing] User: ${userEmail} (${userType})`);
           console.log(`[EnhancedGeofencing] Registering all ${allLots.length} lots (SDK manages proximity)`);
         }
 
-        if (userType === 'UNKNOWN') {
-          throw new Error('No valid parking lot geofences found for this user type');
-        }
-
+        // Geofence registration is intentionally device-based, not user-based:
+        // guests (no Azure AD account) and non-CSULB emails must still be able
+        // to contribute occupancy events so they can earn the Contributor tier
+        // via ContributorPing. See docs/api-access-tiers.md.
         const geofences = createSDKGeofencesFromLots(allLots);
 
         if (geofences.length > 0) {

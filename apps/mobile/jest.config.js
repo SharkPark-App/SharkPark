@@ -15,6 +15,13 @@ module.exports = {
   ],
 
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  // Map @noble/hashes subpath imports to the flat CJS files. The package's
+  // `exports` field points subpaths at `./esm/*.js`, but Jest's resolver
+  // doesn't honor the `import` condition by default and the package also
+  // ships flat CJS at `./*.js`, which is what we want here.
+  moduleNameMapper: {
+    '^@noble/hashes/(.+)$': '<rootDir>/../../node_modules/@noble/hashes/$1.js',
+  },
   testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/', '__tests__/testUtils\\.ts$'],
   // GitHub Actions runners are noticeably slower than local; the default 5s
   // jest timeout occasionally trips RN ReactTestRenderer.act flows that
