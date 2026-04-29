@@ -9,7 +9,7 @@ export enum IncidentType {
 export class CreateReportDto {
   @IsString()
   @IsNotEmpty()
-  lotId!: string; // e.g. 'G2'
+  lotId!: string; // lot.id (cuid) from DB
 
   @IsEnum(IncidentType)
   type!: IncidentType;

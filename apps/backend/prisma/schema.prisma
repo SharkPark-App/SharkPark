@@ -94,6 +94,7 @@ model User {
 
   school         School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
   favorites      UserFavorite[]
+  reports        Report[]
 
   @@index([school_id])
   @@map("users")
@@ -232,13 +233,16 @@ model Weather {
 model Report {
   id         String     @id @default(cuid())
   lot_id     String
+  user_id    String
   type       ReportType
   message    String?
   created_at DateTime   @default(now())
 
   lot        Lot        @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([lot_id, created_at], name: "idx_reports_lot_time")
+  @@index([user_id, created_at], name: "idx_reports_user_time")
   @@map("reports")
 }
 
