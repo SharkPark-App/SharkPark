@@ -21,6 +21,7 @@ import pytest
 from scripts.predict_short_term import _build_prediction_df, predict
 from scripts.train_short_term import train
 from scripts.promote_short_term import promote
+from src.postprocess.weather_adjustment import WeatherSnapshot
 
 
 # =============================================================================
@@ -167,7 +168,11 @@ class TestPredictEndToEnd:
     """Verify predict.py loads production model and generates output."""
 
     @patch("src.data.db.write_short_term_predictions", return_value=0)
-    def test_predict_writes_output(self, mock_write, trained_and_promoted):
+    @patch("src.data.db.fetch_latest_weather", return_value=None)
+    @patch("src.data.db.get_school_id_for_lots", return_value="school-1")
+    def test_predict_writes_output(
+        self, mock_school, mock_weather, mock_write, trained_and_promoted
+    ):
         """predict() should write predictions to DB and local file."""
         info = trained_and_promoted
         output_path = str(info["tmp_path"] / "predictions.csv")
@@ -188,3 +193,58 @@ class TestPredictEndToEnd:
 
         # Verify local CSV was written
         assert Path(output_path).exists()
+
+    @patch("src.data.db.write_short_term_predictions", return_value=0)
+    @patch("src.data.db.fetch_latest_weather")
+    @patch("src.data.db.get_school_id_for_lots", return_value="school-1")
+    def test_predict_applies_weather_adjustment(
+        self, mock_school, mock_weather, mock_write, trained_and_promoted
+    ):
+        """End-to-end: fetch_latest_weather output flows into apply_weather_adjustment.
+
+        Catches contract drift between the DB-layer WeatherSnapshot and the
+        post-processing layer's expectations. Stubs the DB calls but exercises
+        the real adjustment code path.
+        """
+        info = trained_and_promoted
+
+        # Severe weather should produce a meaningful reduction
+        mock_weather.return_value = WeatherSnapshot(
+            timestamp=datetime(2025, 10, 15, 8, 0),
+            temperature_f=45.0,
+            feels_like_f=42.0,
+            humidity_percent=80.0,
+            wind_speed_mph=10.0,
+            conditions="thunderstorm with heavy rain",
+            precipitation_probability=0.95,
+            is_raining=True,
+        )
+
+        baseline = predict(
+            data_path=info["data_path"],
+            output_path=str(info["tmp_path"] / "preds_baseline.csv"),
+            start_of_day=True,
+        )
+
+        with patch("scripts.predict_short_term.WEATHER_ADJUSTMENT_ENABLED", False):
+            unadjusted = predict(
+                data_path=info["data_path"],
+                output_path=str(info["tmp_path"] / "preds_unadjusted.csv"),
+                start_of_day=True,
+            )
+
+        mock_school.assert_called()
+        mock_weather.assert_called_with("school-1")
+
+        # SEVERE multiplier is 0.50, so adjusted occupancy must be strictly lower
+        merged = baseline.merge(
+            unadjusted,
+            on=["lot_id", "target_time"],
+            suffixes=("_adj", "_raw"),
+        )
+        non_zero = merged[merged["predicted_occupancy_raw"] > 0]
+
+        assert not non_zero.empty, "expected at least one non-zero baseline prediction"
+        assert (
+            non_zero["predicted_occupancy_adj"] < non_zero["predicted_occupancy_raw"]
+        ).all(), "SEVERE weather should reduce occupancy across all non-zero rows"

@@ -364,7 +364,7 @@ Weather is integrated through a **two-layer design**: a rule-based adjustment la
 
 #### Current state: rule-based adjustment for short-term predictions
 
-**No learned coefficients.** Pre-launch occupancy is synthetic, so any model trained against synthetic occupancy paired with real weather would memorize fabricated correlations. The rule-based layer ships meaningful weather-awareness without requiring real data, and remains as a permanent safety floor even after a learned weather model eventually integrates — rare severe events (snow, thunderstorms) are systematically under-sampled by Emperical Risk Minimization training, so a hand-coded floor catches the tails the learned model misses.
+**No learned coefficients.** Pre-launch occupancy is synthetic, so any model trained against synthetic occupancy paired with real weather would memorize fabricated correlations. The rule-based layer ships meaningful weather-awareness without requiring real data, and remains as a permanent safety floor even after a learned weather model eventually integrates — rare severe events (snow, thunderstorms) are systematically under-sampled by Empirical Risk Minimization training, so a hand-coded floor catches the tails the learned model misses.
 
 **Severity classification (derived in code, no schema migration):**
 

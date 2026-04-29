@@ -115,6 +115,10 @@ def _cells_for(severity: Severity):
     Each cell is (median_multiplier, lower_floor_factor, reason_label).
     Severities not handled fall through to a no-op with the severity itself
     as the reason (NORMAL, EXTREME_HEAT, NO_WEATHER_DATA).
+
+    Median multipliers and lower-floor factors are rough-tuned so the displayed
+    band visibly widens during bad weather. Recalibrate post-launch against
+    real (weather, occupancy) data.
     """
     if severity == "SEVERE":
         return (0.50, 0.70, "SEVERE_REDUCTION"), (0.50, 0.70, "SEVERE_REDUCTION")
@@ -148,6 +152,8 @@ def apply_weather_adjustment(
         `reasons` is a per-row audit label list aligned to the input arrays.
         All output arrays are clipped to [0, 1].
     """
+    assert "target_hour" in features.columns, "features must include 'target_hour'"
+
     n = len(median)
     if weather is None:
         return median, lower, upper, ["NO_WEATHER_DATA"] * n

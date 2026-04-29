@@ -97,9 +97,10 @@ def predict(
 
     # Rule-based weather adjustment
     if WEATHER_ADJUSTMENT_ENABLED:
-        from src.data.db import fetch_latest_weather
+        from src.data.db import fetch_latest_weather, get_school_id_for_lots
 
-        weather = fetch_latest_weather()
+        school_id = get_school_id_for_lots(lot_ids)
+        weather = fetch_latest_weather(school_id)
         preds, preds_lower, preds_upper, weather_reasons = apply_weather_adjustment(
             preds,
             preds_lower,

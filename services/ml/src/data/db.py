@@ -24,6 +24,7 @@ __all__ = [
     "get_total_lot_count",
     "fetch_recent_snapshots",
     "fetch_latest_weather",
+    "get_school_id_for_lots",
     "load_real_snapshots",
     "load_historical_snapshots",
     "write_short_term_predictions",
@@ -132,13 +133,42 @@ def fetch_recent_snapshots(lookback_hours: int = 2) -> pd.DataFrame:
         return df
 
 
-def fetch_latest_weather():
+def get_school_id_for_lots(lot_ids: list[str]) -> str:
     """
-    Fetch the most recent weather observation from the `weather` table.
+    Resolve the single school_id that owns the given human-readable lot_ids.
+
+    Raises if the lots span multiple schools (multi-campus inference is not
+    supported by the current pipeline) or if any lot_id is unknown.
+    """
+    if not lot_ids:
+        raise ValueError("lot_ids must be non-empty to resolve school_id")
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT DISTINCT school_id FROM lots WHERE lot_id = ANY(:lot_ids)"),
+            {"lot_ids": list(lot_ids)},
+        )
+        school_ids = [row[0] for row in result]
+
+    if not school_ids:
+        raise RuntimeError(f"No lots found for lot_ids={lot_ids}")
+
+    if len(school_ids) > 1:
+        raise RuntimeError(
+            f"lot_ids span multiple schools ({school_ids}); "
+            "inference must be scoped to a single school."
+        )
+    return school_ids[0]
+
+
+def fetch_latest_weather(school_id: str):
+    """
+    Fetch the most recent weather observation for `school_id`.
 
     Returns the row as a `WeatherSnapshot` (defined in
-    `src.postprocess.weather_adjustment`) or None when the table is empty
-    or unreachable.
+    `src.postprocess.weather_adjustment`) or None when the table has no
+    rows for this school or the DB is unreachable.
 
     Returns:
         WeatherSnapshot | None
@@ -155,10 +185,12 @@ def fetch_latest_weather():
                            humidity_percent, wind_speed_mph, conditions,
                            precipitation_probability, is_raining
                     FROM weather
+                    WHERE school_id = :school_id
                     ORDER BY timestamp DESC
                     LIMIT 1
                     """
-                )
+                ),
+                {"school_id": school_id},
             )
             row = result.fetchone()
     except Exception as exc:
@@ -181,7 +213,9 @@ def fetch_latest_weather():
 
         row_ts = row[0]
 
-        # Normalize naive timestamps
+        # Naive timestamps from Postgres are UTC: backend writes `new Date()` in
+        # apps/backend/src/weather/weather-fetch.service.ts, which Prisma stores
+        # as a UTC instant in the `timestamp without time zone` column.
         if row_ts.tzinfo is None:
             row_ts = row_ts.replace(tzinfo=timezone.utc)
 
