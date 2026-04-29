@@ -14,6 +14,7 @@ describe('UsersController', () => {
     removeFavorite: jest.fn(),
     updateNotificationPreferences: jest.fn(),
     findOrCreateUser: jest.fn(),
+    deleteUser: jest.fn(),
   };
 
   /** Helper: build a fake request with the authenticated user. */
@@ -61,6 +62,34 @@ describe('UsersController', () => {
       await expect(
         controller.removeFavorite(reqAs('attacker@csulb.edu'), 'victim@csulb.edu', 'G1'),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject deleting another user\'s account', async () => {
+      await expect(
+        controller.deleteUser(reqAs('attacker@csulb.edu'), 'victim@csulb.edu'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('deleteMe', () => {
+    it('should delete the authenticated user', async () => {
+      mockUsersService.deleteUser.mockResolvedValue(undefined);
+      await controller.deleteMe(reqAs('test@csulb.edu'));
+      expect(service.deleteUser).toHaveBeenCalledWith('test@csulb.edu');
+    });
+
+    it('should reject when no authenticated email is present', async () => {
+      await expect(
+        controller.deleteMe({ user: {} } as never),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('deleteUser', () => {
+    it('should delete own account by userId', async () => {
+      mockUsersService.deleteUser.mockResolvedValue(undefined);
+      await controller.deleteUser(reqAs('test@csulb.edu'), 'test@csulb.edu');
+      expect(service.deleteUser).toHaveBeenCalledWith('test@csulb.edu');
     });
   });
 

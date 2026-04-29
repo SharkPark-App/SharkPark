@@ -19,6 +19,7 @@ import { PrismaClient, UserType, CampusEventType, ImpactLevel, EventType, Confid
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
+import { getSemester, getWeekOfSemester } from '../src/lots/academic-calendar';
 
 // Prisma v7: "client" engine requires a driver adapter for direct DB connections
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -299,12 +300,27 @@ async function main() {
   console.log('[seed] Seeded weather data\n');
 
   // 7. Seed Historical Occupancy Snapshots (7 days, every 15 min during operating hours)
+  //
+  // We populate every column the runtime snapshot cron writes. Treat synthetic
+  // `occupancy` values as already-scaled estimates (i.e. total cars seen by
+  // sensors, not raw device counts), so estimated_occupancy mirrors occupancy
+  // and penetration_rate_used = 1.0. That keeps ML notebooks and the mobile
+  // history view honest against seed data while staying clearly synthetic.
   console.log('[seed] Seeding historical occupancy snapshots...');
   const sampleLotIds = ['G1', 'G2', 'G4', 'G7', 'G9'];
   const now = new Date();
+  // Use the seeded weather row as the snapshot's weather context.
+  const seedWeather = await prisma.weather.findFirst({
+    where: { school_id: school.id },
+    orderBy: { timestamp: 'desc' },
+  });
   const snapshotRows: {
     lot_id: string; timestamp: Date; occupancy: number; available: number;
     occupancy_rate: number; confidence: ConfidenceLevel; is_campus_open: boolean;
+    estimated_occupancy: number; penetration_rate_used: number;
+    reliability_score: number; is_cold_start: boolean;
+    semester: string; academic_period: string; week_of_semester: number;
+    weather_id: string | null;
   }[] = [];
 
   for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
@@ -314,6 +330,11 @@ async function main() {
       for (let minute = 0; minute < 60; minute += 15) {
         const timestamp = new Date(date);
         timestamp.setHours(hour, minute, 0, 0);
+
+        // Academic-calendar features are date-derived and identical for every
+        // lot at the same timestamp — compute once per tick.
+        const semester = getSemester(timestamp);
+        const [weekOfSemester, periodType] = getWeekOfSemester(timestamp);
 
         for (const lotId of sampleLotIds) {
           const lot = parkingLots.find(l => l.lot_id === lotId);
@@ -336,6 +357,16 @@ async function main() {
             occupancy_rate: Math.round(occRate * 1000) / 1000,
             confidence: lot.confidence,
             is_campus_open: true,
+            // Synthetic data is already "total cars" — no scaling applied.
+            estimated_occupancy: occupancy,
+            penetration_rate_used: 1.0,
+            // Plausible reliability for established seed lots.
+            reliability_score: 0.8,
+            is_cold_start: false,
+            semester,
+            academic_period: periodType,
+            week_of_semester: weekOfSemester,
+            weather_id: seedWeather?.id ?? null,
           });
         }
       }

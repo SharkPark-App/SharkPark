@@ -39,7 +39,7 @@ AWS serverless architecture with **Aurora PostgreSQL Serverless v2** as the prim
 
 - ✅ Single-table `current_occupancy` counter on lots (fast reads, atomic increments)
 - ✅ Device hash deduplication for geofence events
-- ✅ 90-day retention for raw events (scheduled `DELETE` instead of TTL)
+- ✅ 30-day retention for raw events (scheduled `DELETE` instead of TTL)
 - ✅ 15-minute snapshot aggregation schedule (via `@nestjs/schedule` cron)
 - ✅ Privacy-first approach (SHA-256 device hashing, no PII in events)
 
@@ -502,7 +502,7 @@ WHERE l.school_id = 'csulb';
 | Table | Retention | Strategy |
 |-------|-----------|----------|
 | `lots`, `users`, `schools` | Permanent | Core data |
-| `occupancy_events` | 90 days | Scheduled `DELETE WHERE timestamp < NOW() - INTERVAL '90 days'` |
+| `occupancy_events` | 30 days | Daily cron `DELETE WHERE timestamp < NOW() - INTERVAL '30 days'` (`apps/backend/src/scripts/prune-old-data.ts`, override with `RETENTION_DAYS` env). Honors README privacy promise; snapshots already carry the aggregated history needed for ML. |
 | `occupancy_snapshots` | Permanent | Primary ML training source (archival to S3 optional at Tier 2) |
 | `predictions_short_term` | Overwritten each cycle | UPSERT every 15 min |
 | `predictions_long_term` | Overwritten daily | UPSERT daily |
@@ -597,7 +597,7 @@ GitHub Push → GitHub Actions → Build & Test → CDK Deploy
 ## Local Development
 
 ```bash
-# Start local PostgreSQL + LocalStack (S3 for ML artifacts)
+# Start local PostgreSQL 17 + MinIO (S3-compatible, mirrors prod Neon + R2)
 docker-compose -f docker/docker-compose.yml up -d
 
 # Run database migrations
@@ -621,8 +621,8 @@ Mobile App (iOS Simulator)
 NestJS Backend (localhost:3000)
     │
     ▼
-PostgreSQL (localhost:5432)    ←── docker-compose
-LocalStack S3 (localhost:4566) ←── ML artifacts (Tier 2+)
+PostgreSQL 17 (localhost:5433)  ←── docker-compose (mirrors Neon prod)
+MinIO S3 (localhost:9000)        ←── ML artifacts + DB backups (mirrors R2)
 ```
 
 ---

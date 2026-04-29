@@ -40,8 +40,10 @@ primary_region = 'lax'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  # min=0 saves ~$5/mo but adds ~3s cold-start to the first request after
-  # idle. Bump to 1 if mobile users complain about latency.
+  # min=0 saves ~$5/mo but adds ~10s cold-start to the first request after
+  # idle (measured 2026-04-26: 10.7s TTFB; warm p95 ~0.28s). Breakdown:
+  # Fly boot + Node/Nest start + Prisma->Neon cold connect. Bump to 1 if
+  # mobile users complain about latency. See docs/runbooks/runbook.md.
   min_machines_running = 0
   processes = ['app']
 
