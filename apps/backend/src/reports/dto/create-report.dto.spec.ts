@@ -4,7 +4,7 @@ import { CreateReportDto, IncidentType } from './create-report.dto';
 describe('CreateReportDto', () => {
   const createValid = (): CreateReportDto => {
     const dto = new CreateReportDto();
-    dto.lotId = 'G2';
+    dto.lotId = 'cm0abc1230000xyz';
     dto.type = IncidentType.OTHER;
     dto.message = 'Tree branch blocking entrance';
     return dto;
