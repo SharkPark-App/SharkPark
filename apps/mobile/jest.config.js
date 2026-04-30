@@ -1,5 +1,5 @@
 module.exports = {
-  preset: '@react-native/jest-preset',
+  preset: 'react-native',
   forceExit: true,
 
   // Setup file to mock native modules
