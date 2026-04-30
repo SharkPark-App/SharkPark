@@ -5,6 +5,20 @@
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 
+// Mock @sentry/react-native — the native SDK isn't available in jest
+// and we don't want test runs to ping the Sentry ingest endpoint.
+jest.mock('@sentry/react-native', () => ({
+  init: jest.fn(),
+  wrap: (component) => component,
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+  addBreadcrumb: jest.fn(),
+  setUser: jest.fn(),
+  setTag: jest.fn(),
+  setContext: jest.fn(),
+  withScope: jest.fn((cb) => cb({ setTag: jest.fn(), setContext: jest.fn() })),
+}));
+
 // Mock react-native-gesture-handler
 jest.mock('react-native-gesture-handler', () => {
   const View = require('react-native').View;

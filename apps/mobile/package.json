@@ -18,6 +18,7 @@
     "@react-navigation/bottom-tabs": "^7.8.12",
     "@react-navigation/native": "^7.1.25",
     "@react-navigation/stack": "^7.6.12",
+    "@sentry/react-native": "^8.9.1",
     "jwt-decode": "^4.0.0",
     "react": "19.1.1",
     "react-native": "0.82.1",
