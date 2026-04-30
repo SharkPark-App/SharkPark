@@ -36,6 +36,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? exception.message
         : 'Internal server error';
 
+    // Some HttpExceptions (notably ContributorGuard's BG_LOCATION_REQUIRED
+    // 403) carry a structured response with a `code` field that the mobile
+    // client uses to drive UX. Surface it at the top level so callers don't
+    // have to dig.
+    let code: string | undefined;
+    if (exception instanceof HttpException) {
+      const raw = exception.getResponse();
+      if (raw && typeof raw === 'object' && 'code' in raw) {
+        const c = (raw as { code?: unknown }).code;
+        if (typeof c === 'string') {
+          code = c;
+        }
+      }
+    }
+
     const errorResponse = {
       success: false,
       statusCode: status,
@@ -43,6 +58,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       path: request.url,
       method: request.method,
       message,
+      ...(code ? { code } : {}),
       ...(process.env.NODE_ENV === 'development' && {
         error: exception instanceof Error ? exception.stack : exception,
       }),

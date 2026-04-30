@@ -72,6 +72,7 @@ model Lot {
   event_impacts       EventImpact[]
   predictions_short   PredictionShortTerm[]
   predictions_long    PredictionLongTerm[]
+  reports             Report[]
 
   @@unique([school_id, lot_id])
   @@index([lot_type], name: "idx_lots_type")
@@ -93,6 +94,7 @@ model User {
 
   school         School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
   favorites      UserFavorite[]
+  reports        Report[]
 
   @@index([school_id])
   @@map("users")
@@ -228,6 +230,22 @@ model Weather {
   @@map("weather")
 }
 
+model Report {
+  id         String     @id @default(cuid())
+  lot_id     String
+  user_id    String
+  type       ReportType
+  message    String?
+  created_at DateTime   @default(now())
+
+  lot        Lot        @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([lot_id, created_at], name: "idx_reports_lot_time")
+  @@index([user_id, created_at], name: "idx_reports_user_time")
+  @@map("reports")
+}
+
 // ─── ML Prediction Tables ─────────────────────────────────
 
 model PredictionShortTerm {
@@ -261,6 +279,40 @@ model PredictionLongTerm {
 
   @@index([lot_id, target_date, target_hour], name: "idx_pred_long")
   @@map("predictions_long_term")
+}
+
+// ─── Audit log ────────────────────────────────────────────
+// Append-only event log for compliance-relevant actions (account deletion,
+// data export, etc.). actor_hash is SHA-256 of the email so the row carries
+// no reversible PII after the user is deleted, satisfying GDPR right-to-erasure
+// while still letting us prove "an account at this hash was deleted at T".
+
+model AuditEvent {
+  id          String         @id @default(cuid())
+  event_type  AuditEventType
+  actor_hash  String         // SHA-256(email + AUDIT_HASH_SALT)
+  metadata    Json?          // event-type-specific structured fields, no PII
+  created_at  DateTime       @default(now())
+
+  @@index([event_type, created_at], name: "idx_audit_type_time")
+  @@index([actor_hash, created_at], name: "idx_audit_actor_time")
+  @@map("audit_events")
+}
+
+// ─── Reciprocity / contributor tracking ───────────────────
+// Tracks which devices have recently sent occupancy events, so the
+// ContributorGuard can grant access to live-occupancy / forecast endpoints
+// only to devices that are actively contributing data. One row per device
+// hash; bumped on every POST /occupancy-events (including deduplicated ones,
+// which still prove the device is alive and reporting).
+
+model ContributorPing {
+  device_hash    String   @id           // SHA-256(salt:device_id) — same hash used in OccupancyEvent
+  first_seen_at  DateTime @default(now())
+  last_seen_at   DateTime @default(now())
+
+  @@index([last_seen_at], name: "idx_contributor_last_seen")
+  @@map("contributor_pings")
 }
 
 // ─── Enums ────────────────────────────────────────────────
@@ -297,4 +349,15 @@ enum ImpactLevel {
   LOW
   MEDIUM
   HIGH
+}
+
+enum ReportType {
+  BLOCKAGE
+  CRASH
+  OTHER
+}
+
+enum AuditEventType {
+  USER_DELETED
+  USER_DATA_EXPORTED
 }

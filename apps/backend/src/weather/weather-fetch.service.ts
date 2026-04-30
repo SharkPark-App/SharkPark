@@ -1,4 +1,3 @@
-/* eslint-disable no-undef -- Node 18+ global fetch */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/database.module';

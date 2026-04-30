@@ -1,0 +1,166 @@
+name: Restore Test (P7.78)
+
+# Validates the entire backup → restore loop works end-to-end. This is the
+# automated version of the monthly drill in docs/runbooks/runbook.md.
+#
+# Schedule: Sundays 13:00 UTC (06:00 PT) — runs after Saturday's daily backup
+# (which happens at 02:00 PT / 10:00 UTC), so we always test against fresh
+# data. Also available on workflow_dispatch.
+#
+# Cost: ~10 GH Actions minutes per run. Neon: a transient branch (deleted at
+# end), no compute beyond the restore itself. R2: 1 GET request + egress
+# of the dump.
+#
+# Skips gracefully if R2 secrets aren't configured. Required GH secrets:
+#   NEON_API_KEY              (already exists)
+#   R2_ACCOUNT_ID             (NEW — copy from Fly secret of same name)
+#   R2_ACCESS_KEY_ID          (NEW — copy from Fly secret of same name)
+#   R2_SECRET_ACCESS_KEY      (NEW — copy from Fly secret of same name)
+#   R2_BACKUPS_BUCKET         (NEW — value: "sharkpark-backups")
+# Required GH vars:
+#   NEON_PROJECT_ID           (already exists)
+
+on:
+  schedule:
+    - cron: "0 13 * * 0"  # Sundays 13:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  restore_test:
+    name: Restore latest backup to throwaway Neon branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # If R2 secrets aren't configured, skip the entire job. Don't fail.
+    if: ${{ vars.NEON_PROJECT_ID != '' }}
+    steps:
+      - name: Check R2 secrets are configured
+        id: check
+        run: |
+          if [ -z "${{ secrets.R2_ACCOUNT_ID }}" ] \
+             || [ -z "${{ secrets.R2_ACCESS_KEY_ID }}" ] \
+             || [ -z "${{ secrets.R2_SECRET_ACCESS_KEY }}" ] \
+             || [ -z "${{ secrets.R2_BACKUPS_BUCKET }}" ]; then
+            echo "R2 secrets not configured — skipping restore test."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      # postgresql-client-17 — pg_restore must be ≥ Neon's PG version (17).
+      # Ubuntu 24.04 runner ships PG16 by default, so add the PGDG repo.
+      - name: Install postgresql-client-17
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          pg_restore --version
+
+      - name: Compute branch name + expiration
+        if: steps.check.outputs.configured == 'true'
+        id: name
+        run: |
+          echo "branch=restore-test-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+          # 1-day TTL is a safety net — the cleanup step at job end normally
+          # deletes the branch. Neon GCs after expires_at if cleanup fails.
+          echo "expires=$(date -u -d '+1 day' +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      # Create a transient Neon branch from main. expires_at is defense in
+      # depth in case the cleanup step at the end fails — Neon will GC it
+      # automatically after 1 day.
+      - name: Create transient Neon branch
+        if: steps.check.outputs.configured == 'true'
+        id: branch
+        uses: neondatabase/create-branch-action@v6
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch_name: ${{ steps.name.outputs.branch }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          expires_at: ${{ steps.name.outputs.expires }}
+
+      # Find the latest dump in R2 by listing daily/ and taking the newest.
+      # Uses awscli with R2's S3-compatible endpoint.
+      - name: Locate latest backup in R2
+        if: steps.check.outputs.configured == 'true'
+        id: dump
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          BUCKET: ${{ secrets.R2_BACKUPS_BUCKET }}
+        run: |
+          set -euo pipefail
+          latest=$(aws --endpoint-url "$R2_ENDPOINT" s3 ls "s3://$BUCKET/daily/" \
+                   | awk '{print $4}' | grep -E '\.dump\.gz$' | sort | tail -1)
+          if [ -z "$latest" ]; then
+            echo "ERROR: no daily/*.dump.gz objects found in R2 bucket $BUCKET" >&2
+            exit 1
+          fi
+          echo "Latest dump: $latest"
+          aws --endpoint-url "$R2_ENDPOINT" s3 cp "s3://$BUCKET/daily/$latest" ./restore.dump.gz
+          gunzip restore.dump.gz
+          ls -lh restore.dump
+          echo "key=$latest" >> "$GITHUB_OUTPUT"
+
+      # Restore into the transient branch. Same flags as the runbook:
+      # --no-owner --no-privileges --clean --if-exists. Use the unpooled URL
+      # because pgbouncer in transaction mode chokes on multi-statement DDL.
+      - name: pg_restore into transient branch
+        if: steps.check.outputs.configured == 'true'
+        env:
+          TARGET_URL: ${{ steps.branch.outputs.db_url }}
+        run: |
+          set -euo pipefail
+          # Wipe schema (matches runbook procedure)
+          psql "$TARGET_URL" -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
+          # Single-job for atomicity (small DB)
+          pg_restore --no-owner --no-privileges --clean --if-exists \
+                     --jobs 1 --dbname "$TARGET_URL" ./restore.dump
+
+      # Sanity queries. Fail loudly if critical tables are empty — that
+      # would mean the backup is structurally valid but missing data.
+      - name: Verify row counts
+        if: steps.check.outputs.configured == 'true'
+        env:
+          TARGET_URL: ${{ steps.branch.outputs.db_url }}
+        run: |
+          set -euo pipefail
+          psql "$TARGET_URL" -At -c 'SELECT count(*) FROM "Lot";' > /tmp/lot_count
+          psql "$TARGET_URL" -At -c 'SELECT count(*) FROM "OccupancySnapshot";' > /tmp/snap_count
+          lot_count=$(cat /tmp/lot_count)
+          snap_count=$(cat /tmp/snap_count)
+          echo "Lot rows:               $lot_count"
+          echo "OccupancySnapshot rows: $snap_count"
+          # Lot is the bedrock — should always be > 0 in a valid backup.
+          if [ "$lot_count" -eq 0 ]; then
+            echo "FAIL: Lot table is empty — backup may be corrupt or pre-seed" >&2
+            exit 1
+          fi
+          # Snapshots can be 0 only on a fresh install (first backup ever).
+          # Once we've been live for a few days this should always be > 0.
+          # Warn but don't fail in case we ever restore-test a pre-launch backup.
+          if [ "$snap_count" -eq 0 ]; then
+            echo "WARN: OccupancySnapshot is empty — expected for pre-launch only"
+          fi
+          echo "Restore test PASSED. Backup ${{ steps.dump.outputs.key }} is restorable."
+
+      # Always delete the transient branch, even on failure.
+      - name: Delete transient Neon branch
+        if: ${{ always() && steps.check.outputs.configured == 'true' && steps.branch.outcome == 'success' }}
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: ${{ steps.name.outputs.branch }}
+          api_key: ${{ secrets.NEON_API_KEY }}
