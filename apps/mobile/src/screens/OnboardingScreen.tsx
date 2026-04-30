@@ -16,7 +16,6 @@
 import React, { useRef, useState, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
@@ -26,6 +25,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text } from '../components/CustomText';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import sharkParkLogo from '../assets/images/SharkParkV4.webp';
 
@@ -192,10 +192,8 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: TYPOGRAPHY.fontSize.md,
     color: COLORS.mediumGray,
-    fontWeight: TYPOGRAPHY.fontWeight.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
-
-  // ── slide
   slide: {
     width: SCREEN_WIDTH,
     flex: 1,
@@ -214,7 +212,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: TYPOGRAPHY.fontSize.xxxl,
-    fontWeight: TYPOGRAPHY.fontWeight.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: COLORS.textPrimary,
     textAlign: 'center',
     marginBottom: SPACING.xl,
@@ -272,7 +270,7 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: TYPOGRAPHY.fontWeight.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
     color: COLORS.white,
   },
 });
