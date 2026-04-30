@@ -42,7 +42,10 @@ function AppContent() {
     return null;
   }
 
-  // First-launch onboarding (shown before login)
+  // First-launch onboarding (shown before login).
+  // IMPORTANT: rendered OUTSIDE <EnhancedGeofencingProvider> so the iOS
+  // location permission sheet does not fire while the user is still on the
+  // first slide. The provider only mounts after onboarding completes.
   if (needsOnboarding) {
     return (
       <SafeAreaProvider>
@@ -63,7 +66,9 @@ function AppContent() {
           barStyle={isDark ? 'light-content' : 'dark-content'} 
           backgroundColor={colors.primary}
         />
-        <LoginScreen />
+        <EnhancedGeofencingProvider>
+          <LoginScreen />
+        </EnhancedGeofencingProvider>
       </SafeAreaProvider>
     );
   }
@@ -75,9 +80,11 @@ function AppContent() {
         barStyle={isDark ? 'light-content' : 'dark-content'} 
         backgroundColor={colors.primary}
       />
-      <NavigationContainer theme={navigationTheme} linking={linkingConfig}>
-        <MainTabNavigator />
-      </NavigationContainer>
+      <EnhancedGeofencingProvider>
+        <NavigationContainer theme={navigationTheme} linking={linkingConfig}>
+          <MainTabNavigator />
+        </NavigationContainer>
+      </EnhancedGeofencingProvider>
     </SafeAreaProvider>
   );
 }
@@ -87,9 +94,7 @@ function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <AuthProvider>
-          <EnhancedGeofencingProvider>
-            <AppContent />
-          </EnhancedGeofencingProvider>
+          <AppContent />
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

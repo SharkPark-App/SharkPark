@@ -5,12 +5,14 @@
  *   1. Welcome
  *   2. How it works — occupancy crowdsourcing
  *   3. Forecasts & reliability
- *   4. Permission priming — explains why "Always Allow" is needed BEFORE
- *      the OS dialog fires from EnhancedGeofencingProvider
+ *   4. Permission priming — explains the optional background-location
+ *      upgrade and the iOS two-step "While Using" → "Always" flow BEFORE
+ *      the OS dialog fires from EnhancedGeofencingProvider.
  *
- * Renders a horizontal FlatList of slides so the user can swipe or tap
- * "Next" / "Get Started".  No react-navigation dependency — parent
- * simply conditionally renders this screen.
+ * Renders a horizontal FlatList of slides driven exclusively by the
+ * "Next" / "Get Started" CTA (swipe is disabled to keep slide order
+ * deterministic and the dot indicator in sync). No react-navigation
+ * dependency — parent simply conditionally renders this screen.
  */
 
 import React, { useRef, useState, useCallback } from 'react';
@@ -47,7 +49,7 @@ const SLIDES: Slide[] = [
     key: 'welcome',
     emoji: null,
     title: 'Welcome to SharkPark',
-    body: 'Find real-time parking availability across CSULB — so you spend less time circling and more time in class.',
+    body: 'An independent student-built app (not affiliated with CSULB) that shows real-time parking availability across campus — so you spend less time circling and more time in class.',
   },
   {
     key: 'crowdsource',
@@ -64,9 +66,9 @@ const SLIDES: Slide[] = [
   {
     key: 'permissions',
     emoji: '📍',
-    title: 'One Permission, Big Impact',
-    body: 'SharkPark uses background location to detect parking lot entry and exit events even when the app is closed. This helps provide real-time parking data to the campus community. Your location data is processed locally and only anonymous parking events are shared.',
-    note: 'Your exact location is never stored. Only anonymous "entered lot / left lot" events are shared.',
+    title: 'Optional: Help Power the Map',
+    body: 'You can browse lots, directions, and shuttle info without granting any permissions. Sharing background location is optional — it unlocks live occupancy and forecasts by anonymously contributing your own lot entry/exit events.',
+    note: 'iOS asks in two steps: first "Allow While Using" so you can try it out, then later offers "Always Allow" for background detection. You can change your mind anytime in Settings.',
   },
 ];
 
