@@ -17,6 +17,7 @@ import { ReliabilityModule } from './reliability/reliability.module';
 import { ShuttleTrackerModule } from './shuttle-tracker/shuttle-tracker.module';
 import { HealthModule } from './health/health.module';
 import { ReportsModule } from './reports/reports.module';
+import { RedisModule } from './redis/redis.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, validateConfig } from './config/configuration';
 
@@ -81,6 +82,7 @@ const isProduction = process.env.NODE_ENV === 'production';
     ShuttleTrackerModule,
     HealthModule,
     ReportsModule,
+    RedisModule,
   ],
   controllers: [],
   providers: [

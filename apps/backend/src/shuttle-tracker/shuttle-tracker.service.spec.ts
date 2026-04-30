@@ -3,9 +3,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { ShuttleTrackerService } from './shuttle-tracker.service';
+import { RedisService } from '../redis/redis.service';
 
 // Mock global fetch
 global.fetch = jest.fn();
+
+const mockRedis = {
+  get: jest.fn().mockResolvedValue(null), // Cold cache by default
+  set: jest.fn().mockResolvedValue(undefined),
+};
 
 describe('ShuttleTrackerService', () => {
   let service: ShuttleTrackerService;
@@ -13,8 +19,14 @@ describe('ShuttleTrackerService', () => {
   let loggerWarnSpy: jest.SpyInstance;
 
   beforeEach(async () => {
+    mockRedis.get.mockResolvedValue(null);
+    mockRedis.set.mockResolvedValue(undefined);
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ShuttleTrackerService],
+      providers: [
+        ShuttleTrackerService,
+        { provide: RedisService, useValue: mockRedis },
+      ],
     }).compile();
 
     service = module.get<ShuttleTrackerService>(ShuttleTrackerService);
@@ -23,21 +35,19 @@ describe('ShuttleTrackerService', () => {
     loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
     loggerWarnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
-    
+
     (global.fetch as jest.Mock).mockClear();
   });
 
   afterEach(() => {
+    service.onModuleDestroy();
     jest.clearAllMocks();
   });
 
   describe('onModuleInit', () => {
-    it('should fetch routes, stops, and shuttles on initialization', async () => {
-      // Mock successful empty responses to allow init to complete
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: async () => ({}),
-      });
+    it('fetches from PassioGO on a cold cache (Redis miss)', async () => {
+      mockRedis.get.mockResolvedValue(null);
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({}) });
 
       const fetchRoutesSpy = jest.spyOn(service, 'fetchRoutesAndStops');
       const fetchShuttlesSpy = jest.spyOn(service, 'fetchShuttles');
@@ -46,6 +56,28 @@ describe('ShuttleTrackerService', () => {
 
       expect(fetchRoutesSpy).toHaveBeenCalledTimes(1);
       expect(fetchShuttlesSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('loads from Redis and skips PassioGO on a warm cache', async () => {
+      const cachedRoutes = [{ id: 'r1', name: 'Red', shortName: 'RD', color: '#f00', status: 'ok', coordinates: [] }];
+      const cachedStops = [{ id: 's1', name: 'Stop 1', latitude: 33.1, longitude: -118.1, routeId: 'r1', color: '#f00' }];
+      const cachedShuttles = [{ id: '101', busName: 'Bus A', color: '#f00', routeId: 'r1', route: 'Red', latitude: 33.1, longitude: -118.1, heading: 0, paxLoad: 0, capacity: 30 }];
+
+      mockRedis.get
+        .mockResolvedValueOnce(cachedRoutes)    // Routes
+        .mockResolvedValueOnce(cachedStops)     // Stops
+        .mockResolvedValueOnce(cachedShuttles); // Shuttles
+
+      const fetchRoutesSpy = jest.spyOn(service, 'fetchRoutesAndStops');
+      const fetchShuttlesSpy = jest.spyOn(service, 'fetchShuttles');
+
+      await service.onModuleInit();
+
+      expect(fetchRoutesSpy).not.toHaveBeenCalled();
+      expect(fetchShuttlesSpy).not.toHaveBeenCalled();
+      expect(service.getCurrentRoutes()).toEqual(cachedRoutes);
+      expect(service.getCurrentStops()).toEqual(cachedStops);
+      expect(service.getCurrentShuttles()).toEqual(cachedShuttles);
     });
   });
 
@@ -106,6 +138,9 @@ describe('ShuttleTrackerService', () => {
         name: 'Main Station',
         routeId: 'route-1',
       });
+
+      expect(mockRedis.set).toHaveBeenCalledWith('transit:routes', routes, expect.any(Number));
+      expect(mockRedis.set).toHaveBeenCalledWith('transit:stops', stops, expect.any(Number));
     });
 
     it('should drop malformed stops and log a warning', async () => {
@@ -114,7 +149,7 @@ describe('ShuttleTrackerService', () => {
           'stop-1': {
             stopId: 'stop-1',
             // Missing coords to intentionally fail class-validator
-            name: 'Invalid Stop', 
+            name: 'Invalid Stop',
           },
         },
       };
@@ -183,6 +218,8 @@ describe('ShuttleTrackerService', () => {
         heading: 90,
         paxLoad: 5,
       });
+
+      expect(mockRedis.set).toHaveBeenCalledWith('transit:shuttles', shuttles, expect.any(Number));
     });
 
     it('should clear shuttles when none are active (-1 indicator)', async () => {
@@ -196,6 +233,7 @@ describe('ShuttleTrackerService', () => {
       await service.fetchShuttles();
 
       expect(service.getCurrentShuttles()).toHaveLength(0);
+      expect(mockRedis.set).toHaveBeenCalledWith('transit:shuttles', [], expect.any(Number));
     });
 
     it('should drop malformed shuttles and log a warning', async () => {
@@ -271,13 +309,13 @@ describe('ShuttleTrackerService', () => {
       const arrivals = await service.getStopETAs(stopId);
 
       expect(arrivals).toHaveLength(2);
-      
+
       // Sorted by closest ETA
       expect(arrivals[0]).toMatchObject({
         routeId: 'route-1',
         routeName: 'Matched Red Route', // Pulled from cache
         abbreviation: 'MRR',            // Pulled from cache
-        color: '#AA0000',               // Pulled from cache
+        color: '#AA0000',             // Pulled from cache
         etaMinutes: 3,                  // Parsed from string
       });
 

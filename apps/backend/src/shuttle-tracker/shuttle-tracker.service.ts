@@ -1,27 +1,87 @@
-/* global fetch */
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
 import type { MapStop, MapRoute, MapShuttle, RouteArrival } from './interfaces/shuttle-tracker.interface';
 import { PassioRouteDto, PassioShuttleDto, PassioStopDto, PassioEtaDto } from './dto/passiogo.dto';
+import { RedisService } from '../redis/redis.service';
+
+const REDIS_KEYS = {
+  ROUTES: 'transit:routes',
+  STOPS: 'transit:stops',
+  SHUTTLES: 'transit:shuttles',
+} as const;
+
+// Routes and stops change at most daily; 25 h gives the cron a full cycle + buffer
+const ROUTES_STOPS_TTL_S = 25 * 60 * 60;
+// Shuttle list (static metadata, not live positions) is also refreshed daily
+const SHUTTLES_TTL_S = 25 * 60 * 60;
+// How often the app process re-syncs from Redis to pick up cron writes
+const REDIS_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
 /** Service for shuttle tracking - live route, stop, and shuttle updates */
 @Injectable()
-export class ShuttleTrackerService implements OnModuleInit {
+export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
   private latestShuttles: MapShuttle[] = [];
   private currentRoutes: MapRoute[] = [];
   private currentStops: MapStop[] = [];
   private readonly logger = new Logger(ShuttleTrackerService.name);
+  private syncInterval: ReturnType<typeof setInterval> | null = null;
+
+  constructor(private readonly redis: RedisService) {}
 
   async onModuleInit() {
     this.logger.log('Initializing Passio GO! transit data');
-    void this.fetchRoutesAndStops().catch((err) =>
-      this.logger.error('Initial route fetch failed; will retry on next cron tick', err),
-    );
-    // Needed for static data e.g. color, busName, etc.
-    void this.fetchShuttles().catch((err) =>
-      this.logger.error('Initial shuttle fetch failed; will retry on next cron tick', err),
-    );
+
+    // Populate from Redis if available (avoids PassioGO interaction every restart)
+    // Ensures all app instances start with the same snapshot the cron last wrote
+    const [cachedRoutes, cachedStops, cachedShuttles] = await Promise.all([
+      this.redis.get<MapRoute[]>(REDIS_KEYS.ROUTES),
+      this.redis.get<MapStop[]>(REDIS_KEYS.STOPS),
+      this.redis.get<MapShuttle[]>(REDIS_KEYS.SHUTTLES),
+    ]);
+
+    if (cachedRoutes && cachedStops) {
+      this.currentRoutes = cachedRoutes;
+      this.currentStops = cachedStops;
+      this.logger.log(`Loaded ${cachedRoutes.length} routes and ${cachedStops.length} stops from Redis`);
+    } else {
+      void this.fetchRoutesAndStops().catch((err) =>
+        this.logger.error('Initial route fetch failed; will retry on next cron tick', err),
+      );
+    }
+
+    if (cachedShuttles) {
+      this.latestShuttles = cachedShuttles;
+      this.logger.log(`Loaded ${cachedShuttles.length} shuttles from Redis`);
+    } else {
+      void this.fetchShuttles().catch((err) =>
+        this.logger.error('Initial shuttle fetch failed; will retry on next cron tick', err),
+      );
+    }
+
+    // Periodically re-sync from Redis so daily cron updates propagate to all
+    // app containers without requiring a restart
+    this.syncInterval = setInterval(() => {
+      void this.syncFromRedis();
+    }, REDIS_SYNC_INTERVAL_MS);
+  }
+
+  onModuleDestroy() {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
+  }
+
+  private async syncFromRedis(): Promise<void> {
+    const [routes, stops, shuttles] = await Promise.all([
+      this.redis.get<MapRoute[]>(REDIS_KEYS.ROUTES),
+      this.redis.get<MapStop[]>(REDIS_KEYS.STOPS),
+      this.redis.get<MapShuttle[]>(REDIS_KEYS.SHUTTLES),
+    ]);
+    if (routes) this.currentRoutes = routes;
+    if (stops) this.currentStops = stops;
+    if (shuttles) this.latestShuttles = shuttles;
   }
 
   getCurrentShuttles() { return this.latestShuttles; }
@@ -69,7 +129,7 @@ export class ShuttleTrackerService implements OnModuleInit {
         }
       }
 
-      // Map stops to inteface
+      // Map stops to interface
       this.currentStops = validStops.map((stop) => ({
         id: stop.stopId,
         name: stop.name,
@@ -94,9 +154,9 @@ export class ShuttleTrackerService implements OnModuleInit {
 
       // Map routes to interface
       this.currentRoutes = validRoutes.map((routeData) => {
-        const actualRouteId = routeData.myid; 
+        const actualRouteId = routeData.myid;
         const rawPoints: { lat: string; lng: string }[] = rawMapData.routePoints?.[actualRouteId] || [];
-        
+
         const parsedCoordinates = rawPoints.map((point: { lat: string; lng: string }) => ({
           latitude: parseFloat(point.lat),
           longitude: parseFloat(point.lng),
@@ -108,11 +168,16 @@ export class ShuttleTrackerService implements OnModuleInit {
           shortName: routeData.shortName,
           color: routeData.color,
           status: routeData.serviceTimeShort || 'N/A',
-          coordinates: parsedCoordinates, 
+          coordinates: parsedCoordinates,
         };
       });
 
       this.logger.log(`Successfully joined ${this.currentRoutes.length} shuttle routes`);
+
+      await Promise.all([
+        this.redis.set(REDIS_KEYS.ROUTES, this.currentRoutes, ROUTES_STOPS_TTL_S),
+        this.redis.set(REDIS_KEYS.STOPS, this.currentStops, ROUTES_STOPS_TTL_S),
+      ]);
     } catch (error) {
       this.logger.error('Failed to parse and merge static data', error);
     }
@@ -130,7 +195,7 @@ export class ShuttleTrackerService implements OnModuleInit {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ s0: 4163, sA: 1 }),
       });
-      
+
       if (!shuttlesResponse.ok) {
         throw new Error(`Shuttles request returned HTTP ${shuttlesResponse.status}`);
       }
@@ -143,6 +208,7 @@ export class ShuttleTrackerService implements OnModuleInit {
       // One shuttle with ID -1 indicates that none are active (empty array shouldn't occur, but check regardless)
       if (shuttlesData['-1'] || Object.keys(shuttlesData).length === 0) {
         this.latestShuttles = [];
+        await this.redis.set(REDIS_KEYS.SHUTTLES, [], SHUTTLES_TTL_S);
         return;
       }
 
@@ -174,8 +240,10 @@ export class ShuttleTrackerService implements OnModuleInit {
         longitude: parseFloat(shuttle.longitude),
         heading: typeof shuttle.calculatedCourse === 'string' ? parseFloat(shuttle.calculatedCourse) : (shuttle.calculatedCourse || 0),
         paxLoad: shuttle.paxLoad || 0,
-        capacity: shuttle.totalCap || 0, 
+        capacity: shuttle.totalCap || 0,
       }));
+
+      await this.redis.set(REDIS_KEYS.SHUTTLES, this.latestShuttles, SHUTTLES_TTL_S);
     } catch (error) {
       this.logger.error('Failed to fetch shuttle data:', error);
     }
@@ -196,12 +264,12 @@ export class ShuttleTrackerService implements OnModuleInit {
         throw new Error(`ETA request returned HTTP ${etaResponse.status}`);
       }
 
-      const rawJson = (await etaResponse.json()) as { 
-        ETAs?: Record<string, PassioEtaDto[]> 
+      const rawJson = (await etaResponse.json()) as {
+        ETAs?: Record<string, PassioEtaDto[]>
       };
 
       const etasDict = rawJson.ETAs || {};
-      const stopArrivals = etasDict[stopId]; 
+      const stopArrivals = etasDict[stopId];
 
       if (!stopArrivals || !Array.isArray(stopArrivals)) return [];
       const arrivals: RouteArrival[] = [];
@@ -210,7 +278,7 @@ export class ShuttleTrackerService implements OnModuleInit {
         if (arrival.eta === 'no vehicles') continue;
 
         let etaVal: number | null = null;
-        
+
         if (typeof arrival.eta === 'string') {
           // Find first sequence of digits
           const match = arrival.eta.match(/\d+/);
@@ -228,7 +296,7 @@ export class ShuttleTrackerService implements OnModuleInit {
           routeId: arrival.routeId,
           routeName: matchingRoute ? matchingRoute.name : (arrival.theStop?.routeName || 'Unknown Route'),
           abbreviation: matchingRoute ? matchingRoute.shortName : (arrival.theStop?.shortName || ''),
-          color: matchingRoute ? matchingRoute.color : (arrival.bg || '#ffffff'), 
+          color: matchingRoute ? matchingRoute.color : (arrival.bg || '#ffffff'),
           etaMinutes: etaVal,
         });
       }
@@ -238,7 +306,7 @@ export class ShuttleTrackerService implements OnModuleInit {
 
     } catch (error) {
       this.logger.error(`Failed to fetch ETAs for stop ${stopId}`, error);
-      return []; 
+      return [];
     }
   }
 }

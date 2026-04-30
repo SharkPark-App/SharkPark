@@ -14,8 +14,7 @@ describe('API Configuration', () => {
   it('should export required configuration', () => {
     expect(API_CONFIG).toBeDefined();
     expect(API_CONFIG.BASE_URL).toBeDefined();
-    expect(API_CONFIG.SHUTTLE_URL).toBeDefined();
-    expect(API_CONFIG.SOCKET_URL).toBeDefined();
+    expect(API_CONFIG.SOCKET_PATH).toBeDefined();
     expect(API_CONFIG.TIMEOUT).toBeDefined();
     expect(API_CONFIG.ENDPOINTS).toBeDefined();
     expect(API_CONFIG.DEFAULT_HEADERS).toBeDefined();
@@ -26,7 +25,7 @@ describe('API Configuration', () => {
   });
 
   it('should have correct socket path', () => {
-    expect(API_CONFIG.SOCKET_URL).toBe('/api/v1/socket.io/');
+    expect(API_CONFIG.SOCKET_PATH).toBe('/api/v1/socket.io/');
   });
 
   it('should have correct default headers', () => {
@@ -72,17 +71,12 @@ describe('API Configuration', () => {
 
   it('should have valid BASE_URL and SHUTTLE_URL formats', () => {
     expect(API_CONFIG.BASE_URL).toMatch(/^https?:\/\/.+\/api\/v1$/);
-    expect(API_CONFIG.SHUTTLE_URL).toMatch(/^https?:\/\/.+\/shuttles$/);
   });
 
   it('should use correct port for development', () => {
     // In development, should use port 3000
     if (API_CONFIG.BASE_URL.includes('localhost') || API_CONFIG.BASE_URL.includes('192.168') || API_CONFIG.BASE_URL.includes('10.0.2.2')) {
       expect(API_CONFIG.BASE_URL).toContain(':3000');
-    }
-
-    if (API_CONFIG.SHUTTLE_URL.includes('localhost') || API_CONFIG.SHUTTLE_URL.includes('192.168') || API_CONFIG.SHUTTLE_URL.includes('10.0.2.2')) {
-      expect(API_CONFIG.SHUTTLE_URL).toContain(':3000');
     }
   });
 });
