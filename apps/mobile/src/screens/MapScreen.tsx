@@ -97,6 +97,7 @@ const NavigateButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
 
 const MapScreen: React.FC = () => {
   const { colors } = useTheme();
+
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   const { favoriteLots, refreshFavorites } = useFavorites();
   const { lots: apiLots } = useLotsList();

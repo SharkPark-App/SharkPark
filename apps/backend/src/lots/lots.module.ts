@@ -4,9 +4,10 @@ import { LotsService } from './lots.service';
 import { PenetrationEstimationService } from './penetration-estimation.service';
 import { EventsModule } from '../events/events.module';
 import { WeatherModule } from '../weather/weather.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [EventsModule, WeatherModule],
+  imports: [EventsModule, WeatherModule, AuthModule],
   controllers: [LotsController],
   providers: [LotsService, PenetrationEstimationService],
   exports: [LotsService, PenetrationEstimationService],

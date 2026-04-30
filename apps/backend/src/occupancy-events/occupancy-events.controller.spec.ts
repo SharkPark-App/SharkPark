@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OccupancyEventsController } from './occupancy-events.controller';
 import { OccupancyEventsService } from './occupancy-events.service';
+import { ContributorGuard } from '../auth/contributor.guard';
 
 describe('OccupancyEventsController', () => {
   let controller: OccupancyEventsController;
@@ -23,7 +24,13 @@ describe('OccupancyEventsController', () => {
         { provide: OccupancyEventsService, useValue: mockService },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('') } },
       ],
-    }).compile();
+    })
+      // ContributorGuard depends on PrismaService which isn't wired in this
+      // unit-test module. The guard's behavior is covered by its own spec
+      // and by the e2e suite; here we just need the controller to resolve.
+      .overrideGuard(ContributorGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<OccupancyEventsController>(OccupancyEventsController);
     service = module.get(OccupancyEventsService);

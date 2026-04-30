@@ -81,11 +81,12 @@ android {
         applicationId "com.sharkpark.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.0.0"
 
         manifestPlaceholders = [
-            appAuthRedirectScheme: 'msauth'
+            appAuthRedirectScheme: 'msauth',
+            BG_GEOLOCATION_LICENSE: System.getenv("BG_GEOLOCATION_LICENSE") ?: ""
         ]
     }
     signingConfigs {
@@ -95,6 +96,13 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            // Set these via environment variables or gradle.properties (never commit keys)
+            storeFile file(System.getenv("RELEASE_KEYSTORE_PATH") ?: "release.keystore")
+            storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: ""
+            keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: ""
+            keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: ""
+        }
     }
     buildTypes {
         debug {
@@ -103,7 +111,7 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources false  // Required by Transistor Background Geolocation SDK
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"

@@ -1,24 +1,18 @@
 /**
- * Geographic & User Classification Helpers
+ * Geographic Helpers
  *
- * Pure, stateless utility functions for user classification,
- * distance calculations, and campus proximity checks.
+ * Pure, stateless utility functions for distance calculations and campus
+ * proximity checks.
+ *
+ * Note: user-type classification (formerly `classifyUser`) was removed when
+ * the access-tier model landed — geofence registration is device-based, not
+ * user-based, so the mobile app no longer needs to classify users at all.
+ * The backend retains a `user_type` column for audit metadata only.
  */
 
 import { DYNAMIC_GEOFENCE, TEST_CONSTANTS } from '../constants/geofencing';
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-export type UserType = 'STUDENT' | 'EMPLOYEE' | 'UNKNOWN';
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Classify a CSULB email into STUDENT / EMPLOYEE / UNKNOWN. */
-export function classifyUser(email: string): UserType {
-  if (email.endsWith('@student.csulb.edu')) return 'STUDENT';
-  if (email.endsWith('@csulb.edu')) return 'EMPLOYEE';
-  return 'UNKNOWN';
-}
 
 /** Haversine distance in meters between two lat/lng points. */
 export function haversineDistance(
