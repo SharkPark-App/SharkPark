@@ -7,10 +7,13 @@ type AuthState = AuthResult;
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isGuest: boolean;
   user: AuthState | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<AuthState | null>;
+  continueAsGuest: () => void;
+  exitGuestMode: () => void;
   isLoading: boolean;
 }
 
@@ -18,6 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
   const [user, setUser] = useState<AuthState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -97,8 +101,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return savedUser;
   };
 
+  const continueAsGuest = () => {
+    setIsGuest(true);
+  };
+
+  const exitGuestMode = () => {
+    setIsGuest(false);
+  };
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, refreshSession, isLoading }}>
+    <AuthContext.Provider value={{ isAuthenticated, isGuest, user, login, logout, refreshSession, continueAsGuest, exitGuestMode, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
