@@ -4,7 +4,7 @@
  */
 
 import { apiService } from './base';
-import { loadAuth } from '../../auth/AzureAuth';
+import { loadAuth } from '../../auth';
 
 /**
  * Permanently deletes the authenticated user's account.
