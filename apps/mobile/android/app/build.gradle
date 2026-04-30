@@ -93,7 +93,8 @@ android {
 
         manifestPlaceholders = [
             appAuthRedirectScheme: 'msauth',
-            MAPS_API_KEY: mapsApiKey
+            MAPS_API_KEY: mapsApiKey,
+            BG_GEOLOCATION_LICENSE: System.getenv("BG_GEOLOCATION_LICENSE") ?: ""
         ]
     }
     signingConfigs {
@@ -103,6 +104,13 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            // Set these via environment variables or gradle.properties (never commit keys)
+            storeFile file(System.getenv("RELEASE_KEYSTORE_PATH") ?: "release.keystore")
+            storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: ""
+            keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: ""
+            keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: ""
+        }
     }
     buildTypes {
         debug {
@@ -111,7 +119,7 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources false  // Required by Transistor Background Geolocation SDK
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"

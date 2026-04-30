@@ -4,7 +4,7 @@
  */
 import { apiService } from './base';
 import API_CONFIG from './config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDeviceId } from './deviceCredentials';
 import { cacheService } from './cache';
 
 // Backend response interfaces (matching the backend)
@@ -334,13 +334,22 @@ class LotsApiService {
    * Record anonymous occupancy event (ENTER/EXIT)
    * Device ID is hashed server-side for privacy
    */
+  /**
+   * Record anonymous occupancy event (ENTER/EXIT).
+   *
+   * The body carries `device_id` so the backend can upsert the
+   * `ContributorPing` row that gates ContributorGuard. The same value is
+   * also injected into the `x-device-id` header by ApiService for the read
+   * endpoints — both surfaces share the install-scoped UUID owned by
+   * deviceCredentials.ts.
+   */
   async recordOccupancyEvent(event: {
     lotId: string;
     eventType: 'ENTER' | 'EXIT';
     source: 'GEOFENCE' | 'MANUAL';
     timestamp?: string;
   }): Promise<{ event_id: string; deduplicated: boolean }> {
-    const deviceId = await this.getAnonymousDeviceId();
+    const deviceId = await getDeviceId();
 
     const payload = {
       lot_id: event.lotId,
@@ -350,48 +359,11 @@ class LotsApiService {
     };
 
     const response = await apiService.post<{ event_id: string; deduplicated: boolean }>(
-      API_CONFIG.ENDPOINTS.OCCUPANCY_EVENTS, 
-      payload
+      API_CONFIG.ENDPOINTS.OCCUPANCY_EVENTS,
+      payload,
     );
     return response.data;
   }
-
-  /** Get or create anonymous device ID for deduplication (hashed server-side) */
-  private async getAnonymousDeviceId(): Promise<string> {
-    try {
-      // Try to get existing ID from AsyncStorage
-      const existingId = await AsyncStorage.getItem('@sharkpark_anonymous_device_id');
-
-      if (existingId) {
-        return existingId;
-      }
-
-      // Generate a new random UUID
-      const newId = this.generateUUID();
-      await AsyncStorage.setItem('@sharkpark_anonymous_device_id', newId);
-      return newId;
-    } catch {
-      // Fallback: generate a session-only ID if AsyncStorage fails
-      if (__DEV__) console.warn('[LotsApi] Failed to access AsyncStorage, using session-only ID');
-      return this.sessionDeviceId || (this.sessionDeviceId = this.generateUUID());
-    }
-  }
-
-  /**
-   * Generate a random UUID v4 using crypto.getRandomValues for security
-   */
-  private generateUUID(): string {
-    const bytes = new Uint8Array(16);
-    crypto.getRandomValues(bytes);
-    // Set version 4 (0100) and variant 10xx per RFC 4122
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-  }
-
-  // Fallback session-only device ID
-  private sessionDeviceId?: string;
 
   private buildQueryString(params: GetLotsParams | GetHistoryParams): string {
     const query = new URLSearchParams();
