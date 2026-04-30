@@ -29,6 +29,15 @@ jest.mock('../src/services/api', () => ({
       this.status = status;
     }
   },
+  BgLocationRequiredError: class BgLocationRequiredError extends Error {
+    readonly code = 'BG_LOCATION_REQUIRED';
+    reason: string;
+    constructor(reason: string) {
+      super(reason);
+      this.reason = reason;
+      this.name = 'BgLocationRequiredError';
+    }
+  },
 }));
 
 // Capture AppState listeners
