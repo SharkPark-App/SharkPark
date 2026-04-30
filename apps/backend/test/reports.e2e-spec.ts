@@ -137,13 +137,13 @@ describe('ReportsController (e2e)', () => {
         .expect(400);
     });
 
-    it('should reject invalid message type (must be string)', () => {
+    it('should reject unknown fields (forbidNonWhitelisted)', () => {
       return request(app.getHttpServer())
         .post('/api/v1/reports')
         .send({
           lotId: 'cm0invalidcuid0000xyz',
           type: 'blockage',
-          message: 12345,
+          adminOverride: true,
         })
         .expect(400);
     });
