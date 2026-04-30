@@ -16,6 +16,7 @@ import { OccupancyEventsService } from './occupancy-events.service';
 import { CreateOccupancyEventDto } from './dto/create-occupancy-event.dto';
 import { Public } from '../auth/public.decorator';
 import { HmacGuard } from '../auth/hmac.guard';
+import { ContributorGuard } from '../auth/contributor.guard';
 
 /** Controller for anonymous occupancy event logging from mobile geofencing */
 @Controller('occupancy-events')
@@ -40,8 +41,18 @@ export class OccupancyEventsController {
     };
   }
 
-  /** Get events for a lot within a date range */
+  /**
+   * Get events for a lot within a date range.
+   *
+   * Contributor-gated: this endpoint returns the raw ENTER/EXIT event
+   * stream, which can be aggregated by a caller to reconstruct the same
+   * live availability that `/lots/summary` and the prediction endpoints
+   * are gated on. Keeping it Public would let any anonymous client poll
+   * around the reciprocity gate, defeating the contribution-for-data
+   * exchange. See docs/api-access-tiers.md ("Current state vs spec audit").
+   */
   @Public()
+  @UseGuards(ContributorGuard)
   @Get('lots/:lotId')
   @HttpCode(HttpStatus.OK)
   async getEventsByLot(

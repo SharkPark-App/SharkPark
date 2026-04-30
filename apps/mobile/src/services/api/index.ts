@@ -7,7 +7,7 @@
 export { default as API_CONFIG } from './config';
 
 // Base service
-export { apiService, ApiError } from './base';
+export { apiService, ApiError, BackgroundLocationRequiredError } from './base';
 export type { ApiResponse } from './base';
 
 // Lots service

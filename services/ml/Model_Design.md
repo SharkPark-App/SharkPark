@@ -358,22 +358,51 @@ Once sufficient real data accumulates, a `weekly_trend` feature should be added 
 
 **Why cyclical encoding (`sin_hour`, `cos_hour`, `sin_day`, `cos_day`) is load-bearing for long-term:** Without lag features, XGBoost must learn time patterns purely from calendar context. Raw integer `hour` treats 23 and 0 as far apart numerically, but they're adjacent in time. Sin/cos encoding fixes this, making late-night/early-morning boundary patterns learnable. Short-term omits cyclical encoding entirely — lag features dominate there, and predictions run 7am–9pm so there is no wrap-around boundary to handle.
 
-### Weather Features (Future)
+### Weather-Aware Forecasting
 
-Weather-aware forecasting will incorporate conditions that affect parking demand:
+Weather is integrated through a **two-layer design**: a rule-based adjustment layer that ships now, and an eventual learned-feature layer that activates post-launch once real data exists.
 
-- `temperature`: current temperature (°F)
-- `precipitation_probability`: 0-100%
-- `precipitation_type`: none, rain, snow
-- `weather_severity`: NORMAL, ADVISORY, WARNING
+#### Current state: rule-based adjustment for short-term predictions
 
-**Data source:** Weather API (OpenWeatherMap or similar), cached in `weather` table in PostgreSQL.
+**No learned coefficients.** Pre-launch occupancy is synthetic, so any model trained against synthetic occupancy paired with real weather would memorize fabricated correlations. The rule-based layer ships meaningful weather-awareness without requiring real data, and remains as a permanent safety floor even after a learned weather model eventually integrates — rare severe events (snow, thunderstorms) are systematically under-sampled by Empirical Risk Minimization training, so a hand-coded floor catches the tails the learned model misses.
 
-**Expected impact:**
+**Severity classification (derived in code, no schema migration):**
 
-- Rain/snow → increased driving, higher lot occupancy
-- Extreme heat → preference for covered/shaded lots
-- Severe weather → reduced campus activity overall
+| Severity | Trigger |
+|---|---|
+| `SEVERE` | `conditions` contains "thunderstorm" / "tornado" / "squall"; OR `wind_speed_mph > 40` |
+| `SNOW` | `conditions` contains "snow" / "sleet" / "freezing rain" |
+| `HEAVY_RAIN` | `is_raining` AND `precipitation_probability > 0.7` AND `conditions` contains "heavy" |
+| `RAIN` | `is_raining` (default rain bucket) |
+| `EXTREME_HEAT` | `temperature_f > 100` |
+| `NORMAL` | none of the above |
+
+Order matters: checks run most-severe to least-severe, so a thunderstorm with rain classifies as `SEVERE`, not `RAIN`.
+
+**Adjustment rules (per prediction row, using `target_hour`):**
+
+| Severity | Adjustment |
+|---|---|
+| `SEVERE` | `median *= 0.5`, lower bound widened to `min(lower, median * 0.7)` |
+| `SNOW` | `median *= 0.75`, lower bound widened similarly |
+| `HEAVY_RAIN` + commute hour (7-9, 16-18) | `median *= 1.05` (drive instead of walk) |
+| `HEAVY_RAIN` + non-commute | `median *= 0.97` |
+| `RAIN` + commute | `median *= 1.02` |
+| `RAIN` + non-commute | no-op |
+| `EXTREME_HEAT` | no-op |
+| `NORMAL` | no-op |
+
+All outputs clipped to `[0, 1]`. The `lower ≤ median ≤ upper` invariant is preserved after adjustment. Widening is one-sided — only the lower bound is pushed down, never the upper — severe weather is hypothesized to push parking demand down.
+
+**Both the directions and magnitudes of these adjustments are documented placeholders, not measured.** They encode plausible-sounding hypotheses about how weather affects parking demand on this specific campus, but every rule — including the sign of the rain bump and the no-op for extreme heat — could be wrong. 
+
+**Failure mode:** if the `weather` table is empty or unreachable, `fetch_latest_weather()` returns `None`, the adjustment layer is a no-op, and predictions ship unchanged with a `NO_WEATHER_DATA` log entry. The kill-switch `WEATHER_ADJUSTMENT_ENABLED` in `src/config.py` disables the layer entirely if rules misfire in production.
+
+#### Eventual learned-weather integration (post-launch)
+
+Once post-launch data accumulates enough coverage to support learning — at minimum one full academic semester, with 30+ rainy days and 10+ extreme-temperature days observed across lots — evaluate whether to integrate weather as model features. Severe weather (snow, thunderstorms, high wind) is intentionally out of scope for the learned layer: those events are too rare for ERM to fit reliably even with years of data, and the rule-based layer remains their permanent home.
+
+The rule-based adjustment layer **stays permanent** under the learned model as a safety floor for severe events.
 
 ### Confidence Intervals
 
@@ -435,7 +464,7 @@ All data lives in a single PostgreSQL database (Aurora PostgreSQL Serverless v2 
 |-------|---------|----------|
 | `lots`, `users`, `campus_events`, etc. | Operational data | Permanent |
 | `occupancy_snapshots` | 15-min snapshots with ML feature columns | Permanent (archive older data to S3) |
-| `occupancy_events` | Raw ENTER/EXIT events | Permanent (archive older data to S3) |
+| `occupancy_events` | Raw ENTER/EXIT events | 30 days (daily prune cron, see infrastructure/README.md) |
 | `predictions_short_term` | Short-term predictions (hourly by lot) | Overwritten each cycle |
 | `predictions_long_term` | Week-ahead predictions (7 days × hourly by lot) | Overwritten daily |
 

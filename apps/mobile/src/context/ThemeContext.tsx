@@ -138,7 +138,9 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           setThemeMode(savedTheme);
         }
       } catch (error) {
-        console.error('[ThemeContext] Failed to load theme from storage:', error);
+        if (__DEV__) {
+          console.error('[ThemeContext] Failed to load theme from storage:', error);
+        }
       }
     };
     loadSavedTheme();
@@ -149,7 +151,9 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setThemeMode(mode);
       await AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
     } catch (error) {
-      console.error('[ThemeContext] Failed to save theme to storage:', error);
+      if (__DEV__) {
+        console.error('[ThemeContext] Failed to save theme to storage:', error);
+      }
     }
   };
 

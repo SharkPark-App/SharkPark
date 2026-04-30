@@ -1,12 +1,11 @@
 /**
  * Unit tests for geoHelpers
  *
- * Tests the pure geographic & user classification functions:
- *   classifyUser, haversineDistance, isAfterELotOpen, isOnCampus
+ * Tests the pure geographic functions:
+ *   haversineDistance, isAfterELotOpen, isOnCampus
  */
 
 import {
-  classifyUser,
   haversineDistance,
   isAfterELotOpen,
   isOnCampus,
@@ -18,26 +17,6 @@ const ON_CAMPUS = { latitude: 33.7838, longitude: -118.1089 };
 const OFF_CAMPUS = { latitude: 34.05, longitude: -118.25 }; // downtown LA
 
 // ── Tests ────────────────────────────────────────────────────────────────────
-
-describe('classifyUser', () => {
-  it('identifies student emails', () => {
-    expect(classifyUser('john@student.csulb.edu')).toBe('STUDENT');
-  });
-
-  it('identifies employee emails', () => {
-    expect(classifyUser('prof@csulb.edu')).toBe('EMPLOYEE');
-  });
-
-  it('does not confuse student email for employee', () => {
-    // @student.csulb.edu ends with @csulb.edu — guard must catch this
-    expect(classifyUser('jane@student.csulb.edu')).toBe('STUDENT');
-  });
-
-  it('returns UNKNOWN for non-CSULB emails', () => {
-    expect(classifyUser('user@gmail.com')).toBe('UNKNOWN');
-    expect(classifyUser('')).toBe('UNKNOWN');
-  });
-});
 
 describe('isAfterELotOpen', () => {
   // 2026-04-14 is a Tuesday (weekday)

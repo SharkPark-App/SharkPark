@@ -5,8 +5,6 @@ import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { SentryModule } from '@sentry/nestjs/setup';
 import type { Request } from 'express';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { LotsModule } from './lots/lots.module';
 import { UsersModule } from './users/users.module';
@@ -17,6 +15,7 @@ import { AzureAdGuard } from './auth/azure-ad.guard';
 import { OccupancyEventsModule } from './occupancy-events/occupancy-events.module';
 import { ReliabilityModule } from './reliability/reliability.module';
 import { HealthModule } from './health/health.module';
+import { ReportsModule } from './reports/reports.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, validateConfig } from './config/configuration';
 
@@ -79,10 +78,10 @@ const isProduction = process.env.NODE_ENV === 'production';
     OccupancyEventsModule,
     ReliabilityModule,
     HealthModule,
+    ReportsModule,
   ],
-  controllers: [AppController],
+  controllers: [],
   providers: [
-    AppService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useExisting: AzureAdGuard },
   ],

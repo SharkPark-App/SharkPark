@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PrismaService } from '../database/database.module';
 import type { UserType } from '@prisma/client';
 import type { UserResponse } from './interfaces/user.interface';
@@ -13,6 +14,17 @@ export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * SHA-256(salt:email) — same salt as occupancy-event device hashing.
+   * Used for audit-log actor identification so the row carries no
+   * reversible PII after the user is deleted.
+   */
+  private hashEmail(email: string): string {
+    const salt = process.env.DEVICE_HASH_SALT || 'dev-unsalted';
+    return createHash('sha256').update(`${salt}:${email.toLowerCase()}`).digest('hex');
+  }
+
 
   /** Retrieves user profile with their favorited parking lots. */
   async findOne(userId: string): Promise<UserResponse> {
@@ -174,8 +186,13 @@ export class UsersService {
         };
       }
 
-      // Determine user type from email
-      const userType: UserType = email.includes('@student') ? 'STUDENT' : 'EMPLOYEE';
+      // Determine user type from email domain. STUDENT is the @student.csulb.edu
+      // sub-domain; everything else under csulb.edu is treated as EMPLOYEE.
+      // Note: this column is metadata-only and gates no endpoint (see
+      // docs/api-access-tiers.md). Pending deletion in a follow-up migration.
+      const userType: UserType = email.toLowerCase().endsWith('@student.csulb.edu')
+        ? 'STUDENT'
+        : 'EMPLOYEE';
 
       // Get default school (CSULB)
       const school = await this.prisma.school.findFirst({
@@ -219,6 +236,40 @@ export class UsersService {
       };
     } catch (error) {
       this.logger.error(`Failed to find or create profile for user ${email}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Hard-deletes a user and cascades to favorites (per schema FK rules).
+   * Writes a USER_DELETED audit row in the same transaction so a deletion
+   * is auditable even after the row is gone. The audit row stores only
+   * SHA-256(salt:email), no reversible PII.
+   *
+   * Apple App Store has required this since 2022 for any app with login.
+   */
+  async deleteUser(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    const actorHash = this.hashEmail(userId);
+
+    try {
+      await this.prisma.$transaction([
+        this.prisma.auditEvent.create({
+          data: {
+            event_type: 'USER_DELETED',
+            actor_hash: actorHash,
+            metadata: { user_type: user.user_type },
+          },
+        }),
+        this.prisma.user.delete({ where: { email: userId } }),
+      ]);
+      this.logger.log(`Deleted user ${userId} (actor_hash=${actorHash.slice(0, 8)}…)`);
+    } catch (error) {
+      this.logger.error(`Failed to delete user ${userId}`, error);
       throw error;
     }
   }
