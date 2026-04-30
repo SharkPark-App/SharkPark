@@ -25,7 +25,11 @@ export default [
         setTimeout: "readonly",
         setInterval: "readonly",
         clearTimeout: "readonly",
-        clearInterval: "readonly"
+        clearInterval: "readonly",
+        fetch: "readonly",
+        AbortController: "readonly",
+        Response: "readonly",
+        globalThis: "readonly"
       }
     },
     plugins: {
@@ -52,7 +56,15 @@ export default [
         afterAll: "readonly",
         beforeEach: "readonly",
         afterEach: "readonly",
-        jest: "readonly"
+        jest: "readonly",
+        process: "readonly",
+        console: "readonly",
+        fetch: "readonly",
+        AbortController: "readonly",
+        Response: "readonly",
+        globalThis: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly"
       }
     },
     plugins: {

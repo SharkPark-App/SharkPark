@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { PrismaService } from '../src/database/database.module';
 import { hashDeviceId } from '../src/occupancy-events/utils/privacy.util';
+import { bootstrapTestApp } from './utils/bootstrap';
 
 describe('LotsController (e2e)', () => {
   let app: INestApplication;
@@ -21,19 +21,7 @@ describe('LotsController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     
-    app.setGlobalPrefix('api/v1');
-    app.useGlobalFilters(new AllExceptionsFilter());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: false,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
-    );
-
+    bootstrapTestApp(app);
     await app.init();
 
     prisma = moduleFixture.get<PrismaService>(PrismaService);

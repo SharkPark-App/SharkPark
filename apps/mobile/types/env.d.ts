@@ -6,4 +6,6 @@ declare module '@env' {
    * the backend HmacGuard runs in permissive (dev) mode.
    */
   export const DEVICE_EVENT_SECRET: string | undefined;
+  export const SENTRY_DSN_MOBILE: string | undefined;
+  export const SENTRY_ENVIRONMENT: string | undefined;
 }
