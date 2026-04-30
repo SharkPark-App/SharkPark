@@ -34,7 +34,6 @@ A few endpoints stack tiers (e.g. *favorites* requires both Authenticated and Co
 | `GET`  | `/api/v1/health`                  | Liveness                             |
 | `GET`  | `/api/v1/weather/current`         | Current weather (via OpenWeather proxy) |
 | `GET`  | `/api/v1/events`                  | Campus event calendar                |
-| `GET`  | `/api/v1/events/:id/impacts`      | Per-event lot impact estimates       |
 | `POST` | `/api/v1/occupancy-events`        | Anonymous device contribution. **This is the contribution mechanism that unlocks the Contributor tier.** Server hashes `device_id` and bumps `ContributorPing.last_seen_at` on every successful (or even deduplicated) call. |
 
 ### Contributor (`x-device-id` header + fresh ping)
@@ -157,7 +156,7 @@ Audit method: `grep` every `@Controller`/`@Public`/`@UseGuards`/`@Get|Post|Put|P
 
 ### Endpoints in the spec table but **not in the code**
 
-_None as of 2026-04-29._ Previously listed `/api/v1/events/:id` was struck from the spec on 2026-04-29 (no handler, no mobile caller — use `/events` or `/events/:id/impacts` instead).
+_None as of 2026-04-30._ Previously listed `/api/v1/events/:id` was struck from the spec on 2026-04-29 (no handler, no mobile caller). `/api/v1/events/:id/impacts` was removed entirely on 2026-04-30 along with the `EventImpact` model — events are a display/notification surface, not a forecasting layer.
 
 ### Endpoints in spec **and** in code, tier matches ✅
 
@@ -165,7 +164,7 @@ _None as of 2026-04-29._ Previously listed `/api/v1/events/:id` was struck from 
 |-----------------------------------------------|---------------|---------------|
 | `GET /lots`, `/lots/:id`, `/lots/:id/history` | Public        | Public ✅      |
 | `GET /weather/current`                        | Public        | Public ✅      |
-| `GET /events`, `/events/:id/impacts`          | Public        | Public ✅      |
+| `GET /events`                                 | Public        | Public ✅      |
 | `POST /occupancy-events`                      | Public + HMAC | Public + HMAC ✅ |
 | `GET /lots/summary`                           | Contributor   | Contributor ✅ |
 | `GET /lots/:id/recommendations`               | Contributor   | Contributor ✅ |

@@ -1,10 +1,11 @@
-import { Controller, Get, Param, Query, HttpCode, HttpStatus, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Query, HttpCode, HttpStatus, ParseIntPipe } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { Public } from '../auth/public.decorator';
 
 /**
- * Provides campus event data and their impact on parking availability.
- * Events include sports games, graduations, and other large gatherings.
+ * Provides campus event data for display and notification surfaces in the
+ * mobile app. Events are stored as raw scraped records; mobile clients
+ * decide which events are relevant to a user based on their favorite lots.
  */
 @Public()
 @Controller('events')
@@ -38,18 +39,6 @@ export class EventsController {
       count: upcoming.length,
       window_hours: windowHours,
       data: upcoming,
-    };
-  }
-
-  @Get(':eventId/impacts')
-  @HttpCode(HttpStatus.OK)
-  async getEventImpacts(@Param('eventId') eventId: string) {
-    const impacts = await this.eventsService.getImpacts(eventId);
-    return {
-      success: true,
-      event_id: eventId,
-      count: impacts.length,
-      data: impacts,
     };
   }
 }

@@ -67,7 +67,7 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 | **Auth** | Azure AD SSO via `react-native-app-auth` | CSULB uses Azure Active Directory for all student accounts. Using the university's existing SSO means students log in with their school credentials — no separate account creation, and we can verify they are actual CSULB students. |
 | **Backend** | NestJS 11 (Node.js) | TypeScript-native framework with built-in support for modules, dependency injection, guards, pipes, and scheduled tasks. The modular architecture maps cleanly to our domain (lots, users, events, weather, reliability). Comes with first-class testing support. |
 | **ORM** | Prisma 7 | Type-safe database queries generated from a schema file (`prisma/schema.prisma`). Catches query errors at compile time instead of runtime, auto-generates migrations, and provides a visual data browser (`prisma studio`). Uses the `@prisma/adapter-pg` driver adapter for direct PostgreSQL connection pooling. |
-| **Database** | PostgreSQL 16 (local) / Aurora PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events impact multiple lots). We run standard PostgreSQL 16 in Docker for local development. In production we deploy to Amazon Aurora PostgreSQL Serverless v2, which is wire-compatible with PostgreSQL but adds auto-scaling, automated backups, and multi-AZ replication. The only change between environments is the `DATABASE_URL` connection string. |
+| **Database** | PostgreSQL 16 (local) / Aurora PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events are linked to nearby lots for the in-app notification surface). We run standard PostgreSQL 16 in Docker for local development. In production we deploy to Amazon Aurora PostgreSQL Serverless v2, which is wire-compatible with PostgreSQL but adds auto-scaling, automated backups, and multi-AZ replication. The only change between environments is the `DATABASE_URL` connection string. |
 | **Security** | Helmet, Throttler, CORS, Passport JWT | Helmet sets security HTTP headers. The throttler rate-limits to 20 requests per 10 seconds per IP. CORS is locked down in production. Passport validates Azure AD JWTs against Microsoft's JWKS endpoint with automatic key rotation. |
 | **Monorepo** | pnpm 10 workspaces + Turborepo | pnpm's strict dependency resolution prevents phantom dependencies. Turborepo parallelizes builds, tests, and lints across workspaces with caching. Shared packages (`packages/types`, `packages/utils`) are consumed by both the backend and mobile app. |
 | **Infra** | Docker Compose | Single `docker compose up` gives every developer an identical PostgreSQL 17 + MinIO (S3) environment matching production (Neon + R2). The postinstall script automates this so `pnpm install` is the only command needed. |
@@ -248,7 +248,7 @@ All user endpoints require Azure AD authentication.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/events` | List campus events (optional `date` filter) |
-| `GET` | `/api/v1/events/:id/parking-impact` | Parking impact for a specific event |
+| `GET` | `/api/v1/events/upcoming` | Upcoming campus events |
 
 ### Weather
 
