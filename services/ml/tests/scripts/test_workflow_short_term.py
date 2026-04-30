@@ -44,8 +44,10 @@ class TestFullWorkflow:
     """Verify the complete train → evaluate → promote → predict pipeline."""
 
     @patch("src.data.db.write_short_term_predictions", return_value=0)
+    @patch("src.data.db.fetch_latest_weather", return_value=None)
+    @patch("src.data.db.get_school_id_for_lots", return_value="school-1")
     def test_train_evaluate_promote_predict(
-        self, mock_write, workflow_env
+        self, mock_school, mock_weather, mock_write, workflow_env
     ):
         """Full workflow should complete without errors."""
         data_path = workflow_env["data_path"]

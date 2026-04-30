@@ -23,9 +23,16 @@ import mlflow
 import numpy as np
 import pandas as pd
 
-from src.config import SHORT_TERM_MODEL_NAME, OPERATING_START_HOUR
+from collections import Counter
+
+from src.config import (
+    SHORT_TERM_MODEL_NAME,
+    OPERATING_START_HOUR,
+    WEATHER_ADJUSTMENT_ENABLED,
+)
 from src.features.short_term import prepare_inference_features
 from src.models.short_term import ShortTermModel
+from src.postprocess.weather_adjustment import apply_weather_adjustment
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +94,28 @@ def predict(
 
     # Generate predictions with quantile confidence intervals
     preds, preds_lower, preds_upper = model.predict_quantiles(features)
+
+    # Rule-based weather adjustment
+    if WEATHER_ADJUSTMENT_ENABLED:
+        from src.data.db import fetch_latest_weather, get_school_id_for_lots
+
+        school_id = get_school_id_for_lots(lot_ids)
+        weather = fetch_latest_weather(school_id)
+        preds, preds_lower, preds_upper, weather_reasons = apply_weather_adjustment(
+            preds,
+            preds_lower,
+            preds_upper,
+            features,
+            weather,
+        )
+
+        reason_counts = Counter(weather_reasons)
+        summary = ", ".join(
+            f"{reason}={count}" for reason, count in sorted(reason_counts.items())
+        )
+        logger.info(
+            "Weather adjustment: %s (rows=%d)", summary or "NORMAL=all", len(features)
+        )
 
     # Derive capacity from snapshots so inference stays self-contained
     # (works with both --data-path parquet and live DB, no extra query needed).

@@ -8,6 +8,7 @@ import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../database/database.module';
 import { withAdvisoryLock } from './_advisory-lock';
+import { pingHeartbeat } from './_heartbeat';
 
 export interface CronContext {
   app: INestApplicationContext;
@@ -64,6 +65,12 @@ export async function runCronJob(
     } else {
       log.log(`[cron:${jobName}] complete`);
     }
+
+    // Ping Better Stack heartbeat on success OR when another instance held
+    // the lock (the lock-holder will ping when it finishes — pinging here too
+    // is harmless and prevents false-positive missed-heartbeat alerts on the
+    // skipped instance). Only suppressed on hard failure (caught below).
+    await pingHeartbeat(jobName, log);
   } catch (err) {
     exitCode = 1;
     const message = err instanceof Error ? err.message : String(err);

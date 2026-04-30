@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe, CanActivate, ExecutionContext } from '@nestjs/common';
+import { INestApplication, CanActivate, ExecutionContext } from '@nestjs/common';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { AzureAdGuard } from '../src/auth/azure-ad.guard';
 import { PrismaService } from '../src/database/database.module';
+import { bootstrapTestApp } from './utils/bootstrap';
 
 /**
  * Azure AD AuthGuard blocks requests w/o valid credentials.
@@ -47,19 +47,7 @@ describe('UsersController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     
-    app.setGlobalPrefix('api/v1');
-    app.useGlobalFilters(new AllExceptionsFilter());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: false,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
-    );
-
+    bootstrapTestApp(app);
     await app.init();
     prisma = moduleFixture.get<PrismaService>(PrismaService);
   });

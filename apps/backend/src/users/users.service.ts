@@ -186,8 +186,13 @@ export class UsersService {
         };
       }
 
-      // Determine user type from email
-      const userType: UserType = email.includes('@student') ? 'STUDENT' : 'EMPLOYEE';
+      // Determine user type from email domain. STUDENT is the @student.csulb.edu
+      // sub-domain; everything else under csulb.edu is treated as EMPLOYEE.
+      // Note: this column is metadata-only and gates no endpoint (see
+      // docs/api-access-tiers.md). Pending deletion in a follow-up migration.
+      const userType: UserType = email.toLowerCase().endsWith('@student.csulb.edu')
+        ? 'STUDENT'
+        : 'EMPLOYEE';
 
       // Get default school (CSULB)
       const school = await this.prisma.school.findFirst({
