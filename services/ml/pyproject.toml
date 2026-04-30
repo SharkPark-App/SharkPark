@@ -20,7 +20,7 @@ dependencies = [
     "cuid2>=2.0.0",
     "botocore>=1.43.0",
     "mlflow>=3.11.1",
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.2.2",
 ]
 
 [project.optional-dependencies]
