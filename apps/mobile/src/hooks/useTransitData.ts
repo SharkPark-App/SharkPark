@@ -38,10 +38,11 @@ export const useTransitData = () => {
   }, [loadInitialShuttles]);
 
   useEffect(() => {
-    const socket = io(API_CONFIG.SHUTTLE_URL, {
-    transports: ['websocket'],
-    path: API_CONFIG.SOCKET_URL,
-  });
+    const socket = io(API_CONFIG.SOCKET_ORIGIN + '/shuttles', {
+      transports: ['websocket'],
+      path: API_CONFIG.SOCKET_PATH,
+      auth: { token: API_CONFIG.WS_SECRET },
+    });
 
     if (__DEV__) {
       socket.on('connect', () => {

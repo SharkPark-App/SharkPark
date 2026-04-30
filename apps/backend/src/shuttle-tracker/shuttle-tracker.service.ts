@@ -15,8 +15,13 @@ export class ShuttleTrackerService implements OnModuleInit {
 
   async onModuleInit() {
     this.logger.log('Initializing Passio GO! transit data');
-    await this.fetchRoutesAndStops(); 
-    await this.fetchShuttles();
+    void this.fetchRoutesAndStops().catch((err) =>
+      this.logger.error('Initial route fetch failed; will retry on next cron tick', err),
+    );
+    // Needed for static data e.g. color, busName, etc.
+    void this.fetchShuttles().catch((err) =>
+      this.logger.error('Initial shuttle fetch failed; will retry on next cron tick', err),
+    );
   }
 
   getCurrentShuttles() { return this.latestShuttles; }
@@ -114,7 +119,9 @@ export class ShuttleTrackerService implements OnModuleInit {
   }
 
   /**
-   * Retrieves list of active shuttles
+   * Retrieves initial data for all active shuttles per cron tick.
+   * Provides static data (e.g. color, busName) that isn't & does not need to be provided by the WS gateway.
+   * Instantiates shuttles for immediate frontend access (user doesn't have to wait for WS gateway).
    */
   async fetchShuttles() {
     try {
@@ -179,7 +186,6 @@ export class ShuttleTrackerService implements OnModuleInit {
    */
   async getStopETAs(stopId: string): Promise<RouteArrival[]> {
     try {
-      // TODO: verify that this fetch works with active busses en route
       const etaResponse = await fetch(`https://passiogo.com/mapGetData.php?eta=1&stopIds=${stopId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

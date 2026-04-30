@@ -1,14 +1,17 @@
 import { Controller, Get, Param } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ShuttleTrackerService } from './shuttle-tracker.service';
 import { Public } from '../auth/public.decorator';
 
 /** Controller for live shuttle tracking */
+// Throttled to prevent abuse of PassioGO! connection on our behalf (could potentially break feature)
+@Public()
 @Controller('transit')
+@Throttle({ default: { limit: 30, ttl: 60_000 } })
 export class ShuttleTrackerController {
   constructor(private readonly shuttleTrackerService: ShuttleTrackerService) {}
 
   /** Get list of active shuttles */
-  @Public()
   @Get('shuttles')
   getShuttles() {
     const shuttles = this.shuttleTrackerService.getCurrentShuttles();
@@ -21,7 +24,6 @@ export class ShuttleTrackerController {
   }
 
   /** Get list of current routes */
-  @Public()
   @Get('routes')
   getRoutes() {
     const routes = this.shuttleTrackerService.getCurrentRoutes();
@@ -34,7 +36,6 @@ export class ShuttleTrackerController {
   }
 
   /** Get list of current stops */
-  @Public()
   @Get('stops')
   getStops() {
     const stops = this.shuttleTrackerService.getCurrentStops();
@@ -47,7 +48,6 @@ export class ShuttleTrackerController {
   }
 
   /** Get list of ETAs for shuttles on route to specified stop */
-  @Public()
   @Get('etas/:stopId')
   async getETAs(@Param('stopId') stopId: string) {
     const etas = await this.shuttleTrackerService.getStopETAs(stopId);

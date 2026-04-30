@@ -8,6 +8,12 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PassioWebSocketService.name);
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Backoff settings
+  private reconnectAttempts = 0;
+  private readonly BASE_DELAY_MS = 5000;         // 5 sec
+  private readonly MAX_DELAY_MS = 5 * 60 * 1000; // 5 min
+
   private readonly PASSIO_WS_URL = 'wss://passio3.com/';
   // CSULB specification
   private readonly HANDSHAKE_PAYLOAD = JSON.stringify({
@@ -36,6 +42,8 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
 
     this.ws.on('open', () => {
       this.logger.log('Connected to PassioGO!. Sending subscription handshake...');
+      this.reconnectAttempts = 0;
+
       // Establish connection for CSULB transit
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.logger.log('Subscription handshake established.');
@@ -58,7 +66,7 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.ws.on('close', () => {
-      this.logger.warn('PassioGo WebSocket closed. Attempting reconnect in 5 seconds...');
+      this.logger.warn('PassioGo WebSocket closed. Reconnect attempt queued...');
       this.scheduleReconnect();
     });
 
@@ -95,9 +103,18 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+
+    // Calculate delay: min(5s * 2^n + jitter, 5min)
+    const exponentialDelay = this.BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts);
+    const jitter = Math.floor(Math.random() * 1000);
+    const finalDelay = Math.min(exponentialDelay + jitter, this.MAX_DELAY_MS);
+
+    this.logger.warn(`WebSocket closed. Reconnecting in ${Math.round(finalDelay / 1000)}s...`);
+
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectAttempts++;
       this.connect();
-    }, 5000);
+    }, finalDelay);
   }
 
   private cleanup() {

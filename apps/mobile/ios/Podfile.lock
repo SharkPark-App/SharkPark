@@ -2770,6 +2770,36 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNSentry (8.9.1):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-hermes
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - Sentry (= 9.11.0)
+    - SocketRocket
+    - Yoga
   - RNSVG (15.15.4):
     - boost
     - DoubleConversion
@@ -2944,6 +2974,9 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - Sentry (9.11.0):
+    - Sentry/Core (= 9.11.0)
+  - Sentry/Core (9.11.0)
   - SocketRocket (0.7.1)
   - TSBackgroundFetch (4.0.6)
   - TSLocationManager (4.1.2):
@@ -3036,6 +3069,7 @@ DEPENDENCIES:
   - RNKeychain (from `../../../node_modules/react-native-keychain`)
   - RNReanimated (from `../../../node_modules/react-native-reanimated`)
   - RNScreens (from `../../../node_modules/react-native-screens`)
+  - "RNSentry (from `../../../node_modules/@sentry/react-native`)"
   - RNSVG (from `../../../node_modules/react-native-svg`)
   - RNVectorIcons (from `../../../node_modules/react-native-vector-icons`)
   - RNWorklets (from `../../../node_modules/react-native-worklets`)
@@ -3045,6 +3079,7 @@ DEPENDENCIES:
 SPEC REPOS:
   trunk:
     - AppAuth
+    - Sentry
     - SocketRocket
     - TSBackgroundFetch
     - TSLocationManager
@@ -3217,6 +3252,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native-reanimated"
   RNScreens:
     :path: "../../../node_modules/react-native-screens"
+  RNSentry:
+    :path: "../../../node_modules/@sentry/react-native"
   RNSVG:
     :path: "../../../node_modules/react-native-svg"
   RNVectorIcons:
@@ -3311,9 +3348,11 @@ SPEC CHECKSUMS:
   RNKeychain: a2c134ab796272c3d605e035ab727591000b30f3
   RNReanimated: c1fba3e1de4822ab65275311e2838835624f6465
   RNScreens: afaf526a9c804c3b4503f950cf3e67ed81e29ada
+  RNSentry: 4628b1f05db58cc8892c73c8e697510de55ae37b
   RNSVG: f7d420ab4c3d766bf3e9c1a4fa7900021311a47a
   RNVectorIcons: 791f13226ec4a3fd13062eda9e892159f0981fae
   RNWorklets: fbf7aeabcfcc73ab57d8304d050dce3243d4baed
+  Sentry: 7561357fd868b329d1aab8152449733b2191ed6c
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   TSBackgroundFetch: 0afbeaae4e1132866e1d4b6e55265af26b5958ae
   TSLocationManager: d0e8ec5c1467782d3eef1d90fbca4a42e98bb287
