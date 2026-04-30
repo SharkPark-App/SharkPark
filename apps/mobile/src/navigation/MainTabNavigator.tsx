@@ -16,15 +16,18 @@ const Stack = createStackNavigator<MapStackParamList>();
 // Inline sign-in prompt screen shown in the Profile tab for guests
 const GuestSignInScreen: React.FC = () => {
   const { colors } = useTheme();
-  const { login, exitGuestMode, isLoading } = useAuth();
+  const { login, exitGuestMode, continueAsGuest, isLoading } = useAuth();
 
   const handleLogin = async () => {
+    // Optimistically leave guest mode so AppContent can route to the
+    // authenticated tree as soon as login() resolves.
+    exitGuestMode();
     try {
-      exitGuestMode();
       await login();
     } catch {
-      // login() will throw on cancel — re-enter guest mode
-      exitGuestMode();
+      // login() throws on cancel/failure — restore guest mode so the
+      // user is not bounced back to the LoginScreen wall.
+      continueAsGuest();
     }
   };
 
