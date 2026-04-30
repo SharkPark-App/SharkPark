@@ -16,6 +16,7 @@ import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { deleteMyAccount } from '../services/api/users';
 
 const ProfileScreen: React.FC = () => {
   const { themeMode, setThemeMode, colors } = useTheme();
@@ -100,6 +101,31 @@ const ProfileScreen: React.FC = () => {
           onPress: () => {logout()},
         },
       ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This permanently deletes your account, favorites, and reports. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteMyAccount();
+              await logout();
+            } catch (error) {
+              Alert.alert(
+                'Error',
+                error instanceof Error ? error.message : 'Failed to delete account. Please try again.',
+              );
+            }
+          },
+        },
+      ],
     );
   };
 
@@ -267,6 +293,17 @@ const ProfileScreen: React.FC = () => {
           <Text style={[styles.logoutButtonText, { color: colors.errorText }]}>Logout</Text>
           </TouchableOpacity>
 
+          {/* Delete Account Button */}
+          <TouchableOpacity
+            style={[styles.deleteAccountButton, { borderColor: colors.errorBorder }]}
+            onPress={handleDeleteAccount}
+          >
+            <Icon name="trash-outline" size={18} color={colors.errorText} />
+            <Text style={[styles.deleteAccountText, { color: colors.errorText }]}>
+              Delete Account
+            </Text>
+          </TouchableOpacity>
+
         {/* Development Test Button */}
         {__DEV__ && GeofencingTestButton && <GeofencingTestButton />}
         
@@ -371,6 +408,20 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.md,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
     marginLeft: SPACING.md,
+  },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.lg,
+    borderRadius: SPACING.lg,
+    borderWidth: 1,
+    marginTop: SPACING.sm,
+  },
+  deleteAccountText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    marginLeft: SPACING.sm,
   },
   statusBadge: {
     paddingHorizontal: 12,
