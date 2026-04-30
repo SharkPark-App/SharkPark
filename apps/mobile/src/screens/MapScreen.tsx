@@ -28,8 +28,6 @@ import type { MapStop } from '../types/transit';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-
 // Interactive lot component
 const InteractiveLot: React.FC<{
   lot: ParkingLotResponse;

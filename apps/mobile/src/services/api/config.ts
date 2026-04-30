@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { SHARKPARK_API_URL } from '@env';
+import { SHARKPARK_API_URL, WS_CONNECT_SECRET } from '@env';
 
 /**
  * API Configuration for SharkPark Mobile App
@@ -17,8 +17,10 @@ import { SHARKPARK_API_URL } from '@env';
  *   # then edit .env to point SHARKPARK_API_URL at your machine's LAN IP
  */
 
-// replace this with real IP if not using simulator
-const IOS_IP = '192.168.1.113';
+const getOrigin = (url: string): string => {
+  const match = url.match(/^(https?:\/\/[^/]+)/);
+  return match ? match[1] : url;
+};
 
 const getApiBaseUrl = (): string => {
   // 1. Explicit override (works for both simulator and physical device)
@@ -35,30 +37,17 @@ const getApiBaseUrl = (): string => {
   }
 
   // iOS simulator — localhost routes correctly
-  return `http://${IOS_IP}:3000/api/v1`;
+  return 'http://localhost:3000/api/v1';
 };
 
-const getShuttleUrl = (): string => {
-  // Production build
-  if (!__DEV__) {
-    return 'http://api.sharkpark.app/shuttles';
-  }
-
-  // Android
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:3000/shuttles';
-  }
-
-  // iOS
-  return `http://${IOS_IP}:3000/shuttles`;
-}
+const _baseUrl = getApiBaseUrl();
 
 export const API_CONFIG = {
   // Base URL for the backend API
-  BASE_URL: getApiBaseUrl(),
-
-  SHUTTLE_URL: getShuttleUrl(),
-  SOCKET_URL: '/api/v1/socket.io/',
+  BASE_URL: _baseUrl,
+  SOCKET_ORIGIN: getOrigin(_baseUrl),
+  SOCKET_PATH: '/api/v1/socket.io/',
+  WS_SECRET: WS_CONNECT_SECRET ?? '',
 
   TIMEOUT: 30000,
 

@@ -9,8 +9,11 @@ export const TransitService = {
     const stopsResponse = await apiService.get<MapStop[]>(API_CONFIG.ENDPOINTS.TRANSIT_STOPS);
     
     if (__DEV__) {
-      console.log('[transitService] Routes Data:', routesResponse.data);
-      console.log('[transitService] Stops Data:', stopsResponse.data);
+      !routesResponse.success? console.log(`[transitService] Failed to load routes`)
+      : console.log(`[transitService] Successfully loaded ${routesResponse.count} routes`)
+      
+      !stopsResponse.success? console.log(`[transitService] Failed to load stops`)
+      : console.log(`[transitService] Successfully loaded ${stopsResponse.count} stops`)
     }
 
     return {
@@ -28,7 +31,8 @@ export const TransitService = {
     const response = await apiService.get<RouteArrival[]>(API_CONFIG.ENDPOINTS.TRANSIT_ETAS(stopId));
 
     if (__DEV__) {
-      console.log(`[transitService] Retrieved Stop ${stopId} Data:`, response.data);
+      response.success? console.log(`[transitService] Retrieved ETAs for Stop ${stopId}`)
+      : console.log(`[transitService] Failed to retrieve ETAs for Stop ${stopId}`)
     }
 
     return response.data;
