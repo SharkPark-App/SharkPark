@@ -6,7 +6,13 @@ import type { Lot as PrismaLot } from '@prisma/client';
  */
 export type ParkingLot = PrismaLot;
 
-export interface ParkingLotResponse extends PrismaLot {
+export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate'> {
+  /**
+   * Prisma stores this as `Decimal` but it is coerced to `number` at the
+   * response boundary so JSON clients can do arithmetic / `.toFixed(...)`
+   * directly without parsing strings.
+   */
+  daily_rate: number | null;
   available: number;
   occupancy_rate: number;
   fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';

@@ -2,7 +2,38 @@ This is a new [**React Native**](https://reactnative.dev) project, bootstrapped 
 
 # Getting Started
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+> First-time setup is run from the **monorepo root**, not here. See the [root README](../../README.md#getting-started) for the full flow.
+
+Quick path on a fresh clone:
+
+```sh
+# from repo root
+pnpm bootstrap   # installs rbenv + Ruby (macOS) + bundler + CocoaPods, links backend .env
+pnpm install     # workspace deps + Docker + migrations + seed
+```
+
+Then to run the iOS app:
+
+```sh
+cd apps/mobile
+pnpm ios
+```
+
+Or to run the Android app:
+
+```sh
+cd apps/mobile
+pnpm android
+```
+
+> **macOS Ruby note:** the project pins Ruby in `apps/mobile/.ruby-version` and bundler in `Gemfile.lock`. `pnpm setup` installs both via `rbenv`. Don't run `gem install` or `bundle install` against the system Ruby (2.6) — it's too old.
+
+## Re-installing CocoaPods after pulling native changes
+
+```sh
+cd apps/mobile
+bundle exec pod install --project-directory=ios
+```
 
 ## Step 1: Start Metro
 
