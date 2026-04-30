@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Associated Domains for Universal Links
+	  Once sharkpark.app is provisioned with an apple-app-site-association
+	  file at https://sharkpark.app/.well-known/apple-app-site-association,
+	  iOS will open matching URLs directly in the app without a browser redirect.
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:sharkpark.app</string>
+	</array>
+</dict>
+</plist>

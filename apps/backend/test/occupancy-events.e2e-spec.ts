@@ -4,6 +4,8 @@ import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AzureAdGuard } from '../src/auth/azure-ad.guard';
+import { PrismaService } from '../src/database/database.module';
+import { hashDeviceId } from '../src/occupancy-events/utils/privacy.util';
 import { bootstrapTestApp } from './utils/bootstrap';
 
 /** Mock guard to bypass Azure AD auth in e2e tests */
@@ -15,6 +17,9 @@ class MockAuthGuard implements CanActivate {
 
 describe('OccupancyEventsController (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
+  // Contributor identity for the now-gated GET /lots/:lotId and friends.
+  const contributorDeviceId = `e2e-occupancy-contributor-${Date.now()}`;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -28,9 +33,19 @@ describe('OccupancyEventsController (e2e)', () => {
 
     bootstrapTestApp(app);
     await app.init();
+
+    prisma = moduleFixture.get<PrismaService>(PrismaService);
+    await prisma.contributorPing.upsert({
+      where: { device_hash: hashDeviceId(contributorDeviceId) },
+      update: { last_seen_at: new Date() },
+      create: { device_hash: hashDeviceId(contributorDeviceId), last_seen_at: new Date() },
+    });
   });
 
   afterAll(async () => {
+    await prisma.contributorPing.deleteMany({
+      where: { device_hash: hashDeviceId(contributorDeviceId) },
+    });
     await app.close();
   });
 
@@ -149,9 +164,23 @@ describe('OccupancyEventsController (e2e)', () => {
   });
 
   describe('/api/v1/occupancy-events/lots/:lotId (GET)', () => {
-    it('should return events for a lot', () => {
+    // Contributor-gated as of 2026-04-29 (was Public). Returns the raw
+    // ENTER/EXIT stream which can be aggregated to reconstruct live
+    // availability, so it must sit behind the same reciprocity gate as
+    // /lots/summary. See docs/api-access-tiers.md.
+    it('returns 403 BG_LOCATION_REQUIRED without x-device-id', () => {
       return request(app.getHttpServer())
         .get('/api/v1/occupancy-events/lots/G1')
+        .expect(403)
+        .expect((res: Response) => {
+          expect(res.body.code).toBe('BG_LOCATION_REQUIRED');
+        });
+    });
+
+    it('should return events for a lot with a fresh contributor ping', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/occupancy-events/lots/G1')
+        .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
@@ -165,6 +194,7 @@ describe('OccupancyEventsController (e2e)', () => {
       const today = new Date().toISOString().split('T')[0];
       return request(app.getHttpServer())
         .get(`/api/v1/occupancy-events/lots/G1?start=${today}&end=${today}T23:59:59Z`)
+        .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
@@ -175,6 +205,7 @@ describe('OccupancyEventsController (e2e)', () => {
     it('should reject invalid date format', () => {
       return request(app.getHttpServer())
         .get('/api/v1/occupancy-events/lots/G1?start=invalid-date')
+        .set('x-device-id', contributorDeviceId)
         .expect(400);
     });
   });

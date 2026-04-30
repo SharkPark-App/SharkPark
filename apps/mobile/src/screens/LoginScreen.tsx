@@ -19,7 +19,7 @@ const sharkParkLogo = require('../assets/images/SharkParkV4.webp') as ImageSourc
 export const LoginScreen = () => {
   const { colors } = useTheme();
   const [errorMessage, setErrorMessage] = useState('');
-  const { login, isLoading } = useAuth();
+  const { login, isLoading, continueAsGuest } = useAuth();
 
     const handleLogin = async () => {
       // clear any current error messages
@@ -78,6 +78,23 @@ export const LoginScreen = () => {
         <View style={styles.helpSection}>
           <Text style={[styles.helpText, { color: colors.mediumGray }]}>
             Only CSULB email addresses are accepted
+          </Text>
+        </View>
+
+        {/* Guest access */}
+        <View style={styles.guestSection}>
+          <TouchableOpacity
+            style={styles.guestButton}
+            onPress={continueAsGuest}
+            accessibilityRole="button"
+            accessibilityLabel="Continue without account"
+          >
+            <Text style={[styles.guestButtonText, { color: colors.mediumGray }]}>
+              Continue without account
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.guestSubText, { color: colors.mediumGray }]}>
+            Browse the map — sign in to report and save favorites
           </Text>
         </View>
       </View>
@@ -139,5 +156,25 @@ const styles = StyleSheet.create({
   helpText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
     textAlign: 'center',
+  },
+
+  // Guest Section
+  guestSection: {
+    alignItems: 'center',
+    marginTop: SPACING.xxxl,
+  },
+  guestButton: {
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+  },
+  guestButtonText: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    textDecorationLine: 'underline',
+  },
+  guestSubText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textAlign: 'center',
+    marginTop: SPACING.xs,
   },
 });
