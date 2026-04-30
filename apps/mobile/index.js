@@ -2,6 +2,28 @@
  * @format
  */
 
+// Sentry must be initialized before any other code runs so it can capture
+// errors from module-load and the headless geofence task below.
+import * as Sentry from '@sentry/react-native';
+import { SENTRY_DSN_MOBILE, SENTRY_ENVIRONMENT } from '@env';
+
+if (SENTRY_DSN_MOBILE) {
+  Sentry.init({
+    dsn: SENTRY_DSN_MOBILE,
+    environment: SENTRY_ENVIRONMENT ?? (__DEV__ ? 'development' : 'production'),
+    // Don't capture breadcrumbs for noisy console.log calls in dev.
+    enableNativeCrashHandling: true,
+    enableAutoSessionTracking: true,
+    // Performance: keep low on free tier; tune later from real traffic.
+    tracesSampleRate: __DEV__ ? 1.0 : 0.1,
+    // Strip user IP and other PII by default. We never send identifiable
+    // location data to Sentry; only anonymous device-scoped breadcrumbs.
+    sendDefaultPii: false,
+    // App Store reviewer + cold-start path: don't block startup on Sentry.
+    autoInitializeNativeSdk: true,
+  });
+}
+
 import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './app.json';
@@ -55,8 +77,9 @@ if (__DEV__) {
   };
 }
 
-// Register the main app component
-AppRegistry.registerComponent(appName, () => App);
+// Register the main app component. Sentry.wrap enables automatic
+// touch/navigation/perf instrumentation when the SDK is initialized.
+AppRegistry.registerComponent(appName, () => Sentry.wrap(App));
 
 // Ensure HMR client is properly registered for hot module replacement
 if (__DEV__ && module.hot) {
