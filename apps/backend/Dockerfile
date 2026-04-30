@@ -79,10 +79,37 @@ RUN curl -fsSLo /usr/local/bin/supercronic \
  && echo "${SUPERCRONIC_SHA1}  /usr/local/bin/supercronic" | sha1sum -c - \
  && chmod +x /usr/local/bin/supercronic
 
+# Python 3.11 + venv for the ML package. The cron process group invokes
+# services/ml/scripts/predict_short_term.py and predict_long_term.py via
+# child_process.spawn from predict-all-lots.ts (and similarly for the
+# weekly retrain cron). Without Python available at runtime those crons
+# would crash with ENOENT. Debian bookworm ships python 3.11, which
+# matches services/ml/pyproject.toml's requires-python = ">=3.11".
+#
+# We isolate into /opt/venv to sidestep PEP 668 (the system python on
+# bookworm is externally-managed and refuses pip install otherwise).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 python3-venv python3-dev build-essential libpq-dev \
+ && python3 -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+ && rm -rf /var/lib/apt/lists/*
+ENV PATH="/opt/venv/bin:$PATH"
+
 # Non-root user
 RUN groupadd --system --gid 1001 nodejs \
  && useradd  --system --uid 1001 --gid nodejs nodejs
 WORKDIR /app
+
+# Install the ML package into the venv. Editable install (-e) keeps the
+# layer thin: only the dist-info goes under site-packages, the actual
+# code is read from /app/services/ml at runtime. Layer is cached as long
+# as pyproject.toml doesn't change.
+COPY --chown=nodejs:nodejs services/ml/pyproject.toml /app/services/ml/pyproject.toml
+COPY --chown=nodejs:nodejs services/ml/src /app/services/ml/src
+COPY --chown=nodejs:nodejs services/ml/scripts /app/services/ml/scripts
+RUN /opt/venv/bin/pip install --no-cache-dir -e /app/services/ml \
+ && chown -R nodejs:nodejs /opt/venv
 
 # Copy production dependencies (workspace symlinks resolved by pnpm)
 COPY --from=prod-deps --chown=nodejs:nodejs /repo/node_modules ./node_modules
