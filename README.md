@@ -70,7 +70,7 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 | **Database** | PostgreSQL 16 (local) / Aurora PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events impact multiple lots). We run standard PostgreSQL 16 in Docker for local development. In production we deploy to Amazon Aurora PostgreSQL Serverless v2, which is wire-compatible with PostgreSQL but adds auto-scaling, automated backups, and multi-AZ replication. The only change between environments is the `DATABASE_URL` connection string. |
 | **Security** | Helmet, Throttler, CORS, Passport JWT | Helmet sets security HTTP headers. The throttler rate-limits to 20 requests per 10 seconds per IP. CORS is locked down in production. Passport validates Azure AD JWTs against Microsoft's JWKS endpoint with automatic key rotation. |
 | **Monorepo** | pnpm 10 workspaces + Turborepo | pnpm's strict dependency resolution prevents phantom dependencies. Turborepo parallelizes builds, tests, and lints across workspaces with caching. Shared packages (`packages/types`, `packages/utils`) are consumed by both the backend and mobile app. |
-| **Infra** | Docker Compose | Single `docker compose up` gives every developer an identical PostgreSQL + LocalStack (S3) environment. The postinstall script automates this so `pnpm install` is the only command needed. |
+| **Infra** | Docker Compose | Single `docker compose up` gives every developer an identical PostgreSQL 17 + MinIO (S3) environment matching production (Neon + R2). The postinstall script automates this so `pnpm install` is the only command needed. |
 
 ---
 
@@ -113,7 +113,7 @@ The mobile app uses a provider-based architecture:
 
 ### Privacy-first data collection
 
-We never store personal location data. The mobile app generates a random UUID once, stores it locally in secure storage, and sends it with each event. The backend hashes it with SHA-256 and a salt before persisting — the raw ID is never written to the database. Only the lot ID (which lot was entered/exited) is stored, never GPS coordinates. Data retention is limited: anonymous events are purged after 30 days, logs after 7 days. Rate limits cap events at 100/hour and 1,000/day per device to prevent abuse.
+We never store personal location data. The mobile app generates a random UUID once, stores it locally in secure storage, and sends it with each event. The backend hashes it with SHA-256 and a salt before persisting — the raw ID is never written to the database. Only the lot ID (which lot was entered/exited) is stored, never GPS coordinates. Data retention is limited: anonymous raw events are purged after 30 days by a daily cron, logs after 7 days. Rate limits cap events at 100/hour and 1,000/day per device to prevent abuse.
 
 ### Atomic occupancy updates
 
@@ -135,7 +135,7 @@ The database schema is designed around a `School` entity as the top-level tenant
 |------|---------|
 | Node.js | >= 20 |
 | pnpm | 10.20.0 (`corepack enable && corepack prepare pnpm@10.20.0 --activate`) |
-| Docker | Latest (for PostgreSQL + LocalStack) |
+| Docker | Latest (for PostgreSQL + MinIO) |
 | Xcode | 16+ (iOS builds, includes CocoaPods via `xcode-select`) |
 | CocoaPods | Installed via Xcode or `gem install cocoapods` |
 
@@ -319,8 +319,9 @@ Defined in `docker/docker-compose.yml`:
 
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
-| `postgres` | `postgres:16-alpine` | `5433 -> 5432` | Local dev database (Aurora PostgreSQL in production) |
-| `localstack` | `localstack/localstack` | `4566` | Local S3 emulation |
+| `postgres` | `postgres:17-alpine` | `5433 -> 5432` | Local dev database (Neon Postgres 17 in production) |
+| `minio` | `minio/minio:latest` | `9000` (S3 API), `9001` (console) | Local S3-compatible object storage (Cloudflare R2 in production) |
+| `minio-init` | `minio/mc:latest` | — | One-shot bucket bootstrap (`sharkpark-backups`, `sharkpark-ml-exports`) |
 
 ```bash
 # Containers start automatically on pnpm install.

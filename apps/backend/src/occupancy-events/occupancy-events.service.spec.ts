@@ -12,6 +12,7 @@ describe('OccupancyEventsService', () => {
     occupancyEvent: { create: jest.Mock; findMany: jest.Mock };
     occupancySnapshot: { create: jest.Mock; createMany: jest.Mock; findMany: jest.Mock };
     deviceState: { findUnique: jest.Mock; upsert: jest.Mock };
+    contributorPing: { upsert: jest.Mock };
     weather: { findFirst: jest.Mock };
     $transaction: jest.Mock;
     $executeRaw: jest.Mock;
@@ -37,6 +38,7 @@ describe('OccupancyEventsService', () => {
       occupancyEvent: { create: jest.fn(), findMany: jest.fn() },
       occupancySnapshot: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn() },
       deviceState: { findUnique: jest.fn(), upsert: jest.fn() },
+      contributorPing: { upsert: jest.fn() },
       weather: { findFirst: jest.fn() },
       $transaction: jest.fn(),
       $executeRaw: jest.fn(),
@@ -130,6 +132,36 @@ describe('OccupancyEventsService', () => {
       expect(result.event_type).toBe('ENTER');
       expect(result.deduplicated).toBe(false);
       expect(result.event_id).toBeDefined();
+    });
+
+    // ACCESS-4: every successful POST /occupancy-events must bump the
+    // ContributorPing.last_seen_at for the device — that's how the
+    // ContributorGuard knows the device is currently contributing.
+    it('should upsert ContributorPing on a fresh event', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+
+      await service.create(validDto);
+
+      expect(prisma.contributorPing.upsert).toHaveBeenCalledWith({
+        where: { device_hash: expect.any(String) },
+        update: { last_seen_at: expect.any(Date) },
+        create: { device_hash: expect.any(String), last_seen_at: expect.any(Date) },
+      });
+    });
+
+    it('should still upsert ContributorPing even when the event is deduplicated', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.deviceState.findUnique.mockResolvedValue({
+        device_hash: 'h', lot_id: mockLot.id, last_event_type: 'ENTER',
+      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+
+      const result = await service.create(validDto);
+
+      expect(result.deduplicated).toBe(true);
+      expect(prisma.contributorPing.upsert).toHaveBeenCalled();
     });
 
     it('should create an event and decrement occupancy for EXIT', async () => {
@@ -399,6 +431,57 @@ describe('OccupancyEventsService', () => {
 
       await expect(service.cleanupStaleDeviceStates(18))
         .rejects.toThrow('Failed to clean up stale device states');
+    });
+  });
+
+  describe('pruneOldData', () => {
+    it('should delete occupancy_events older than the cutoff (snapshots untouched)', async () => {
+      (prisma as any).occupancyEvent.deleteMany = jest.fn().mockResolvedValue({ count: 42 });
+      (prisma as any).occupancySnapshot.deleteMany = jest.fn();
+
+      const before = Date.now();
+      const result = await service.pruneOldData(30);
+      const after = Date.now();
+
+      expect(result.events_deleted).toBe(42);
+      expect((prisma as any).occupancyEvent.deleteMany).toHaveBeenCalledTimes(1);
+      // Snapshots are permanent per docs — must never be touched here
+      expect((prisma as any).occupancySnapshot.deleteMany).not.toHaveBeenCalled();
+
+      const cutoffMs = new Date(result.cutoff).getTime();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      expect(cutoffMs).toBeGreaterThanOrEqual(before - thirtyDaysMs);
+      expect(cutoffMs).toBeLessThanOrEqual(after - thirtyDaysMs);
+
+      const call = (prisma as any).occupancyEvent.deleteMany.mock.calls[0][0];
+      expect(call.where.timestamp.lt.toISOString()).toBe(result.cutoff);
+    });
+
+    it('should default to 30 days when called with no argument', async () => {
+      (prisma as any).occupancyEvent.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+
+      const before = Date.now();
+      const result = await service.pruneOldData();
+      const cutoffMs = new Date(result.cutoff).getTime();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      expect(cutoffMs).toBeLessThanOrEqual(before - thirtyDaysMs + 1000);
+      expect(cutoffMs).toBeGreaterThanOrEqual(before - thirtyDaysMs - 1000);
+    });
+
+    it('should reject retentionDays < 1', async () => {
+      (prisma as any).occupancyEvent.deleteMany = jest.fn();
+
+      await expect(service.pruneOldData(0)).rejects.toThrow('retentionDays must be >= 1');
+      await expect(service.pruneOldData(-5)).rejects.toThrow('retentionDays must be >= 1');
+      await expect(service.pruneOldData(NaN)).rejects.toThrow('retentionDays must be >= 1');
+      expect((prisma as any).occupancyEvent.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw InternalServerErrorException on database error', async () => {
+      (prisma as any).occupancyEvent.deleteMany = jest.fn().mockRejectedValue(new Error('Connection lost'));
+
+      await expect(service.pruneOldData(30))
+        .rejects.toThrow('Failed to prune old occupancy data');
     });
   });
 });

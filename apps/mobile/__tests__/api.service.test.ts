@@ -1,7 +1,7 @@
 /**
  * API Service Tests
  */
-import { ApiError } from '../src/services/api/base';
+import { ApiError, BackgroundLocationRequiredError } from '../src/services/api/base';
 import API_CONFIG from '../src/services/api/config';
 
 describe('API Configuration', () => {
@@ -144,5 +144,74 @@ describe('ApiService', () => {
       expect.stringContaining('/test'),
       expect.objectContaining({ method: 'DELETE' }),
     );
+  });
+
+  describe('BG_LOCATION_REQUIRED handling', () => {
+    it('throws BackgroundLocationRequiredError when 403 body has the contract code', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({ code: 'BG_LOCATION_REQUIRED', message: 'enable bg location' }),
+          ),
+      });
+
+      await expect(apiService.post('/gated', {})).rejects.toBeInstanceOf(
+        BackgroundLocationRequiredError,
+      );
+    });
+
+    it('preserves the parsed payload on details and exposes status 403', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({ code: 'BG_LOCATION_REQUIRED', message: 'nope', extra: 1 }),
+          ),
+      });
+
+      try {
+        await apiService.post('/gated', {});
+        fail('expected throw');
+      } catch (err) {
+        expect(err).toBeInstanceOf(BackgroundLocationRequiredError);
+        const e = err as BackgroundLocationRequiredError;
+        expect(e.status).toBe(403);
+        expect(e.message).toBe('nope');
+        expect(e.details).toMatchObject({ code: 'BG_LOCATION_REQUIRED', extra: 1 });
+      }
+    });
+
+    it('does not retry BackgroundLocationRequiredError on GET', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: () => Promise.resolve(JSON.stringify({ code: 'BG_LOCATION_REQUIRED' })),
+      });
+
+      await expect(apiService.get('/gated')).rejects.toBeInstanceOf(
+        BackgroundLocationRequiredError,
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to plain ApiError when 403 body is not the BG_LOCATION_REQUIRED contract', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: () => Promise.resolve(JSON.stringify({ message: 'some other forbidden' })),
+      });
+
+      await expect(apiService.post('/gated', {})).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 403,
+      });
+    });
   });
 });

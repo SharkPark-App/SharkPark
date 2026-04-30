@@ -50,6 +50,17 @@ export class OccupancyEventsService {
       // Perform dedup check + event recording inside a single transaction
       // to prevent concurrent requests from the same device slipping through.
       const result = await this.prisma.$transaction(async (tx) => {
+        // Bump the contributor ping FIRST, before the dedup check. Even a
+        // deduplicated POST proves the device is alive and reporting, so it
+        // earns reciprocity access. ContributorGuard reads last_seen_at to
+        // gate live-occupancy / forecast endpoints.
+        const pingNow = new Date();
+        await tx.contributorPing.upsert({
+          where: { device_hash: deviceHash },
+          update: { last_seen_at: pingNow },
+          create: { device_hash: deviceHash, last_seen_at: pingNow },
+        });
+
         // Check for duplicate event inside the transaction
         const deviceState = await tx.deviceState.findUnique({
           where: { device_hash_lot_id: { device_hash: deviceHash, lot_id: lot.id } },
@@ -166,6 +177,50 @@ export class OccupancyEventsService {
     } catch (error) {
       this.logger.error('Failed to clean up stale device states', error);
       throw new InternalServerErrorException('Failed to clean up stale device states');
+    }
+  }
+
+  /**
+   * Deletes raw `occupancy_events` older than `retentionDays`. Default is
+   * 30 days to honor the user-facing privacy promise in README.md ("raw
+   * events purged after 30 days"); overridable via the `RETENTION_DAYS`
+   * env in the cron entry.
+   *
+   * `occupancy_snapshots` are intentionally NOT pruned here — they are the
+   * primary ML training source and are kept permanently (see
+   * infrastructure/README.md "Data Retention"). Raw events are derivable
+   * history that snapshots already aggregate, so dropping them is safe
+   * and bounds table growth.
+   *
+   * Called by the scheduler at 4 AM daily Pacific (after the 2 AM backup).
+   */
+  async pruneOldData(
+    retentionDays: number = 30,
+  ): Promise<{ events_deleted: number; cutoff: string }> {
+    if (!Number.isFinite(retentionDays) || retentionDays < 1) {
+      throw new InternalServerErrorException(
+        `pruneOldData: retentionDays must be >= 1, got ${retentionDays}`,
+      );
+    }
+
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+    try {
+      const { count: eventsDeleted } = await this.prisma.occupancyEvent.deleteMany({
+        where: { timestamp: { lt: cutoff } },
+      });
+
+      this.logger.log(
+        `[retention] Pruned ${eventsDeleted} occupancy_events older than ${retentionDays} days (cutoff=${cutoff.toISOString()})`,
+      );
+
+      return {
+        events_deleted: eventsDeleted,
+        cutoff: cutoff.toISOString(),
+      };
+    } catch (error) {
+      this.logger.error('Failed to prune old occupancy data', error);
+      throw new InternalServerErrorException('Failed to prune old occupancy data');
     }
   }
 
