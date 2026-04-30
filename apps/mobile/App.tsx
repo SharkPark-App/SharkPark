@@ -17,11 +17,18 @@ import { EnhancedGeofencingProvider } from './src/context/EnhancedGeofencingProv
 import { useOnboarding } from './src/hooks/useOnboarding';
 function AppContent() {
   const { isDark, colors } = useTheme();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isGuest, isLoading: authLoading } = useAuth();
   const { isLoading: onboardingLoading, needsOnboarding, completeOnboarding } = useOnboarding();
 
   if (__DEV__) {
-    console.log('[AppContent] Render - isAuthenticated:', isAuthenticated, 'isLoading:', authLoading);
+    console.log(
+      '[AppContent] Render - isAuthenticated:',
+      isAuthenticated,
+      'isGuest:',
+      isGuest,
+      'isLoading:',
+      authLoading,
+    );
   }
 
   // Create custom navigation theme based on our theme colors
@@ -59,7 +66,7 @@ function AppContent() {
   }
 
   // login flow handled via auth context
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !isGuest) {
     return (
       <SafeAreaProvider>
         <StatusBar 
