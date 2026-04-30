@@ -152,9 +152,18 @@ describe('PassioWebSocketService', () => {
   });
 
   describe('Error Handling & Reconnection', () => {
+    let mathRandomSpy: jest.SpyInstance;
+
     beforeEach(() => {
       service.onModuleInit();
       (WebSocket as unknown as jest.Mock).mockClear();
+      
+      // Mock Math.random to return 0 to remove jitter
+      mathRandomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+    });
+
+    afterEach(() => {
+      mathRandomSpy.mockRestore();
     });
 
     it('should log errors and close the socket on "error" event', () => {
@@ -168,30 +177,27 @@ describe('PassioWebSocketService', () => {
     it('should automatically attempt to reconnect 5 seconds after a "close" event', () => {
       triggerWsEvent('close');
 
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        'PassioGo WebSocket closed. Attempting reconnect in 5 seconds...'
-      );
+      expect(loggerWarnSpy).toHaveBeenCalledWith('PassioGo WebSocket closed. Reconnect attempt queued...');
+      expect(loggerWarnSpy).toHaveBeenCalledWith('WebSocket closed. Reconnecting in 5s...');
       
       // Connection should not exist yet
       expect(WebSocket).not.toHaveBeenCalled();
-      jest.advanceTimersByTime(5000); // 5 seconds
+      jest.advanceTimersByTime(5000); 
 
-      // Connection should exist
       expect(WebSocket).toHaveBeenCalledTimes(1);
       expect(WebSocket).toHaveBeenCalledWith('wss://passio3.com/');
     });
 
     it('should clear existing reconnect timers if multiple closes happen rapidly', () => {
       triggerWsEvent('close');
-      jest.advanceTimersByTime(2000); // 2s
+      jest.advanceTimersByTime(2000);
       
-      triggerWsEvent('close'); // Trigger close again
-      jest.advanceTimersByTime(3000); // 5s from first event
+      triggerWsEvent('close'); // Should reset timer
+      jest.advanceTimersByTime(3000);
       
       // No connection yet
       expect(WebSocket).not.toHaveBeenCalled();
 
-      // 2nd event
       jest.advanceTimersByTime(2000);
       expect(WebSocket).toHaveBeenCalledTimes(1);
     });

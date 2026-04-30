@@ -1,11 +1,11 @@
 // test/shuttle-tracker.e2e-spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe, CanActivate } from '@nestjs/common';
+import { INestApplication, CanActivate } from '@nestjs/common';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { AzureAdGuard } from '../src/auth/azure-ad.guard';
+import { bootstrapTestApp } from './utils/bootstrap';
 
 /** Mock guard to bypass Azure AD auth in e2e tests */
 class MockAuthGuard implements CanActivate {
@@ -27,19 +27,7 @@ describe('ShuttleTrackerController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
 
-    app.setGlobalPrefix('api/v1');
-    app.useGlobalFilters(new AllExceptionsFilter());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: false,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
-    );
-
+    bootstrapTestApp(app);
     // Initial data fetched implicitly via ShuttleTrackerService onModuleInit
     await app.init();
   });
