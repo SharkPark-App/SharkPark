@@ -1,5 +1,6 @@
 module.exports = {
   preset: 'react-native',
+  forceExit: true,
 
   // Setup file to mock native modules
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
@@ -15,12 +16,14 @@ module.exports = {
   ],
 
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
-  // Map @noble/hashes subpath imports to the flat CJS files. The package's
-  // `exports` field points subpaths at `./esm/*.js`, but Jest's resolver
-  // doesn't honor the `import` condition by default and the package also
-  // ships flat CJS at `./*.js`, which is what we want here.
   moduleNameMapper: {
+    // Map @noble/hashes subpath imports to the flat CJS files. The package's
+    // `exports` field points subpaths at `./esm/*.js`, but Jest's resolver
+    // doesn't honor the `import` condition by default and the package also
+    // ships flat CJS at `./*.js`, which is what we want here.
     '^@noble/hashes/(.+)$': '<rootDir>/../../node_modules/@noble/hashes/$1.js',
+    // Map image imports to a simple stub so Jest doesn't choke on binary assets
+    '\\.(png|jpg|jpeg|gif|webp|svg)$': '<rootDir>/__mocks__/fileMock.js',
   },
   testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/', '__tests__/testUtils\\.ts$'],
   // GitHub Actions runners are noticeably slower than local; the default 5s

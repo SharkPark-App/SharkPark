@@ -29,6 +29,44 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Thrown when the backend rejects a request because the device is not a
+ * fresh contributor (no valid x-device-id / no recent ContributorPing).
+ *
+ * Backend shape: HTTP 403 with body `{ code: 'BG_LOCATION_REQUIRED', ... }`.
+ * The mobile UI is expected to catch this and prompt the user to enable
+ * "Always Allow" background location to participate in the reciprocity
+ * model. See docs/api-access-tiers.md.
+ */
+export class BackgroundLocationRequiredError extends ApiError {
+  static readonly CODE = 'BG_LOCATION_REQUIRED';
+  constructor(message: string, details?: unknown) {
+    super(403, message, details);
+    this.name = 'BackgroundLocationRequiredError';
+  }
+}
+
+/**
+ * Inspects a 403 response body for the BG_LOCATION_REQUIRED contract.
+ * Returns the parsed JSON body if it matches, otherwise null.
+ */
+function parseBgLocationRequired(rawBody: string | null): Record<string, unknown> | null {
+  if (!rawBody) return null;
+  try {
+    const parsed: unknown = JSON.parse(rawBody);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed as { code?: unknown }).code === BackgroundLocationRequiredError.CODE
+    ) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Not JSON — fall through.
+  }
+  return null;
+}
+
 const RETRY_CONFIG = {
   maxRetries: 2,
   baseDelay: 1000,
@@ -36,6 +74,10 @@ const RETRY_CONFIG = {
 };
 
 function isRetryable(error: unknown): boolean {
+  if (error instanceof BackgroundLocationRequiredError) {
+    // No point retrying — the device just isn't a contributor right now.
+    return false;
+  }
   if (error instanceof ApiError) {
     return error.status === 0 || error.status === 429 || error.status >= 500;
   }
@@ -121,10 +163,24 @@ class ApiService {
       const response = await fetch(url, requestOptions);
 
       if (!response.ok) {
+        const rawBody = await response.text().catch(() => null);
+
+        if (response.status === 403) {
+          const bgPayload = parseBgLocationRequired(rawBody);
+          if (bgPayload) {
+            throw new BackgroundLocationRequiredError(
+              typeof bgPayload.message === 'string'
+                ? bgPayload.message
+                : 'Background location required to use this feature',
+              bgPayload
+            );
+          }
+        }
+
         throw new ApiError(
           response.status,
           `HTTP ${response.status}: ${response.statusText}`,
-          await response.text().catch(() => null)
+          rawBody
         );
       }
 
