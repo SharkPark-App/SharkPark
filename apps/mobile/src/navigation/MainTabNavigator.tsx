@@ -2,7 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { HomeScreen as LongTerm, MapScreen, ProfileScreen, ShortTermForecastScreen } from '../screens';
+import { HomeScreen as LongTerm, MapScreen, ProfileScreen, ShortTermForecastScreen, LocationPermissionScreen } from '../screens';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import type { RootTabParamList, MapStackParamList } from '../types/navigation';
@@ -16,6 +16,7 @@ const MapStack: React.FC = () => {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MapMain" component={MapScreen} />
       <Stack.Screen name="Short Term Forecast" component={ShortTermForecastScreen} />
+      <Stack.Screen name="LocationPermission" component={LocationPermissionScreen} />
     </Stack.Navigator>
   );
 };

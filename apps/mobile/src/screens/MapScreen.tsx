@@ -99,7 +99,14 @@ const MapScreen: React.FC = () => {
   const { colors } = useTheme();
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   const { favoriteLots, refreshFavorites } = useFavorites();
-  const { lots: apiLots } = useLotsList();
+  const { lots: apiLots, bgLocationRequired } = useLotsList();
+
+  // Navigate to the soft-ask screen when the backend returns BG_LOCATION_REQUIRED
+  React.useEffect(() => {
+    if (bgLocationRequired) {
+      navigation.navigate('LocationPermission', {});
+    }
+  }, [bgLocationRequired, navigation]);
 
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);

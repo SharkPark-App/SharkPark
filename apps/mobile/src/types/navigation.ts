@@ -22,6 +22,7 @@ export type RootTabParamList = {
 export type MapStackParamList = {
   MapMain: undefined;
   'Short Term Forecast': { lotId: string; lotName: string };
+  LocationPermission: { reason?: string };
 };
 
 /**

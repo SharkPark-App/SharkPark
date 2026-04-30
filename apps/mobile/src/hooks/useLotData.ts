@@ -3,7 +3,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { lotsApi, ParkingLotResponse, OccupancyHistoryRecord, ApiError } from '../services/api';
+import { lotsApi, ParkingLotResponse, OccupancyHistoryRecord, ApiError, BgLocationRequiredError } from '../services/api';
 
 /** How often to re-fetch lot data (ms) */
 const LOT_DETAIL_POLL_MS = 60_000;  // 60 seconds
@@ -21,6 +21,8 @@ interface UseLotDataReturn {
   }>;
   loading: boolean;
   error: string | null;
+  /** True when the backend rejected with BG_LOCATION_REQUIRED (403). */
+  bgLocationRequired: boolean;
   refreshLot: () => Promise<void>;
   refreshHistory: (date?: string) => Promise<void>;
 }
@@ -37,6 +39,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
   }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bgLocationRequired, setBgLocationRequired] = useState(false);
 
   const refreshLot = useCallback(async () => {
     if (!lotId) return;
@@ -44,6 +47,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
     try {
       setLoading(true);
       setError(null);
+      setBgLocationRequired(false);
       
       const lotData = await lotsApi.getLotDetails(lotId);
       setLot(lotData);
@@ -53,6 +57,10 @@ export function useLotData(lotId: string): UseLotDataReturn {
       setForecast(forecastData);
       
     } catch (err) {
+      if (err instanceof BgLocationRequiredError) {
+        setBgLocationRequired(true);
+        return;
+      }
       const errorMessage = err instanceof ApiError 
         ? `${err.message} (${err.status})`
         : 'Failed to fetch lot data';
@@ -110,6 +118,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
     forecast,
     loading,
     error,
+    bgLocationRequired,
     refreshLot,
     refreshHistory,
   };
@@ -119,6 +128,8 @@ interface UseLotsListReturn {
   lots: ParkingLotResponse[];
   loading: boolean;
   error: string | null;
+  /** True when the backend rejected with BG_LOCATION_REQUIRED (403). */
+  bgLocationRequired: boolean;
   refreshLots: () => Promise<void>;
 }
 
@@ -130,6 +141,7 @@ export function useLotsList(filters?: {
   const [lots, setLots] = useState<ParkingLotResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bgLocationRequired, setBgLocationRequired] = useState(false);
 
   // Stabilise the filters reference so that callers passing an inline object
   // literal don't cause the polling effect to reset on every render.
@@ -141,11 +153,16 @@ export function useLotsList(filters?: {
     try {
       setLoading(true);
       setError(null);
+      setBgLocationRequired(false);
       
       const lotsData = await lotsApi.getAllLots(filtersRef.current);
       setLots(lotsData);
       
     } catch (err) {
+      if (err instanceof BgLocationRequiredError) {
+        setBgLocationRequired(true);
+        return;
+      }
       const errorMessage = err instanceof ApiError 
         ? `${err.message} (${err.status})`
         : 'Failed to fetch lots data';
@@ -183,6 +200,7 @@ export function useLotsList(filters?: {
     lots,
     loading,
     error,
+    bgLocationRequired,
     refreshLots,
   };
 }

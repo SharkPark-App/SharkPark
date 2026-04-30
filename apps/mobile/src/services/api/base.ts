@@ -29,6 +29,19 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Thrown when the backend returns 403 { code: 'BG_LOCATION_REQUIRED' }.
+ * The mobile app catches this to route to the soft-ask location permission
+ * screen instead of showing a generic error toast.
+ */
+export class BgLocationRequiredError extends Error {
+  public readonly code = 'BG_LOCATION_REQUIRED';
+  constructor(public readonly reason: string) {
+    super(reason);
+    this.name = 'BgLocationRequiredError';
+  }
+}
+
 const RETRY_CONFIG = {
   maxRetries: 2,
   baseDelay: 1000,
@@ -121,10 +134,30 @@ class ApiService {
       const response = await fetch(url, requestOptions);
 
       if (!response.ok) {
+        // Parse body once so we can inspect for structured error codes.
+        const rawBody = await response.text().catch(() => '');
+
+        // 403 BG_LOCATION_REQUIRED — backend ContributorGuard gate.
+        // Throw a typed error so callers can route to the soft-ask screen
+        // instead of showing a generic toast.
+        if (response.status === 403) {
+          try {
+            const parsed = JSON.parse(rawBody) as { code?: string; message?: string };
+            if (parsed.code === 'BG_LOCATION_REQUIRED') {
+              throw new BgLocationRequiredError(
+                parsed.message ?? 'Background location is required to access live data.'
+              );
+            }
+          } catch (e) {
+            if (e instanceof BgLocationRequiredError) throw e;
+            // Body wasn't JSON — fall through to generic ApiError below.
+          }
+        }
+
         throw new ApiError(
           response.status,
           `HTTP ${response.status}: ${response.statusText}`,
-          await response.text().catch(() => null)
+          rawBody || null
         );
       }
 
