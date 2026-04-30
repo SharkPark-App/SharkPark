@@ -150,9 +150,9 @@
             <data android:scheme="sharkpark" />
         </intent-filter>
 
-        <!-- App Links (HTTPS): https://sharkpark.csulb.edu/...
+        <!-- App Links (HTTPS): https://sharkpark.app/...
              Requires a Digital Asset Links file at:
-             https://sharkpark.csulb.edu/.well-known/assetlinks.json
+             https://sharkpark.app/.well-known/assetlinks.json
              Set android:autoVerify="true" to skip the disambiguation dialog. -->
         <intent-filter android:autoVerify="true">
             <action android:name="android.intent.action.VIEW" />
@@ -160,7 +160,7 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data
                 android:scheme="https"
-                android:host="sharkpark.csulb.edu" />
+                android:host="sharkpark.app" />
         </intent-filter>
       </activity>
     </application>

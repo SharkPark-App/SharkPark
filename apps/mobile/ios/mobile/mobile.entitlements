@@ -4,13 +4,13 @@
 <dict>
 	<!--
 	  Associated Domains for Universal Links
-	  Once sharkpark.csulb.edu is provisioned with an apple-app-site-association
-	  file at https://sharkpark.csulb.edu/.well-known/apple-app-site-association,
+	  Once sharkpark.app is provisioned with an apple-app-site-association
+	  file at https://sharkpark.app/.well-known/apple-app-site-association,
 	  iOS will open matching URLs directly in the app without a browser redirect.
 	-->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:sharkpark.csulb.edu</string>
+		<string>applinks:sharkpark.app</string>
 	</array>
 </dict>
 </plist>

@@ -65,7 +65,7 @@ const SLIDES: Slide[] = [
     key: 'permissions',
     emoji: '📍',
     title: 'One Permission, Big Impact',
-    body: 'SharkPark needs "Always Allow" location access to detect when you enter and exit parking lots in the background — even when the app is closed.',
+    body: 'SharkPark uses background location to detect parking lot entry and exit events even when the app is closed. This helps provide real-time parking data to the campus community. Your location data is processed locally and only anonymous parking events are shared.',
     note: 'Your exact location is never stored. Only anonymous "entered lot / left lot" events are shared.',
   },
 ];

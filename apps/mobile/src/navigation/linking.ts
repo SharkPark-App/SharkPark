@@ -11,11 +11,11 @@
  *   sharkpark://profile                → Profile tab
  *
  * Universal / App Links (requires Associated Domains / Digital Asset Links):
- *   https://sharkpark.csulb.edu/map
- *   https://sharkpark.csulb.edu/map/lot/:lotId
- *   https://sharkpark.csulb.edu/forecast/short/:lotId
- *   https://sharkpark.csulb.edu/forecast/long
- *   https://sharkpark.csulb.edu/profile
+ *   https://sharkpark.app/map
+ *   https://sharkpark.app/map/lot/:lotId
+ *   https://sharkpark.app/forecast/short/:lotId
+ *   https://sharkpark.app/forecast/long
+ *   https://sharkpark.app/profile
  *
  * Navigation structure (mirrors MainTabNavigator + MapStack):
  *
@@ -32,8 +32,7 @@ import { Linking } from 'react-native';
 import type { RootTabParamList } from '../types/navigation';
 
 // The hostname used for Universal Links / App Links.
-// Update this once the CSULB domain is provisioned.
-const UNIVERSAL_LINK_HOST = 'sharkpark.csulb.edu';
+const UNIVERSAL_LINK_HOST = 'sharkpark.app';
 
 export const linkingConfig: LinkingOptions<RootTabParamList> = {
   // Custom URL scheme + universal link prefixes
