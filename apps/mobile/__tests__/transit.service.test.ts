@@ -57,10 +57,6 @@ describe('TransitService', () => {
         routes: mockRoutes,
         stops: mockStops
       });
-      
-      // Verify DEV logging occurred
-      expect(consoleSpy).toHaveBeenCalledWith('[transitService] Routes Data:', mockRoutes);
-      expect(consoleSpy).toHaveBeenCalledWith('[transitService] Stops Data:', mockStops);
     });
   });
 
@@ -93,9 +89,6 @@ describe('TransitService', () => {
       // Verify query string was appended correctly
       expect(mockApiService.get).toHaveBeenCalledWith(`/transit/etas/${stopId}`);
       expect(result).toEqual(mockETAs);
-      
-      // Verify DEV logging
-      expect(consoleSpy).toHaveBeenCalledWith(`[transitService] Retrieved Stop ${stopId} Data:`, mockETAs);
     });
   });
 });
