@@ -61,6 +61,26 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 30,
     maxRuntime: 30,
   },
+  'notify-favorites-filling': {
+    schedule: '*/15 * * * *',
+    checkinMargin: 5,
+    maxRuntime: 10,
+  },
+  'notify-favorites-clearing': {
+    schedule: '*/15 * * * *',
+    checkinMargin: 5,
+    maxRuntime: 10,
+  },
+  'notify-surge': {
+    schedule: '*/15 * * * *',
+    checkinMargin: 5,
+    maxRuntime: 10,
+  },
+  'notify-events': {
+    schedule: '*/15 * * * *',
+    checkinMargin: 5,
+    maxRuntime: 10,
+  },
 };
 
 export const CRON_TIMEZONE = TIMEZONE;

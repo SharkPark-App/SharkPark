@@ -148,4 +148,22 @@ describe('ReportsController (e2e)', () => {
         .expect(400);
     });
   });
+
+  describe('/api/v1/reports (POST) — unauthenticated', () => {
+    let anonApp: INestApplication;
+
+    beforeAll(async () => {
+      const moduleFixture: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      }).compile();
+      anonApp = moduleFixture.createNestApplication();
+      bootstrapTestApp(anonApp);
+      await anonApp.init();
+    });
+
+    afterAll(() => anonApp.close());
+
+    it('should return 401 for anonymous requests', () =>
+      request(anonApp.getHttpServer()).post('/api/v1/reports').send({}).expect(401));
+  });
 });
