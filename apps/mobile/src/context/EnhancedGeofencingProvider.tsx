@@ -21,7 +21,7 @@ import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
 import carBluetooth from '../services/carBluetooth';
 import { isOnCampus } from '../utils/geoHelpers';
 import { lotsApi } from '../services/api';
-import { registerContributorGrant, revokeContributorGrant } from '../services/api/contributor';
+import { registerContributorGrant, revokeContributorGrant, refreshLotsForPermissionChange } from '../services/api/contributor';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
@@ -596,16 +596,16 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       // Returning to the foreground is the right moment to reconcile with
       // OS truth. Users routinely toggle permission from Settings while
       // we're backgrounded, and iOS doesn't reliably fire a ProviderChange
-      // we can latch onto. Re-check on every active transition and sync
-      // the backend either way:
-      //   - newly revoked  → POST /contributor/revoke (UI flips to locked)
-      //   - newly granted  → POST /contributor/grant   (UI flips to live)
-      // Both helpers emit on the contributor pub-sub so lot hooks refetch
-      // immediately instead of waiting up to a full poll interval (30s).
+      // we can latch onto. Re-check on every active transition.
+      //
+      // Contributor tier requires Always (BG geofences only fire under
+      // Always). WhenInUse must NOT register a grant — doing so would
+      // let the user read live data without being able to contribute,
+      // defeating the reciprocity gate.
       if (nextAppState === 'active' && previousAppState !== 'active') {
         void (async () => {
-          const stillAuthorized = await locationService.isAuthorized();
-          if (stillAuthorized) {
+          const isContributor = await locationService.isContributorAuthorized();
+          if (isContributor) {
             void registerContributorGrant({ force: true });
           } else {
             void revokeContributorGrant();
@@ -661,23 +661,77 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     };
     parkingValidationService.onValidationComplete(validationListener);
 
-    // Track authorization across ProviderChange events so we can detect
-    // the denied→authorized edge and refresh the contributor grant the
-    // moment the user flips permission ON in Settings (without waiting
-    // for the next AppState 'active' transition). The PERMISSION_DENIED
-    // edge is already handled by locationService's own dedup → onError.
-    let lastAuthorized: boolean | null = null;
+    // Track contributor-tier authorization (Always AND FullAccuracy) across
+    // ProviderChange events so we can fire the contributor pub-sub the moment
+    // the user flips either toggle in Settings (without waiting for the next
+    // AppState 'active' transition). Both axes must be in the eligible state
+    // — see `locationService.isContributorAuthorized()` for the reasoning:
+    //
+    //   - Always:        only auth level that fires BG geofence events.
+    //   - FullAccuracy:  Reduced fuzzes coords to ~hectares, making lot
+    //                    enter/exit detection effectively random.
+    //
+    // Dedup on the LAST ACTION SENT (not the last observation). This guarantees:
+    //   1. The very first ProviderChange event after mount fires the
+    //      correct action — never silently swallowed as "initial observation".
+    //      (Previous bug: seeding `lastWasContributor` from getProviderState
+    //      raced ProviderChange events and could swallow a real toggle.
+    //      Symptom: user had to toggle BOTH Always AND Precise before the
+    //      pins went grey.)
+    //   2. iOS frequently emits multiple ProviderChange events per Settings
+    //      toggle. Deduping on the last action means we POST grant/revoke
+    //      exactly once per real-world transition.
+    //   3. Off-axis changes (status WhenInUse→Denied while staying
+    //      non-contributor, accuracy Full↔Reduced while staying contributor,
+    //      etc.) still wipe the lots cache via refreshLotsForPermissionChange
+    //      so server response shape changes (e.g. accuracy-based redaction)
+    //      are reflected without waiting on the next poll tick.
+    //
+    // The cold-start path through the AppState 'active' handler also calls
+    // grant/revoke based on isContributorAuthorized(), so a redundant POST
+    // on the very first ProviderChange after launch is acceptable
+    // (contributor.ts inFlight dedup will collapse them).
+    let lastAction: 'grant' | 'revoke' | null = null;
+    let lastPermissionKey: string | null = null;
     const removeProvider = locationService.onProviderChange((event) => {
       if (destroyed) return;
-      const isAuthorized =
-        event.status !== BackgroundGeolocation.AuthorizationStatus.Denied &&
-        event.status !== BackgroundGeolocation.AuthorizationStatus.NotDetermined;
-      if (isAuthorized && lastAuthorized === false) {
-        // denied → authorized: re-register so the contributor pub-sub fires
-        // 'granted' immediately and lot hooks refetch with the new identity.
-        void registerContributorGrant({ force: true });
+      const isAlways = event.status === BackgroundGeolocation.AuthorizationStatus.Always;
+      const isFullAccuracy =
+        event.accuracyAuthorization ===
+        BackgroundGeolocation.AccuracyAuthorization.Full;
+      const isContributor = isAlways && isFullAccuracy;
+      const desiredAction: 'grant' | 'revoke' = isContributor ? 'grant' : 'revoke';
+      const key = `${event.status}|${event.accuracyAuthorization}`;
+
+      if (lastAction !== desiredAction) {
+        if (desiredAction === 'grant') {
+          // → contributor-eligible: register the grant + emit 'granted'
+          // so lot hooks refetch with the new contributor identity
+          // (live pins, unlocked forecast). force:true bypasses the
+          // 1h grant-cooldown so a same-session toggle re-fires.
+          if (__DEV__) console.log('[EnhancedGeofencing] Provider transition → grant (key=%s)', key);
+          void registerContributorGrant({ force: true });
+        } else {
+          // Lost Always or dropped to Reduced accuracy: tell the backend
+          // to stop treating us as a contributor and emit 'revoked' so
+          // the UI flips to locked immediately.
+          if (__DEV__) console.log('[EnhancedGeofencing] Provider transition → revoke (key=%s)', key);
+          void revokeContributorGrant();
+        }
+        lastAction = desiredAction;
+      } else if (lastPermissionKey !== null && key !== lastPermissionKey) {
+        // Same desired action as last fire (e.g. still non-contributor)
+        // but the underlying permission state changed (WhenInUse→Denied,
+        // Always+Full→Always+Reduced re-prompt response, etc.). The
+        // server's response shape may differ, and any cached entries are
+        // now suspect. Bust the lots cache and force every subscribing
+        // screen to refetch — without this, MapScreen /
+        // ShortTermForecastScreen / lot detail keep showing whatever
+        // they had before the toggle until the next poll tick.
+        if (__DEV__) console.log('[EnhancedGeofencing] Provider off-axis change %s → %s', lastPermissionKey, key);
+        void refreshLotsForPermissionChange(isContributor ? 'granted' : 'revoked');
       }
-      lastAuthorized = isAuthorized;
+      lastPermissionKey = key;
     });
 
     const removeError = locationService.onError((error) => {
@@ -705,15 +759,22 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         await restoreParkingState();
 
         await locationService.initialize();
-        const permissionGranted = await locationService.requestPermissions();
+        await locationService.requestPermissions();
 
-        // If the OS already reports authorization (returning user, or fresh
-        // grant from this very call), refresh the backend's permission-grant
-        // grace pass so ContributorGuard accepts reads for the next 24h even
-        // before the user has driven into a lot. Best-effort — the helper
-        // dedupes itself and swallows network errors.
-        if (permissionGranted) {
+        // Only register the contributor grant if the OS grants Always.
+        // WhenInUse is enough to drive the SDK's foreground geofence
+        // monitoring but it CAN'T fire BG geofence events — so the user
+        // would never actually contribute occupancy data. Registering a
+        // grant under WhenInUse would unlock the live read while leaving
+        // the contribution side broken (free-rider). Best-effort — the
+        // helper dedupes itself and swallows network errors.
+        if (await locationService.isContributorAuthorized()) {
           void registerContributorGrant();
+        } else {
+          // If the OS dropped us to anything below Always since last
+          // launch, make sure the backend isn't still serving live data
+          // off a stale grant.
+          void revokeContributorGrant();
         }
 
         const allLots = await lotsApi.getAllLots();

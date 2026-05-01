@@ -187,6 +187,55 @@ class LocationService {
   }
 
   /**
+   * Returns true ONLY if the OS grants "Always Allow" location AND
+   * full (precise) accuracy. Both are required for contributor tier:
+   *
+   *   - Always: needed to deliver BG geofence events when the app is
+   *     terminated/backgrounded. WhenInUse can't fire BG events at all.
+   *   - FullAccuracy: lot geofences have radii of tens of meters. With
+   *     iOS "Reduced Accuracy", coordinates are fuzzed to ~hectares,
+   *     making enter/exit detection effectively random and polluting
+   *     occupancy data with garbage. We refuse the contributor grant
+   *     under Reduced rather than letting bad signal corrupt aggregates.
+   *
+   * This is the correct check to gate `registerContributorGrant` calls.
+   */
+  async isContributorAuthorized(): Promise<boolean> {
+    try {
+      const provider = await BackgroundGeolocation.getProviderState();
+      const isAlways =
+        provider.status === BackgroundGeolocation.AuthorizationStatus.Always;
+      const isFullAccuracy =
+        provider.accuracyAuthorization ===
+        BackgroundGeolocation.AccuracyAuthorization.Full;
+      return isAlways && isFullAccuracy;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Read the OS-level accuracy authorization as a normalized string.
+   * iOS 14+ only — on Android this always returns 'full'. The soft-ask
+   * screen uses this to decide whether to surface a "Precise Location is
+   * off" warning + Settings deep link.
+   */
+  async getAccuracyAuthorization(): Promise<'full' | 'reduced'> {
+    try {
+      const provider = await BackgroundGeolocation.getProviderState();
+      return provider.accuracyAuthorization ===
+        BackgroundGeolocation.AccuracyAuthorization.Reduced
+        ? 'reduced'
+        : 'full';
+    } catch {
+      // Default to 'full' so a transient SDK read failure doesn't lock
+      // out otherwise-eligible users — the next contributor-gated read
+      // will surface the truth via the 403 path.
+      return 'full';
+    }
+  }
+
+  /**
    * Read the OS-level authorization status as a normalized string. This
    * is the source of truth for the soft-ask screen — do NOT rely on
    * `requestPermission()`'s return value alone, because on iOS calling
@@ -220,28 +269,48 @@ class LocationService {
   /**
    * Request location permissions. The SDK auto-requests on start/startGeofences,
    * but this allows explicit control for permission UI flows.
+   *
+   * On iOS 14+, also requests `requestTemporaryFullAccuracy('ParkingDetection')`
+   * if the user granted Reduced Accuracy. We AWAIT and INSPECT the result —
+   * the SDK returns the resulting accuracy code, and if the user dismissed
+   * the dialog we leave that fact visible to callers via
+   * `getAccuracyAuthorization()` so the soft-ask screen can route them to
+   * Settings.app (the temporary-full-accuracy prompt cannot be re-shown
+   * after the user dismisses it within the same session).
+   *
+   * Returns true only if the resulting OS state is contributor-eligible
+   * (Always + FullAccuracy). Anything less means the caller should keep
+   * the user in the soft-ask flow rather than treating them as a
+   * contributor.
    */
   async requestPermissions(): Promise<boolean> {
     try {
-      const status = await BackgroundGeolocation.requestPermission();
-      const granted =
-        status === BackgroundGeolocation.AuthorizationStatus.Always ||
-        status === BackgroundGeolocation.AuthorizationStatus.WhenInUse;
+      await BackgroundGeolocation.requestPermission();
 
-      // Request full accuracy on iOS 14+ if needed
-      if (granted) {
-        const provider = await BackgroundGeolocation.getProviderState();
-        if (
-          provider.accuracyAuthorization ===
-          BackgroundGeolocation.AccuracyAuthorization.Reduced
-        ) {
+      // Request full accuracy on iOS 14+ if the user granted Reduced.
+      // We don't gate this on `granted` (Always vs WhenInUse) because the
+      // accuracy prompt is independently useful even under WhenInUse —
+      // and the user may bump to Always later via Settings.
+      const provider = await BackgroundGeolocation.getProviderState();
+      if (
+        provider.accuracyAuthorization ===
+        BackgroundGeolocation.AccuracyAuthorization.Reduced
+      ) {
+        try {
           await BackgroundGeolocation.requestTemporaryFullAccuracy(
             'ParkingDetection',
           );
+        } catch {
+          // User dismissed the dialog or the SDK couldn't show it. Fall
+          // through — `isContributorAuthorized()` below will read the
+          // resulting state and return false, which is the correct signal.
         }
       }
 
-      return granted;
+      // Re-read OS state after both prompts settle. Returning the
+      // contributor-eligibility boolean here means callers don't have to
+      // know about the two-stage permission model.
+      return this.isContributorAuthorized();
     } catch {
       return false;
     }
@@ -412,6 +481,12 @@ class LocationService {
   };
 
   private handleLocationEvent = (location: Location) => {
+    // Defensive: the SDK occasionally fires synthetic events without a
+    // location payload (e.g. when toggled while between fixes), and
+    // accessing `.coords` would throw. The original null-check used
+    // `location.coords.accuracy` which crashed before the guard.
+    if (!location || !location.coords) return;
+
     // Filter out sample locations (intermediate GPS fixes)
     if (location.sample) return;
 

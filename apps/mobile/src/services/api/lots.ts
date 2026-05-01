@@ -6,6 +6,40 @@ import { apiService, BackgroundLocationRequiredError } from './base';
 import API_CONFIG from './config';
 import { getDeviceId } from './deviceCredentials';
 import { cacheService } from './cache';
+import { getContributorStateSync } from './contributor';
+
+/**
+ * Single source of truth for contributor-gated response shaping.
+ *
+ * The OS-reported permission state is authoritative: if the device is
+ * currently revoked, we MUST present every contributor-gated field as
+ * locked (null occupancy / forecast 403) regardless of what the backend
+ * returned. The backend can lag local OS state by a single round-trip
+ * (the revoke POST may not have committed before an in-flight GET landed),
+ * so trusting the backend response in that window flickers colored data
+ * back onto a screen the user just locked.
+ *
+ * This helper runs at the API service layer — every consumer (hooks,
+ * cache reads, polling intervals, focus refetches) gets the same answer
+ * without needing per-call dedup, generation counters, or in-memory
+ * clobbering. Cache stores raw server responses; redaction happens on
+ * the way out, so when state flips back to granted the cached colored
+ * response is once again served as colored without an extra refetch.
+ */
+function redactLotIfRevoked<T extends ParkingLotResponse>(lot: T): T {
+  if (getContributorStateSync() === 'granted') return lot;
+  return {
+    ...lot,
+    current_occupancy: null,
+    available: null,
+    occupancy_rate: null,
+    fill_status: null,
+    estimated_occupancy: null,
+    estimated_available: null,
+    raw_occupancy: null,
+    effective_penetration_rate: null,
+  };
+}
 
 // Backend response interfaces (matching the backend)
 export interface ParkingLot {
@@ -150,7 +184,7 @@ class LotsApiService {
       },
       { ttl: LotsApiService.CACHE_TTL.ALL_LOTS },
     );
-    return result.data;
+    return result.data.map(redactLotIfRevoked);
   }
 
   /**
@@ -166,14 +200,25 @@ class LotsApiService {
       },
       { ttl: LotsApiService.CACHE_TTL.SUMMARY },
     );
-    return result.data;
+    return {
+      ...result.data,
+      high_occupancy_lots: (result.data.high_occupancy_lots ?? []).map(redactLotIfRevoked),
+    };
   }
 
   /**
    * Get details for a specific lot.
    * Cached per-lot for offline detail views.
+   *
+   * `forceRefresh` skips the cache READ but still updates the cache with the
+   * fresh response. The lot detail screen passes this on every refetch so a
+   * just-revoked user never sees a 30-second-stale colored response after
+   * navigating back into the lot. Cache is still warm for offline fallback.
    */
-  async getLotDetails(lotId: string): Promise<ParkingLotResponse> {
+  async getLotDetails(
+    lotId: string,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<ParkingLotResponse> {
     const endpoint = API_CONFIG.ENDPOINTS.LOT_DETAILS(lotId);
     const result = await cacheService.getOrFetch(
       `lots:detail:${lotId}`,
@@ -181,9 +226,9 @@ class LotsApiService {
         const response = await apiService.get<ParkingLotResponse>(endpoint);
         return response.data;
       },
-      { ttl: LotsApiService.CACHE_TTL.LOT_DETAILS },
+      { ttl: LotsApiService.CACHE_TTL.LOT_DETAILS, forceRefresh: options.forceRefresh },
     );
-    return result.data;
+    return redactLotIfRevoked(result.data);
   }
 
   /**
@@ -229,7 +274,14 @@ class LotsApiService {
       },
       { ttl: LotsApiService.CACHE_TTL.RECOMMENDATIONS },
     );
-    return result.data;
+    // Recommendations extend ParkingLotResponse — redact the live fields
+    // while keeping recommendation-specific fields (score, distance, reason).
+    return result.data.map((rec) => ({
+      ...redactLotIfRevoked(rec),
+      recommendation_score: rec.recommendation_score,
+      distance_meters: rec.distance_meters,
+      reason: rec.reason,
+    }));
   }
 
   /**
@@ -237,13 +289,26 @@ class LotsApiService {
    * Uses cache for offline support; falls back to local heuristic if
    * neither the backend nor a cached result is available.
    */
-  async getForecast(lot: Pick<ParkingLotResponse, 'lot_id' | 'confidence'>): Promise<Array<{
+  async getForecast(
+    lot: Pick<ParkingLotResponse, 'lot_id' | 'confidence'>,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<Array<{
     time: string;
     occupancy: number;
     lowerBound: number;
     upperBound: number;
     accuracy: number;
   }>> {
+    // Local short-circuit: if the OS says we're revoked, the forecast
+    // endpoint will 403 anyway. Throw the same error the backend would
+    // throw, without burning a network round-trip — the screen handles
+    // BackgroundLocationRequiredError by showing the locked card.
+    if (getContributorStateSync() !== 'granted') {
+      throw new BackgroundLocationRequiredError(
+        'Forecast unavailable while location permission is revoked.',
+        { code: BackgroundLocationRequiredError.CODE },
+      );
+    }
     try {
       const result = await cacheService.getOrFetch(
         `lots:forecast:${lot.lot_id}`,
@@ -279,7 +344,7 @@ class LotsApiService {
           // No predictions from backend — return local heuristic (still cache it)
           return this.generateForecast(lot);
         },
-        { ttl: LotsApiService.CACHE_TTL.FORECAST },
+        { ttl: LotsApiService.CACHE_TTL.FORECAST, forceRefresh: options.forceRefresh },
       );
       return result.data;
     } catch (err) {

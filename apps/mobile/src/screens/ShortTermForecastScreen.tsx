@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -15,6 +15,7 @@ import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { Header, ReliabilityMeter, LockedOccupancyBadge, LockedForecastCard, UnlockCTAButton } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
+import { useContributorState } from '../services/api/contributor';
 import { MapSelectModal } from '../components/Modals/MapSelectModal';
 import { useReliability } from '../hooks/useReliability';
 import useFavorites from '../hooks/useFavorites';
@@ -28,6 +29,19 @@ import { upcomingEvents } from '../data/mockEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
 import type { MapStackScreenProps } from '../types/navigation';
+
+// Format a wall-clock timestamp into a short "X ago" relative string for the
+// inline freshness label on the lot header card. We deliberately keep the
+// granularity coarse (seconds < 1m, minutes < 1h, hours otherwise) so the
+// label doesn't visibly tick every second and force re-renders.
+function formatUpdatedAgo(ts: number | null): string {
+  if (ts == null) return 'just now';
+  const deltaMs = Date.now() - ts;
+  if (deltaMs < 5_000) return 'just now';
+  if (deltaMs < 60_000) return `${Math.floor(deltaMs / 1000)}s ago`;
+  if (deltaMs < 3_600_000) return `${Math.floor(deltaMs / 60_000)}m ago`;
+  return `${Math.floor(deltaMs / 3_600_000)}h ago`;
+}
 
 // Favorite button component
 const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = ({ isFavorite, onToggle }) => {
@@ -53,8 +67,16 @@ export function ShortTermForecastScreen() {
   const { colors } = useTheme();
 
   // Use the API hook instead of mock data
-  const { lot, forecast, loading, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
+  const { lot, forecast, loading, refreshing, lastUpdatedAt, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
+
+  // Live OS contributor state. Drives the lock UI directly so the badge /
+  // forecast card flip the instant the user toggles permission — we don't
+  // wait for the next poll tick to commit a fresh fetch before reflecting
+  // the change. The fetched payload (`lot.occupancy_rate`) catches up
+  // moments later via the contributor pub-sub triggering refreshLot.
+  const contributorState = useContributorState();
+  const isContributor = contributorState === 'granted';
 
   // Non-contributors see the redacted lot detail (neutral badge + Unlock
   // CTA). We deliberately do NOT auto-navigate to the permission screen —
@@ -80,11 +102,28 @@ export function ShortTermForecastScreen() {
   // If the lotId is present in favoriteLots, then the lot is a favorite
   const isFavorite = favoriteLots.some(fav => fav === lotId);
 
-  // Show loading spinner while data is being fetched. We no longer
-  // early-return on bgLocationRequired — the redacted detail view (locked
-  // badge + Unlock CTA) is the right thing to show non-contributors who
-  // tapped into a lot.
-  if (loading) {
+  // Drive a coarse re-render once per minute so the "Updated Xm ago" staleness
+  // label can flip on after the lot data has been sitting unrefreshed. We only
+  // show the label when the data is actually stale (>2min) — no point telling
+  // the user "Updated 12s ago" when the screen polls every 60s anyway.
+  const [, setRelTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setRelTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Threshold past which we surface a freshness label. Below this the label is
+  // hidden entirely (the data is recent enough that calling it out is noise).
+  const STALE_THRESHOLD_MS = 2 * 60_000;
+  const isStale = lastUpdatedAt != null && Date.now() - lastUpdatedAt > STALE_THRESHOLD_MS;
+
+  // Show the full-screen spinner ONLY on the very first load (when we have
+  // no `lot` yet). Background refetches (poll tick, focus return, contributor
+  // grant/revoke) keep the rendered content mounted and surface progress via
+  // the inline "Updating..." / "Updated Xm ago" label below — unmounting the
+  // whole screen on every poll feels broken and made permission changes feel
+  // like a 30s lag because the screen flashed to spinner mid-transition.
+  if (loading && !lot) {
     return (
       <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
         <Header title="Today's Forecast" onBack={onBack} />
@@ -191,16 +230,15 @@ export function ShortTermForecastScreen() {
         {/* Title Card w/ Lot Name and Occupancy */}
         <View style={[styles.lotHeaderCard, { backgroundColor: colors.white }]}>
           <Text style={[styles.lotName, { color: colors.textPrimary }]}>{lot.lot_name}</Text>
-          {/* `occupancy_rate` is null for non-contributors. In practice the
-              bgLocationRequired guard above redirects them away before this
-              renders (the forecast endpoint 403s first), but if they manage
-              to land here from a stale screen, we show a neutral "locked"
-              badge instead of "NaN%". */}
-          {lot.occupancy_rate != null ? (
-            <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
-              <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
-            </View>
-          ) : (
+          {/* Lock decision is driven by live OS permission state, not by
+              whether the most recent fetch happened to return null. This
+              way the badge flips instantly on a permission toggle even if
+              the in-memory `lot` payload is still from the pre-toggle
+              fetch — the next refetch fills in the live numbers a moment
+              later. While contributor=granted but data is still loading
+              (occupancy_rate not yet populated), we show a small spinner
+              instead of either the locked chip or a misleading 0%. */}
+          {!isContributor ? (
             <View style={styles.lockedGroup}>
               {/* Redacted live occupancy: shows a lock chip + smeared
                   placeholder — see LockedOccupancyBadge for the no-deps
@@ -218,30 +256,82 @@ export function ShortTermForecastScreen() {
                 accessibilityLabel="Unlock live occupancy by granting background location"
               />
             </View>
+          ) : lot.occupancy_rate != null ? (
+            <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
+              <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
+            </View>
+          ) : (
+            // Contributor-but-no-data (truly missing — e.g. lot has no
+            // recent occupancy reports). The revoke→grant gap that used
+            // to land here no longer happens because we stopped clobbering
+            // in-memory state on revoke (see useLotData). Reserve the
+            // badge slot height so the card doesn't shift.
+            <View style={[styles.statusBadge, styles.statusBadgeEmpty]} />
           )}
 
           {/* Reliability Meter — contributor-only signal, mirrors the
               live occupancy + forecast gating. Non-contributors (whose
-              `lot.occupancy_rate` is redacted to null) don't see it. */}
-          {lot.occupancy_rate != null && !reliabilityLoading && reliability && (
-            <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
-              <ReliabilityMeter
-                confidence={reliability.confidence}
-                isColdStart={reliability.isColdStart}
-                size="medium"
-                onPress={() => setIsReliabilityModalOpen(true)}
-              />
+              `lot.occupancy_rate` is redacted to null) don't see it.
+
+              We always render the wrapper at a fixed height when this is a
+              contributor view, so the lot header card doesn't grow/shift when
+              the reliability fetch resolves a moment after the lot fetch.
+              The meter itself only appears once data is available. */}
+          {isContributor && (
+            <View style={styles.reliabilitySlot}>
+              {!reliabilityLoading && reliability && (
+                <ReliabilityMeter
+                  confidence={reliability.confidence}
+                  isColdStart={reliability.isColdStart}
+                  size="medium"
+                  onPress={() => setIsReliabilityModalOpen(true)}
+                />
+              )}
             </View>
+          )}
+
+          {/* Inline freshness indicator. Hidden while data is fresh (the
+              60s poll keeps it current and a label would just be noise);
+              shown when refreshing or when the data has gone stale (>2min,
+              e.g. after returning from background or if polling stalled).
+              Tapping forces an immediate refresh.
+
+              Absolutely positioned in the bottom-right of the card so
+              toggling it on/off doesn't grow the card or leave a gap of
+              reserved empty space when hidden. */}
+          {(refreshing || isStale) && (
+            <TouchableOpacity
+              onPress={refreshLot}
+              disabled={refreshing}
+              accessibilityRole="button"
+              accessibilityLabel={
+                refreshing
+                  ? 'Refreshing lot data'
+                  : `Last updated ${formatUpdatedAgo(lastUpdatedAt)}. Tap to refresh.`
+              }
+              style={styles.updatedRow}
+            >
+              {refreshing && (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.darkGray}
+                  style={styles.updatedSpinner}
+                />
+              )}
+              <Text style={[styles.updatedText, { color: colors.darkGray }]}>
+                {refreshing ? 'Updating…' : `Updated ${formatUpdatedAgo(lastUpdatedAt)}`}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
 
         {/* Chart — the forecast endpoint is contributor-gated, so for
             non-contributors `forecast` comes back empty and we render a
-            locked placeholder card with its own Unlock CTA. We use
-            `lot.occupancy_rate == null` as the gate signal because it's
-            the same redaction marker used for the occupancy badge above
-            and avoids flashing the empty-state message during a refetch. */}
-        {lot.occupancy_rate == null ? (
+            locked placeholder card with its own Unlock CTA. The lock
+            decision is keyed on live OS contributor state (not on the
+            forecast array contents) so the card flips immediately on
+            permission toggle, before the next refetch lands. */}
+        {!isContributor ? (
           <LockedForecastCard
             onUnlockPress={() => navigation.navigate('LocationPermission', {})}
           />
@@ -384,13 +474,54 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
 
+  // Empty/no-data variant — invisible chip that reserves layout height
+  // so the card doesn't jump if a lot truly has no occupancy_rate.
+  statusBadgeEmpty: {
+    backgroundColor: 'transparent',
+  },
+
   // Wraps the locked occupancy badge + Unlock CTA so they share consistent
   // vertical rhythm (and so the CTA stays visually grouped with what it
   // unlocks rather than floating into the reliability meter row below).
   lockedGroup: {
     alignItems: 'center',
     gap: SPACING.md,
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.sm,  },
+
+  // Inline freshness indicator under the reliability meter / locked group.
+  // Tap target spans the whole row so the user can refresh on demand without
+  // hunting for a tiny button.
+  updatedRow: {
+    position: 'absolute',
+    right: SPACING.md,
+    bottom: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.xs,
+  },
+  updatedText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+  },
+  // Scale the spinner down — RN's smallest preset ("small") is still
+  // noticeably larger than the xs label next to it.
+  updatedSpinner: {
+    transform: [{ scale: 0.7 }],
+  },
+  // (No reserved-height slot — the freshness label above is absolutely
+  // positioned over the bottom-right of the lot header card so toggling it
+  // on/off has zero impact on layout.)
+  // Reserved-height slot for the ReliabilityMeter so the lot header card
+  // stays the same size whether reliability data has resolved yet or not.
+  // Height matches the medium-size meter (text ~14px + 5px padding *2 + 1px
+  // border *2) so when the meter mounts it slots in without shifting siblings.
+  reliabilitySlot: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 28,
   },
 
   statusBadgeText: {

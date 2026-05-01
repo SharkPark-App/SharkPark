@@ -21,17 +21,28 @@ export function useAllLotsData(): UseAllLotsDataReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Monotonic generation counter so a slow in-flight fetch from a previous
+  // call doesn't overwrite a newer one. Critical on permission toggles where
+  // AppState 'active' + onProviderChange + the grant 2-phase emit can fire
+  // multiple fetches back-to-back, and the network can reorder them.
+  const refreshGenRef = useRef(0);
+
   const fetchLots = async () => {
+    const myGen = ++refreshGenRef.current;
+    const isLatest = () => refreshGenRef.current === myGen;
+
     try {
       setLoading(true);
       setError(null);
       const allLots = await lotsApi.getAllLots();
+      if (!isLatest()) return;
       setLots(allLots);
     } catch (err) {
+      if (!isLatest()) return;
       console.error('[useAllLotsData] Error fetching lots:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch parking lots');
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
   };
 
@@ -60,12 +71,16 @@ export function useAllLotsData(): UseAllLotsDataReturn {
 
   // Re-fetch the moment our contributor status flips so the map's pin
   // colors update immediately on grant/revoke instead of lagging by up
-  // to one full poll interval (30s). On 'revoked' we redact the cached
-  // lots client-side first to beat the GET-vs-revoke-POST race; the
-  // server's redacted response will reconcile on the follow-up refetch.
+  // to one full poll interval (30s). On 'revoked' we redact in-memory
+  // first so pins flip to neutral instantly; the follow-up refetch funnels
+  // through the API redactor (lots.ts) so a late-landing pre-revoke GET
+  // can't snap pins back to colored.
   useEffect(() => {
     return subscribeContributorState((state) => {
       if (state === 'revoked') {
+        // Bump gen FIRST so any in-flight pre-revoke fetch can't land on
+        // top of the in-memory clobber and re-color the pins.
+        refreshGenRef.current++;
         setLots((prev) =>
           prev.map((lot) => ({
             ...lot,

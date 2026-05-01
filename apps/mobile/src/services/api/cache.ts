@@ -29,6 +29,18 @@ interface CacheOptions {
   ttl?: number;
   /** If true, never serve stale data — return null instead */
   strictFreshness?: boolean;
+  /**
+   * If true, skip the cache READ entirely and always hit the fetcher.
+   * The result is still WRITTEN to cache so subsequent offline reads
+   * have something to fall back on.
+   *
+   * Used by hooks that absolutely must see current server truth on
+   * every call (e.g. the lot detail screen, where the response shape
+   * depends on contributor status — a 30-second-stale cache hit can
+   * mean showing colored occupancy + forecast to a user who just
+   * revoked location permission).
+   */
+  forceRefresh?: boolean;
 }
 
 class CacheService {
@@ -93,6 +105,40 @@ class CacheService {
   }
 
   /**
+   * Remove every cached entry whose key starts with the given prefix.
+   *
+   * Used by the contributor pub-sub: when the device transitions
+   * granted ↔ revoked, every contributor-gated response under `lots:` is
+   * stale by definition (the server's redaction layer will return a
+   * different shape on the next request). Without this invalidation, the
+   * subscribers' refetch hits the in-memory cache and silently returns the
+   * pre-flip response — so the map pins / forecast UI keep showing the
+   * old state until the TTL expires (60s for `lots:all`, 30s for
+   * `lots:detail:*`, 5min for `lots:forecast:*`).
+   */
+  async invalidatePrefix(prefix: string): Promise<void> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const fullPrefix = CACHE_PREFIX + prefix;
+      const matching = keys.filter((k) => k.startsWith(fullPrefix));
+      if (matching.length > 0) {
+        await AsyncStorage.multiRemove(matching);
+      }
+      // Also prune the index so eviction bookkeeping stays accurate.
+      const rawIndex = await AsyncStorage.getItem(CACHE_INDEX_KEY);
+      if (rawIndex) {
+        const index: string[] = JSON.parse(rawIndex);
+        const filtered = index.filter((k) => !k.startsWith(prefix));
+        if (filtered.length !== index.length) {
+          await AsyncStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(filtered));
+        }
+      }
+    } catch (error) {
+      console.warn(`[Cache] Failed to invalidate prefix "${prefix}":`, error);
+    }
+  }
+
+  /**
    * Clear all cached data.
    */
   async clear(): Promise<void> {
@@ -124,10 +170,14 @@ class CacheService {
     fetcher: () => Promise<T>,
     options: CacheOptions = {},
   ): Promise<{ data: T; source: 'cache' | 'network'; isStale: boolean }> {
-    const cached = await this.get<T>(key, options);
+    // forceRefresh: skip the cache READ but still WRITE the result so the
+    // entry stays warm for offline fallback. Used by callers (e.g. lot
+    // detail hook) that must reflect server truth on every fetch.
+    const cached = options.forceRefresh ? null : await this.get<T>(key, options);
     const isOnline = await NetInfo.isConnected();
 
-    // If cached and fresh, return immediately
+    // If cached and fresh, return immediately (forceRefresh skips this branch
+    // because `cached` is null above).
     if (cached && !cached.isStale) {
       return { data: cached.data, source: 'cache', isStale: false };
     }
@@ -139,18 +189,24 @@ class CacheService {
         await this.set(key, freshData, options);
         return { data: freshData, source: 'network', isStale: false };
       } catch (error) {
-        // Network error — fall back to stale cache if available
-        if (cached) {
+        // Network error — fall back to stale cache if available. Even on
+        // forceRefresh we honor a still-readable stale entry here so an
+        // offline focus-refetch doesn't blow up the screen; the caller
+        // can detect this via `isStale`.
+        const fallback = options.forceRefresh ? await this.get<T>(key, {}) : cached;
+        if (fallback) {
           console.warn(`[Cache] Network fetch failed for "${key}", serving stale data`);
-          return { data: cached.data, source: 'cache', isStale: true };
+          return { data: fallback.data, source: 'cache', isStale: true };
         }
         throw error;
       }
     }
 
-    // Offline: return stale cache if available
-    if (cached) {
-      return { data: cached.data, source: 'cache', isStale: true };
+    // Offline: return stale cache if available (re-read on forceRefresh
+    // since `cached` was deliberately skipped above).
+    const offlineFallback = options.forceRefresh ? await this.get<T>(key, {}) : cached;
+    if (offlineFallback) {
+      return { data: offlineFallback.data, source: 'cache', isStale: true };
     }
 
     // No cache, no network

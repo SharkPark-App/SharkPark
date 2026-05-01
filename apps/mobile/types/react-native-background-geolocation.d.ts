@@ -175,7 +175,11 @@ declare module 'react-native-background-geolocation' {
     DesiredAccuracy: { High: number; Medium: number; Low: number; VeryLow: number; Lowest: number; Navigation: number };
     TriggerActivity: { InVehicle: string; OnBicycle: string; OnFoot: string; Running: string; Walking: string };
     AuthorizationStatus: { NotDetermined: number; Restricted: number; Denied: number; Always: number; WhenInUse: number };
-    AccuracyAuthorization: { FullAccuracy: number; Reduced: number };
+    // NOTE: runtime keys are `Full` and `Reduced` (see
+    // node_modules/react-native-background-geolocation/src/index.js).
+    // Do NOT rename to `FullAccuracy` — the value will be undefined at
+    // runtime and every accuracy comparison silently fails.
+    AccuracyAuthorization: { Full: number; Reduced: number };
     LogLevel: { Off: number; Error: number; Warning: number; Info: number; Debug: number; Verbose: number };
     [key: string]: unknown;
   };
