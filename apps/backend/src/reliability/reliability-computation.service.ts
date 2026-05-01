@@ -106,12 +106,25 @@ export class ReliabilityComputationService {
     // Get historical accuracy if available
     const historicalAccuracy = await this.getHistoricalAccuracy(lotId);
 
+    // Distinct reporters in the configured window - deduped per user so spamming counts as 1.
+    const { userReportsWindowMinutes } = this.reliabilityService.getDefaultThresholds();
+    const reportsWindowStart = new Date(now.getTime() - userReportsWindowMinutes * 60 * 1000);
+    const distinctReporters = await this.prisma.report.findMany({
+      where: {
+        lot_id: lot.id,
+        created_at: { gte: reportsWindowStart, lte: now },
+      },
+      distinct: ['user_id'],
+      select: { user_id: true },
+    });
+
     return {
       penetrationRate: lot.penetration_rate || 0,
       minutesSinceLastEvent: Math.min(120, minutesSinceLastEvent),
       eventsInLastHour: recentEvents.length,
       uniqueDevicesInLastHour: uniqueDevices.size,
       historicalAccuracy,
+      uniqueReportersInWindow: distinctReporters.length,
     };
   }
 

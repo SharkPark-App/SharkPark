@@ -11,6 +11,7 @@ describe('ReliabilityComputationService', () => {
     occupancyEvent: { findMany: jest.Mock };
     predictionShortTerm: { findMany: jest.Mock };
     occupancySnapshot: { findFirst: jest.Mock };
+    report: { findMany: jest.Mock };
   };
   let reliabilityService: jest.Mocked<ReliabilityService>;
 
@@ -31,11 +32,12 @@ describe('ReliabilityComputationService', () => {
     computedAt: '2026-02-14T20:00:00.000Z',
     explanation: 'High confidence',
     factors: {
-      penetrationRate: { name: 'penetrationRate', rawValue: 0.65, normalizedValue: 0.87, weight: 0.35, weightedScore: 30.45 },
-      dataFreshness: { name: 'dataFreshness', rawValue: 5, normalizedValue: 0.83, weight: 0.25, weightedScore: 20.75 },
-      eventFrequency: { name: 'eventFrequency', rawValue: 3, normalizedValue: 0.1, weight: 0.2, weightedScore: 2 },
-      sampleSize: { name: 'sampleSize', rawValue: 2, normalizedValue: 0.2, weight: 0.15, weightedScore: 3 },
-      historicalAccuracy: { name: 'historicalAccuracy', rawValue: 0.5, normalizedValue: 0.5, weight: 0.05, weightedScore: 2.5 },
+      penetrationRate: { name: 'penetrationRate', rawValue: 0.65, normalizedValue: 0.87, weight: 0.3, weightedScore: 26.1 },
+      dataFreshness: { name: 'dataFreshness', rawValue: 5, normalizedValue: 0.83, weight: 0.21, weightedScore: 17.43 },
+      eventFrequency: { name: 'eventFrequency', rawValue: 3, normalizedValue: 0.1, weight: 0.17, weightedScore: 1.7 },
+      sampleSize: { name: 'sampleSize', rawValue: 2, normalizedValue: 0.2, weight: 0.13, weightedScore: 2.6 },
+      historicalAccuracy: { name: 'historicalAccuracy', rawValue: 0.5, normalizedValue: 0.5, weight: 0.04, weightedScore: 2 },
+      userReports: { name: 'User Reports', rawValue: 0, normalizedValue: 1, weight: 0.15, weightedScore: 15 },
     },
   };
 
@@ -53,13 +55,14 @@ describe('ReliabilityComputationService', () => {
       occupancyEvent: { findMany: jest.fn() },
       predictionShortTerm: { findMany: jest.fn().mockResolvedValue([]) },
       occupancySnapshot: { findFirst: jest.fn().mockResolvedValue(null) },
+      report: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const mockReliabilityService = {
       computeReliability: jest.fn().mockReturnValue(mockReliabilityScore),
       computeReliabilitySummary: jest.fn().mockReturnValue(mockScoreSummary),
       getDefaultWeights: jest.fn(),
-      getDefaultThresholds: jest.fn(),
+      getDefaultThresholds: jest.fn().mockReturnValue({ userReportsWindowMinutes: 60 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -119,6 +122,45 @@ describe('ReliabilityComputationService', () => {
         eventsInLastHour: 0,
         uniqueDevicesInLastHour: 0,
       }));
+    });
+
+    it('should pass distinct reporter count from the report query', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.occupancyEvent.findMany.mockResolvedValue([]);
+      prisma.report.findMany.mockResolvedValue([
+        { user_id: 'u1' },
+        { user_id: 'u2' },
+        { user_id: 'u3' },
+      ]);
+
+      await service.computeReliabilityForLot('G1');
+
+      expect(prisma.report.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ distinct: ['user_id'] }),
+      );
+      expect(reliabilityService.computeReliability).toHaveBeenCalledWith(
+        'G1',
+        expect.objectContaining({ uniqueReportersInWindow: 3 }),
+      );
+    });
+
+    it('should use userReportsWindowMinutes threshold for the report query window', async () => {
+      reliabilityService.getDefaultThresholds.mockReturnValue({ userReportsWindowMinutes: 30 } as never);
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.occupancyEvent.findMany.mockResolvedValue([]);
+
+      const before = Date.now();
+      await service.computeReliabilityForLot('G1');
+      const after = Date.now();
+
+      const call = prisma.report.findMany.mock.calls[0][0];
+      const gte: Date = call.where.created_at.gte;
+      const lte: Date = call.where.created_at.lte;
+      const windowMs = lte.getTime() - gte.getTime();
+      
+      expect(windowMs).toBe(30 * 60 * 1000);
+      expect(lte.getTime()).toBeGreaterThanOrEqual(before);
+      expect(lte.getTime()).toBeLessThanOrEqual(after);
     });
 
     it('should calculate unique devices correctly', async () => {

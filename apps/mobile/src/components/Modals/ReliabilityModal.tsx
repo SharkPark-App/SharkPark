@@ -24,6 +24,7 @@ function formatFactorName(key: string): string {
     eventFrequency: 'Event Frequency',
     sampleSize: 'Sample Size',
     historicalAccuracy: 'Historical Accuracy',
+    userReports: 'User Reports',
   };
   return names[key] || key;
 }
