@@ -12,6 +12,7 @@ import React, { createContext, useContext, useEffect, useLayoutEffect, useCallba
 import { Alert, AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Location, MotionActivityEvent, MotionChangeEvent } from 'react-native-background-geolocation';
+import BackgroundGeolocation from 'react-native-background-geolocation';
 import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
@@ -592,15 +593,21 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       const previousAppState = appState.current;
       appState.current = nextAppState;
 
-      // Returning to the foreground is the right moment to verify that the
-      // OS still considers us authorized. Users routinely revoke permission
-      // from Settings while we're backgrounded, and iOS doesn't always fire
-      // a ProviderChange we can latch onto. Re-check on every active
-      // transition and revoke server-side if the answer is no.
+      // Returning to the foreground is the right moment to reconcile with
+      // OS truth. Users routinely toggle permission from Settings while
+      // we're backgrounded, and iOS doesn't reliably fire a ProviderChange
+      // we can latch onto. Re-check on every active transition and sync
+      // the backend either way:
+      //   - newly revoked  → POST /contributor/revoke (UI flips to locked)
+      //   - newly granted  → POST /contributor/grant   (UI flips to live)
+      // Both helpers emit on the contributor pub-sub so lot hooks refetch
+      // immediately instead of waiting up to a full poll interval (30s).
       if (nextAppState === 'active' && previousAppState !== 'active') {
         void (async () => {
           const stillAuthorized = await locationService.isAuthorized();
-          if (!stillAuthorized) {
+          if (stillAuthorized) {
+            void registerContributorGrant({ force: true });
+          } else {
             void revokeContributorGrant();
           }
         })();
@@ -653,6 +660,25 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       setCurrentValidationStatus(analysis);
     };
     parkingValidationService.onValidationComplete(validationListener);
+
+    // Track authorization across ProviderChange events so we can detect
+    // the denied→authorized edge and refresh the contributor grant the
+    // moment the user flips permission ON in Settings (without waiting
+    // for the next AppState 'active' transition). The PERMISSION_DENIED
+    // edge is already handled by locationService's own dedup → onError.
+    let lastAuthorized: boolean | null = null;
+    const removeProvider = locationService.onProviderChange((event) => {
+      if (destroyed) return;
+      const isAuthorized =
+        event.status !== BackgroundGeolocation.AuthorizationStatus.Denied &&
+        event.status !== BackgroundGeolocation.AuthorizationStatus.NotDetermined;
+      if (isAuthorized && lastAuthorized === false) {
+        // denied → authorized: re-register so the contributor pub-sub fires
+        // 'granted' immediately and lot hooks refetch with the new identity.
+        void registerContributorGrant({ force: true });
+      }
+      lastAuthorized = isAuthorized;
+    });
 
     const removeError = locationService.onError((error) => {
       if (!destroyed && error.code === 'PERMISSION_DENIED') {
@@ -768,6 +794,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     return () => {
       destroyed = true;
       removeError();
+      removeProvider();
       removeGeofence();
       removeLocation();
       removeActivity();
