@@ -85,7 +85,7 @@ def check_predictions(
 
     logger.info("\nShort-Term Predictions (%d rows):", len(rows))
     logger.info(
-        "%-10s %-22s %-22s %5s %5s %5s %7s",
+        "%-10s %-22s %-22s %6s %6s %6s %7s",
         "lot_id",
         "predicted_at",
         "target_time",
@@ -99,7 +99,7 @@ def check_predictions(
         lot_cuid, predicted_at, target_time, occ, low, high, ver = row
         lot_label = reverse_map.get(lot_cuid, lot_cuid)
         logger.info(
-            "%-10s %-22s %-22s %5d %5d %5d %7s",
+            "%-10s %-22s %-22s %6.3f %6.3f %6.3f %7s",
             lot_label,
             str(predicted_at)[:22],
             str(target_time)[:22],

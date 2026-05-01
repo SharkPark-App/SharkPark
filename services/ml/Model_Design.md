@@ -14,7 +14,6 @@ Technical decisions and rationale for SharkPark's prediction models.
 - [Synthetic Data](#synthetic-data)
   - [Cold-Start Strategy](#cold-start-strategy)
 - [Feature Engineering](#feature-engineering)
-  - [Event Features](#event-features-future)
   - [Weather Features](#weather-features-future)
   - [Confidence Intervals](#confidence-intervals)
 - [Reliability Scoring](#reliability-scoring)
@@ -125,7 +124,7 @@ The ML pipeline also reads from these operational tables:
 | Table | ML Role | Key Columns |
 |-------|---------|-------------|
 | `lots` | Lot metadata & capacity | `lot_id`, `capacity`, `current_occupancy`, `lot_type`, `penetration_rate`, `confidence` |
-| `campus_events` + `event_impacts` | Event-aware features | `event_type` (ATHLETIC \| ACADEMIC \| PERFORMANCE \| OTHER), `expected_attendance`, `impact_level`, `expected_increase_percent` |
+| ~~`campus_events` + `event_impacts`~~ | ~~Event-aware features~~ | **Removed 2026-04-30:** events are surfaced as a display/notification context layer in mobile, not as a model feature. Too sparse/noisy to improve per-lot occupancy predictions. |
 | `weather` | Weather features | `temperature_f`, `humidity_percent`, `wind_speed_mph`, `precipitation_probability`, `is_raining` |
 | `academic_calendar` | Period classification | `semester`, `period_type`, `week_of_semester` — provided by `academic_calendar.py` |
 | `campus_closures` | `is_campus_open` flag | `is_campus_open(date)` — provided by `academic_calendar.py` |
@@ -224,7 +223,7 @@ Week-ahead predictions answer "what will parking look like next Thursday at 10am
 - Day-of-week variation (lighter weekends)
 - Semester patterns (dead during breaks)
 - Non-semester periods (campus closures, breaks, summer) with near-zero occupancy
-- Event impacts (spikes near campus events)
+- ~~Event impacts (spikes near campus events)~~ — removed 2026-04-30; events are a display/notification surface in mobile, not a model feature
 - Noise and random fluctuations
 
 ### Source Tagging & Sample Weighting
@@ -486,7 +485,7 @@ PostgreSQL retains data permanently, but archiving older data to S3 reduces data
 |----------------------------------|---------------------------|-----------|--------------------------------------|
 | `s3://sharkpark-ml/occupancy/`   | `occupancy_snapshots`     | Permanent | Historical occupancy for retraining  |
 | `s3://sharkpark-ml/weather/`     | `weather`                 | Permanent | Weather correlation analysis         |
-| `s3://sharkpark-ml/events/`      | `campus_events` + `event_impacts` | Permanent | Event impact modeling       |
+| ~~`s3://sharkpark-ml/events/`~~      | ~~`campus_events` + `event_impacts`~~ | — | **Removed 2026-04-30:** events are a mobile display/notification context layer, not an ML feature. No archive needed. |
 | `s3://sharkpark-ml/raw-events/`  | `occupancy_events`        | Permanent | Raw ENTER/EXIT events for feature engineering |
 
 **Archive schedule:** Daily export job writes new records to S3 in Parquet format, partitioned by date. This enables efficient queries for retraining (e.g., "all data from Fall 2025 semester").

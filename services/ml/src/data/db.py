@@ -421,9 +421,9 @@ def write_short_term_predictions(predictions_df: pd.DataFrame) -> int:
                     cuid_lot_ids,
                     predictions_df["predicted_at"],
                     predictions_df["target_time"],
-                    predictions_df["predicted_occupancy"].astype(int),
-                    predictions_df["confidence_lower"].astype(int),
-                    predictions_df["confidence_upper"].astype(int),
+                    predictions_df["predicted_occupancy"].astype(float),
+                    predictions_df["confidence_lower"].astype(float),
+                    predictions_df["confidence_upper"].astype(float),
                     predictions_df["model_version"],
                 )
             )
@@ -505,9 +505,9 @@ def write_long_term_predictions(predictions_df: pd.DataFrame) -> int:
                     predictions_df["predicted_at"],
                     predictions_df["target_date"],
                     predictions_df["target_hour"].astype(int),
-                    predictions_df["predicted_occupancy"].astype(int),
-                    predictions_df["confidence_lower"].astype(int),
-                    predictions_df["confidence_upper"].astype(int),
+                    predictions_df["predicted_occupancy"].astype(float),
+                    predictions_df["confidence_lower"].astype(float),
+                    predictions_df["confidence_upper"].astype(float),
                     predictions_df["model_version"],
                 )
             )

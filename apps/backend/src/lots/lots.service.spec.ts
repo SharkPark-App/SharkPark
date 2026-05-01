@@ -3,7 +3,6 @@ import { NotFoundException, InternalServerErrorException } from '@nestjs/common'
 import { LotsService } from './lots.service';
 import { PrismaService } from '../database/database.module';
 import { PenetrationEstimationService } from './penetration-estimation.service';
-import { EventsService } from '../events/events.service';
 import { WeatherService } from '../weather/weather.service';
 
 describe('LotsService', () => {
@@ -17,10 +16,6 @@ describe('LotsService', () => {
   let penetrationService: {
     estimateForAllLots: jest.Mock;
     estimateForLot: jest.Mock;
-  };
-  let eventsService: {
-    getUpcomingImpactsForLot: jest.Mock;
-    getActiveImpactsForLots: jest.Mock;
   };
   let weatherService: {
     getCurrent: jest.Mock;
@@ -55,11 +50,6 @@ describe('LotsService', () => {
       estimateForLot: jest.fn().mockImplementation(async (lot: any) => makeEstimate(lot)),
     };
 
-    eventsService = {
-      getUpcomingImpactsForLot: jest.fn().mockResolvedValue([]),
-      getActiveImpactsForLots: jest.fn().mockResolvedValue(new Map()),
-    };
-
     weatherService = {
       getCurrent: jest.fn().mockResolvedValue(null),
     };
@@ -69,7 +59,6 @@ describe('LotsService', () => {
         LotsService,
         { provide: PrismaService, useValue: prisma },
         { provide: PenetrationEstimationService, useValue: penetrationService },
-        { provide: EventsService, useValue: eventsService },
         { provide: WeatherService, useValue: weatherService },
       ],
     }).compile();
@@ -577,56 +566,7 @@ describe('LotsService', () => {
 
       expect(results).toEqual([]);
     });
-    it('should penalize lots with active high-impact events', async () => {
-      const lotWithEvent = makeLot({
-        id: 'uuid-event',
-        lot_id: 'GE',
-        current_occupancy: 100,
-        capacity: 400,
-        center_lat: 33.7825,
-        center_lng: -118.1098,
-      });
-      const lotWithoutEvent = makeLot({
-        id: 'uuid-noevent',
-        lot_id: 'GF',
-        current_occupancy: 100,
-        capacity: 400,
-        center_lat: 33.7825,
-        center_lng: -118.1098,
-      });
-
-      prisma.lot.findFirst.mockResolvedValue(sourceLot);
-      prisma.lot.findMany.mockResolvedValue([lotWithEvent, lotWithoutEvent]);
-
-      // GE has a high-impact event (40% increase expected)
-      eventsService.getActiveImpactsForLots.mockResolvedValue(
-        new Map([['uuid-event', 40]]),
-      );
-
-      const results = await service.getRecommendations('G1');
-
-      const withEvent = results.find(r => r.lot_id === 'GE');
-      const withoutEvent = results.find(r => r.lot_id === 'GF');
-
-      expect(withEvent).toBeDefined();
-      expect(withoutEvent).toBeDefined();
-      // Lot without event should score higher
-      expect(withoutEvent!.recommendation_score).toBeGreaterThan(withEvent!.recommendation_score);
-    });
-
-    it('should include event impact info in recommendation reason', async () => {
-      prisma.lot.findFirst.mockResolvedValue(sourceLot);
-      prisma.lot.findMany.mockResolvedValue([nearbyAvailable]);
-
-      eventsService.getActiveImpactsForLots.mockResolvedValue(
-        new Map([['uuid-nearby', 25]]),
-      );
-
-      const results = await service.getRecommendations('G1');
-
-      expect(results[0].reason).toContain('event nearby');
-      expect(results[0].reason).toContain('+25% demand');
-    });  });
+  });
 
   describe('getShortTermPredictions', () => {
     const mockLot = { id: 'uuid-1', lot_id: 'G1' };
@@ -636,7 +576,7 @@ describe('LotsService', () => {
       await expect(service.getShortTermPredictions('INVALID')).rejects.toThrow(NotFoundException);
     });
 
-    it('should return predictions with event impacts and weather context', async () => {
+    it('should return predictions with weather context (no event coupling)', async () => {
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       prisma.predictionShortTerm.findMany.mockResolvedValue([
         {
@@ -646,22 +586,6 @@ describe('LotsService', () => {
           confidence_upper: 170,
           model_version: 'v1.0',
         },
-      ]);
-
-      const mockEvent = {
-        event_name: 'Basketball Game',
-        event_type: 'ATHLETIC',
-        start_time: new Date('2026-03-01T13:00:00Z'),
-        end_time: new Date('2026-03-01T16:00:00Z'),
-        location: 'Walter Pyramid',
-        expected_attendance: 5000,
-      };
-      const mockImpact = {
-        impact_level: 'HIGH',
-        expected_increase_percent: 30,
-      };
-      eventsService.getUpcomingImpactsForLot.mockResolvedValue([
-        { event: mockEvent, impact: mockImpact },
       ]);
 
       weatherService.getCurrent.mockResolvedValue({
@@ -675,9 +599,8 @@ describe('LotsService', () => {
 
       expect(result.lot_id).toBe('G1');
       expect(result.predictions).toHaveLength(1);
-      expect(result.event_impacts).toHaveLength(1);
-      expect(result.event_impacts[0].event_name).toBe('Basketball Game');
-      expect(result.event_impacts[0].expected_increase_percent).toBe(30);
+      // Per 2026-04-30 product decision, predictions response no longer carries event_impacts.
+      expect(result).not.toHaveProperty('event_impacts');
       expect(result.weather).toBeDefined();
       expect(result.weather!.conditions).toBe('Sunny');
     });
@@ -685,13 +608,11 @@ describe('LotsService', () => {
     it('should return null weather when no weather data available', async () => {
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       prisma.predictionShortTerm.findMany.mockResolvedValue([]);
-      eventsService.getUpcomingImpactsForLot.mockResolvedValue([]);
       weatherService.getCurrent.mockResolvedValue(null);
 
       const result = await service.getShortTermPredictions('G1');
 
       expect(result.weather).toBeNull();
-      expect(result.event_impacts).toEqual([]);
       expect(result.predictions).toEqual([]);
     });
   });
@@ -750,16 +671,17 @@ describe('LotsService', () => {
       expect(result.predictions[result.predictions.length - 1].target_hour).toBe(21);
     });
 
-    it('should cap predicted_occupancy at lot capacity', async () => {
+    it('should bound heuristic predicted_occupancy rates to [0, 1]', async () => {
       prisma.lot.findFirst.mockResolvedValue(mockLotFull);
       prisma.predictionLongTerm.findMany.mockResolvedValue([]);
 
       const result = await service.getLongTermPredictions('G1', 1);
 
       for (const p of result.predictions) {
-        expect(p.predicted_occupancy).toBeLessThanOrEqual(mockLotFull.capacity);
+        expect(p.predicted_occupancy).toBeGreaterThanOrEqual(0);
+        expect(p.predicted_occupancy).toBeLessThanOrEqual(1);
         expect(p.confidence_lower).toBeGreaterThanOrEqual(0);
-        expect(p.confidence_upper).toBeLessThanOrEqual(mockLotFull.capacity);
+        expect(p.confidence_upper).toBeLessThanOrEqual(1);
       }
     });
   });
