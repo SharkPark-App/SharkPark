@@ -50,6 +50,7 @@ const baseShuttle = {
   id: 'shuttle-1',
   busName: 'Beach City', 
   route: 'All Campus Express',
+  routeId: 'route-1',
   paxLoad: 15,
   capacity: 40,
   latitude: 33.78,

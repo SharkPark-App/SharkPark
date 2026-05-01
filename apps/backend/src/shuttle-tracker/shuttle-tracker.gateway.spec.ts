@@ -47,10 +47,27 @@ describe('ShuttleTrackerGateway', () => {
   });
 
   describe('handleConnection', () => {
-    it('allows connection when WS_CONNECT_SECRET is not set', () => {
+    it('allows connection when WS_CONNECT_SECRET is not set (non-production)', () => {
       const client = makeClient(undefined);
       gateway.handleConnection(client as unknown as Socket);
       expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('rejects connection when WS_CONNECT_SECRET is not set in production', () => {
+      const originalEnv = process.env.NODE_ENV;
+      const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+      process.env.NODE_ENV = 'production';
+      try {
+        const client = makeClient(undefined);
+        gateway.handleConnection(client as unknown as Socket);
+        expect(client.disconnect).toHaveBeenCalledWith(true);
+        expect(loggerErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('WS_CONNECT_SECRET is not set in production'),
+        );
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        loggerErrorSpy.mockRestore();
+      }
     });
 
     it('allows connection with a valid token', () => {

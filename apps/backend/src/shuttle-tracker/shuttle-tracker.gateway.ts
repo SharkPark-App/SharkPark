@@ -31,7 +31,18 @@ export class ShuttleTrackerGateway implements OnGatewayInit, OnGatewayConnection
 
   handleConnection(client: Socket) {
     const secret = process.env.WS_CONNECT_SECRET;
-    if (!secret) return;
+    if (!secret) {
+      // Fail closed in production: never accept unauthenticated connections
+      // when the shared secret hasn't been provisioned. Outside production we
+      // allow open access so local dev / simulators don't need the env var.
+      if (process.env.NODE_ENV === 'production') {
+        this.logger.error(
+          `[WS] Rejected connection: WS_CONNECT_SECRET is not set in production (${client.handshake.address})`,
+        );
+        client.disconnect(true);
+      }
+      return;
+    }
     const token = (client.handshake.auth as Record<string, unknown>)?.token;
     if (token !== secret) {
       this.logger.warn(`[WS] Rejected connection: invalid token (${client.handshake.address})`);

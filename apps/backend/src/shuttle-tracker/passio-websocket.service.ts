@@ -1,4 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validateOrReject } from 'class-validator';
 import WebSocket from 'ws';
 import { ShuttleTrackerGateway } from './shuttle-tracker.gateway';
 import { PassioLiveShuttleDto } from './dto/passiogo.dto';
@@ -54,9 +56,9 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     this.ws.on('message', (data: WebSocket.Data) => {
       try {
         const parsedData = JSON.parse(data.toString()) as Record<string, unknown>;
-        
+
         if (this.hasActiveShuttles(parsedData)) {
-           this.handleShuttleUpdate(parsedData);
+           void this.handleShuttleUpdate(parsedData);
         } else {
            this.logger.debug('Received empty or keep-alive frame');
         }
@@ -76,10 +78,19 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private handleShuttleUpdate(data: Record<string, unknown>) {
+  private async handleShuttleUpdate(data: Record<string, unknown>) {
+    // Validate the live frame against the DTO schema before broadcasting.
+    // Without this a single malformed PassioGO frame would be relayed verbatim
+    // to every connected mobile client and could break downstream parsers.
+    const liveData = plainToInstance(PassioLiveShuttleDto, data);
     try {
-      const liveData = data as unknown as PassioLiveShuttleDto;
+      await validateOrReject(liveData);
+    } catch {
+      this.logger.warn('Dropping malformed live shuttle frame from PassioGO!');
+      return;
+    }
 
+    try {
       // Transform for frontend
       const locationUpdate = {
         id: liveData.busId.toString(), // Standardize ID as a string
@@ -91,7 +102,7 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
 
       // Broadcast data (batching happens later)
       this.shuttleGateway.broadcastShuttles([locationUpdate]);
-      
+
     } catch (error) {
       this.logger.error('Failed to process live location payload', error);
     }

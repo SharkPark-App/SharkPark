@@ -5,12 +5,16 @@ export interface MapStop {
   name: string;
   latitude: number;
   longitude: number;
+  routeId: string;
   color: string;
 }
 
 export interface MapRoute {
   id: string;
+  name: string;
+  shortName: string;
   color: string;
+  status: string;
   coordinates: { latitude: number; longitude: number }[];
 }
 
@@ -18,6 +22,7 @@ export interface MapShuttle {
   id: string;
   busName: string;
   color?: string;
+  routeId: string;
   route: string;
   latitude: number;
   longitude: number;

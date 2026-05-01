@@ -14,10 +14,10 @@ const mockIo = io as jest.Mock;
 const mockTransitService = TransitService as jest.Mocked<typeof TransitService>;
 
 describe('useTransitData hook', () => {
-  const mockRoutes = [{ id: 'r1', color: '#00ff00', coordinates: [] }];
-  const mockStops = [{ id: 's1', name: 'Student Union', latitude: 33.0, longitude: -118.0, color: '#00ff00' }];
+  const mockRoutes = [{ id: 'r1', name: 'Route One', shortName: 'R1', color: '#00ff00', status: 'On Time', coordinates: [] }];
+  const mockStops = [{ id: 's1', name: 'Student Union', latitude: 33.0, longitude: -118.0, routeId: 'r1', color: '#00ff00' }];
   const mockShuttles = [
-    { id: 'sh1', busName: 'Shuttle 1', color: '#ff0000', latitude: 33.0, longitude: -118.0, heading: 0 }
+    { id: 'sh1', busName: 'Shuttle 1', color: '#ff0000', routeId: 'r1', route: 'Route One', latitude: 33.0, longitude: -118.0, heading: 0, paxLoad: 0, capacity: 30 }
   ];
 
   // Mock socket object
@@ -115,7 +115,7 @@ describe('useTransitData hook', () => {
     });
   });
 
-  it('ignores socket updates for shuttles that do not exist in HTTP state', async () => {
+  it('inserts a placeholder for unknown shuttles and refreshes static metadata', async () => {
     mockTransitService.getRoutesAndStops.mockResolvedValueOnce({ routes: [], stops: [] });
     mockTransitService.getLiveShuttles.mockResolvedValueOnce(mockShuttles as any);
 
@@ -125,22 +125,40 @@ describe('useTransitData hook', () => {
       expect(result.current.shuttles).toHaveLength(1);
     });
 
+    // A second call from the placeholder-triggered refresh
+    mockTransitService.getLiveShuttles.mockResolvedValueOnce(mockShuttles as any);
+
     // Sending an ID ('sh999') that wasn't in mockShuttles
     const phantomUpdate = [{
       id: 'sh999',
       latitude: 50.0,
       longitude: -50.0,
       heading: 90,
-      paxLoad: 0
+      paxLoad: 7,
     }];
 
     act(() => {
       socketHandlers['shuttle_update'](phantomUpdate);
     });
 
-    // The state should be completely unchanged
-    expect(result.current.shuttles).toEqual(mockShuttles);
-    expect(result.current.shuttles).toHaveLength(1);
+    // Placeholder added so the unknown shuttle still renders on the map
+    expect(result.current.shuttles).toHaveLength(2);
+    expect(result.current.shuttles[1]).toMatchObject({
+      id: 'sh999',
+      busName: 'Shuttle',
+      route: '',
+      routeId: '',
+      latitude: 50.0,
+      longitude: -50.0,
+      heading: 90,
+      paxLoad: 7,
+      capacity: 0,
+    });
+
+    // And we trigger a static-metadata refresh so the placeholder gets enriched
+    await waitFor(() => {
+      expect(mockTransitService.getLiveShuttles).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('logs a warning on socket connect_error', () => {

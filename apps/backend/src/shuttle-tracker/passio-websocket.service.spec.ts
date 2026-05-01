@@ -1,5 +1,6 @@
 // src/transit/passio-websocket.service.spec.ts
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { setImmediate } from 'node:timers';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import WebSocket from 'ws';
@@ -107,7 +108,8 @@ describe('PassioWebSocketService', () => {
       service.onModuleInit();
     });
 
-    it('should parse valid shuttle telemetry and broadcast to gateway', () => {
+    it('should parse valid shuttle telemetry and broadcast to gateway', async () => {
+      jest.useRealTimers();
       const mockPayload = {
         busId: 15133,
         latitude: 33.785605,
@@ -120,6 +122,9 @@ describe('PassioWebSocketService', () => {
       // Simulate incoming stringified message
       triggerWsEvent('message', JSON.stringify(mockPayload));
 
+      // handleShuttleUpdate is now async (DTO validation runs on a microtask).
+      await new Promise((resolve) => setImmediate(resolve));
+
       expect(gateway.broadcastShuttles).toHaveBeenCalledTimes(1);
       expect(gateway.broadcastShuttles).toHaveBeenCalledWith([
         {
@@ -130,6 +135,27 @@ describe('PassioWebSocketService', () => {
           paxLoad: 0,
         },
       ]);
+    });
+
+    it('should drop malformed live shuttle frames without broadcasting', async () => {
+      jest.useRealTimers();
+      const malformedPayload = {
+        // busId is required as a number; sending a string should fail validation
+        busId: 'not-a-number',
+        latitude: 33.78,
+        longitude: -118.13,
+        course: 0,
+        paxLoad: 0,
+      };
+
+      triggerWsEvent('message', JSON.stringify(malformedPayload));
+
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(gateway.broadcastShuttles).not.toHaveBeenCalled();
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'Dropping malformed live shuttle frame from PassioGO!',
+      );
     });
 
     it('should ignore empty payloads or keep-alive frames without broadcasting', () => {

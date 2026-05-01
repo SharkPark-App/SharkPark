@@ -285,6 +285,7 @@ describe('ShuttleTrackerService', () => {
           name: 'Matched Red Route',
           shortName: 'MRR',
           color: '#AA0000',
+          status: 'On Time',
           coordinates: [],
         },
       ];

@@ -52,6 +52,7 @@ const baseShuttle = {
   id: 'shuttle-1',
   busName: 'Shuttle 42', 
   route: 'All Campus Express',
+  routeId: 'route-1',
   paxLoad: 0,
   capacity: 40,
   latitude: 33.78,

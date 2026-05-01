@@ -94,7 +94,7 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
   async fetchRoutesAndStops() {
     try {
       const [routesResponse, stopsResponse] = await Promise.all([
-        fetch('https://passiogo.com//mapGetData.php?getRoutes=1', {
+        fetch('https://passiogo.com/mapGetData.php?getRoutes=1', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ systemSelected0: 4163, amount: 1 }),
