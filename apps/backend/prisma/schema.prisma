@@ -91,9 +91,11 @@ model User {
   last_login     DateTime?
   updated_at     DateTime @updatedAt
 
-  school         School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  favorites      UserFavorite[]
-  reports        Report[]
+  school             School             @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  favorites          UserFavorite[]
+  reports            Report[]
+  push_tokens        PushToken[]
+  notification_logs  NotificationLog[]
 
   @@index([school_id])
   @@map("users")
@@ -263,6 +265,37 @@ model PredictionLongTerm {
 
   @@index([lot_id, target_date, target_hour], name: "idx_pred_long")
   @@map("predictions_long_term")
+}
+
+// ─── Push Notifications ───────────────────────────────────
+
+model PushToken {
+  id         String   @id @default(cuid())
+  user_id    String
+  token      String   @unique
+  platform   String   // "ios" | "android"
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("push_tokens")
+}
+
+// Dedup log — prevents sending the same alert class to the same user twice.
+// For lot-level triggers (favorites_filling, favorites_clearing), lot_id is
+// set to the Lot id. For event triggers, lot_id holds the CampusEvent id.
+model NotificationLog {
+  id      String   @id @default(cuid())
+  user_id String
+  type    String   // "favorites_filling" | "favorites_clearing" | "surge" | "events"
+  lot_id  String?
+  sent_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, type, sent_at], name: "idx_notification_log_dedup")
+  @@map("notification_logs")
 }
 
 // ─── Audit log ────────────────────────────────────────────
