@@ -10,6 +10,23 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 // ────────────────────── Mocks ──────────────────────
 
+// The hooks use `useFocusEffect` from @react-navigation/native to trigger
+// fetch + polling only while the screen is focused. In a unit test there's
+// no NavigationContainer, so we shim it to behave like a plain useEffect
+// that runs on mount and tears down on unmount — preserving the test's
+// existing assumptions (initial fetch + interval started immediately).
+jest.mock('@react-navigation/native', () => {
+  // Require inside the factory so we don't reference an out-of-scope
+  // variable (jest hoists jest.mock to the top of the file).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react');
+  return {
+    useFocusEffect: (cb: () => void | (() => void)) => {
+      React.useEffect(() => cb(), [cb]);
+    },
+  };
+});
+
 const mockGetLotDetails = jest.fn();
 const mockGetLotHistory = jest.fn();
 const mockGetForecast = jest.fn();

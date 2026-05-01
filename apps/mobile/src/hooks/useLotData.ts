@@ -3,6 +3,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { lotsApi, ParkingLotResponse, OccupancyHistoryRecord, ApiError, BackgroundLocationRequiredError } from '../services/api';
 
 /** How often to re-fetch lot data (ms) */
@@ -88,19 +89,26 @@ export function useLotData(lotId: string): UseLotDataReturn {
     }
   }, [lotId]);
 
-  // Initial data load + polling
-  useEffect(() => {
-    if (!lotId) return;
+  // Fetch on focus + poll while focused. Using `useFocusEffect` (instead
+  // of a plain `useEffect` on mount) ensures we re-pull whenever the
+  // user returns to this screen — e.g. after coming back from the
+  // LocationPermission soft-ask — without waiting up to a full poll
+  // interval. Polling is also paused while the screen is blurred,
+  // which is what we want for battery + bandwidth.
+  useFocusEffect(
+    useCallback(() => {
+      if (!lotId) return;
 
-    refreshLot();
-    refreshHistory();
-
-    const interval = setInterval(() => {
       refreshLot();
-    }, LOT_DETAIL_POLL_MS);
+      refreshHistory();
 
-    return () => clearInterval(interval);
-  }, [lotId, refreshLot, refreshHistory]);
+      const interval = setInterval(() => {
+        refreshLot();
+      }, LOT_DETAIL_POLL_MS);
+
+      return () => clearInterval(interval);
+    }, [lotId, refreshLot, refreshHistory]),
+  );
 
   // Re-fetch when the app returns to the foreground
   const appState = useRef(AppState.currentState);
@@ -178,16 +186,22 @@ export function useLotsList(filters?: {
     }
   }, [filtersKey]);
 
-  // Initial fetch + polling
-  useEffect(() => {
-    refreshLots();
-
-    const interval = setInterval(() => {
+  // Fetch on focus + poll while focused. See note in `useLotData` above:
+  // this ensures the map / forecast screens immediately re-pull when the
+  // user returns from the LocationPermission soft-ask (or any other
+  // pushed screen) instead of showing stale neutral pins / locked badges
+  // until the next poll tick.
+  useFocusEffect(
+    useCallback(() => {
       refreshLots();
-    }, LOTS_LIST_POLL_MS);
 
-    return () => clearInterval(interval);
-  }, [refreshLots]);
+      const interval = setInterval(() => {
+        refreshLots();
+      }, LOTS_LIST_POLL_MS);
+
+      return () => clearInterval(interval);
+    }, [refreshLots]),
+  );
 
   // Re-fetch when the app returns to the foreground
   const appState = useRef(AppState.currentState);
