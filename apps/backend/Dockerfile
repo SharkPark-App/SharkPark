@@ -79,10 +79,39 @@ RUN curl -fsSLo /usr/local/bin/supercronic \
  && echo "${SUPERCRONIC_SHA1}  /usr/local/bin/supercronic" | sha1sum -c - \
  && chmod +x /usr/local/bin/supercronic
 
+# Python 3.11 + venv for the ML package. The cron process group invokes
+# services/ml/scripts/predict_short_term.py and predict_long_term.py via
+# child_process.spawn from predict-all-lots.ts (and similarly for the
+# weekly retrain cron). Without Python available at runtime those crons
+# would crash with ENOENT. Debian bookworm ships python 3.11, which
+# matches services/ml/pyproject.toml's requires-python = ">=3.11".
+#
+# We isolate into /opt/venv to sidestep PEP 668 (the system python on
+# bookworm is externally-managed and refuses pip install otherwise).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 python3-venv python3-dev build-essential libpq-dev \
+ && python3 -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel uv \
+ && rm -rf /var/lib/apt/lists/*
+ENV PATH="/opt/venv/bin:$PATH"
+ENV VIRTUAL_ENV="/opt/venv"
+
 # Non-root user
 RUN groupadd --system --gid 1001 nodejs \
  && useradd  --system --uid 1001 --gid nodejs nodejs
 WORKDIR /app
+
+# Install the ML package into the venv from the pinned uv.lock so the
+# runtime image resolves the exact xgboost/pandas/numpy versions models
+# were trained against (no train/serve version skew). Layer is cached as
+# long as pyproject.toml + uv.lock don't change.
+COPY --chown=nodejs:nodejs services/ml/pyproject.toml /app/services/ml/pyproject.toml
+COPY --chown=nodejs:nodejs services/ml/uv.lock        /app/services/ml/uv.lock
+COPY --chown=nodejs:nodejs services/ml/src /app/services/ml/src
+COPY --chown=nodejs:nodejs services/ml/scripts /app/services/ml/scripts
+RUN cd /app/services/ml && /opt/venv/bin/uv sync --active --frozen --no-dev \
+ && chown -R nodejs:nodejs /opt/venv
 
 # Copy production dependencies (workspace symlinks resolved by pnpm)
 COPY --from=prod-deps --chown=nodejs:nodejs /repo/node_modules ./node_modules

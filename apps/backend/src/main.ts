@@ -9,11 +9,14 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { API_PREFIX } from './constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
   const isProduction = process.env.NODE_ENV === 'production';
 
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Use Socket.IO for @WebSocketGateway (shuttle feed)
+  app.useWebSocketAdapter(new IoAdapter(app));
   // Swap Nest's default ConsoleLogger for nestjs-pino. JSON in prod, pretty
   // in dev (transport configured in AppModule).
   app.useLogger(app.get(PinoLogger));

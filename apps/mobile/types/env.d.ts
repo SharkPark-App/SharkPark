@@ -8,4 +8,5 @@ declare module '@env' {
   export const DEVICE_EVENT_SECRET: string | undefined;
   export const SENTRY_DSN_MOBILE: string | undefined;
   export const SENTRY_ENVIRONMENT: string | undefined;
+  export const WS_CONNECT_SECRET: string | undefined;
 }

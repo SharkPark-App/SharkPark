@@ -1,10 +1,25 @@
 /**
  * @format
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
+
+jest.mock('react-native-maps', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: (props: any) => <View testID="map-view" {...props}>{props.children}</View>,
+    Marker: (props: any) => <View testID="marker" {...props}>{props.children}</View>,
+    Polyline: (props: any) => <View testID="polyline" {...props} />,
+    Callout: (props: any) => <View testID="callout" {...props}>{props.children}</View>,
+    PROVIDER_DEFAULT: 'default',
+    PROVIDER_GOOGLE: 'google',
+  };
+});
 
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
@@ -85,6 +100,7 @@ jest.mock('../src/context/AuthContext', () => ({
 // Mock react-native-safe-area-context
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaProvider: ({ children }: { children: React.ReactNode }) => children,
+  SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 

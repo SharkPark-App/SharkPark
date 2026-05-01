@@ -1,2 +1,2 @@
-export { loginWithAzure } from './AzureAuth';
-export { logoutFromAzure } from './AzureAuth';
+export { loginWithAzure, logoutFromAzure, loadAuth, saveAuth } from './AzureAuth';
+export type { AuthResult } from './AzureAuth';
