@@ -92,23 +92,25 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       python3 python3-venv python3-dev build-essential libpq-dev \
  && python3 -m venv /opt/venv \
- && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+ && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel uv \
  && rm -rf /var/lib/apt/lists/*
 ENV PATH="/opt/venv/bin:$PATH"
+ENV VIRTUAL_ENV="/opt/venv"
 
 # Non-root user
 RUN groupadd --system --gid 1001 nodejs \
  && useradd  --system --uid 1001 --gid nodejs nodejs
 WORKDIR /app
 
-# Install the ML package into the venv. Editable install (-e) keeps the
-# layer thin: only the dist-info goes under site-packages, the actual
-# code is read from /app/services/ml at runtime. Layer is cached as long
-# as pyproject.toml doesn't change.
+# Install the ML package into the venv from the pinned uv.lock so the
+# runtime image resolves the exact xgboost/pandas/numpy versions models
+# were trained against (no train/serve version skew). Layer is cached as
+# long as pyproject.toml + uv.lock don't change.
 COPY --chown=nodejs:nodejs services/ml/pyproject.toml /app/services/ml/pyproject.toml
+COPY --chown=nodejs:nodejs services/ml/uv.lock        /app/services/ml/uv.lock
 COPY --chown=nodejs:nodejs services/ml/src /app/services/ml/src
 COPY --chown=nodejs:nodejs services/ml/scripts /app/services/ml/scripts
-RUN /opt/venv/bin/pip install --no-cache-dir -e /app/services/ml \
+RUN cd /app/services/ml && /opt/venv/bin/uv sync --active --frozen --no-dev \
  && chown -R nodejs:nodejs /opt/venv
 
 # Copy production dependencies (workspace symlinks resolved by pnpm)
