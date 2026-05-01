@@ -179,6 +179,37 @@ class LocationService {
   }
 
   /**
+   * Read the OS-level authorization status as a normalized string. This
+   * is the source of truth for the soft-ask screen — do NOT rely on
+   * `requestPermission()`'s return value alone, because on iOS calling
+   * it a second time silently returns the existing status without
+   * showing a dialog (the OS only allows one prompt for Always).
+   *
+   * Returning a string keeps callers free of the SDK enum import.
+   */
+  async getAuthorizationStatus(): Promise<
+    'always' | 'whenInUse' | 'denied' | 'restricted' | 'notDetermined'
+  > {
+    try {
+      const provider = await BackgroundGeolocation.getProviderState();
+      switch (provider.status) {
+        case BackgroundGeolocation.AuthorizationStatus.Always:
+          return 'always';
+        case BackgroundGeolocation.AuthorizationStatus.WhenInUse:
+          return 'whenInUse';
+        case BackgroundGeolocation.AuthorizationStatus.Denied:
+          return 'denied';
+        case BackgroundGeolocation.AuthorizationStatus.Restricted:
+          return 'restricted';
+        default:
+          return 'notDetermined';
+      }
+    } catch {
+      return 'notDetermined';
+    }
+  }
+
+  /**
    * Request location permissions. The SDK auto-requests on start/startGeofences,
    * but this allows explicit control for permission UI flows.
    */

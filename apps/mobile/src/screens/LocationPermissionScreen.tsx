@@ -13,13 +13,14 @@
  * at any time without being blocked.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
   Linking,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -45,6 +46,31 @@ const LocationPermissionScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const [step, setStep] = useState<'explain' | 'when-in-use' | 'always' | 'done'>('explain');
   const [isRequesting, setIsRequesting] = useState(false);
+  // Truth-of-record for what the OS actually grants us. We refresh this
+  // after every prompt and on focus so the UI never drifts away from
+  // Settings.app. Initialised lazily on mount.
+  const [authStatus, setAuthStatus] = useState<
+    'always' | 'whenInUse' | 'denied' | 'restricted' | 'notDetermined' | null
+  >(null);
+
+  // On mount: read current auth so the screen starts at the right step
+  // (e.g. user already has WhenInUse from onboarding — don't re-prompt,
+  // jump straight to the Always escalation).
+  useEffect(() => {
+    let cancelled = false;
+    locationService.getAuthorizationStatus().then((s) => {
+      if (cancelled) return;
+      setAuthStatus(s);
+      if (s === 'always') {
+        setStep('done');
+      } else if (s === 'whenInUse') {
+        setStep('always');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ── Stage 1: WhenInUse ────────────────────────────────────────────────────
   // The Transistor SDK only honors the FIRST `BackgroundGeolocation.ready()`
@@ -59,14 +85,31 @@ const LocationPermissionScreen: React.FC = () => {
   const requestWhenInUse = async () => {
     setIsRequesting(true);
     try {
-      const granted = await locationService.requestPermissions();
-      if (granted) {
+      await locationService.requestPermissions();
+      // Read the actual OS state — do NOT trust the request's boolean
+      // return value as the source of truth (see getAuthorizationStatus
+      // doc for why iOS may silently no-op the second prompt).
+      const status = await locationService.getAuthorizationStatus();
+      setAuthStatus(status);
+
+      if (status === 'always' || status === 'whenInUse') {
         // Register the permission-grant grace pass with the backend so the
         // ContributorGuard accepts reads for the next 24h even before the
         // user has driven into a lot. Best-effort, swallows network errors.
         await registerContributorGrant({ force: true });
       }
-      setStep(granted ? 'always' : 'done');
+
+      // Routing:
+      //  - already Always   → skip stage 2, go straight to done
+      //  - WhenInUse        → offer escalation to Always
+      //  - denied/etc       → land on done with a Settings link
+      if (status === 'always') {
+        setStep('done');
+      } else if (status === 'whenInUse') {
+        setStep('always');
+      } else {
+        setStep('done');
+      }
     } catch {
       setStep('done');
     } finally {
@@ -77,13 +120,43 @@ const LocationPermissionScreen: React.FC = () => {
   // ── Stage 2: Escalate to Always (opt-in only) ─────────────────────────────
   // The OS dialog text is owned by `app.backgroundPermissionRationale` in
   // `createSDKConfig()` (Android) and the iOS Info.plist usage strings.
+  //
+  // iOS only allows ONE Always prompt per app install. If the user previously
+  // declined, `requestPermission()` will silently return without showing a
+  // dialog — we detect that here by re-reading the OS state and routing the
+  // user to Settings.app instead of falsely claiming success.
   const requestAlways = async () => {
     setIsRequesting(true);
     try {
+      const before = await locationService.getAuthorizationStatus();
       await locationService.requestPermissions();
-      // Refresh the grant — the user just escalated to Always Allow, which
-      // is its own permission state worth re-registering.
-      await registerContributorGrant({ force: true });
+      const after = await locationService.getAuthorizationStatus();
+      setAuthStatus(after);
+
+      if (after === 'always') {
+        // Genuine escalation — refresh the grant so the backend knows.
+        await registerContributorGrant({ force: true });
+        setStep('done');
+        return;
+      }
+
+      // No-op escalation: status didn't change OR iOS suppressed the
+      // dialog. Tell the user the truth and offer to deep-link to
+      // Settings, where they can flip the toggle themselves.
+      if (before === after) {
+        Alert.alert(
+          'Background access still off',
+          'iOS only shows the “Always Allow” prompt once. To enable background contributions, open Settings and choose “Always” for SharkPark’s location.',
+          [
+            { text: 'Not now', style: 'cancel', onPress: () => setStep('done') },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ],
+        );
+        return;
+      }
+
+      // Some other change (e.g. user demoted to WhenInUse mid-flow) —
+      // just exit cleanly without misrepresenting state.
       setStep('done');
     } catch {
       setStep('done');
@@ -111,12 +184,24 @@ const LocationPermissionScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
         <View style={styles.doneContainer}>
-          <Icon name="checkmark-circle" size={72} color={COLORS.primary} />
+          <Icon
+            name={authStatus === 'always' || authStatus === 'whenInUse' ? 'checkmark-circle' : 'alert-circle'}
+            size={72}
+            color={authStatus === 'always' || authStatus === 'whenInUse' ? COLORS.primary : colors.gray}
+          />
           <Text style={[styles.doneTitle, { color: colors.textPrimary }]}>
-            You're all set
+            {authStatus === 'always'
+              ? "You're all set"
+              : authStatus === 'whenInUse'
+              ? 'Foreground access enabled'
+              : 'Background access not granted'}
           </Text>
           <Text style={[styles.doneSubtitle, { color: colors.gray }]}>
-            Live occupancy is unlocked for the next 24 hours. To keep it flowing after that, just have SharkPark open (or running in the background) the next time you park on campus — your phone handles the lot detection locally and only sends an anonymous "entered Lot G1"-style event. No GPS trails, no identity, nothing tying it back to you. You can change location permissions any time in your device settings.
+            {authStatus === 'always'
+              ? 'Live occupancy is unlocked for the next 24 hours. SharkPark can detect when you park or leave even when the app is closed — your phone handles the detection locally and only sends an anonymous "entered Lot G1"-style event. No GPS trails, no identity, nothing tying it back to you. You can change location permissions any time in your device settings.'
+              : authStatus === 'whenInUse'
+              ? 'Live occupancy is unlocked for the next 24 hours. To keep it flowing after that, just have SharkPark open (or running) the next time you park on campus — your phone handles the lot detection locally and only sends an anonymous "entered Lot G1"-style event. To enable automatic background contributions, choose "Always" for SharkPark in device settings.'
+              : 'You can still browse the map, but live occupancy stays locked until you grant location access in device settings.'}
           </Text>
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: COLORS.primary }]}

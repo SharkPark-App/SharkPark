@@ -15,12 +15,22 @@ jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: jest.fn(), goBack: jest.fn() }),
 }));
 
-// Mock locationService.requestPermissions so we control the granted/denied path.
+// Mock locationService — both `requestPermissions` (action) and
+// `getAuthorizationStatus` (truth-of-record post-action). The screen
+// reconciles against the latter, never trusting the former alone, so
+// every test must stub it.
 const mockRequestPermissions = jest.fn();
+const mockGetAuthorizationStatus = jest.fn();
 jest.mock('../src/services/locationService', () => ({
   locationService: {
     requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+    getAuthorizationStatus: (...args: unknown[]) => mockGetAuthorizationStatus(...args),
   },
+}));
+
+// Mock the contributor-grant API so tests don't hit the network.
+jest.mock('../src/services/api/contributor', () => ({
+  registerContributorGrant: jest.fn().mockResolvedValue(undefined),
 }));
 
 // Theme context — the screen reads colors from useTheme.
@@ -44,6 +54,9 @@ import LocationPermissionScreen from '../src/screens/LocationPermissionScreen';
 describe('LocationPermissionScreen', () => {
   beforeEach(() => {
     mockRequestPermissions.mockReset();
+    mockGetAuthorizationStatus.mockReset();
+    // Default: no prior auth — keeps the screen on the explain step.
+    mockGetAuthorizationStatus.mockResolvedValue('notDetermined');
   });
 
   it('renders the explain step on mount', () => {
@@ -54,6 +67,10 @@ describe('LocationPermissionScreen', () => {
 
   it('routes through locationService and advances on grant', async () => {
     mockRequestPermissions.mockResolvedValueOnce(true);
+    // After the prompt the OS reports WhenInUse — should advance to stage 2.
+    mockGetAuthorizationStatus
+      .mockResolvedValueOnce('notDetermined') // initial mount probe
+      .mockResolvedValueOnce('whenInUse');    // post-request reconciliation
     const { getByText } = render(<LocationPermissionScreen />);
 
     fireEvent.press(getByText(/Enable location access/i));
@@ -70,6 +87,10 @@ describe('LocationPermissionScreen', () => {
 
   it('advances to done when permission is denied', async () => {
     mockRequestPermissions.mockResolvedValueOnce(false);
+    // OS still reports denied after the prompt.
+    mockGetAuthorizationStatus
+      .mockResolvedValueOnce('notDetermined')
+      .mockResolvedValueOnce('denied');
     const { getByText, queryByText } = render(<LocationPermissionScreen />);
 
     fireEvent.press(getByText(/Enable location access/i));
