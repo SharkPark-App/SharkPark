@@ -33,3 +33,19 @@
 # present in the latest dump. Skips Mondays so it doesn't race
 # verify-latest-backup; the next day's run catches up.
 0 4 * * 0,2-6 node /app/apps/backend/dist/scripts/prune-old-data.js
+
+# Push notification triggers — each runs every 15 min, matching the snapshot cadence.
+# Requires FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY Fly secrets.
+# Advisory lock prevents overlap; missing Firebase creds leads to a warning log.
+
+# Favorite lot crosses 80% occupancy.
+*/15 * * * *  node /app/apps/backend/dist/scripts/notify-favorites-filling.js
+
+# Favorite lot drops below 30% after previously being above 75%.
+*/15 * * * *  node /app/apps/backend/dist/scripts/notify-favorites-clearing.js
+
+# Any lot exceeds 90% occupancy (campus-wide surge).
+*/15 * * * *  node /app/apps/backend/dist/scripts/notify-surge.js
+
+# CampusEvent starting within the next 2 hours.
+*/15 * * * *  node /app/apps/backend/dist/scripts/notify-events.js
