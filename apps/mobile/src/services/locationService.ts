@@ -38,13 +38,13 @@ class LocationService {
   private isInitialized = false;
   private trackingMode: 'off' | 'geofences' | 'full' = 'off';
 
-  // Tracks the last authorization status we reported as PERMISSION_DENIED.
-  // iOS frequently fires multiple ProviderChange events for a single user
-  // toggle (one per backing flag flip — enabled, gps, network, etc.), so
-  // without this guard a single revoke surfaces 2–3 duplicate alerts.
-  // Reset to null whenever we observe an authorized state again so the
-  // *next* revoke transition fires exactly one notification.
-  private lastReportedDeniedStatus: number | null = null;
+  // True once we've reported a denied-class status (Denied OR NotDetermined)
+  // since the last authorized observation. iOS commonly fires *multiple*
+  // ProviderChange events per user toggle (sometimes mixing Denied and
+  // NotDetermined), so we must dedup on the class — not the exact status —
+  // or the second event re-fires PERMISSION_DENIED. Flips back to false when
+  // we see an authorized status, arming the next revoke transition.
+  private hasReportedDenied = false;
 
   // Event callbacks
   private geofenceCallbacks: GeofenceCallback[] = [];
@@ -465,10 +465,12 @@ class LocationService {
       event.status === BackgroundGeolocation.AuthorizationStatus.NotDetermined;
 
     if (isDenied) {
-      // Only surface the PERMISSION_DENIED error once per
-      // authorized→denied transition. Suppresses iOS's chatty multi-fire.
-      if (this.lastReportedDeniedStatus !== event.status) {
-        this.lastReportedDeniedStatus = event.status;
+      // Only surface PERMISSION_DENIED once per authorized→denied transition.
+      // iOS may emit Denied and NotDetermined in quick succession for the
+      // same toggle, so keying on a boolean (not the exact status) is what
+      // actually suppresses the duplicate alert.
+      if (!this.hasReportedDenied) {
+        this.hasReportedDenied = true;
         this.errorCallbacks.forEach((cb) => {
           try {
             cb({
@@ -482,7 +484,7 @@ class LocationService {
       }
     } else {
       // Authorized again — arm the dedup so a future revoke fires once.
-      this.lastReportedDeniedStatus = null;
+      this.hasReportedDenied = false;
     }
 
     this.providerCallbacks.forEach((cb) => {
