@@ -12,6 +12,7 @@ import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { useLotsList } from '../../hooks/useLotData';
 import { getOccupancyColor } from '../../utils/parkingUtils';
+import { LockedOccupancyBadge } from '..';
 import { lotsApi, LotRecommendation, BackgroundLocationRequiredError } from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -202,9 +203,17 @@ export function RecommendationModal({
               >
                 <View style={styles.lotHeader}>
                   <Text style={styles.lotName}>{lot.lot_name}</Text>
-                  <View style={[styles.pctBadge, { backgroundColor: color }]}>
-                    <Text style={styles.pctBadgeText}>{isLocked ? 'Locked' : `${pct}%`}</Text>
-                  </View>
+                  {isLocked ? (
+                    <LockedOccupancyBadge
+                      size="sm"
+                      style={styles.pctBadgeLocked}
+                      accessibilityLabel={`${lot.lot_name} live occupancy locked`}
+                    />
+                  ) : (
+                    <View style={[styles.pctBadge, { backgroundColor: color }]}>
+                      <Text style={styles.pctBadgeText}>{`${pct}%`}</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.occupancyText}>
                   {isLocked
@@ -479,6 +488,13 @@ const getStyles = (
     paddingVertical: 2,
     borderRadius: 10,
     flexShrink: 0,
+  },
+  // Override LockedOccupancyBadge defaults so it lines up with the inline
+  // numeric badge rather than the hero alignment used on the lot detail.
+  pctBadgeLocked: {
+    flexShrink: 0,
+    marginBottom: 0,
+    alignSelf: 'auto',
   },
   pctBadgeText: {
     fontSize: 12,

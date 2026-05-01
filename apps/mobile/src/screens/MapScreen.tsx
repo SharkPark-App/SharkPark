@@ -121,16 +121,15 @@ const MapScreen: React.FC = () => {
   const { lots, bgLocationRequired, clearBgLocationRequired } = useLotsList();
   const { routes, stops, shuttles } = useTransitData();
 
-  // Navigate to the soft-ask screen when the backend returns BG_LOCATION_REQUIRED.
-  // Only fires while MapScreen is focused so the user can press back without being
-  // re-pushed into the screen on the next mount; the flag is cleared immediately
-  // so a stale `true` doesn't bounce them back if they navigate away and return.
+  // Apple App Review 5.1.1: never push the user into the permission screen
+  // automatically. The redacted UI (neutral pins + per-lot "Unlock live
+  // occupancy" CTA) is the user-controlled path. We still clear the flag so
+  // a stale `true` doesn't loop subsequent fetches into a no-op.
   React.useEffect(() => {
     if (bgLocationRequired && isFocused) {
       clearBgLocationRequired();
-      navigation.navigate('LocationPermission', {});
     }
-  }, [bgLocationRequired, isFocused, clearBgLocationRequired, navigation]);
+  }, [bgLocationRequired, isFocused, clearBgLocationRequired]);
 
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);

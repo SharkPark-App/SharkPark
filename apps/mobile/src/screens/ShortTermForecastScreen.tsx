@@ -12,7 +12,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
-import { Header, ReliabilityMeter } from '../components';
+import { Header, ReliabilityMeter, LockedOccupancyBadge } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
 import { MapSelectModal } from '../components/Modals/MapSelectModal';
@@ -56,13 +56,16 @@ export function ShortTermForecastScreen() {
   const { lot, forecast, loading, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
 
-  // Route to soft-ask when the backend rejects with BG_LOCATION_REQUIRED.
+  // Non-contributors see the redacted lot detail (neutral badge + Unlock
+  // CTA). We deliberately do NOT auto-navigate to the permission screen —
+  // the user already chose to tap into this lot, and a forced redirect
+  // would feel like a permission-wall (App Review 5.1.1). Just clear the
+  // flag so subsequent re-fetches don't loop.
   React.useEffect(() => {
     if (bgLocationRequired) {
       clearBgLocationRequired();
-      navigation.navigate('LocationPermission', {});
     }
-  }, [bgLocationRequired, clearBgLocationRequired, navigation]);
+  }, [bgLocationRequired, clearBgLocationRequired]);
 
   const onBack = () => navigation.goBack();
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -77,14 +80,11 @@ export function ShortTermForecastScreen() {
   // If the lotId is present in favoriteLots, then the lot is a favorite
   const isFavorite = favoriteLots.some(fav => fav === lotId);
 
-  // Show loading spinner while data is being fetched.
-  //
-  // We also early-return while `bgLocationRequired` is true so we never render
-  // the partial screen (header + lot summary + empty forecast) before the
-  // useEffect above has a chance to navigate to the soft-ask. The lot detail
-  // endpoint isn't behind ContributorGuard, so `lot` resolves first and would
-  // otherwise flash a broken UI for a frame.
-  if (loading || bgLocationRequired) {
+  // Show loading spinner while data is being fetched. We no longer
+  // early-return on bgLocationRequired — the redacted detail view (locked
+  // badge + Unlock CTA) is the right thing to show non-contributors who
+  // tapped into a lot.
+  if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
         <Header title="Today's Forecast" onBack={onBack} />
@@ -202,9 +202,10 @@ export function ShortTermForecastScreen() {
             </View>
           ) : (
             <View>
-              <View style={[styles.statusBadge, {backgroundColor: colors.neutralPin}]}>
-                <Text style={styles.statusBadgeText}>Locked</Text>
-              </View>
+              {/* Redacted live occupancy: shows a lock chip + smeared
+                  placeholder — see LockedOccupancyBadge for the no-deps
+                  blur-style approach. */}
+              <LockedOccupancyBadge size="lg" />
               {/* Soft-ask CTA: a non-contributor can unlock live occupancy and
                   the today's-forecast chart by granting background location.
                   We route to the dedicated permission screen (which explains
@@ -228,8 +229,10 @@ export function ShortTermForecastScreen() {
             </View>
           )}
 
-          {/* Reliability Meter */}
-          {!reliabilityLoading && reliability && (
+          {/* Reliability Meter — contributor-only signal, mirrors the
+              live occupancy + forecast gating. Non-contributors (whose
+              `lot.occupancy_rate` is redacted to null) don't see it. */}
+          {lot.occupancy_rate != null && !reliabilityLoading && reliability && (
             <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
               <ReliabilityMeter
                 confidence={reliability.confidence}
