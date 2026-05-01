@@ -7,7 +7,9 @@
  *   - Filter button and modal
  *   - Navigate FAB opening the RecommendationModal
  *   - Lot press navigation
+ *   - Stop marker interaction and StopModal
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 
@@ -67,6 +69,38 @@ jest.mock('../src/hooks/useLotData', () => ({
   useLotsList: () => mockUseLotsList(),
 }));
 
+jest.mock('../src/hooks/useTransitData', () => ({
+  useTransitData: () => ({
+    routes: [{ id: 'r1', color: '#ff0000', coordinates: [{ latitude: 33.78, longitude: -118.11 }] }],
+    stops: [{ id: 's1', name: 'Student Union', latitude: 33.78, longitude: -118.11, color: '#ff0000' }],
+    shuttles: [{ id: 'sh1', routeId: 'r1', latitude: 33.78, longitude: -118.11, heading: 90 }],
+  }),
+}));
+
+jest.mock('../src/hooks/useStopETAs', () => ({
+  useStopETAs: () => ({
+    arrivals: [],
+    isLoading: false,
+  }),
+}));
+
+// Mock react-native-maps
+jest.mock('react-native-maps', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { View } = require('react-native');
+  const MockMapView = (props: any) => <View testID="map-view" {...props}>{props.children}</View>;
+  const MockMarker = (props: any) => <View testID="marker" {...props}>{props.children}</View>;
+  const MockPolyline = (props: any) => <View testID="polyline" {...props} />;
+  
+  return {
+    __esModule: true,
+    default: MockMapView,
+    Marker: MockMarker,
+    Polyline: MockPolyline,
+    PROVIDER_DEFAULT: 'default',
+  };
+});
+
 jest.mock('../src/components', () => ({
   Header: ({ title }: { title?: string }) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -103,48 +137,25 @@ jest.mock('../src/components/Modals/RecommendationModal', () => ({
   },
 }));
 
-// Mock react-native-reanimated Animated.View as RN View
-jest.mock('react-native-reanimated', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const RN = require('react-native');
-  return {
-    __esModule: true,
-    default: {
-      View: RN.View,
-      Text: RN.Text,
-      Image: RN.Image,
-      ScrollView: RN.ScrollView,
-      createAnimatedComponent: (component: unknown) => component,
-    },
-    useSharedValue: (value: number) => ({ value }),
-    useAnimatedStyle: (cb: () => Record<string, unknown>) => cb(),
-    withTiming: (value: number) => value,
-    withSpring: (value: number) => value,
-  };
-});
+jest.mock('../src/components/Modals/StopModal', () => ({
+  StopModal: (props: { isOpen: boolean }) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { View, Text } = require('react-native');
+    return props.isOpen ? (
+      <View testID="stop-modal">
+        <Text>StopModal Open</Text>
+      </View>
+    ) : null;
+  },
+}));
 
-// Mock react-native-gesture-handler
-jest.mock('react-native-gesture-handler', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const RN = require('react-native');
-  return {
-    GestureDetector: ({ children }: { children: React.ReactNode }) => children,
-    Gesture: {
-      Pan: () => ({
-        onStart: jest.fn().mockReturnThis(),
-        onUpdate: jest.fn().mockReturnThis(),
-        onEnd: jest.fn().mockReturnThis(),
-      }),
-      Pinch: () => ({
-        onStart: jest.fn().mockReturnThis(),
-        onUpdate: jest.fn().mockReturnThis(),
-        onEnd: jest.fn().mockReturnThis(),
-      }),
-      Simultaneous: jest.fn(() => ({})),
-    },
-    GestureHandlerRootView: RN.View,
-  };
-});
+jest.mock('../src/components/Map/ShuttleMarker', () => ({
+  ShuttleMarker: () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { View } = require('react-native');
+    return <View testID="shuttle-marker" />;
+  }
+}));
 
 // Must import after all mocks
 import MapScreen from '../src/screens/MapScreen';
@@ -185,7 +196,7 @@ const mockApiLots = [
 describe('MapScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseLotsList.mockReturnValue({ lots: [], loading: false, error: null, refreshLots: jest.fn() });
+    mockUseLotsList.mockReturnValue({ lots: mockApiLots, loading: false, error: null, refreshLots: jest.fn() });
   });
 
   describe('rendering', () => {
@@ -206,144 +217,58 @@ describe('MapScreen', () => {
       expect(json).toContain('header-logo');
     });
 
-    it('renders parking lot circles from mock data when API has no data', () => {
+    it('renders parking lot markers correctly', () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
       ReactTestRenderer.act(() => {
         tree = ReactTestRenderer.create(<MapScreen />);
       });
       const json = JSON.stringify(tree!.toJSON());
-      // Mock data has lots G1 through E11
-      expect(json).toContain('G1');
-      expect(json).toContain('E1');
+      expect(json).toContain('Lot G1');
+      expect(json).toContain('Lot G2');
     });
   });
 
-  describe('live data merge', () => {
-    it('uses API occupancy data when available', () => {
-      mockUseLotsList.mockReturnValue({
-        lots: mockApiLots,
-        loading: false,
-        error: null,
-        refreshLots: jest.fn(),
-      });
-
+  describe('transit mapping', () => {
+    it('renders transit routes, stops, and shuttles', () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
       ReactTestRenderer.act(() => {
         tree = ReactTestRenderer.create(<MapScreen />);
       });
-
-      // The component should still render all lot circles
+      
       const json = JSON.stringify(tree!.toJSON());
-      expect(json).toContain('G1');
-      expect(json).toContain('G2');
-    });
-
-    it('falls back to mock data for lots not in API response', () => {
-      mockUseLotsList.mockReturnValue({
-        lots: [mockApiLots[0]], // Only G1 from API
-        loading: false,
-        error: null,
-        refreshLots: jest.fn(),
-      });
-
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
-
-      // Should still render G2 from mock data
-      const json = JSON.stringify(tree!.toJSON());
-      expect(json).toContain('G2');
+      expect(json).toContain('polyline'); // Route paths
+      expect(json).toContain('Shuttle stop: Student Union'); // Stop accessibility label
+      expect(json).toContain('shuttle-marker'); // Shuttle custom component
     });
   });
 
-  describe('filter button', () => {
-    it('renders the filter button', () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
-
-      // Filter button renders an Icon with name="filter"
-      const filterIcons = tree!.root.findAllByProps({ name: 'filter' });
-      expect(filterIcons.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('navigate FAB', () => {
-    it('renders the navigate button', () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
-
-      const navIcons = tree!.root.findAllByProps({ name: 'navigate' });
-      expect(navIcons.length).toBeGreaterThan(0);
-    });
-
-    it('opens RecommendationModal when navigate button is pressed', async () => {
+  describe('interactions', () => {
+    it('opens StopModal when a shuttle stop marker is pressed', async () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
       await ReactTestRenderer.act(async () => {
         tree = ReactTestRenderer.create(<MapScreen />);
       });
 
-      // Modal should NOT be open initially
+      // Verify modal is closed initially
       let json = JSON.stringify(tree!.toJSON());
-      expect(json).not.toContain('RecommendationModal Open');
+      expect(json).not.toContain('StopModal Open');
 
-      // Find the navigate icon's parent TouchableOpacity and press it
-      const navIcon = tree!.root.findAllByProps({ name: 'navigate' })[0];
-      let touchable = navIcon.parent;
+      // Find the stop marker
+      const stopMarkers = tree!.root.findAllByProps({ accessibilityLabel: 'Shuttle stop: Student Union' });
+
+      // Press the first element in the matched array
+      let touchable = stopMarkers[0];
       while (touchable && !touchable.props.onPress) {
-        touchable = touchable.parent;
+        touchable = touchable.parent as any;
       }
-      expect(touchable).toBeTruthy();
 
       await ReactTestRenderer.act(async () => {
         touchable!.props.onPress();
       });
 
-      // Modal should now be open
+      // Verify modal is now open
       json = JSON.stringify(tree!.toJSON());
-      expect(json).toContain('RecommendationModal Open');
-    });
-
-    it('calls refreshFavorites when opening recommendation modal', async () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      await ReactTestRenderer.act(async () => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
-
-      const navIcon = tree!.root.findAllByProps({ name: 'navigate' })[0];
-      let touchable = navIcon.parent;
-      while (touchable && !touchable.props.onPress) {
-        touchable = touchable.parent;
-      }
-
-      await ReactTestRenderer.act(async () => {
-        touchable!.props.onPress();
-      });
-
-      expect(mockRefreshFavorites).toHaveBeenCalled();
-    });
-  });
-
-  describe('lot interaction', () => {
-    it('renders lot circles that are pressable', () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
-
-      // Find a lot text (e.g., "G1") and verify its parent chain has an onPress
-      const g1Texts = tree!.root.findAllByProps({ children: 'G1' });
-      expect(g1Texts.length).toBeGreaterThan(0);
-
-      let touchable = g1Texts[0].parent;
-      while (touchable && !touchable.props.onPress) {
-        touchable = touchable.parent;
-      }
-      expect(touchable).toBeTruthy();
+      expect(json).toContain('StopModal Open');
     });
 
     it('navigates to Short Term Forecast when a lot is pressed', async () => {
@@ -352,9 +277,11 @@ describe('MapScreen', () => {
         tree = ReactTestRenderer.create(<MapScreen />);
       });
 
-      // Find lot "G1" and tap
-      const g1Texts = tree!.root.findAllByProps({ children: 'G1' });
-      let touchable = g1Texts[0].parent;
+      // Find the Marker that wraps "Lot G1" text
+      const g1TextNodes = tree!.root.findAllByProps({ children: 'Lot G1' });
+      let touchable = g1TextNodes[0].parent;
+      
+      // Traverse up to find the Marker onPress prop
       while (touchable && !touchable.props.onPress) {
         touchable = touchable.parent;
       }
@@ -365,22 +292,44 @@ describe('MapScreen', () => {
 
       expect(mockNavigate).toHaveBeenCalledWith('Short Term Forecast', {
         lotId: 'G1',
-        lotName: 'G1',
+        lotName: 'Lot G1',
       });
     });
   });
 
-  describe('filtering', () => {
-    it('shows all lots when no filter is applied', () => {
+  describe('buttons and modals', () => {
+    it('renders the filter button', () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
       ReactTestRenderer.act(() => {
         tree = ReactTestRenderer.create(<MapScreen />);
       });
-      const json = JSON.stringify(tree!.toJSON());
-      // Should contain both general and employee lots
-      expect(json).toContain('G1');
-      expect(json).toContain('E1');
-      expect(json).toContain('E5');
+
+      const filterIcons = tree!.root.findAllByProps({ name: 'filter' });
+      expect(filterIcons.length).toBeGreaterThan(0);
+    });
+
+    it('renders the navigate button and opens RecommendationModal', async () => {
+      let tree: ReactTestRenderer.ReactTestRenderer;
+      await ReactTestRenderer.act(async () => {
+        tree = ReactTestRenderer.create(<MapScreen />);
+      });
+
+      let json = JSON.stringify(tree!.toJSON());
+      expect(json).not.toContain('RecommendationModal Open');
+
+      const navIcons = tree!.root.findAllByProps({ name: 'navigate' });
+      let touchable = navIcons[0].parent;
+      while (touchable && !touchable.props.onPress) {
+        touchable = touchable.parent;
+      }
+
+      await ReactTestRenderer.act(async () => {
+        touchable!.props.onPress();
+      });
+
+      json = JSON.stringify(tree!.toJSON());
+      expect(json).toContain('RecommendationModal Open');
+      expect(mockRefreshFavorites).toHaveBeenCalled();
     });
   });
 });

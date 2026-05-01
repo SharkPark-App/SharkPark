@@ -1,0 +1,122 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { MapRoute, MapStop, MapShuttle, ShuttleLocationUpdate } from '../types/transit';
+import { API_CONFIG } from '../services';
+import { TransitService } from '../services/api/transit';
+import { io } from 'socket.io-client';
+
+export const useTransitData = () => {
+  const [routes, setRoutes] = useState<MapRoute[]>([]);
+  const [stops, setStops] = useState<MapStop[]>([]);
+  const [shuttles, setShuttles] = useState<MapShuttle[]>([]);
+  // Mirror of `shuttles` we can read synchronously inside socket callbacks
+  // without depending on React having flushed pending state.
+  const shuttlesRef = useRef<MapShuttle[]>([]);
+  shuttlesRef.current = shuttles;
+
+  useEffect(() => {
+    const loadRoutesAndStops = async () => {
+      try {
+        const data = await TransitService.getRoutesAndStops();
+        setRoutes(data.routes);
+        setStops(data.stops);
+      } catch (error) {
+        console.error('Error loading static transit data:', error);
+      }
+    };
+
+    loadRoutesAndStops();
+  }, []);
+
+  // Fetch static/non-live shuttle data
+  const loadInitialShuttles = useCallback(async () => {
+    try {
+      const initialData = await TransitService.getLiveShuttles();
+      setShuttles(initialData);
+    } catch (error) {
+      console.error('Error loading initial shuttles:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInitialShuttles();
+  }, [loadInitialShuttles]);
+
+  useEffect(() => {
+    const socket = io(API_CONFIG.SOCKET_ORIGIN + '/shuttles', {
+      transports: ['websocket'],
+      path: API_CONFIG.SOCKET_PATH,
+      auth: { token: API_CONFIG.WS_SECRET },
+    });
+
+    if (__DEV__) {
+      socket.on('connect', () => {
+        console.log('[useTransitData] Socket connection success:', socket.id);
+      });
+
+      socket.on('disconnect', (reason) => {
+        console.log('[useTransitData] Socket disconnected. Reason:', reason);
+      });
+
+      socket.on('connect_error', (error) => {
+        console.warn('[useTransitData] Socket connection error:', error.message);
+      });
+    }
+
+    // Merge live shuttle updates into existing state
+    socket.on('shuttle_update', (updates: ShuttleLocationUpdate[]) => {
+      // Determine up-front whether any incoming update belongs to a shuttle
+      // we haven't seen yet. We read from a ref so the decision doesn't
+      // depend on whether React has flushed pending state from the updater.
+      const knownIds = new Set(shuttlesRef.current.map((s) => s.id));
+      const sawUnknownShuttle = updates.some((u) => !knownIds.has(u.id));
+
+      setShuttles((prevShuttles) => {
+        const updatedShuttles = [...prevShuttles];
+
+        updates.forEach((update) => {
+          // Get existing shuttle
+          const index = updatedShuttles.findIndex((s) => s.id === update.id);
+
+          if (index !== -1) {
+            // Perform update (coords/heading)
+            updatedShuttles[index] = {
+              ...updatedShuttles[index],
+              latitude: update.latitude,
+              longitude: update.longitude,
+              heading: update.heading,
+            };
+          } else {
+            // Shuttle not seeded by the daily cron yet (e.g. went on-route
+            // mid-day). Insert a placeholder so it still renders; the next
+            // refresh below backfills the static metadata (busName/color).
+            updatedShuttles.push({
+              id: update.id,
+              busName: 'Shuttle',
+              route: '',
+              routeId: '',
+              latitude: update.latitude,
+              longitude: update.longitude,
+              heading: update.heading,
+              paxLoad: update.paxLoad ?? 0,
+              capacity: 0,
+            });
+          }
+        });
+
+        return updatedShuttles;
+      });
+
+      // Pull the static metadata once for the new shuttle so the placeholder
+      // gets its real busName/color/route without waiting for the daily cron.
+      if (sawUnknownShuttle) {
+        loadInitialShuttles();
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [loadInitialShuttles]);
+
+  return { routes, stops, shuttles };
+};

@@ -19,17 +19,16 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Platform,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import BackgroundGeolocation from 'react-native-background-geolocation';
 import { Text } from '../components/CustomText';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { locationService } from '../services/locationService';
 import type { MapStackParamList } from '../types/navigation';
 
 type Nav = StackNavigationProp<MapStackParamList, 'LocationPermission'>;
@@ -49,28 +48,20 @@ const LocationPermissionScreen: React.FC = () => {
   const [isRequesting, setIsRequesting] = useState(false);
 
   // ── Stage 1: WhenInUse ────────────────────────────────────────────────────
+  // The Transistor SDK only honors the FIRST `BackgroundGeolocation.ready()`
+  // call per app lifecycle. The production config (Always auth, PersistMode.None,
+  // headless mode, polygon geofences, etc.) is applied at app boot in
+  // `locationService.initialize()` — we MUST NOT call `ready()` again here or
+  // the prod config silently wins / our WhenInUse override is ignored.
+  //
+  // Instead, route through the shared service which wraps `requestPermission()`
+  // and additionally requests `requestTemporaryFullAccuracy('ParkingDetection')`
+  // on iOS 14+ when the user grants reduced accuracy.
   const requestWhenInUse = async () => {
     setIsRequesting(true);
     try {
-      // Configure with WhenInUse first — SDK triggers the OS dialog.
-      await BackgroundGeolocation.ready({
-        geolocation: {
-          locationAuthorizationRequest: 'WhenInUse',
-          desiredAccuracy: BackgroundGeolocation.DesiredAccuracy.High,
-        },
-        app: { stopOnTerminate: true, startOnBoot: false },
-        logger: { logLevel: BackgroundGeolocation.LogLevel.Off },
-      });
-      const status = await BackgroundGeolocation.requestPermission();
-      if (
-        status === BackgroundGeolocation.AUTHORIZATION_STATUS_ALWAYS ||
-        status === BackgroundGeolocation.AUTHORIZATION_STATUS_WHEN_IN_USE
-      ) {
-        setStep('always');
-      } else {
-        // Denied — offer settings link
-        setStep('done');
-      }
+      const granted = await locationService.requestPermissions();
+      setStep(granted ? 'always' : 'done');
     } catch {
       setStep('done');
     } finally {
@@ -79,16 +70,12 @@ const LocationPermissionScreen: React.FC = () => {
   };
 
   // ── Stage 2: Escalate to Always (opt-in only) ─────────────────────────────
+  // The OS dialog text is owned by `app.backgroundPermissionRationale` in
+  // `createSDKConfig()` (Android) and the iOS Info.plist usage strings.
   const requestAlways = async () => {
     setIsRequesting(true);
     try {
-      if (Platform.OS === 'ios') {
-        // iOS 13+: must ask the OS directly via changeAuthorization
-        await BackgroundGeolocation.requestPermission();
-      } else {
-        // Android: BackgroundPermissionRationale is shown by the SDK
-        await BackgroundGeolocation.requestPermission();
-      }
+      await locationService.requestPermissions();
       setStep('done');
     } catch {
       setStep('done');

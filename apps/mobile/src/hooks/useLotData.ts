@@ -3,7 +3,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { lotsApi, ParkingLotResponse, OccupancyHistoryRecord, ApiError, BgLocationRequiredError } from '../services/api';
+import { lotsApi, ParkingLotResponse, OccupancyHistoryRecord, ApiError, BackgroundLocationRequiredError } from '../services/api';
 
 /** How often to re-fetch lot data (ms) */
 const LOT_DETAIL_POLL_MS = 60_000;  // 60 seconds
@@ -23,6 +23,8 @@ interface UseLotDataReturn {
   error: string | null;
   /** True when the backend rejected with BG_LOCATION_REQUIRED (403). */
   bgLocationRequired: boolean;
+  /** Reset the bgLocationRequired flag (call after routing to the soft-ask screen). */
+  clearBgLocationRequired: () => void;
   refreshLot: () => Promise<void>;
   refreshHistory: (date?: string) => Promise<void>;
 }
@@ -57,7 +59,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
       setForecast(forecastData);
       
     } catch (err) {
-      if (err instanceof BgLocationRequiredError) {
+      if (err instanceof BackgroundLocationRequiredError) {
         setBgLocationRequired(true);
         return;
       }
@@ -119,6 +121,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
     loading,
     error,
     bgLocationRequired,
+    clearBgLocationRequired: () => setBgLocationRequired(false),
     refreshLot,
     refreshHistory,
   };
@@ -130,6 +133,8 @@ interface UseLotsListReturn {
   error: string | null;
   /** True when the backend rejected with BG_LOCATION_REQUIRED (403). */
   bgLocationRequired: boolean;
+  /** Reset the bgLocationRequired flag (call after routing to the soft-ask screen). */
+  clearBgLocationRequired: () => void;
   refreshLots: () => Promise<void>;
 }
 
@@ -159,7 +164,7 @@ export function useLotsList(filters?: {
       setLots(lotsData);
       
     } catch (err) {
-      if (err instanceof BgLocationRequiredError) {
+      if (err instanceof BackgroundLocationRequiredError) {
         setBgLocationRequired(true);
         return;
       }
@@ -201,6 +206,7 @@ export function useLotsList(filters?: {
     loading,
     error,
     bgLocationRequired,
+    clearBgLocationRequired: () => setBgLocationRequired(false),
     refreshLots,
   };
 }

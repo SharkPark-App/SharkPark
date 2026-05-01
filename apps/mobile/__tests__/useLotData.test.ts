@@ -29,13 +29,14 @@ jest.mock('../src/services/api', () => ({
       this.status = status;
     }
   },
-  BgLocationRequiredError: class BgLocationRequiredError extends Error {
-    readonly code = 'BG_LOCATION_REQUIRED';
-    reason: string;
-    constructor(reason: string) {
-      super(reason);
-      this.reason = reason;
-      this.name = 'BgLocationRequiredError';
+  BackgroundLocationRequiredError: class BackgroundLocationRequiredError extends Error {
+    static readonly CODE = 'BG_LOCATION_REQUIRED';
+    status = 403;
+    details: unknown;
+    constructor(message: string, details?: unknown) {
+      super(message);
+      this.name = 'BackgroundLocationRequiredError';
+      this.details = details;
     }
   },
 }));

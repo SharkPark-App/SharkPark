@@ -9,16 +9,26 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MainTabNavigator } from './src/navigation';
+import { linkingConfig } from './src/navigation/linking';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
-import { AuthProvider, useAuth } from './src/context/AuthContext'
-import { LoginScreen } from './src/screens';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { LoginScreen, OnboardingScreen } from './src/screens';
 import { EnhancedGeofencingProvider } from './src/context/EnhancedGeofencingProvider';
+import { useOnboarding } from './src/hooks/useOnboarding';
 function AppContent() {
   const { isDark, colors } = useTheme();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isGuest, isLoading: authLoading } = useAuth();
+  const { isLoading: onboardingLoading, needsOnboarding, completeOnboarding } = useOnboarding();
 
   if (__DEV__) {
-    console.log('[AppContent] Render - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading);
+    console.log(
+      '[AppContent] Render - isAuthenticated:',
+      isAuthenticated,
+      'isGuest:',
+      isGuest,
+      'isLoading:',
+      authLoading,
+    );
   }
 
   // Create custom navigation theme based on our theme colors
@@ -34,20 +44,38 @@ function AppContent() {
     },
   };
 
-  if (isLoading) {
-    // prevent login screen from prematurely rendering if already logged in
+  // Wait for both auth + onboarding storage reads before rendering
+  if (authLoading || onboardingLoading) {
     return null;
   }
 
+  // First-launch onboarding (shown before login).
+  // IMPORTANT: rendered OUTSIDE <EnhancedGeofencingProvider> so the iOS
+  // location permission sheet does not fire while the user is still on the
+  // first slide. The provider only mounts after onboarding completes.
+  if (needsOnboarding) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar
+          barStyle="dark-content"
+          backgroundColor={colors.white}
+        />
+        <OnboardingScreen onComplete={completeOnboarding} />
+      </SafeAreaProvider>
+    );
+  }
+
   // login flow handled via auth context
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !isGuest) {
     return (
       <SafeAreaProvider>
         <StatusBar 
           barStyle={isDark ? 'light-content' : 'dark-content'} 
           backgroundColor={colors.primary}
         />
-        <LoginScreen />
+        <EnhancedGeofencingProvider>
+          <LoginScreen />
+        </EnhancedGeofencingProvider>
       </SafeAreaProvider>
     );
   }
@@ -59,9 +87,11 @@ function AppContent() {
         barStyle={isDark ? 'light-content' : 'dark-content'} 
         backgroundColor={colors.primary}
       />
-      <NavigationContainer theme={navigationTheme}>
-        <MainTabNavigator />
-      </NavigationContainer>
+      <EnhancedGeofencingProvider>
+        <NavigationContainer theme={navigationTheme} linking={linkingConfig}>
+          <MainTabNavigator />
+        </NavigationContainer>
+      </EnhancedGeofencingProvider>
     </SafeAreaProvider>
   );
 }
@@ -71,9 +101,7 @@ function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <AuthProvider>
-          <EnhancedGeofencingProvider>
-            <AppContent />
-          </EnhancedGeofencingProvider>
+          <AppContent />
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

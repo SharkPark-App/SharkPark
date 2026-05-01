@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.com.sharkpark.mobile",
+        "paths": [
+          "/map",
+          "/map/lot/*",
+          "/forecast/short/*",
+          "/forecast/long",
+          "/profile"
+        ]
+      }
+    ]
+  }
+}

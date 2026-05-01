@@ -42,9 +42,9 @@ def sample_predictions():
                 "2025-10-15T11:00:00",
                 "2025-10-15T10:00:00",
             ],
-            "predicted_occupancy": [90, 126, 100],
-            "confidence_lower": [72, 108, 81],
-            "confidence_upper": [108, 144, 119],
+            "predicted_occupancy": [0.45, 0.63, 0.50],
+            "confidence_lower": [0.36, 0.54, 0.40],
+            "confidence_upper": [0.54, 0.72, 0.60],
             "model_version": ["v1", "v1", "v1"],
         }
     )

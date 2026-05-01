@@ -3,7 +3,6 @@ import { PrismaService } from '../database/database.module';
 import type { Lot, LotType } from '@prisma/client';
 import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
-import { EventsService } from '../events/events.service';
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
 
@@ -18,7 +17,6 @@ export class LotsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly penetrationService: PenetrationEstimationService,
-    private readonly eventsService: EventsService,
     private readonly weatherService: WeatherService,
   ) {}
 
@@ -229,7 +227,6 @@ export class LotsService {
   /**
    * Recommends alternative lots when a preferred lot is full or nearly full.
    * Scores candidates using weighted factors: availability, distance, type match, permit compatibility.
-   * Factors in active event impacts (lots with high-impact events get penalized).
    * Excludes the source lot and any lots at ≥75% occupancy.
    */
   async getRecommendations(lotId: string, limit: number = 5): Promise<LotRecommendation[]> {
@@ -247,12 +244,8 @@ export class LotsService {
       },
     });
 
-    // Batch-estimate penetration and fetch event impacts in parallel
-    const candidateIds = candidates.map(c => c.id);
-    const [estimates, eventImpacts] = await Promise.all([
-      this.penetrationService.estimateForAllLots(candidates),
-      this.eventsService.getActiveImpactsForLots(candidateIds),
-    ]);
+    // Batch-estimate penetration for candidates
+    const estimates = await this.penetrationService.estimateForAllLots(candidates);
 
     const W = LotsService.RECOMMENDATION_WEIGHTS;
 
@@ -284,23 +277,15 @@ export class LotsService {
         const overlap = candidate.permit_types.filter(p => sourcePermits.has(p)).length;
         const permitScore = sourcePermits.size > 0 ? overlap / sourcePermits.size : 1;
 
-        // --- Event penalty (0–1): reduce score if active high-impact event ---
-        const eventIncrease = eventImpacts.get(candidate.id) ?? 0;
-        // Normalize: 50%+ expected increase → 0 penalty margin, 0% → no penalty
-        const eventPenalty = Math.min(1, eventIncrease / 50);
-
-        let score = W.availability * availabilityScore +
-           W.distance    * distanceScore +
-           W.typeMatch   * typeScore +
-           W.permitCompat * permitScore;
-
-        // Apply event penalty: reduce score by up to 20%
-        score *= (1 - eventPenalty * 0.20);
-
-        score = Math.round(score * 100);
+        const score = Math.round(
+          (W.availability * availabilityScore +
+            W.distance    * distanceScore +
+            W.typeMatch   * typeScore +
+            W.permitCompat * permitScore) * 100,
+        );
 
         // Build a human-readable reason
-        const reason = this.buildRecommendationReason(response, distance, eventIncrease);
+        const reason = this.buildRecommendationReason(response, distance);
 
         return {
           ...response,
@@ -338,7 +323,6 @@ export class LotsService {
   private buildRecommendationReason(
     lot: ParkingLotResponse,
     distanceMeters: number,
-    eventIncrease: number = 0,
   ): string {
     const parts: string[] = [];
 
@@ -356,10 +340,6 @@ export class LotsService {
       parts.push('nearby');
     } else {
       parts.push(`~${Math.round(distanceMeters / 100) * 100}m away`);
-    }
-
-    if (eventIncrease > 0) {
-      parts.push(`event nearby (+${Math.round(eventIncrease)}% demand)`);
     }
 
     return parts.join(' · ');
@@ -392,6 +372,9 @@ export class LotsService {
 
     return {
       ...lot,
+      // Prisma Decimal serializes to string over JSON; coerce to number so
+      // mobile clients can call numeric methods (.toFixed, etc.) directly.
+      daily_rate: lot.daily_rate != null ? Number(lot.daily_rate) : null,
       available: Math.max(0, available),
       occupancy_rate: Math.round(occupancy_rate * 1000) / 1000,
       fill_status,
@@ -406,7 +389,12 @@ export class LotsService {
 
   /**
    * Fetches short-term ML predictions for a lot from predictions_short_term.
-   * Includes active/upcoming event impacts and current weather context.
+   * Includes current weather context.
+   *
+   * Note: campus events are intentionally NOT bundled here — per the 2026-04-30
+   * product decision they are surfaced to the client as a separate display
+   * layer (see the planned `GET /lots/:id/nearby-events` endpoint), not as a
+   * forecasting input or a prediction-response field.
    */
   async getShortTermPredictions(lotId: string): Promise<{
     lot_id: string;
@@ -416,14 +404,6 @@ export class LotsService {
       confidence_lower: number;
       confidence_upper: number;
       model_version: string;
-    }>;
-    event_impacts: Array<{
-      event_name: string;
-      event_type: string;
-      start_time: string;
-      end_time: string;
-      impact_level: string;
-      expected_increase_percent: number;
     }>;
     weather: {
       conditions: string;
@@ -437,8 +417,7 @@ export class LotsService {
 
     const now = new Date();
 
-    // Fetch predictions, event impacts, and weather in parallel
-    const [predictions, eventImpacts, weather] = await Promise.all([
+    const [predictions, weather] = await Promise.all([
       this.prisma.predictionShortTerm.findMany({
         where: {
           lot_id: lot.id,
@@ -447,7 +426,6 @@ export class LotsService {
         orderBy: { target_time: 'asc' },
         take: 20,
       }),
-      this.eventsService.getUpcomingImpactsForLot(lot.id, 6),
       this.weatherService.getCurrent(),
     ]);
 
@@ -459,14 +437,6 @@ export class LotsService {
         confidence_lower: p.confidence_lower,
         confidence_upper: p.confidence_upper,
         model_version: p.model_version,
-      })),
-      event_impacts: eventImpacts.map(({ event, impact }) => ({
-        event_name: event.event_name,
-        event_type: event.event_type,
-        start_time: event.start_time.toISOString(),
-        end_time: event.end_time.toISOString(),
-        impact_level: impact.impact_level,
-        expected_increase_percent: impact.expected_increase_percent,
       })),
       weather: weather
         ? {
@@ -530,7 +500,7 @@ export class LotsService {
     return {
       lot_id: lotId,
       source: 'heuristic',
-      predictions: this.generateHeuristicPredictions(lot, days, now),
+      predictions: this.generateHeuristicPredictions(days, now),
     };
   }
 
@@ -539,7 +509,6 @@ export class LotsService {
    * Provides useful predictions even before the ML model is trained.
    */
   private generateHeuristicPredictions(
-    lot: Lot,
     days: number,
     startDate: Date,
   ): Array<{
@@ -583,17 +552,18 @@ export class LotsService {
 
       for (let hour = CAMPUS_OPEN; hour < CAMPUS_CLOSE; hour++) {
         const baseRate = (hourlyPattern[hour] ?? 0.10) * dayMultiplier;
-        const predicted = Math.round(baseRate * lot.capacity);
 
         // Wider confidence intervals for heuristic predictions
-        const margin = Math.round(lot.capacity * 0.12);
+        const margin = 0.12;
 
         predictions.push({
           target_date: dateStr,
           target_hour: hour,
-          predicted_occupancy: Math.min(predicted, lot.capacity),
-          confidence_lower: Math.max(0, predicted - margin),
-          confidence_upper: Math.min(lot.capacity, predicted + margin),
+          // baseRate is bounded by hourlyPattern (max 0.85) * dayMultiplier (max 1.0),
+          // so it can never exceed 1; no upper clamp needed here.
+          predicted_occupancy: baseRate,
+          confidence_lower: Math.max(0, baseRate - margin),
+          confidence_upper: Math.min(1, baseRate + margin),
           model_version: 'heuristic-v1',
         });
       }

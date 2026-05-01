@@ -225,25 +225,11 @@ class LotsApiService {
   }
 
   /**
-   * Convert UI lot format to API format for backward compatibility
-   */
-  convertToUIFormat(apiLot: ParkingLotResponse): import('../../types/ui').ParkingLotUI {
-    return {
-      id: apiLot.lot_id,
-      name: apiLot.display_name || apiLot.lot_name,
-      occupancy: Math.round(apiLot.occupancy_rate * 100),
-      category: apiLot.lot_type.toLowerCase() as 'general' | 'employee',
-      // Note: position will need to be mapped from coordinates or maintained separately
-      position: { x: 0, y: 0 }, // TODO: Map from lat/lng to UI coordinates
-    };
-  }
-
-  /**
    * Fetch short-term predictions from backend ML pipeline.
    * Uses cache for offline support; falls back to local heuristic if
    * neither the backend nor a cached result is available.
    */
-  async getForecast(lot: ParkingLotResponse): Promise<Array<{
+  async getForecast(lot: Pick<ParkingLotResponse, 'lot_id' | 'confidence'>): Promise<Array<{
     time: string;
     occupancy: number;
     lowerBound: number;
@@ -268,15 +254,9 @@ class LotsApiService {
           if (predictions && predictions.length > 0) {
             return predictions.map((p) => {
               const hour = new Date(p.target_time).getHours();
-              const occupancyPercent = lot.capacity > 0
-                ? Math.round((p.predicted_occupancy / lot.capacity) * 100)
-                : p.predicted_occupancy;
-              const lower = lot.capacity > 0
-                ? Math.round((p.confidence_lower / lot.capacity) * 100)
-                : p.confidence_lower;
-              const upper = lot.capacity > 0
-                ? Math.round((p.confidence_upper / lot.capacity) * 100)
-                : p.confidence_upper;
+              const occupancyPercent = Math.round(p.predicted_occupancy * 100);
+              const lower = Math.round(p.confidence_lower * 100);
+              const upper = Math.round(p.confidence_upper * 100);
 
               return {
                 time: hour.toString(),
@@ -303,7 +283,7 @@ class LotsApiService {
   /**
    * Generate forecast data for short-term predictions (local fallback)
    */
-  generateForecast(lot: ParkingLotResponse): Array<{
+  generateForecast(lot: Pick<ParkingLotResponse, 'confidence'>): Array<{
     time: string;
     occupancy: number;
     lowerBound: number;

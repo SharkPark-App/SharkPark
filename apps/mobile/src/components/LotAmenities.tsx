@@ -145,8 +145,8 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
           label="Daily Permit"
           value={
             lot.daily_permit_allowed
-              ? lot.daily_rate != null
-                ? `$${lot.daily_rate.toFixed(2)}`
+              ? lot.daily_rate != null && Number.isFinite(Number(lot.daily_rate))
+                ? `$${Number(lot.daily_rate).toFixed(2)}`
                 : 'Available'
               : 'Not Available'
           }

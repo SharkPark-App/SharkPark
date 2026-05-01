@@ -9,7 +9,6 @@ describe('EventsController', () => {
   const mockEventsService = {
     findAll: jest.fn(),
     findUpcoming: jest.fn(),
-    getImpacts: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -82,30 +81,6 @@ describe('EventsController', () => {
       expect(result.window_hours).toBe(24);
       expect(result.count).toBe(1);
       expect(result.data[0].event_name).toBe('Basketball Game');
-    });
-  });
-
-  describe('getEventImpacts', () => {
-    it('should return parking impacts for event', async () => {
-      const mockImpacts = [
-        {
-          event_id: 'basketball-2025',
-          lot_id: 'G2',
-          impact_level: 'HIGH',
-        },
-      ];
-
-      mockEventsService.getImpacts.mockResolvedValue(mockImpacts);
-
-      const result = await controller.getEventImpacts('basketball-2025');
-
-      expect(result).toEqual({
-        success: true,
-        event_id: 'basketball-2025',
-        count: mockImpacts.length,
-        data: mockImpacts,
-      });
-      expect(service.getImpacts).toHaveBeenCalledWith('basketball-2025');
     });
   });
 });

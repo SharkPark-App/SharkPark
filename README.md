@@ -67,7 +67,7 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 | **Auth** | Azure AD SSO via `react-native-app-auth` | CSULB uses Azure Active Directory for all student accounts. Using the university's existing SSO means students log in with their school credentials — no separate account creation, and we can verify they are actual CSULB students. |
 | **Backend** | NestJS 11 (Node.js) | TypeScript-native framework with built-in support for modules, dependency injection, guards, pipes, and scheduled tasks. The modular architecture maps cleanly to our domain (lots, users, events, weather, reliability). Comes with first-class testing support. |
 | **ORM** | Prisma 7 | Type-safe database queries generated from a schema file (`prisma/schema.prisma`). Catches query errors at compile time instead of runtime, auto-generates migrations, and provides a visual data browser (`prisma studio`). Uses the `@prisma/adapter-pg` driver adapter for direct PostgreSQL connection pooling. |
-| **Database** | PostgreSQL 16 (local) / Aurora PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events impact multiple lots). We run standard PostgreSQL 16 in Docker for local development. In production we deploy to Amazon Aurora PostgreSQL Serverless v2, which is wire-compatible with PostgreSQL but adds auto-scaling, automated backups, and multi-AZ replication. The only change between environments is the `DATABASE_URL` connection string. |
+| **Database** | PostgreSQL 16 (local) / Aurora PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events are linked to nearby lots for the in-app notification surface). We run standard PostgreSQL 16 in Docker for local development. In production we deploy to Amazon Aurora PostgreSQL Serverless v2, which is wire-compatible with PostgreSQL but adds auto-scaling, automated backups, and multi-AZ replication. The only change between environments is the `DATABASE_URL` connection string. |
 | **Security** | Helmet, Throttler, CORS, Passport JWT | Helmet sets security HTTP headers. The throttler rate-limits to 20 requests per 10 seconds per IP. CORS is locked down in production. Passport validates Azure AD JWTs against Microsoft's JWKS endpoint with automatic key rotation. |
 | **Monorepo** | pnpm 10 workspaces + Turborepo | pnpm's strict dependency resolution prevents phantom dependencies. Turborepo parallelizes builds, tests, and lints across workspaces with caching. Shared packages (`packages/types`, `packages/utils`) are consumed by both the backend and mobile app. |
 | **Infra** | Docker Compose | Single `docker compose up` gives every developer an identical PostgreSQL 17 + MinIO (S3) environment matching production (Neon + R2). The postinstall script automates this so `pnpm install` is the only command needed. |
@@ -77,17 +77,23 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 ## Architecture
 
 ```
-┌──────────────────┐         ┌──────────────────────┐
-│  React Native    │  REST   │  NestJS API          │
-│  iOS / Android   │ ──────> │  /api/v1/*           │
-│  (apps/mobile)   │         │  (apps/backend)      │
-└──────────────────┘         └────────┬─────────────┘
-                                      │ Prisma ORM
-                              ┌───────▼───────┐
-                              │  PostgreSQL   │
-                              │  (Docker dev) │
-                              │  (Aurora prod)│
-                              └───────────────┘
+┌──────────────────┐   REST / WS   ┌──────────────────────┐
+│  React Native    │ ────────────> │  NestJS API          │
+│  iOS / Android   │ <──────────── │  /api/v1/*           │
+│  (apps/mobile)   │  socket.io    │  (apps/backend)      │
+└──────────────────┘               └──┬───────────────┬───┘
+                                      │ Prisma ORM    │
+                              ┌───────▼───────┐  ┌────▼──────────┐
+                              │  PostgreSQL   │  │  Redis        │
+                              │  (Docker dev) │  │  (Fly Redis   │
+                              │  (Neon prod)  │  │   prod cache) │
+                              └───────────────┘  └───────────────┘
+                                                        ▲
+                                               ┌────────┴───────┐
+                                               │  PassioGO WS   │
+                                               │  (live shuttle │
+                                               │   positions)   │
+                                               └────────────────┘
 ```
 
 The backend is organized into feature modules, each with its own controller, service, and interfaces:
@@ -98,6 +104,8 @@ The backend is organized into feature modules, each with its own controller, ser
 - **Occupancy Events** — The core data pipeline: receives anonymous geofence ENTER/EXIT events, deduplicates, updates occupancy atomically, and produces periodic snapshots for ML training.
 - **Reliability** — Real-time confidence scoring for each lot's occupancy estimate, computed from the five-factor weighted model described above.
 - **Weather** — Current weather data used as an ML feature (rain correlates with higher driving and lot demand).
+- **Shuttle Tracker** — Live shuttle tracking via a persistent PassioGO connection. Routes, stops, and shuttle metadata are refreshed daily.
+- **Redis** — Global cache module. Currently provides shared state for shuttle data across multi-instance deployments.
 - **Database** — Global Prisma module with environment-aware connection pooling (pool size 5 locally, 20 in production, SSL required in production).
 
 The mobile app uses a provider-based architecture:
@@ -136,32 +144,44 @@ The database schema is designed around a `School` entity as the top-level tenant
 | Node.js | >= 20 |
 | pnpm | 10.20.0 (`corepack enable && corepack prepare pnpm@10.20.0 --activate`) |
 | Docker | Latest (for PostgreSQL + MinIO) |
-| Xcode | 16+ (iOS builds, includes CocoaPods via `xcode-select`) |
-| CocoaPods | Installed via Xcode or `gem install cocoapods` |
+| Xcode | 16+ (iOS builds) |
+| Ruby | 3.3.x — installed automatically via `pnpm bootstrap` (uses `rbenv` on macOS) |
+
+> **macOS:** the system Ruby (2.6) is too old for our pinned bundler/CocoaPods. `pnpm bootstrap` installs `rbenv` and the version pinned in `apps/mobile/.ruby-version`. Don't `gem install` against system Ruby.
 
 ---
 
 ## Getting Started
 
 ```bash
-# 1. Clone and install (Docker, migrations, and seeding run automatically via postinstall)
+# 1. Clone
 git clone <repo-url> && cd SharkPark
-pnpm install
 
 # 2. Set up environment
-cp .env.example apps/backend/.env
-# Edit apps/backend/.env with your values (see Environment Variables below)
+cp .env.example .env
+# Edit .env with your values (see Environment Variables below).
+# For DEVICE_HASH_SALT and DEVICE_EVENT_SECRET, generate with:
+#   openssl rand -hex 32
 
-# 3. Start the backend (http://localhost:3000)
+# 3. One-time bootstrap (installs rbenv/Ruby/bundler on macOS, runs bundle install,
+#    symlinks apps/backend/.env -> ../../.env). Idempotent — safe to re-run.
+pnpm bootstrap
+
+# 4. Install deps (also brings up Docker, runs migrations, seeds the database)
+pnpm install
+
+# 5. Start backend (http://localhost:3000)
 pnpm --filter @sharkpark/backend dev
 
-# 4. Start the mobile app (in a second terminal)
+# 6. Start the mobile app (in a second terminal)
 pnpm --filter mobile ios
 ```
 
 Run `pnpm dev` from root to start both backend and mobile in parallel.
 
-**What happens on `pnpm install`?** The postinstall script automatically starts Docker containers, waits for PostgreSQL to accept connections, runs Prisma migrations (idempotent, safe to re-run), generates the Prisma client, and seeds the database if it is empty. Set `SKIP_LOCAL_INFRA=1` to skip all of this (used in CI).
+**What `pnpm bootstrap` does:** Verifies tooling, installs `rbenv` + the project's pinned Ruby (from `apps/mobile/.ruby-version`), installs the bundler version pinned in `Gemfile.lock`, runs `bundle install` for CocoaPods, and symlinks `apps/backend/.env` to the root `.env`. Skip on Linux/CI where the system Ruby is already managed.
+
+**What `pnpm install` does:** Installs all workspace deps. The postinstall hook then starts Docker containers, waits for PostgreSQL, runs Prisma migrations (idempotent), generates the Prisma client, and seeds the database if empty. Set `SKIP_LOCAL_INFRA=1` to skip the Docker bring-up (used in CI).
 
 ---
 
@@ -171,6 +191,7 @@ Run `pnpm dev` from root to start both backend and mobile in parallel.
 
 | Script | Command | Description |
 |--------|---------|-------------|
+| `pnpm bootstrap` | `bash scripts/bootstrap.sh` | One-time: installs rbenv/Ruby/bundler, runs `bundle install`, links backend `.env` |
 | `pnpm install` | — | Install all deps, start Docker, migrate, and seed |
 | `pnpm dev` | `turbo run dev --parallel` | Start backend + mobile in parallel |
 | `pnpm build` | `turbo run build` | Build all workspaces |
@@ -248,7 +269,7 @@ All user endpoints require Azure AD authentication.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/events` | List campus events (optional `date` filter) |
-| `GET` | `/api/v1/events/:id/parking-impact` | Parking impact for a specific event |
+| `GET` | `/api/v1/events/upcoming` | Upcoming campus events |
 
 ### Weather
 
@@ -274,20 +295,39 @@ All user endpoints require Azure AD authentication.
 | `GET` | `/api/v1/reliability` | Reliability scores for all lots |
 | `GET` | `/api/v1/reliability/config` | Reliability computation config (weights and thresholds) |
 
-**Total: 19 endpoints** (14 GET, 3 POST, 1 DELETE, 1 PATCH)
+### Transit
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/transit/shuttles` | List of active shuttles & their data |
+| `GET` | `/api/v1/transit/routes` | Active routes with coordinates |
+| `GET` | `/api/v1/transit/stops` | All stops with coordinates and route assignments |
+| `GET` | `/api/v1/transit/etas/:stopId` | Upcoming arrivals at a stop, sorted by ETA |
+
+#### Shuttle WebSocket
+
+| Property | Value |
+|----------|-------|
+| Namespace | `/shuttles` |
+| socket.io path | `/api/v1/socket.io/` |
+| Transport | `websocket` |
+| Auth | Requires a secret handshake |
+| Event | `shuttle_update` → `ShuttleLocationUpdate[]` |
+
+**Total: 23 endpoints** (18 GET, 3 POST, 1 DELETE, 1 PATCH)
 
 ---
 
 ## Testing
 
 ```bash
-# Run all 248 tests
+# Run all 1,103 tests
 pnpm test
 
-# Backend only (142 tests, 17 suites)
+# Backend only (494 tests, 35 suites)
 pnpm --filter @sharkpark/backend test
 
-# Mobile only (106 tests, 13 suites)
+# Mobile only (609 tests, 50 suites)
 pnpm --filter mobile test
 
 # Backend E2E (requires running DB)
@@ -302,7 +342,7 @@ Create `apps/backend/.env` from `.env.example`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string (local Docker or Aurora endpoint) | `postgresql://sharkpark:sharkpark@localhost:5433/sharkpark` |
+| `DATABASE_URL` | PostgreSQL connection string (local Docker or Neon pooled endpoint) | `postgresql://sharkpark:sharkpark@localhost:5433/sharkpark` |
 | `PORT` | API server port | `3000` |
 | `NODE_ENV` | Environment (`development` / `production`) | `development` |
 | `AZURE_TENANT_ID` | Azure AD tenant for SSO | — |
@@ -310,6 +350,7 @@ Create `apps/backend/.env` from `.env.example`:
 | `CORS_ORIGIN` | Allowed CORS origin (comma-separated in production) | `*` |
 | `THROTTLE_TTL` | Rate limit window (seconds) | `10` |
 | `THROTTLE_LIMIT` | Max requests per window | `20` |
+| `REDIS_URL` | Fly Redis connection URL | — |
 
 ---
 
@@ -346,7 +387,9 @@ SharkPark/
 │   │   │   ├── events/           # Campus events and parking impact
 │   │   │   ├── lots/             # Parking lot CRUD, filtering, occupancy summaries
 │   │   │   ├── occupancy-events/ # Geofence event pipeline, dedup, snapshots, scheduler
+│   │   │   ├── redis/            # Global ioredis cache module (shared shuttle state)
 │   │   │   ├── reliability/      # Multi-factor weighted reliability scoring
+│   │   │   ├── shuttle-tracker/  # Live shuttle tracking (PassioGO WS + socket.io gateway)
 │   │   │   ├── users/            # Profiles, favorites, notification preferences
 │   │   │   └── weather/          # Weather data for demand correlation
 │   │   └── test/                 # E2E tests

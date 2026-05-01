@@ -30,18 +30,42 @@ export class ApiError extends Error {
 }
 
 /**
- * Thrown when the backend returns 403 { code: 'BG_LOCATION_REQUIRED' }.
- * The mobile app catches this to route to the soft-ask location permission
- * screen instead of showing a generic error toast.
+ * Thrown when the backend rejects a request because the device is not a
+ * fresh contributor (no valid x-device-id / no recent ContributorPing).
+ *
+ * Backend shape: HTTP 403 with body `{ code: 'BG_LOCATION_REQUIRED', ... }`.
+ * The mobile UI is expected to catch this and prompt the user to enable
+ * "Always Allow" background location to participate in the reciprocity
+ * model. See docs/api-access-tiers.md.
  */
-export class BgLocationRequiredError extends Error {
-  public readonly code = 'BG_LOCATION_REQUIRED';
-  constructor(public readonly reason: string) {
-    super(reason);
-    this.name = 'BgLocationRequiredError';
+export class BackgroundLocationRequiredError extends ApiError {
+  static readonly CODE = 'BG_LOCATION_REQUIRED';
+  constructor(message: string, details?: unknown) {
+    super(403, message, details);
+    this.name = 'BackgroundLocationRequiredError';
   }
 }
 
+/**
+ * Inspects a 403 response body for the BG_LOCATION_REQUIRED contract.
+ * Returns the parsed JSON body if it matches, otherwise null.
+ */
+function parseBgLocationRequired(rawBody: string | null): Record<string, unknown> | null {
+  if (!rawBody) return null;
+  try {
+    const parsed: unknown = JSON.parse(rawBody);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed as { code?: unknown }).code === BackgroundLocationRequiredError.CODE
+    ) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Not JSON — fall through.
+  }
+  return null;
+}
 const RETRY_CONFIG = {
   maxRetries: 2,
   baseDelay: 1000,
@@ -49,6 +73,10 @@ const RETRY_CONFIG = {
 };
 
 function isRetryable(error: unknown): boolean {
+  if (error instanceof BackgroundLocationRequiredError) {
+    // No point retrying — the device just isn't a contributor right now.
+    return false;
+  }
   if (error instanceof ApiError) {
     return error.status === 0 || error.status === 429 || error.status >= 500;
   }
@@ -134,30 +162,24 @@ class ApiService {
       const response = await fetch(url, requestOptions);
 
       if (!response.ok) {
-        // Parse body once so we can inspect for structured error codes.
-        const rawBody = await response.text().catch(() => '');
+        const rawBody = await response.text().catch(() => null);
 
-        // 403 BG_LOCATION_REQUIRED — backend ContributorGuard gate.
-        // Throw a typed error so callers can route to the soft-ask screen
-        // instead of showing a generic toast.
         if (response.status === 403) {
-          try {
-            const parsed = JSON.parse(rawBody) as { code?: string; message?: string };
-            if (parsed.code === 'BG_LOCATION_REQUIRED') {
-              throw new BgLocationRequiredError(
-                parsed.message ?? 'Background location is required to access live data.'
-              );
-            }
-          } catch (e) {
-            if (e instanceof BgLocationRequiredError) throw e;
-            // Body wasn't JSON — fall through to generic ApiError below.
+          const bgPayload = parseBgLocationRequired(rawBody);
+          if (bgPayload) {
+            throw new BackgroundLocationRequiredError(
+              typeof bgPayload.message === 'string'
+                ? bgPayload.message
+                : 'Background location required to use this feature',
+              bgPayload
+            );
           }
         }
 
         throw new ApiError(
           response.status,
           `HTTP ${response.status}: ${response.statusText}`,
-          rawBody || null
+          rawBody
         );
       }
 
