@@ -372,6 +372,9 @@ export class LotsService {
 
     return {
       ...lot,
+      // Prisma Decimal serializes to string over JSON; coerce to number so
+      // mobile clients can call numeric methods (.toFixed, etc.) directly.
+      daily_rate: lot.daily_rate != null ? Number(lot.daily_rate) : null,
       available: Math.max(0, available),
       occupancy_rate: Math.round(occupancy_rate * 1000) / 1000,
       fill_status,

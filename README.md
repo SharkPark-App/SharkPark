@@ -144,32 +144,44 @@ The database schema is designed around a `School` entity as the top-level tenant
 | Node.js | >= 20 |
 | pnpm | 10.20.0 (`corepack enable && corepack prepare pnpm@10.20.0 --activate`) |
 | Docker | Latest (for PostgreSQL + MinIO) |
-| Xcode | 16+ (iOS builds, includes CocoaPods via `xcode-select`) |
-| CocoaPods | Installed via Xcode or `gem install cocoapods` |
+| Xcode | 16+ (iOS builds) |
+| Ruby | 3.3.x — installed automatically via `pnpm bootstrap` (uses `rbenv` on macOS) |
+
+> **macOS:** the system Ruby (2.6) is too old for our pinned bundler/CocoaPods. `pnpm bootstrap` installs `rbenv` and the version pinned in `apps/mobile/.ruby-version`. Don't `gem install` against system Ruby.
 
 ---
 
 ## Getting Started
 
 ```bash
-# 1. Clone and install (Docker, migrations, and seeding run automatically via postinstall)
+# 1. Clone
 git clone <repo-url> && cd SharkPark
-pnpm install
 
 # 2. Set up environment
-cp .env.example apps/backend/.env
-# Edit apps/backend/.env with your values (see Environment Variables below)
+cp .env.example .env
+# Edit .env with your values (see Environment Variables below).
+# For DEVICE_HASH_SALT and DEVICE_EVENT_SECRET, generate with:
+#   openssl rand -hex 32
 
-# 3. Start the backend (http://localhost:3000)
+# 3. One-time bootstrap (installs rbenv/Ruby/bundler on macOS, runs bundle install,
+#    symlinks apps/backend/.env -> ../../.env). Idempotent — safe to re-run.
+pnpm bootstrap
+
+# 4. Install deps (also brings up Docker, runs migrations, seeds the database)
+pnpm install
+
+# 5. Start backend (http://localhost:3000)
 pnpm --filter @sharkpark/backend dev
 
-# 4. Start the mobile app (in a second terminal)
+# 6. Start the mobile app (in a second terminal)
 pnpm --filter mobile ios
 ```
 
 Run `pnpm dev` from root to start both backend and mobile in parallel.
 
-**What happens on `pnpm install`?** The postinstall script automatically starts Docker containers, waits for PostgreSQL to accept connections, runs Prisma migrations (idempotent, safe to re-run), generates the Prisma client, and seeds the database if it is empty. Set `SKIP_LOCAL_INFRA=1` to skip all of this (used in CI).
+**What `pnpm bootstrap` does:** Verifies tooling, installs `rbenv` + the project's pinned Ruby (from `apps/mobile/.ruby-version`), installs the bundler version pinned in `Gemfile.lock`, runs `bundle install` for CocoaPods, and symlinks `apps/backend/.env` to the root `.env`. Skip on Linux/CI where the system Ruby is already managed.
+
+**What `pnpm install` does:** Installs all workspace deps. The postinstall hook then starts Docker containers, waits for PostgreSQL, runs Prisma migrations (idempotent), generates the Prisma client, and seeds the database if empty. Set `SKIP_LOCAL_INFRA=1` to skip the Docker bring-up (used in CI).
 
 ---
 
@@ -179,6 +191,7 @@ Run `pnpm dev` from root to start both backend and mobile in parallel.
 
 | Script | Command | Description |
 |--------|---------|-------------|
+| `pnpm bootstrap` | `bash scripts/bootstrap.sh` | One-time: installs rbenv/Ruby/bundler, runs `bundle install`, links backend `.env` |
 | `pnpm install` | — | Install all deps, start Docker, migrate, and seed |
 | `pnpm dev` | `turbo run dev --parallel` | Start backend + mobile in parallel |
 | `pnpm build` | `turbo run build` | Build all workspaces |
