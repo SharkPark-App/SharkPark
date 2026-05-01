@@ -76,10 +76,6 @@ def predict(
     logger.info("Computing historical baseline...")
     baseline_df = compute_baseline(df)
 
-    # Derive capacity from snapshots so inference stays self-contained
-    lot_capacities = (
-        (df["occupancy"] + df["available"]).groupby(df["lot_id"]).median().to_dict()
-    )  # Falls back to 200 in _build_prediction_df for missing lots
     lot_ids = df["lot_id"].unique().tolist()
 
     today = date.today()
@@ -108,7 +104,6 @@ def predict(
         median=median,
         lower=lower,
         upper=upper,
-        lot_capacities=lot_capacities,
         model_version=model_version,
     )
 
@@ -181,32 +176,22 @@ def _build_prediction_df(
     median: np.ndarray,
     lower: np.ndarray,
     upper: np.ndarray,
-    lot_capacities: dict[str, int],
     model_version: str,
 ) -> pd.DataFrame:
     """
     Build a DataFrame matching the predictions_long_term schema.
 
-    Converts occupancy rates to counts using lot capacities.
-    Confidence bounds come from quantile regression.
+    Stores occupancy rates [0, 1] directly. Confidence bounds come from
+    quantile regression.
     """
-    missing_lots = set(features["lot_id"].unique()) - set(lot_capacities)
-    if missing_lots:
-        logger.warning(
-            "No capacity found for %d lot(s), using fallback 200: %s",
-            len(missing_lots),
-            sorted(missing_lots),
-        )
-    caps = features["lot_id"].map(lot_capacities).fillna(200).values
-
     df = pd.DataFrame(
         {
             "lot_id": features["lot_id"].values,
             "target_date": features["target_date"].values,
             "target_hour": features["target_hour"].values,
-            "predicted_occupancy": (median * caps).round().astype(int),
-            "confidence_lower": (lower * caps).round().astype(int),
-            "confidence_upper": (upper * caps).round().astype(int),
+            "predicted_occupancy": median,
+            "confidence_lower": lower,
+            "confidence_upper": upper,
         }
     )
     df["predicted_at"] = pd.Timestamp.now("UTC").isoformat()

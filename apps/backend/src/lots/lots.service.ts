@@ -530,7 +530,7 @@ export class LotsService {
     return {
       lot_id: lotId,
       source: 'heuristic',
-      predictions: this.generateHeuristicPredictions(lot, days, now),
+      predictions: this.generateHeuristicPredictions(days, now),
     };
   }
 
@@ -539,7 +539,6 @@ export class LotsService {
    * Provides useful predictions even before the ML model is trained.
    */
   private generateHeuristicPredictions(
-    lot: Lot,
     days: number,
     startDate: Date,
   ): Array<{
@@ -583,17 +582,18 @@ export class LotsService {
 
       for (let hour = CAMPUS_OPEN; hour < CAMPUS_CLOSE; hour++) {
         const baseRate = (hourlyPattern[hour] ?? 0.10) * dayMultiplier;
-        const predicted = Math.round(baseRate * lot.capacity);
 
         // Wider confidence intervals for heuristic predictions
-        const margin = Math.round(lot.capacity * 0.12);
+        const margin = 0.12;
 
         predictions.push({
           target_date: dateStr,
           target_hour: hour,
-          predicted_occupancy: Math.min(predicted, lot.capacity),
-          confidence_lower: Math.max(0, predicted - margin),
-          confidence_upper: Math.min(lot.capacity, predicted + margin),
+          // baseRate is bounded by hourlyPattern (max 0.85) * dayMultiplier (max 1.0),
+          // so it can never exceed 1; no upper clamp needed here.
+          predicted_occupancy: baseRate,
+          confidence_lower: Math.max(0, baseRate - margin),
+          confidence_upper: Math.min(1, baseRate + margin),
           model_version: 'heuristic-v1',
         });
       }

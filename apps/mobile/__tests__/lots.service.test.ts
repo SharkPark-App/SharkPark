@@ -326,9 +326,9 @@ describe('LotsService', () => {
       const predictions = [
         {
           target_time: new Date().toISOString(),
-          predicted_occupancy: 60,
-          confidence_lower: 50,
-          confidence_upper: 70,
+          predicted_occupancy: 0.6,
+          confidence_lower: 0.5,
+          confidence_upper: 0.7,
         },
       ];
 
