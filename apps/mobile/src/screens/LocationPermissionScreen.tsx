@@ -29,17 +29,15 @@ import { Text } from '../components/CustomText';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { locationService } from '../services/locationService';
+import { LOCATION_DATA_POINTS } from '../constants/permissions';
 import type { MapStackParamList } from '../types/navigation';
 
 type Nav = StackNavigationProp<MapStackParamList, 'LocationPermission'>;
 
-// ─── data-collection bullet points shown to users ──────────────────────────
-const DATA_POINTS = [
-  { icon: 'checkmark-circle-outline', text: 'When you enter or leave a campus parking lot' },
-  { icon: 'checkmark-circle-outline', text: 'Which lot you parked in (anonymous lot ID only)' },
-  { icon: 'close-circle-outline',     text: 'Your exact GPS coordinates — never stored' },
-  { icon: 'close-circle-outline',     text: 'Your identity or personal information' },
-];
+// ── data-collection bullet points shown to users ──────────────────────────
+// Sourced from constants/permissions.ts so OnboardingScreen and this screen
+// never drift apart.
+const DATA_POINTS = LOCATION_DATA_POINTS;
 
 const LocationPermissionScreen: React.FC = () => {
   const { colors } = useTheme();
