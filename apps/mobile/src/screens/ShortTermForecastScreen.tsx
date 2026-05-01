@@ -12,7 +12,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
-import { Header, ReliabilityMeter, LockedOccupancyBadge } from '../components';
+import { Header, ReliabilityMeter, LockedOccupancyBadge, LockedForecastCard, UnlockCTAButton } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
 import { MapSelectModal } from '../components/Modals/MapSelectModal';
@@ -201,31 +201,22 @@ export function ShortTermForecastScreen() {
               <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
             </View>
           ) : (
-            <View>
+            <View style={styles.lockedGroup}>
               {/* Redacted live occupancy: shows a lock chip + smeared
                   placeholder — see LockedOccupancyBadge for the no-deps
                   blur-style approach. */}
               <LockedOccupancyBadge size="lg" />
-              {/* Soft-ask CTA: a non-contributor can unlock live occupancy and
-                  the today's-forecast chart by granting background location.
-                  We route to the dedicated permission screen (which explains
-                  what we collect, on-device storage, etc.) rather than
-                  triggering the system prompt directly — required by Apple's
-                  permission UX guidance and App Review 5.1.1. */}
-              <TouchableOpacity
+              {/* Soft-ask CTA: a non-contributor can unlock live occupancy
+                  by granting background location. We route to the dedicated
+                  permission screen (which explains what we collect, on-device
+                  storage, etc.) rather than triggering the system prompt
+                  directly — required by Apple's permission UX guidance and
+                  App Review 5.1.1. */}
+              <UnlockCTAButton
+                label="Unlock live occupancy"
                 onPress={() => navigation.navigate('LocationPermission', {})}
-                style={{ marginTop: SPACING.md }}
-                accessibilityRole="button"
                 accessibilityLabel="Unlock live occupancy by granting background location"
-              >
-                <Text style={{
-                  color: colors.primary,
-                  fontFamily: TYPOGRAPHY.fontFamily.semibold,
-                  textAlign: 'center',
-                }}>
-                  Unlock live occupancy
-                </Text>
-              </TouchableOpacity>
+              />
             </View>
           )}
 
@@ -244,8 +235,19 @@ export function ShortTermForecastScreen() {
           )}
         </View>
 
-        {/* Chart */}
-        <HourlyChart data={forecast}/>
+        {/* Chart — the forecast endpoint is contributor-gated, so for
+            non-contributors `forecast` comes back empty and we render a
+            locked placeholder card with its own Unlock CTA. We use
+            `lot.occupancy_rate == null` as the gate signal because it's
+            the same redaction marker used for the occupancy badge above
+            and avoids flashing the empty-state message during a refetch. */}
+        {lot.occupancy_rate == null ? (
+          <LockedForecastCard
+            onUnlockPress={() => navigation.navigate('LocationPermission', {})}
+          />
+        ) : (
+          <HourlyChart data={forecast}/>
+        )}
 
         {/* Lot Amenities & Details */}
         <LotAmenities lot={lot} />
@@ -380,6 +382,15 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     borderRadius: SPACING.sm,
     marginBottom: SPACING.md,
+  },
+
+  // Wraps the locked occupancy badge + Unlock CTA so they share consistent
+  // vertical rhythm (and so the CTA stays visually grouped with what it
+  // unlocks rather than floating into the reliability meter row below).
+  lockedGroup: {
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginBottom: SPACING.sm,
   },
 
   statusBadgeText: {
