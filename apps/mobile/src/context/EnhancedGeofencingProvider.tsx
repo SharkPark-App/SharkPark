@@ -9,7 +9,7 @@
  */
 
 import React, { createContext, useContext, useEffect, useLayoutEffect, useCallback, useMemo, ReactNode, useRef, useState } from 'react';
-import { Alert, AppState, AppStateStatus, Linking } from 'react-native';
+import { Alert, AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Location, MotionActivityEvent, MotionChangeEvent } from 'react-native-background-geolocation';
 import { GeofenceEvent } from '../types/location';
@@ -660,16 +660,14 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         // immediately. Without this, the server keeps serving live data
         // for up to CONTRIBUTOR_GRANT_TTL_MS (24h) after the user revoked
         // permission, because it has no other signal that anything changed.
+        //
+        // Intentionally silent: the user just toggled a setting they own,
+        // they don't need a modal telling them what they did. The UI flips
+        // to neutral pins / locked detail card via the contributor-state
+        // pub-sub (see services/api/contributor.ts), and the soft-ask flow
+        // (UnlockCTAButton → LocationPermissionScreen) is the *only* place
+        // we should be prompting them to grant.
         void revokeContributorGrant();
-
-        Alert.alert(
-          'Location Permission Required',
-          'SharkPark needs "Always Allow" location access to detect when you enter and exit parking lots. Please update your settings.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => { void Linking.openSettings(); } },
-          ]
-        );
       }
     });
 
