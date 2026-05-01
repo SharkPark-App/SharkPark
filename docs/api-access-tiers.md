@@ -35,6 +35,8 @@ A few endpoints stack tiers (e.g. *favorites* requires both Authenticated and Co
 | `GET`  | `/api/v1/weather/current`         | Current weather (via OpenWeather proxy) |
 | `GET`  | `/api/v1/events`                  | Campus event calendar                |
 | `POST` | `/api/v1/occupancy-events`        | Anonymous device contribution. **This is the contribution mechanism that unlocks the Contributor tier.** Server hashes `device_id` and bumps `ContributorPing.last_seen_at` on every successful (or even deduplicated) call. |
+| `POST` | `/api/v1/contributor/grant`       | Records a permission-grant grace pass for the calling device. Requires `x-device-id` (no body). Sets `ContributorPing.granted_at = NOW()` so subsequent gated reads succeed for `CONTRIBUTOR_GRANT_TTL_MS` (24h) before any geofence event lands. Solves the cold-start chicken-and-egg without violating Apple App Review 5.1.1. Idempotent. Returns `204`. Throws `403 BG_LOCATION_REQUIRED` if `x-device-id` is missing. |
+| `POST` | `/api/v1/contributor/revoke`      | Companion to `/grant`. Mobile calls this immediately when it detects that background-location permission has been revoked (Settings toggle, SDK reports `Denied`). Clears `granted_at` and backdates `last_seen_at` to epoch so neither freshness check passes. Without it, the server would keep serving live data for up to 24h after revocation. Idempotent — returns `204` even if the device was never seen. Missing/empty `x-device-id` is a silent no-op (not an error). |
 
 ### Contributor (`x-device-id` header + fresh ping)
 

@@ -61,4 +61,46 @@ export class ContributorController {
       create: { device_hash: deviceHash, granted_at: now },
     });
   }
+
+  /**
+   * Revokes the device's contributor status immediately.
+   *
+   * Mobile calls this when it detects that background-location permission
+   * has been revoked (Settings → Privacy → Location toggled off, or the
+   * SDK reports `Denied`). Without this, the server would continue
+   * serving live data for up to CONTRIBUTOR_GRANT_TTL_MS (24h) after the
+   * user revoked permission — because we have no way of knowing the
+   * device state has changed otherwise.
+   *
+   * Implementation: clear `granted_at` AND backdate `last_seen_at` past
+   * the ping TTL so neither freshness check passes. We don't delete the
+   * row — keeping it preserves the audit trail of past contributions and
+   * lets a re-grant naturally re-upsert.
+   *
+   * Returns 204 even if the device was never known to us (idempotent).
+   */
+  @Post('revoke')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeGrant(@Req() req: Request): Promise<void> {
+    const rawHeader = req.headers['x-device-id'];
+    const deviceId = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
+    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim().length === 0) {
+      // No device id → nothing to revoke. 204 no-op (matches the idempotent
+      // contract; we don't want client retry storms on missing-header bugs).
+      return;
+    }
+
+    const deviceHash = hashDeviceId(deviceId.trim());
+    // Backdate well past CONTRIBUTOR_PING_TTL_MS (default 30min) so the
+    // ping freshness check fails immediately. Using epoch keeps the
+    // semantics obvious in the database.
+    const epoch = new Date(0);
+
+    await this.prisma.contributorPing.updateMany({
+      where: { device_hash: deviceHash },
+      data: { granted_at: null, last_seen_at: epoch },
+    });
+  }
 }
