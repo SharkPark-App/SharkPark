@@ -25,14 +25,14 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@types/node": "^22.18.13",
-    "@typescript-eslint/eslint-plugin": "^8.46.2",
-    "@typescript-eslint/parser": "^8.46.2",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
     "eslint": "^9.38.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
-    "prettier": "^3.6.2",
-    "turbo": "^2.6.0",
+    "prettier": "^3.8.3",
+    "turbo": "^2.9.6",
     "typescript": "^5.9.3"
   },
   "pnpm": {

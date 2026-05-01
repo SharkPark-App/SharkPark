@@ -237,9 +237,9 @@ model PredictionShortTerm {
   lot_id          String
   predicted_at    DateTime
   target_time     DateTime
-  predicted_occupancy Int
-  confidence_lower    Int
-  confidence_upper    Int
+  predicted_occupancy Float   // rate [0, 1] — CHECK constraint in DB
+  confidence_lower    Float
+  confidence_upper    Float
   model_version   String
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
@@ -254,9 +254,9 @@ model PredictionLongTerm {
   predicted_at    DateTime
   target_date     DateTime
   target_hour     Int      // 0-23
-  predicted_occupancy Int
-  confidence_lower    Int
-  confidence_upper    Int
+  predicted_occupancy Float   // rate [0, 1] — CHECK constraint in DB
+  confidence_lower    Float
+  confidence_upper    Float
   model_version   String
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)

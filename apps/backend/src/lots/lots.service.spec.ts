@@ -671,16 +671,17 @@ describe('LotsService', () => {
       expect(result.predictions[result.predictions.length - 1].target_hour).toBe(21);
     });
 
-    it('should cap predicted_occupancy at lot capacity', async () => {
+    it('should bound heuristic predicted_occupancy rates to [0, 1]', async () => {
       prisma.lot.findFirst.mockResolvedValue(mockLotFull);
       prisma.predictionLongTerm.findMany.mockResolvedValue([]);
 
       const result = await service.getLongTermPredictions('G1', 1);
 
       for (const p of result.predictions) {
-        expect(p.predicted_occupancy).toBeLessThanOrEqual(mockLotFull.capacity);
+        expect(p.predicted_occupancy).toBeGreaterThanOrEqual(0);
+        expect(p.predicted_occupancy).toBeLessThanOrEqual(1);
         expect(p.confidence_lower).toBeGreaterThanOrEqual(0);
-        expect(p.confidence_upper).toBeLessThanOrEqual(mockLotFull.capacity);
+        expect(p.confidence_upper).toBeLessThanOrEqual(1);
       }
     });
   });

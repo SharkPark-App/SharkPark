@@ -78,7 +78,7 @@ def check_predictions(
                 logger.info("-" * 65)
                 for target_date, lots, total_rows, avg_predicted, predicted_at in rows:
                     logger.info(
-                        "%-12s %6d %10d %12.1f  %s",
+                        "%-12s %6d %10d %12.3f  %s",
                         str(target_date)[:10],
                         int(lots),
                         int(total_rows),
@@ -147,14 +147,14 @@ def check_predictions(
     for lot_cuid, predicted_at, target_date, hour, pred, lower, upper, ver in rows:
         lot_label = reverse_map.get(lot_cuid, lot_cuid)
         logger.info(
-            "%-8s %-19s %-12s %5d %10d %10d %10d %s",
+            "%-8s %-19s %-12s %5d %10.3f %10.3f %10.3f %s",
             lot_label,
             str(predicted_at)[:19],
             str(target_date)[:10],
             int(hour),
-            int(pred),
-            int(lower),
-            int(upper),
+            pred,
+            lower,
+            upper,
             ver,
         )
     logger.info("=" * 90)

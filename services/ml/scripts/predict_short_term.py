@@ -117,20 +117,12 @@ def predict(
             "Weather adjustment: %s (rows=%d)", summary or "NORMAL=all", len(features)
         )
 
-    # Derive capacity from snapshots so inference stays self-contained
-    # (works with both --data-path parquet and live DB, no extra query needed).
-    # Falls back to 200 in _build_prediction_df if a lot_id is missing.
-    lot_capacities = (
-        (df["occupancy"] + df["available"]).groupby(df["lot_id"]).median().to_dict()
-    )
-
     # Build output matching predictions_short_term schema
     predictions = _build_prediction_df(
         features=features,
         preds=preds,
         preds_lower=preds_lower,
         preds_upper=preds_upper,
-        lot_capacities=lot_capacities,
         model_version=model_version,
         prediction_time=prediction_time,
     )
@@ -212,25 +204,15 @@ def _build_prediction_df(
     preds: np.ndarray,
     preds_lower: np.ndarray,
     preds_upper: np.ndarray,
-    lot_capacities: dict,
     model_version: str,
     prediction_time: datetime,
 ) -> pd.DataFrame:
     """
     Build a DataFrame matching the predictions_short_term schema.
 
-    Converts occupancy rates to counts using lot capacities.
-    Confidence bounds come from quantile regression (10th/90th percentile).
+    Stores occupancy rates [0, 1] directly. Confidence bounds come from
+    quantile regression (10th/90th percentile).
     """
-    missing_lots = set(features["lot_id"].unique()) - set(lot_capacities)
-    if missing_lots:
-        logger.warning(
-            "No capacity found for %d lot(s), using fallback 200: %s",
-            len(missing_lots),
-            sorted(missing_lots),
-        )
-    capacities = features["lot_id"].map(lot_capacities).fillna(200)
-
     base_time = prediction_time.replace(minute=0, second=0, microsecond=0)
     target_times = pd.to_datetime(
         features["target_hour"].astype(int), unit="h", origin=base_time.replace(hour=0)
@@ -241,9 +223,9 @@ def _build_prediction_df(
             "lot_id": features["lot_id"],
             "predicted_at": prediction_time.isoformat(),
             "target_time": target_times.dt.strftime("%Y-%m-%dT%H:%M:%S"),
-            "predicted_occupancy": (preds * capacities.values).round().astype(int),
-            "confidence_lower": (preds_lower * capacities.values).round().astype(int),
-            "confidence_upper": (preds_upper * capacities.values).round().astype(int),
+            "predicted_occupancy": preds,
+            "confidence_lower": preds_lower,
+            "confidence_upper": preds_upper,
             "model_version": model_version,
         }
     )

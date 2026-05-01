@@ -77,17 +77,23 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 ## Architecture
 
 ```
-┌──────────────────┐         ┌──────────────────────┐
-│  React Native    │  REST   │  NestJS API          │
-│  iOS / Android   │ ──────> │  /api/v1/*           │
-│  (apps/mobile)   │         │  (apps/backend)      │
-└──────────────────┘         └────────┬─────────────┘
-                                      │ Prisma ORM
-                              ┌───────▼───────┐
-                              │  PostgreSQL   │
-                              │  (Docker dev) │
-                              │  (Aurora prod)│
-                              └───────────────┘
+┌──────────────────┐   REST / WS   ┌──────────────────────┐
+│  React Native    │ ────────────> │  NestJS API          │
+│  iOS / Android   │ <──────────── │  /api/v1/*           │
+│  (apps/mobile)   │  socket.io    │  (apps/backend)      │
+└──────────────────┘               └──┬───────────────┬───┘
+                                      │ Prisma ORM    │
+                              ┌───────▼───────┐  ┌────▼──────────┐
+                              │  PostgreSQL   │  │  Redis        │
+                              │  (Docker dev) │  │  (Fly Redis   │
+                              │  (Neon prod)  │  │   prod cache) │
+                              └───────────────┘  └───────────────┘
+                                                        ▲
+                                               ┌────────┴───────┐
+                                               │  PassioGO WS   │
+                                               │  (live shuttle │
+                                               │   positions)   │
+                                               └────────────────┘
 ```
 
 The backend is organized into feature modules, each with its own controller, service, and interfaces:
@@ -98,6 +104,8 @@ The backend is organized into feature modules, each with its own controller, ser
 - **Occupancy Events** — The core data pipeline: receives anonymous geofence ENTER/EXIT events, deduplicates, updates occupancy atomically, and produces periodic snapshots for ML training.
 - **Reliability** — Real-time confidence scoring for each lot's occupancy estimate, computed from the five-factor weighted model described above.
 - **Weather** — Current weather data used as an ML feature (rain correlates with higher driving and lot demand).
+- **Shuttle Tracker** — Live shuttle tracking via a persistent PassioGO connection. Routes, stops, and shuttle metadata are refreshed daily.
+- **Redis** — Global cache module. Currently provides shared state for shuttle data across multi-instance deployments.
 - **Database** — Global Prisma module with environment-aware connection pooling (pool size 5 locally, 20 in production, SSL required in production).
 
 The mobile app uses a provider-based architecture:
@@ -274,20 +282,39 @@ All user endpoints require Azure AD authentication.
 | `GET` | `/api/v1/reliability` | Reliability scores for all lots |
 | `GET` | `/api/v1/reliability/config` | Reliability computation config (weights and thresholds) |
 
-**Total: 19 endpoints** (14 GET, 3 POST, 1 DELETE, 1 PATCH)
+### Transit
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/transit/shuttles` | List of active shuttles & their data |
+| `GET` | `/api/v1/transit/routes` | Active routes with coordinates |
+| `GET` | `/api/v1/transit/stops` | All stops with coordinates and route assignments |
+| `GET` | `/api/v1/transit/etas/:stopId` | Upcoming arrivals at a stop, sorted by ETA |
+
+#### Shuttle WebSocket
+
+| Property | Value |
+|----------|-------|
+| Namespace | `/shuttles` |
+| socket.io path | `/api/v1/socket.io/` |
+| Transport | `websocket` |
+| Auth | Requires a secret handshake |
+| Event | `shuttle_update` → `ShuttleLocationUpdate[]` |
+
+**Total: 23 endpoints** (18 GET, 3 POST, 1 DELETE, 1 PATCH)
 
 ---
 
 ## Testing
 
 ```bash
-# Run all 248 tests
+# Run all 1,103 tests
 pnpm test
 
-# Backend only (142 tests, 17 suites)
+# Backend only (494 tests, 35 suites)
 pnpm --filter @sharkpark/backend test
 
-# Mobile only (106 tests, 13 suites)
+# Mobile only (609 tests, 50 suites)
 pnpm --filter mobile test
 
 # Backend E2E (requires running DB)
@@ -302,7 +329,7 @@ Create `apps/backend/.env` from `.env.example`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string (local Docker or Aurora endpoint) | `postgresql://sharkpark:sharkpark@localhost:5433/sharkpark` |
+| `DATABASE_URL` | PostgreSQL connection string (local Docker or Neon pooled endpoint) | `postgresql://sharkpark:sharkpark@localhost:5433/sharkpark` |
 | `PORT` | API server port | `3000` |
 | `NODE_ENV` | Environment (`development` / `production`) | `development` |
 | `AZURE_TENANT_ID` | Azure AD tenant for SSO | — |
@@ -310,6 +337,7 @@ Create `apps/backend/.env` from `.env.example`:
 | `CORS_ORIGIN` | Allowed CORS origin (comma-separated in production) | `*` |
 | `THROTTLE_TTL` | Rate limit window (seconds) | `10` |
 | `THROTTLE_LIMIT` | Max requests per window | `20` |
+| `REDIS_URL` | Fly Redis connection URL | — |
 
 ---
 
@@ -346,7 +374,9 @@ SharkPark/
 │   │   │   ├── events/           # Campus events and parking impact
 │   │   │   ├── lots/             # Parking lot CRUD, filtering, occupancy summaries
 │   │   │   ├── occupancy-events/ # Geofence event pipeline, dedup, snapshots, scheduler
+│   │   │   ├── redis/            # Global ioredis cache module (shared shuttle state)
 │   │   │   ├── reliability/      # Multi-factor weighted reliability scoring
+│   │   │   ├── shuttle-tracker/  # Live shuttle tracking (PassioGO WS + socket.io gateway)
 │   │   │   ├── users/            # Profiles, favorites, notification preferences
 │   │   │   └── weather/          # Weather data for demand correlation
 │   │   └── test/                 # E2E tests
