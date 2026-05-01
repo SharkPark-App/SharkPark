@@ -123,7 +123,8 @@ describe('LotsService', () => {
         total_lots: 25,
         total_capacity: 3500,
         total_occupied: 2100,
-        average_occupancy: 0.6
+        average_occupancy: 0.6,
+        high_occupancy_lots: [],
       };
 
       mockApiService.get.mockResolvedValueOnce({

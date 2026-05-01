@@ -3,7 +3,7 @@ import { TouchableOpacity, View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { HomeScreen as LongTerm, MapScreen, ProfileScreen, ShortTermForecastScreen } from '../screens';
+import { HomeScreen as LongTerm, MapScreen, ProfileScreen, ShortTermForecastScreen, LocationPermissionScreen } from '../screens';
 import { Text } from '../components/CustomText';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
@@ -36,7 +36,7 @@ const GuestSignInScreen: React.FC = () => {
       <Icon name="person-circle-outline" size={72} color={colors.primary} />
       <Text style={[guestStyles.title, { color: colors.textPrimary }]}>Sign in to SharkPark</Text>
       <Text style={[guestStyles.subtitle, { color: colors.gray }]}>
-        Create reports, save favourite lots, and get personalised alerts.
+        Create reports, save favorite lots, and get personalized alerts.
       </Text>
       <TouchableOpacity
         style={[guestStyles.button, { backgroundColor: colors.primary, opacity: isLoading ? 0.6 : 1 }]}
@@ -65,6 +65,7 @@ const MapStack: React.FC = () => {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MapMain" component={MapScreen} />
       <Stack.Screen name="Short Term Forecast" component={ShortTermForecastScreen} />
+      <Stack.Screen name="LocationPermission" component={LocationPermissionScreen} />
     </Stack.Navigator>
   );
 };

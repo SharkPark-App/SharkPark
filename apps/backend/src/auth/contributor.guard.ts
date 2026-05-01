@@ -5,25 +5,24 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { PrismaService } from '../database/database.module';
-import { hashDeviceId } from '../occupancy-events/utils/privacy.util';
+import { ContributorService } from './contributor.service';
 
 /**
  * Reciprocity gate: a request can read live-occupancy / forecast data only if
- * the device behind it is *currently contributing* occupancy events. The
- * client identifies itself with the `x-device-id` header (same opaque
- * identifier it uses in POST /occupancy-events). The header is hashed
- * server-side with the same SHA-256(DEVICE_HASH_SALT:device_id) used for
- * event storage, so we never see the raw device id.
+ * the device behind it is *currently contributing* OR is inside its first-run
+ * grace window after granting location permissions. The client identifies
+ * itself with the `x-device-id` header (same opaque identifier it uses in
+ * POST /occupancy-events).
  *
- * Failure modes (kept distinct so the mobile client can map them to UX):
- *   - missing header  → 403 { code: 'BG_LOCATION_REQUIRED' }
- *   - empty header    → 403 { code: 'BG_LOCATION_REQUIRED' }
- *   - no recent ping  → 403 { code: 'BG_LOCATION_REQUIRED' }
+ * The actual freshness logic lives in {@link ContributorService.isContributor}
+ * — this guard is a thin "translate `false` into 403" wrapper so that Public
+ * endpoints that need the same boolean for *redaction* (rather than
+ * rejection) can share one definition.
  *
- * "Recent" is currently 30 minutes — a device that hasn't pinged in 30 min
- * is assumed to have stopped contributing (app force-quit, location revoked,
- * device offline). Tunable via CONTRIBUTOR_PING_TTL_MS.
+ * Failure shape (mobile maps `code === 'BG_LOCATION_REQUIRED'` to the
+ * soft-ask UX, NOT a generic error):
+ *
+ *   403 { code: 'BG_LOCATION_REQUIRED', message: '...' }
  *
  * This guard is opt-in per controller/handler with @UseGuards(ContributorGuard);
  * it does NOT replace AzureAdGuard. Endpoints that are also auth-gated will
@@ -32,48 +31,22 @@ import { hashDeviceId } from '../occupancy-events/utils/privacy.util';
 @Injectable()
 export class ContributorGuard implements CanActivate {
   private readonly logger = new Logger(ContributorGuard.name);
-  private readonly pingTtlMs: number;
 
-  constructor(private readonly prisma: PrismaService) {
-    const raw = process.env.CONTRIBUTOR_PING_TTL_MS;
-    const parsed = raw ? Number(raw) : NaN;
-    this.pingTtlMs = Number.isFinite(parsed) && parsed > 0 ? parsed : 30 * 60 * 1000;
-  }
+  constructor(private readonly contributorService: ContributorService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<{ headers: Record<string, string | string[] | undefined> }>();
+    const req = context.switchToHttp().getRequest<{
+      headers: Record<string, string | string[] | undefined>;
+    }>();
     const rawHeader = req.headers['x-device-id'];
-    const deviceId = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
 
-    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim().length === 0) {
-      throw new ForbiddenException({
-        code: 'BG_LOCATION_REQUIRED',
-        message:
-          'This endpoint requires an active contributor device. Send the x-device-id header and ensure the device has posted a recent occupancy event.',
-      });
-    }
+    const allowed = await this.contributorService.isContributor(rawHeader);
+    if (allowed) return true;
 
-    const deviceHash = hashDeviceId(deviceId.trim());
-    const ping = await this.prisma.contributorPing.findUnique({
-      where: { device_hash: deviceHash },
-      select: { last_seen_at: true },
+    throw new ForbiddenException({
+      code: 'BG_LOCATION_REQUIRED',
+      message:
+        'This endpoint requires an active contributor device. Send the x-device-id header and ensure the device has granted location permissions.',
     });
-
-    if (!ping) {
-      throw new ForbiddenException({
-        code: 'BG_LOCATION_REQUIRED',
-        message: 'Device has not contributed any occupancy events yet.',
-      });
-    }
-
-    const ageMs = Date.now() - ping.last_seen_at.getTime();
-    if (ageMs > this.pingTtlMs) {
-      throw new ForbiddenException({
-        code: 'BG_LOCATION_REQUIRED',
-        message: 'Device contribution is stale; resume background location to refresh.',
-      });
-    }
-
-    return true;
   }
 }
