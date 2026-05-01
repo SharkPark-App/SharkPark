@@ -1,0 +1,5 @@
+# ── Google Maps API key ────────────────────────
+# Required for utilizing Google Maps services
+e.g. Map display on Android.
+# Restricted by package ID & SHA-1 fingerprint
+MAPS_API_KEY=

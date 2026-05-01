@@ -1,11 +1,3 @@
-export interface ParkingLotUI {
-  id: string;
-  name: string;
-  occupancy: number;
-  category: 'general' | 'employee';
-  position: { x: number; y: number };
-}
-
 export interface Event {
   id: string;
   name: string;
