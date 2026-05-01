@@ -2,7 +2,7 @@
  * Lots API Service
  * Handles all parking lot related API calls
  */
-import { apiService } from './base';
+import { apiService, BackgroundLocationRequiredError } from './base';
 import API_CONFIG from './config';
 import { getDeviceId } from './deviceCredentials';
 import { cacheService } from './cache';
@@ -15,7 +15,13 @@ export interface ParkingLot {
   lot_number: string;
   lot_type: 'STUDENT' | 'EMPLOYEE';
   capacity: number;
-  current_occupancy: number;
+  /**
+   * REDACTED for non-contributors. The backend strips live occupancy
+   * from `GET /lots` and `GET /lots/:id` for devices that haven't granted
+   * background location (no reciprocity → no live data). Treat as nullable
+   * and render a "locked" placeholder + soft-ask CTA when null.
+   */
+  current_occupancy: number | null;
   location_description: string;
   building_proximity: string[];
   center_lat: number;
@@ -44,17 +50,19 @@ export interface ParkingLot {
 }
 
 export interface ParkingLotResponse extends ParkingLot {
-  available: number;
-  occupancy_rate: number;
-  fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
+  // All live-occupancy fields are nullable: redacted to `null` for non-
+  // contributor callers (see ParkingLot.current_occupancy).
+  available: number | null;
+  occupancy_rate: number | null;
+  fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL' | null;
   /** Estimated true occupancy (scaled up from raw device count) */
-  estimated_occupancy: number;
+  estimated_occupancy: number | null;
   /** Estimated available spots (capacity - estimated_occupancy) */
-  estimated_available: number;
+  estimated_available: number | null;
   /** Raw device count (current_occupancy before scaling) */
-  raw_occupancy: number;
+  raw_occupancy: number | null;
   /** Effective penetration rate used for estimation (0.01–1.0) */
-  effective_penetration_rate: number;
+  effective_penetration_rate: number | null;
 }
 
 export interface OccupancySummary {
@@ -274,7 +282,10 @@ class LotsApiService {
         { ttl: LotsApiService.CACHE_TTL.FORECAST },
       );
       return result.data;
-    } catch {
+    } catch (err) {
+      // BG_LOCATION_REQUIRED must propagate so the UI can show the soft-ask
+      // screen instead of silently serving a local heuristic forecast.
+      if (err instanceof BackgroundLocationRequiredError) throw err;
       // Cache miss + network failure — generate locally
       return this.generateForecast(lot);
     }

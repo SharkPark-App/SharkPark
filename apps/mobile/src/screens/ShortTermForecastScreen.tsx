@@ -18,6 +18,7 @@ import { useLotData } from '../hooks/useLotData';
 import { MapSelectModal } from '../components/Modals/MapSelectModal';
 import { useReliability } from '../hooks/useReliability';
 import useFavorites from '../hooks/useFavorites';
+import { useAuth } from '../context/AuthContext';
 
 import {getOccupancyColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
@@ -46,14 +47,22 @@ const FavoriteButton: React.FC<{ isFavorite: boolean; onToggle: () => void }> = 
 
 // Navigation-aware component
 export function ShortTermForecastScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<MapStackScreenProps<'Short Term Forecast'>['navigation']>();
   const route = useRoute<MapStackScreenProps<'Short Term Forecast'>['route']>();
   const { lotId } = route.params || { lotId: 'G1' };
   const { colors } = useTheme();
 
   // Use the API hook instead of mock data
-  const { lot, forecast, loading, error, refreshLot } = useLotData(lotId);
+  const { lot, forecast, loading, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
+
+  // Route to soft-ask when the backend rejects with BG_LOCATION_REQUIRED.
+  React.useEffect(() => {
+    if (bgLocationRequired) {
+      clearBgLocationRequired();
+      navigation.navigate('LocationPermission', {});
+    }
+  }, [bgLocationRequired, clearBgLocationRequired, navigation]);
 
   const onBack = () => navigation.goBack();
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -62,11 +71,20 @@ export function ShortTermForecastScreen() {
 
   // For favorites
   const { addFavorite, removeFavorite, favoriteLots } = useFavorites();
+  // Auth state drives the favorite-tap gate below: guests/unauthenticated
+  // users are sent to the Profile tab to sign in instead of silently failing.
+  const { isAuthenticated, isGuest } = useAuth();
   // If the lotId is present in favoriteLots, then the lot is a favorite
   const isFavorite = favoriteLots.some(fav => fav === lotId);
 
-  // Show loading spinner while data is being fetched
-  if (loading) {
+  // Show loading spinner while data is being fetched.
+  //
+  // We also early-return while `bgLocationRequired` is true so we never render
+  // the partial screen (header + lot summary + empty forecast) before the
+  // useEffect above has a chance to navigate to the soft-ask. The lot detail
+  // endpoint isn't behind ContributorGuard, so `lot` resolves first and would
+  // otherwise flash a broken UI for a frame.
+  if (loading || bgLocationRequired) {
     return (
       <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
         <Header title="Today's Forecast" onBack={onBack} />
@@ -121,8 +139,29 @@ export function ShortTermForecastScreen() {
     (e.affectedLots.includes('all') || e.affectedLots.includes(lotId))
   );
 
-  // Try to (un-)favorite a lot dependent on current isFavorite status
+  // Try to (un-)favorite a lot dependent on current isFavorite status.
+  //
+  // Favorites are persisted server-side keyed off the user account, so they
+  // require a real sign-in. Guests/unauthenticated users get a two-button
+  // Alert (Apple HIG pattern, mirrors what Apple News / Maps do for
+  // personalization features that require an account) routing them to the
+  // Profile tab where they can sign in or stay signed out.
   const toggleFavorite = async () => {
+    if (!isAuthenticated || isGuest) {
+      Alert.alert(
+        'Sign in to save favorites',
+        'Save your favorite lots to find them quickly. Sign in with your SharkMail to enable favorites.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          {
+            text: 'Sign In',
+            onPress: () => navigation.getParent()?.navigate('Profile'),
+          },
+        ],
+      );
+      return;
+    }
+
     try {
       isFavorite? await removeFavorite(lotId) : await addFavorite(lotId);
     } catch {
@@ -152,9 +191,42 @@ export function ShortTermForecastScreen() {
         {/* Title Card w/ Lot Name and Occupancy */}
         <View style={[styles.lotHeaderCard, { backgroundColor: colors.white }]}>
           <Text style={[styles.lotName, { color: colors.textPrimary }]}>{lot.lot_name}</Text>
-          <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
-<Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
-          </View>
+          {/* `occupancy_rate` is null for non-contributors. In practice the
+              bgLocationRequired guard above redirects them away before this
+              renders (the forecast endpoint 403s first), but if they manage
+              to land here from a stale screen, we show a neutral "locked"
+              badge instead of "NaN%". */}
+          {lot.occupancy_rate != null ? (
+            <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
+              <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
+            </View>
+          ) : (
+            <View>
+              <View style={[styles.statusBadge, {backgroundColor: colors.neutralPin}]}>
+                <Text style={styles.statusBadgeText}>Locked</Text>
+              </View>
+              {/* Soft-ask CTA: a non-contributor can unlock live occupancy and
+                  the today's-forecast chart by granting background location.
+                  We route to the dedicated permission screen (which explains
+                  what we collect, on-device storage, etc.) rather than
+                  triggering the system prompt directly — required by Apple's
+                  permission UX guidance and App Review 5.1.1. */}
+              <TouchableOpacity
+                onPress={() => navigation.navigate('LocationPermission', {})}
+                style={{ marginTop: SPACING.md }}
+                accessibilityRole="button"
+                accessibilityLabel="Unlock live occupancy by granting background location"
+              >
+                <Text style={{
+                  color: colors.primary,
+                  fontFamily: TYPOGRAPHY.fontFamily.semibold,
+                  textAlign: 'center',
+                }}>
+                  Unlock live occupancy
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Reliability Meter */}
           {!reliabilityLoading && reliability && (

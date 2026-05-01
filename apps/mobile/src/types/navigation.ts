@@ -5,16 +5,7 @@
 
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { StackScreenProps } from '@react-navigation/stack';
-import type { CompositeScreenProps } from '@react-navigation/native';
-
-/**
- * Root Bottom Tab Navigator Parameter List
- */
-export type RootTabParamList = {
-  'Long Term': undefined;
-  Map: undefined;
-  Profile: undefined;
-};
+import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 
 /**
  * Map Stack Parameter List (nested within Map tab)
@@ -23,6 +14,19 @@ export type MapStackParamList = {
   MapMain: undefined;
   'Short Term Forecast': { lotId: string; lotName: string };
   LocationPermission: { reason?: string };
+};
+
+/**
+ * Root Bottom Tab Navigator Parameter List
+ *
+ * The Map tab hosts a nested stack — typing it as `NavigatorScreenParams<...>`
+ * lets call sites use `navigation.navigate('Map', { screen: 'LocationPermission', params: {} })`
+ * with full type safety from anywhere in the tree.
+ */
+export type RootTabParamList = {
+  'Long Term': undefined;
+  Map: NavigatorScreenParams<MapStackParamList> | undefined;
+  Profile: undefined;
 };
 
 /**

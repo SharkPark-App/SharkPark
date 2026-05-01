@@ -12,7 +12,10 @@ import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { useLotsList } from '../../hooks/useLotData';
 import { getOccupancyColor } from '../../utils/parkingUtils';
-import { lotsApi, LotRecommendation } from '../../services/api';
+import { lotsApi, LotRecommendation, BackgroundLocationRequiredError } from '../../services/api';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { MapStackParamList } from '../../types/navigation';
 
 interface RecommendationModalProps {
   isOpen: boolean;
@@ -42,6 +45,7 @@ export function RecommendationModal({
 }: RecommendationModalProps) {
   const { colors, spacing, typography, isDark } = useTheme();
   const { lots, loading: lotsLoading } = useLotsList();
+  const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   const [step, setStep] = useState<Step>('favorites');
   const [sourceLotId, setSourceLotId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<LotRecommendation[]>([]);
@@ -104,7 +108,20 @@ export function RecommendationModal({
       const results = await lotsApi.getRecommendedLots(lotId);
       setRecommendations(results);
       setStep('alternatives');
-    } catch {
+    } catch (err) {
+      if (err instanceof BackgroundLocationRequiredError) {
+        // Reset modal state BEFORE closing + navigating so the next time the
+        // user opens the favorites modal it doesn't reopen mid-loading-state
+        // with a half-completed slide animation. Mirrors handleClose().
+        slideAnim.setValue(0);
+        setStep('favorites');
+        setSourceLotId(null);
+        setRecommendations([]);
+        setError(null);
+        onClose();
+        navigation.navigate('LocationPermission', {});
+        return;
+      }
       setError('Could not load recommendations. Please try again.');
       setStep('alternatives');
     }
@@ -117,7 +134,7 @@ export function RecommendationModal({
       friction: 11,
       useNativeDriver: true,
     }).start();
-  }, [slideAnim]);
+  }, [slideAnim, navigation, onClose]);
 
   const handleBack = () => {
     animateTransition('favorites', 'back', () => {
@@ -166,8 +183,13 @@ export function RecommendationModal({
     return (
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {favoriteLots.map((lot) => {
-          const pct = Math.round(lot.occupancy_rate * 100);
-          const color = getOccupancyColor(pct);
+          // Favorite-list lots come from `GET /lots` which redacts live data
+          // for non-contributors. Render a neutral "locked" badge in that
+          // case; recommendations themselves are contributor-gated so the
+          // alternatives view below always has live data.
+          const isLocked = lot.occupancy_rate == null;
+          const pct = isLocked ? null : Math.round(lot.occupancy_rate! * 100);
+          const color = isLocked ? colors.neutralPin : getOccupancyColor(pct!);
           return (
             <View key={lot.lot_id} style={styles.lotRow}>
               {/* Tap row → go to forecast */}
@@ -176,25 +198,29 @@ export function RecommendationModal({
                 onPress={() => handleSelectLot(lot.lot_id, lot.lot_name)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel={`${lot.lot_name}, ${pct}% full`}
+                accessibilityLabel={isLocked ? `${lot.lot_name}, live occupancy locked` : `${lot.lot_name}, ${pct}% full`}
               >
                 <View style={styles.lotHeader}>
                   <Text style={styles.lotName}>{lot.lot_name}</Text>
                   <View style={[styles.pctBadge, { backgroundColor: color }]}>
-                    <Text style={styles.pctBadgeText}>{pct}%</Text>
+                    <Text style={styles.pctBadgeText}>{isLocked ? 'Locked' : `${pct}%`}</Text>
                   </View>
                 </View>
                 <Text style={styles.occupancyText}>
-                  ~{lot.estimated_occupancy ?? lot.current_occupancy} / {lot.capacity} spots taken
+                  {isLocked
+                    ? `${lot.capacity} total spots`
+                    : `~${lot.estimated_occupancy ?? lot.current_occupancy ?? 0} / ${lot.capacity} spots taken`}
                 </Text>
-                <View style={styles.progressBarBg}>
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      { width: `${pct}%`, backgroundColor: color },
-                    ]}
-                  />
-                </View>
+                {!isLocked && pct != null && (
+                  <View style={styles.progressBarBg}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        { width: `${pct}%`, backgroundColor: color },
+                      ]}
+                    />
+                  </View>
+                )}
               </TouchableOpacity>
 
               {/* Tap icon → find alternatives */}
@@ -251,11 +277,14 @@ export function RecommendationModal({
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {sourceLot && (
           <Text style={styles.stepHint}>
-            Alternatives to {sourceLot.lot_name} ({Math.round(sourceLot.occupancy_rate * 100)}% full)
+            Alternatives to {sourceLot.lot_name} ({Math.round((sourceLot.occupancy_rate ?? 0) * 100)}% full)
           </Text>
         )}
         {recommendations.map((rec) => {
-          const pct = Math.round(rec.occupancy_rate * 100);
+          // The recommendations endpoint is contributor-gated, so live fields
+          // are always present here. `?? 0` keeps the type checker happy
+          // without changing runtime behavior on the success path.
+          const pct = Math.round((rec.occupancy_rate ?? 0) * 100);
           const color = getOccupancyColor(pct);
           return (
             <TouchableOpacity

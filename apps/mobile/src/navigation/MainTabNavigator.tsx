@@ -36,7 +36,7 @@ const GuestSignInScreen: React.FC = () => {
       <Icon name="person-circle-outline" size={72} color={colors.primary} />
       <Text style={[guestStyles.title, { color: colors.textPrimary }]}>Sign in to SharkPark</Text>
       <Text style={[guestStyles.subtitle, { color: colors.gray }]}>
-        Create reports, save favourite lots, and get personalised alerts.
+        Create reports, save favorite lots, and get personalized alerts.
       </Text>
       <TouchableOpacity
         style={[guestStyles.button, { backgroundColor: colors.primary, opacity: isLoading ? 0.6 : 1 }]}

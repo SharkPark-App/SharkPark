@@ -29,6 +29,7 @@ import { Text } from '../components/CustomText';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { locationService } from '../services/locationService';
+import { registerContributorGrant } from '../services/api/contributor';
 import { LOCATION_DATA_POINTS } from '../constants/permissions';
 import type { MapStackParamList } from '../types/navigation';
 
@@ -59,6 +60,12 @@ const LocationPermissionScreen: React.FC = () => {
     setIsRequesting(true);
     try {
       const granted = await locationService.requestPermissions();
+      if (granted) {
+        // Register the permission-grant grace pass with the backend so the
+        // ContributorGuard accepts reads for the next 24h even before the
+        // user has driven into a lot. Best-effort, swallows network errors.
+        await registerContributorGrant({ force: true });
+      }
       setStep(granted ? 'always' : 'done');
     } catch {
       setStep('done');
@@ -74,6 +81,9 @@ const LocationPermissionScreen: React.FC = () => {
     setIsRequesting(true);
     try {
       await locationService.requestPermissions();
+      // Refresh the grant — the user just escalated to Always Allow, which
+      // is its own permission state worth re-registering.
+      await registerContributorGrant({ force: true });
       setStep('done');
     } catch {
       setStep('done');
@@ -106,7 +116,7 @@ const LocationPermissionScreen: React.FC = () => {
             You're all set
           </Text>
           <Text style={[styles.doneSubtitle, { color: colors.gray }]}>
-            SharkPark will now show live occupancy data. You can change location permissions any time in your device settings.
+            Live occupancy is unlocked for the next 24 hours. To keep it flowing after that, just have SharkPark open (or running in the background) the next time you park on campus — your phone handles the lot detection locally and only sends an anonymous "entered Lot G1"-style event. No GPS trails, no identity, nothing tying it back to you. You can change location permissions any time in your device settings.
           </Text>
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: COLORS.primary }]}
@@ -143,9 +153,9 @@ const LocationPermissionScreen: React.FC = () => {
           </Text>
 
           <View style={[styles.card, { backgroundColor: colors.white, borderColor: colors.borderGray }]}>
-            <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Background collection</Text>
+            <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>How background mode works</Text>
             <Text style={[styles.cardBody, { color: colors.gray }]}>
-              Only lot-level entry/exit events are sent — no GPS tracks, no identity. Battery impact is minimal (OS-level geofencing, not continuous GPS).
+              Your phone uses the operating system's geofencing (not continuous GPS) to notice when you cross a lot's boundary. The detection runs entirely on-device — only the resulting anonymous entry/exit event is sent to our servers. Battery impact is minimal.
             </Text>
           </View>
 
@@ -182,12 +192,15 @@ const LocationPermissionScreen: React.FC = () => {
           Live data needs your help
         </Text>
         <Text style={[styles.body, { color: colors.gray }]}>
-          SharkPark's real-time occupancy is crowdsourced. To read live lot data, your device needs to contribute anonymous parking events — which requires location access.
+          SharkPark's real-time occupancy is crowdsourced. Your phone watches for campus parking lots <Text style={{ fontFamily: TYPOGRAPHY.fontFamily.semibold }}>locally on-device</Text> and, when you park or leave, sends a single anonymous event (just the lot ID and a timestamp) so other students can see live availability.
+        </Text>
+        <Text style={[styles.body, { color: colors.gray }]}>
+          We never receive your GPS coordinates, your route, or anything that could identify you. The detection itself happens on your phone — our servers only ever see "someone parked in Lot G1".
         </Text>
 
         {/* What is / isn't collected */}
         <View style={[styles.card, { backgroundColor: colors.white, borderColor: colors.borderGray }]}>
-          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>What SharkPark collects</Text>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>What leaves your phone</Text>
           {DATA_POINTS.map((point) => (
             <View key={point.text} style={styles.bulletRow}>
               <Icon

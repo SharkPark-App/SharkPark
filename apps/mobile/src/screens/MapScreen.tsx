@@ -34,9 +34,24 @@ const InteractiveLot: React.FC<{
   onPress: (lot: ParkingLotResponse) => void;
   colors: ThemeColors;
 }> = ({ lot, onPress, colors }) => {
-  const occupancyColor = getOccupancyColor(lot.current_occupancy);
+  // `current_occupancy` is a raw device count, not a percentage. Use the
+  // backend-supplied `occupancy_rate` (0–1) — falling back to estimated /
+  // capacity — so pin colors agree with the lot detail / recommendation UIs.
+  //
+  // When ALL three are null, the user is a non-contributor: the backend
+  // redacted live data and we render a neutral steel-blue pin (lot letter
+  // still visible) so the map is still useful for navigation/discovery.
+  const liveOccupancy =
+    lot.occupancy_rate ?? lot.estimated_occupancy ?? lot.current_occupancy;
+  const isRedacted = liveOccupancy === null;
+  const pct = isRedacted
+    ? null
+    : Math.round(
+        (lot.occupancy_rate ?? liveOccupancy / Math.max(lot.capacity, 1)) * 100,
+      );
+  const occupancyColor = isRedacted ? colors.neutralPin : getOccupancyColor(pct!);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
-  
+
   return (
     <Marker
       coordinate={{ latitude: lot.center_lat, longitude: lot.center_lng }}
@@ -53,7 +68,11 @@ const InteractiveLot: React.FC<{
           }
         ]}
         accessibilityRole="button"
-        accessibilityLabel={`${lot.lot_name} parking lot, ${lot.current_occupancy} percent full`}
+        accessibilityLabel={
+          isRedacted
+            ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
+            : `${lot.lot_name} parking lot, ${pct} percent full`
+        }
       >
         <Text
           style={[styles.lotText, { color: colors.white }]}

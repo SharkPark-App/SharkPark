@@ -20,6 +20,7 @@ import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
 import carBluetooth from '../services/carBluetooth';
 import { isOnCampus } from '../utils/geoHelpers';
 import { lotsApi } from '../services/api';
+import { registerContributorGrant } from '../services/api/contributor';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
@@ -659,7 +660,16 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         await restoreParkingState();
 
         await locationService.initialize();
-        await locationService.requestPermissions();
+        const permissionGranted = await locationService.requestPermissions();
+
+        // If the OS already reports authorization (returning user, or fresh
+        // grant from this very call), refresh the backend's permission-grant
+        // grace pass so ContributorGuard accepts reads for the next 24h even
+        // before the user has driven into a lot. Best-effort — the helper
+        // dedupes itself and swallows network errors.
+        if (permissionGranted) {
+          void registerContributorGrant();
+        }
 
         const allLots = await lotsApi.getAllLots();
 

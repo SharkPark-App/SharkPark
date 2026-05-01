@@ -15,8 +15,9 @@ export interface DataPoint {
 }
 
 export const LOCATION_DATA_POINTS: DataPoint[] = [
-  { icon: 'checkmark-circle-outline', text: 'When you enter or leave a campus parking lot' },
-  { icon: 'checkmark-circle-outline', text: 'Which lot you parked in (anonymous lot ID only)' },
-  { icon: 'close-circle-outline',     text: 'Your exact GPS coordinates — never stored' },
-  { icon: 'close-circle-outline',     text: 'Your identity or personal information' },
+  { icon: 'checkmark-circle-outline', text: 'Lot entry/exit events (just the anonymous lot ID + a timestamp)' },
+  { icon: 'checkmark-circle-outline', text: 'A short-lived random device ID so we can dedupe contributions' },
+  { icon: 'close-circle-outline',     text: 'Your GPS coordinates — never sent or stored on our servers' },
+  { icon: 'close-circle-outline',     text: 'Your name, email, or any data tying events back to you' },
+  { icon: 'close-circle-outline',     text: 'A location history, breadcrumb trail, or "where you\'ve been" log' },
 ];
