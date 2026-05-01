@@ -142,3 +142,35 @@ project.ext.vectoricons = [
     iconFontsDir: "../../../../node_modules/react-native-vector-icons/Fonts"
 ]
 apply from: file("../../../../node_modules/react-native-vector-icons/fonts.gradle")
+
+// Fail loudly if release signing secrets are missing when a release build is requested.
+// Required env vars (set as GitHub Actions secrets in CI, or via local env for manual builds):
+//   RELEASE_KEYSTORE_PATH, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD
+// Without this guard the silent `?: ""` fallbacks in signingConfigs.release would produce
+// an unsigned-or-garbage-signed APK/AAB that Play Console rejects only after upload.
+gradle.taskGraph.whenReady { graph ->
+    def needsReleaseSigning = graph.allTasks.any { task ->
+        task.name ==~ /(?i).*(assemble|bundle).*Release/
+    }
+    if (needsReleaseSigning) {
+        def required = [
+            'RELEASE_KEYSTORE_PATH',
+            'RELEASE_KEYSTORE_PASSWORD',
+            'RELEASE_KEY_ALIAS',
+            'RELEASE_KEY_PASSWORD',
+        ]
+        def missing = required.findAll { !System.getenv(it) }
+        if (missing) {
+            throw new GradleException(
+                "Missing required release signing env vars: ${missing.join(', ')}. " +
+                "Set these as GitHub Actions secrets (or local env) before assembling/bundling a release build."
+            )
+        }
+        def keystorePath = System.getenv('RELEASE_KEYSTORE_PATH')
+        if (!file(keystorePath).exists()) {
+            throw new GradleException(
+                "RELEASE_KEYSTORE_PATH points to a file that does not exist: ${keystorePath}"
+            )
+        }
+    }
+}
