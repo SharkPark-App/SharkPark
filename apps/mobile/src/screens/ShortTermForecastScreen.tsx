@@ -150,7 +150,7 @@ export function ShortTermForecastScreen() {
     if (!isAuthenticated || isGuest) {
       Alert.alert(
         'Sign in to save favorites',
-        'Save your favorite lots to find them quickly. Sign in with your SharkMail to enable favorites.',
+        'Save your favorite lots to find them quickly. Sign in with your CSULB account to enable favorites.',
         [
           { text: 'Not Now', style: 'cancel' },
           {

@@ -159,6 +159,26 @@ class LocationService {
   }
 
   /**
+   * Returns true if the OS currently grants us at least "When In Use"
+   * background-location authorization. Used by the AppState foreground
+   * hook to detect that the user has revoked permission while we were
+   * backgrounded so we can immediately notify the backend.
+   */
+  async isAuthorized(): Promise<boolean> {
+    try {
+      const provider = await BackgroundGeolocation.getProviderState();
+      return (
+        provider.status === BackgroundGeolocation.AuthorizationStatus.Always ||
+        provider.status === BackgroundGeolocation.AuthorizationStatus.WhenInUse
+      );
+    } catch {
+      // If we can't read the state, don't claim revocation — the next
+      // gated read will reveal the truth via the 403 path.
+      return true;
+    }
+  }
+
+  /**
    * Request location permissions. The SDK auto-requests on start/startGeofences,
    * but this allows explicit control for permission UI flows.
    */

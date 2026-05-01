@@ -54,6 +54,35 @@ export async function registerContributorGrant(opts: { force?: boolean } = {}): 
   return inFlight;
 }
 
+/**
+ * POST /contributor/revoke. Tells the backend to immediately stop treating
+ * this device as a contributor (clears `granted_at`, backdates
+ * `last_seen_at`).
+ *
+ * Call this whenever the mobile client detects that background-location
+ * permission has been revoked (Settings toggle, "Don't Allow" on a re-prompt,
+ * SDK reports `Denied`/`Restricted`). Without it, the server will keep
+ * serving live data for up to CONTRIBUTOR_GRANT_TTL_MS (24h) after revocation
+ * because the server has no other way of knowing.
+ *
+ * Idempotent server-side. Best-effort client-side: failures are logged but
+ * never thrown. Also resets the in-process grant dedup state so the next
+ * legitimate grant call goes through.
+ */
+export async function revokeContributorGrant(): Promise<void> {
+  // Always reset local dedup state so a subsequent re-grant isn't deduped
+  // against the (now invalidated) prior grant.
+  lastGrantAt = 0;
+
+  try {
+    await apiService.post(API_CONFIG.ENDPOINTS.CONTRIBUTOR_REVOKE, {});
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[contributor] revoke failed (server may still consider device a contributor until grant TTL expires):', err);
+    }
+  }
+}
+
 /** Test-only reset hook. */
 export function __resetContributorGrantStateForTests(): void {
   inFlight = null;

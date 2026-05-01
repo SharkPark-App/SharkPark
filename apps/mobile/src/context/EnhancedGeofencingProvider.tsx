@@ -20,7 +20,7 @@ import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
 import carBluetooth from '../services/carBluetooth';
 import { isOnCampus } from '../utils/geoHelpers';
 import { lotsApi } from '../services/api';
-import { registerContributorGrant } from '../services/api/contributor';
+import { registerContributorGrant, revokeContributorGrant } from '../services/api/contributor';
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
@@ -589,8 +589,23 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   // App state monitoring for behavioral context
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      const previousAppState = appState.current;
       appState.current = nextAppState;
-      
+
+      // Returning to the foreground is the right moment to verify that the
+      // OS still considers us authorized. Users routinely revoke permission
+      // from Settings while we're backgrounded, and iOS doesn't always fire
+      // a ProviderChange we can latch onto. Re-check on every active
+      // transition and revoke server-side if the answer is no.
+      if (nextAppState === 'active' && previousAppState !== 'active') {
+        void (async () => {
+          const stillAuthorized = await locationService.isAuthorized();
+          if (!stillAuthorized) {
+            void revokeContributorGrant();
+          }
+        })();
+      }
+
       if (currentLotIdRef.current) {
         parkingValidationService.recordBehavioralEvent('GPS_ACCURACY_CHANGE', {
           raw_data: {
@@ -641,6 +656,12 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     const removeError = locationService.onError((error) => {
       if (!destroyed && error.code === 'PERMISSION_DENIED') {
+        // Tell the backend to stop treating this device as a contributor
+        // immediately. Without this, the server keeps serving live data
+        // for up to CONTRIBUTOR_GRANT_TTL_MS (24h) after the user revoked
+        // permission, because it has no other signal that anything changed.
+        void revokeContributorGrant();
+
         Alert.alert(
           'Location Permission Required',
           'SharkPark needs "Always Allow" location access to detect when you enter and exit parking lots. Please update your settings.',
