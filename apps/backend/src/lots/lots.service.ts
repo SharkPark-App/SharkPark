@@ -589,7 +589,9 @@ export class LotsService {
         predictions.push({
           target_date: dateStr,
           target_hour: hour,
-          predicted_occupancy: Math.min(baseRate, 1),
+          // baseRate is bounded by hourlyPattern (max 0.85) * dayMultiplier (max 1.0),
+          // so it can never exceed 1; no upper clamp needed here.
+          predicted_occupancy: baseRate,
           confidence_lower: Math.max(0, baseRate - margin),
           confidence_upper: Math.min(1, baseRate + margin),
           model_version: 'heuristic-v1',

@@ -229,7 +229,7 @@ class LotsApiService {
    * Uses cache for offline support; falls back to local heuristic if
    * neither the backend nor a cached result is available.
    */
-  async getForecast(lot: ParkingLotResponse): Promise<Array<{
+  async getForecast(lot: Pick<ParkingLotResponse, 'lot_id' | 'confidence'>): Promise<Array<{
     time: string;
     occupancy: number;
     lowerBound: number;
@@ -283,7 +283,7 @@ class LotsApiService {
   /**
    * Generate forecast data for short-term predictions (local fallback)
    */
-  generateForecast(lot: ParkingLotResponse): Array<{
+  generateForecast(lot: Pick<ParkingLotResponse, 'confidence'>): Array<{
     time: string;
     occupancy: number;
     lowerBound: number;
