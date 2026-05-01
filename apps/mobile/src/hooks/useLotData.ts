@@ -126,8 +126,35 @@ export function useLotData(lotId: string): UseLotDataReturn {
   // Re-fetch the moment our contributor status changes (grant or revoke)
   // so the locked badge / occupancy_rate flips without waiting for the
   // next poll tick. Fires from registerContributorGrant / revokeContributorGrant.
+  //
+  // Critical: on 'revoked' we MUST clobber the cached lot's live fields
+  // *immediately*, not just refetch. The /contributor/revoke POST and our
+  // refetch GET are two independent network round-trips, and the GET
+  // frequently wins the race — returning the same colored/contributor view
+  // we had before the toggle. Server reconciliation happens on the
+  // follow-up refetch; the client-side redaction guarantees the UI flips
+  // instantly to match OS truth.
   useEffect(() => {
-    return subscribeContributorState(() => {
+    return subscribeContributorState((state) => {
+      if (state === 'revoked') {
+        setLot((prev) =>
+          prev
+            ? {
+                ...prev,
+                current_occupancy: null,
+                available: null,
+                occupancy_rate: null,
+                fill_status: null,
+                estimated_occupancy: null,
+                estimated_available: null,
+                raw_occupancy: null,
+                effective_penetration_rate: null,
+              }
+            : prev,
+        );
+        setForecast([]);
+        setBgLocationRequired(true);
+      }
       refreshLot();
     });
   }, [refreshLot]);
@@ -225,9 +252,26 @@ export function useLotsList(filters?: {
     return () => sub.remove();
   }, [refreshLots]);
 
-  // Re-fetch on contributor grant/revoke (see useLotData above for rationale).
+  // Re-fetch on contributor grant/revoke. On 'revoked' we redact the
+  // cached lots client-side first to beat the GET-vs-revoke-POST race —
+  // see useLotData above for the rationale.
   useEffect(() => {
-    return subscribeContributorState(() => {
+    return subscribeContributorState((state) => {
+      if (state === 'revoked') {
+        setLots((prev) =>
+          prev.map((lot) => ({
+            ...lot,
+            current_occupancy: null,
+            available: null,
+            occupancy_rate: null,
+            fill_status: null,
+            estimated_occupancy: null,
+            estimated_available: null,
+            raw_occupancy: null,
+            effective_penetration_rate: null,
+          })),
+        );
+      }
       refreshLots();
     });
   }, [refreshLots]);

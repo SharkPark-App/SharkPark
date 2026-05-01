@@ -60,9 +60,26 @@ export function useAllLotsData(): UseAllLotsDataReturn {
 
   // Re-fetch the moment our contributor status flips so the map's pin
   // colors update immediately on grant/revoke instead of lagging by up
-  // to one full poll interval (30s).
+  // to one full poll interval (30s). On 'revoked' we redact the cached
+  // lots client-side first to beat the GET-vs-revoke-POST race; the
+  // server's redacted response will reconcile on the follow-up refetch.
   useEffect(() => {
-    return subscribeContributorState(() => {
+    return subscribeContributorState((state) => {
+      if (state === 'revoked') {
+        setLots((prev) =>
+          prev.map((lot) => ({
+            ...lot,
+            current_occupancy: null,
+            available: null,
+            occupancy_rate: null,
+            fill_status: null,
+            estimated_occupancy: null,
+            estimated_available: null,
+            raw_occupancy: null,
+            effective_penetration_rate: null,
+          })),
+        );
+      }
       fetchLots();
     });
   }, []);
