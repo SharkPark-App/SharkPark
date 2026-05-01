@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { lotsApi, ParkingLotResponse, OccupancyHistoryRecord, ApiError, BackgroundLocationRequiredError } from '../services/api';
+import { subscribeContributorState } from '../services/api/contributor';
 
 /** How often to re-fetch lot data (ms) */
 const LOT_DETAIL_POLL_MS = 60_000;  // 60 seconds
@@ -122,6 +123,15 @@ export function useLotData(lotId: string): UseLotDataReturn {
     return () => sub.remove();
   }, [refreshLot]);
 
+  // Re-fetch the moment our contributor status changes (grant or revoke)
+  // so the locked badge / occupancy_rate flips without waiting for the
+  // next poll tick. Fires from registerContributorGrant / revokeContributorGrant.
+  useEffect(() => {
+    return subscribeContributorState(() => {
+      refreshLot();
+    });
+  }, [refreshLot]);
+
   return {
     lot,
     history,
@@ -213,6 +223,13 @@ export function useLotsList(filters?: {
       appState.current = next;
     });
     return () => sub.remove();
+  }, [refreshLots]);
+
+  // Re-fetch on contributor grant/revoke (see useLotData above for rationale).
+  useEffect(() => {
+    return subscribeContributorState(() => {
+      refreshLots();
+    });
   }, [refreshLots]);
 
   return {

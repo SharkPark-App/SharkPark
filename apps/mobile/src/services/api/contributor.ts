@@ -20,6 +20,33 @@ let lastGrantAt = 0;
 // plenty of headroom while keeping cold-start traffic negligible.
 const MIN_REFRESH_MS = 60 * 60 * 1000;
 
+// ── Contributor-state pub/sub ───────────────────────────────────────────────────────────
+// Lots-list / lot-detail screens need to refetch the moment our contributor
+// status flips, so locked badges / pin colors don't lag the OS truth by up
+// to a full poll interval (30–60s). Hooks call `subscribeContributorState`
+// in a useEffect; we fire 'granted' from registerContributorGrant() and
+// 'revoked' from revokeContributorGrant().
+export type ContributorState = 'granted' | 'revoked';
+type Listener = (state: ContributorState) => void;
+const listeners = new Set<Listener>();
+
+export function subscribeContributorState(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function emitContributorState(state: ContributorState): void {
+  for (const listener of listeners) {
+    try {
+      listener(state);
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('[contributor] listener threw:', err);
+      }
+    }
+  }
+}
+
 /**
  * POST /contributor/grant. The x-device-id header is added automatically by
  * apiService. The body is intentionally empty — the device id IS the payload.
@@ -42,6 +69,9 @@ export async function registerContributorGrant(opts: { force?: boolean } = {}): 
       // ignore the body.
       await apiService.post(API_CONFIG.ENDPOINTS.CONTRIBUTOR_GRANT, {});
       lastGrantAt = Date.now();
+      // Wake up subscribers (lot hooks) so they refetch with the new
+      // contributor identity — don't make them wait for the next poll tick.
+      emitContributorState('granted');
     } catch (err) {
       if (__DEV__) {
         console.warn('[contributor] grant registration failed (will retry on next opportunity):', err);
@@ -74,6 +104,11 @@ export async function revokeContributorGrant(): Promise<void> {
   // against the (now invalidated) prior grant.
   lastGrantAt = 0;
 
+  // Wake up subscribers immediately — even before the network round-trip
+  // completes — so the UI flips to neutral pins / locked badges without
+  // waiting on the server. The next refetch will see the redacted payload.
+  emitContributorState('revoked');
+
   try {
     await apiService.post(API_CONFIG.ENDPOINTS.CONTRIBUTOR_REVOKE, {});
   } catch (err) {
@@ -87,4 +122,5 @@ export async function revokeContributorGrant(): Promise<void> {
 export function __resetContributorGrantStateForTests(): void {
   inFlight = null;
   lastGrantAt = 0;
+  listeners.clear();
 }

@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { lotsApi, ParkingLotResponse } from '../services/api';
+import { subscribeContributorState } from '../services/api/contributor';
 
 /** How often to re-fetch all lots data (ms) */
 const ALL_LOTS_POLL_MS = 30_000; // 30 seconds
@@ -55,6 +56,15 @@ export function useAllLotsData(): UseAllLotsDataReturn {
       appState.current = next;
     });
     return () => sub.remove();
+  }, []);
+
+  // Re-fetch the moment our contributor status flips so the map's pin
+  // colors update immediately on grant/revoke instead of lagging by up
+  // to one full poll interval (30s).
+  useEffect(() => {
+    return subscribeContributorState(() => {
+      fetchLots();
+    });
   }, []);
 
   return {

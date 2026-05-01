@@ -38,6 +38,14 @@ class LocationService {
   private isInitialized = false;
   private trackingMode: 'off' | 'geofences' | 'full' = 'off';
 
+  // Tracks the last authorization status we reported as PERMISSION_DENIED.
+  // iOS frequently fires multiple ProviderChange events for a single user
+  // toggle (one per backing flag flip — enabled, gps, network, etc.), so
+  // without this guard a single revoke surfaces 2–3 duplicate alerts.
+  // Reset to null whenever we observe an authorized state again so the
+  // *next* revoke transition fires exactly one notification.
+  private lastReportedDeniedStatus: number | null = null;
+
   // Event callbacks
   private geofenceCallbacks: GeofenceCallback[] = [];
   private locationCallbacks: LocationCallback[] = [];
@@ -452,21 +460,29 @@ class LocationService {
       });
     }
 
-    // Detect permission downgrade
-    if (
+    const isDenied =
       event.status === BackgroundGeolocation.AuthorizationStatus.Denied ||
-      event.status === BackgroundGeolocation.AuthorizationStatus.NotDetermined
-    ) {
-      this.errorCallbacks.forEach((cb) => {
-        try {
-          cb({
-            code: 'PERMISSION_DENIED',
-            message: 'Location permissions were revoked. Geofencing requires at least "When In Use" permission.',
-          });
-        } catch (e) {
-          console.error('[LocationService] Error in error callback:', e);
-        }
-      });
+      event.status === BackgroundGeolocation.AuthorizationStatus.NotDetermined;
+
+    if (isDenied) {
+      // Only surface the PERMISSION_DENIED error once per
+      // authorized→denied transition. Suppresses iOS's chatty multi-fire.
+      if (this.lastReportedDeniedStatus !== event.status) {
+        this.lastReportedDeniedStatus = event.status;
+        this.errorCallbacks.forEach((cb) => {
+          try {
+            cb({
+              code: 'PERMISSION_DENIED',
+              message: 'Location permissions were revoked. Geofencing requires at least "When In Use" permission.',
+            });
+          } catch (e) {
+            console.error('[LocationService] Error in error callback:', e);
+          }
+        });
+      }
+    } else {
+      // Authorized again — arm the dedup so a future revoke fires once.
+      this.lastReportedDeniedStatus = null;
     }
 
     this.providerCallbacks.forEach((cb) => {
