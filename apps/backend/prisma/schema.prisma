@@ -69,7 +69,6 @@ model Lot {
   occupancy_events    OccupancyEvent[]
   occupancy_snapshots OccupancySnapshot[]
   device_states       DeviceState[]
-  event_impacts       EventImpact[]
   predictions_short   PredictionShortTerm[]
   predictions_long    PredictionLongTerm[]
   reports             Report[]
@@ -190,24 +189,9 @@ model CampusEvent {
   created_at          DateTime        @default(now())
 
   school  School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  impacts EventImpact[]
 
   @@index([school_id])
   @@map("campus_events")
-}
-
-model EventImpact {
-  id                       String      @id @default(cuid())
-  event_id                 String
-  lot_id                   String
-  impact_level             ImpactLevel
-  expected_increase_percent Float
-
-  event CampusEvent @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  lot   Lot         @relation(fields: [lot_id], references: [id], onDelete: Cascade)
-
-  @@unique([event_id, lot_id])
-  @@map("event_impacts")
 }
 
 model Weather {
@@ -343,12 +327,6 @@ enum CampusEventType {
   ACADEMIC
   PERFORMANCE
   OTHER
-}
-
-enum ImpactLevel {
-  LOW
-  MEDIUM
-  HIGH
 }
 
 enum ReportType {

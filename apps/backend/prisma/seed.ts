@@ -5,7 +5,7 @@
  * - 1 school (CSULB)
  * - 28 parking lots with CSULB-accurate locations and capacities
  * - 5 user profiles with favorites
- * - 4 campus events with parking impacts
+ * - 4 campus events for display in the mobile app
  * - Weather data
  * - 7 days of historical occupancy snapshots
  * - Sample occupancy events (ENTER/EXIT from geofencing)
@@ -15,7 +15,7 @@
  */
 
 import 'dotenv/config';
-import { PrismaClient, UserType, CampusEventType, ImpactLevel, EventType, ConfidenceLevel } from '@prisma/client';
+import { PrismaClient, UserType, CampusEventType, EventType, ConfidenceLevel } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
@@ -83,12 +83,6 @@ const campusEvents = [
     start_time: new Date('2025-12-15T19:00:00Z'),
     end_time: new Date('2025-12-15T21:30:00Z'),
     expected_attendance: 4500,
-    impacts: [
-      { lot_id: 'G2', impact_level: ImpactLevel.HIGH, expected_increase_percent: 40 },
-      { lot_id: 'G1', impact_level: ImpactLevel.MEDIUM, expected_increase_percent: 25 },
-      { lot_id: 'G7', impact_level: ImpactLevel.LOW, expected_increase_percent: 10 },
-      { lot_id: 'G4', impact_level: ImpactLevel.LOW, expected_increase_percent: 15 },
-    ],
   },
   {
     event_name: 'Spring Commencement 2025',
@@ -97,14 +91,6 @@ const campusEvents = [
     start_time: new Date('2025-05-17T09:00:00Z'),
     end_time: new Date('2025-05-17T18:00:00Z'),
     expected_attendance: 12000,
-    impacts: [
-      { lot_id: 'G2', impact_level: ImpactLevel.HIGH, expected_increase_percent: 50 },
-      { lot_id: 'G1', impact_level: ImpactLevel.HIGH, expected_increase_percent: 50 },
-      { lot_id: 'G7', impact_level: ImpactLevel.HIGH, expected_increase_percent: 35 },
-      { lot_id: 'G4', impact_level: ImpactLevel.HIGH, expected_increase_percent: 40 },
-      { lot_id: 'G3', impact_level: ImpactLevel.HIGH, expected_increase_percent: 30 },
-      { lot_id: 'G9', impact_level: ImpactLevel.MEDIUM, expected_increase_percent: 20 },
-    ],
   },
   {
     event_name: 'Winter Concert Series',
@@ -113,10 +99,6 @@ const campusEvents = [
     start_time: new Date('2025-12-20T19:30:00Z'),
     end_time: new Date('2025-12-20T21:30:00Z'),
     expected_attendance: 800,
-    impacts: [
-      { lot_id: 'G9', impact_level: ImpactLevel.MEDIUM, expected_increase_percent: 15 },
-      { lot_id: 'G4', impact_level: ImpactLevel.LOW, expected_increase_percent: 10 },
-    ],
   },
   {
     event_name: 'Spring Career Fair',
@@ -125,12 +107,6 @@ const campusEvents = [
     start_time: new Date('2025-01-15T10:00:00Z'),
     end_time: new Date('2025-01-15T16:00:00Z'),
     expected_attendance: 2500,
-    impacts: [
-      { lot_id: 'G4', impact_level: ImpactLevel.HIGH, expected_increase_percent: 30 },
-      { lot_id: 'G5', impact_level: ImpactLevel.HIGH, expected_increase_percent: 28 },
-      { lot_id: 'G9', impact_level: ImpactLevel.MEDIUM, expected_increase_percent: 15 },
-      { lot_id: 'G10', impact_level: ImpactLevel.MEDIUM, expected_increase_percent: 10 },
-    ],
   },
 ];
 
@@ -146,7 +122,6 @@ async function main() {
   await prisma.deviceState.deleteMany();
   await prisma.occupancyEvent.deleteMany();
   await prisma.occupancySnapshot.deleteMany();
-  await prisma.eventImpact.deleteMany();
   await prisma.userFavorite.deleteMany();
   await prisma.predictionShortTerm.deleteMany();
   await prisma.predictionLongTerm.deleteMany();
@@ -248,12 +223,11 @@ async function main() {
   }
   console.log(`[seed] Seeded ${testUsers.length} users with ${totalFavorites} favorites\n`);
 
-  // 5. Seed Campus Events & Impacts
+  // 5. Seed Campus Events
   console.log('[seed] Seeding campus events...');
-  let totalImpacts = 0;
 
   for (const event of campusEvents) {
-    const created = await prisma.campusEvent.create({
+    await prisma.campusEvent.create({
       data: {
         school_id: school.id,
         event_name: event.event_name,
@@ -264,23 +238,8 @@ async function main() {
         expected_attendance: event.expected_attendance,
       },
     });
-
-    for (const impact of event.impacts) {
-      const lotDbId = lotMap.get(impact.lot_id);
-      if (!lotDbId) continue;
-
-      await prisma.eventImpact.create({
-        data: {
-          event_id: created.id,
-          lot_id: lotDbId,
-          impact_level: impact.impact_level,
-          expected_increase_percent: impact.expected_increase_percent,
-        },
-      });
-      totalImpacts++;
-    }
   }
-  console.log(`[seed] Seeded ${campusEvents.length} events with ${totalImpacts} impacts\n`);
+  console.log(`[seed] Seeded ${campusEvents.length} events\n`);
 
   // 6. Seed Weather
   console.log('[seed] Seeding weather data...');
@@ -452,7 +411,6 @@ async function main() {
     users: await prisma.user.count(),
     favorites: await prisma.userFavorite.count(),
     events: await prisma.campusEvent.count(),
-    impacts: await prisma.eventImpact.count(),
     weather: await prisma.weather.count(),
     snapshots: await prisma.occupancySnapshot.count(),
     occEvents: await prisma.occupancyEvent.count(),
