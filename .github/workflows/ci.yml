@@ -111,13 +111,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-turbo-
 
+      # NOTE: exact-match only (no restore-keys). Pods/Local Podspecs is keyed
+      # by Podfile.lock content; restoring a stale prefix-matched cache from a
+      # different lockfile makes `pod install` fail with "version of the
+      # dependency ... differs from the version stored in `Pods/Local Podspecs`"
+      # (e.g. when a PR's RN version differs from a previously-cached one).
       - name: Cache CocoaPods
         uses: actions/cache@v5
         with:
           path: apps/mobile/ios/Pods
           key: ${{ runner.os }}-pods-${{ hashFiles('apps/mobile/ios/Podfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pods-
 
       - name: Install dependencies
         run: pnpm install
