@@ -88,6 +88,7 @@ const campusEvents = [
   {
     external_id: 'seed-basketball-home',
     event_name: "Men's Basketball — Home Game",
+    description: 'Come cheer on the 49ers as they take on our rivals in an exciting home game at the Walter Pyramid! Free entry for students with valid ID. Go Beach!',
     location: 'Walter Pyramid',
     start_time: daysFromNow(0, 19),
     end_time: daysFromNow(0, 21),
@@ -102,6 +103,7 @@ const campusEvents = [
   {
     external_id: 'seed-career-fair',
     event_name: 'Spring Career Fair',
+    description: 'Connect with potential employers and explore career opportunities at our annual Spring Career Fair!',
     location: 'USU Ballroom',
     start_time: daysFromNow(4, 10),
     end_time: daysFromNow(4, 16),
@@ -276,6 +278,7 @@ async function main() {
         school_id: school.id,
         external_id: event.external_id,
         event_name: event.event_name,
+        description: event.description,
         location: event.location,
         start_time: event.start_time,
         end_time: event.end_time,
@@ -454,7 +457,7 @@ async function main() {
     lots: await prisma.lot.count(),
     users: await prisma.user.count(),
     favorites: await prisma.userFavorite.count(),
-    events: await prisma.campusEvent.count(),
+    campusEvents: await prisma.campusEvent.count(),
     weather: await prisma.weather.count(),
     snapshots: await prisma.occupancySnapshot.count(),
     occEvents: await prisma.occupancyEvent.count(),
