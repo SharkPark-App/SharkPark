@@ -15,7 +15,7 @@
  */
 
 import 'dotenv/config';
-import { PrismaClient, UserType, CampusEventType, EventType, ConfidenceLevel } from '@prisma/client';
+import { PrismaClient, UserType, EventType, ConfidenceLevel } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
@@ -72,41 +72,46 @@ const testUsers = [
 ];
 
 // ────────────────────────────────────────────────────────────
-// Campus Events (mapped to CampusEventType enum)
+// Campus Events — seed data for local development.
+// In production these are populated by the fetch-events cron (CampusLabs scraper).
+// Dates are relative to now so the events always fall within the 7-day query window.
 // ────────────────────────────────────────────────────────────
+
+function daysFromNow(days: number, hour = 19): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(hour, 0, 0, 0);
+  return d;
+}
 
 const campusEvents = [
   {
-    event_name: "Men's Basketball vs UC Irvine",
-    event_type: CampusEventType.ATHLETIC,
+    external_id: 'seed-basketball-home',
+    event_name: "Men's Basketball — Home Game",
     location: 'Walter Pyramid',
-    start_time: new Date('2025-12-15T19:00:00Z'),
-    end_time: new Date('2025-12-15T21:30:00Z'),
-    expected_attendance: 4500,
+    start_time: daysFromNow(0, 19),
+    end_time: daysFromNow(0, 21),
   },
   {
-    event_name: 'Spring Commencement 2025',
-    event_type: CampusEventType.ACADEMIC,
+    external_id: 'seed-spring-commencement',
+    event_name: 'Spring Commencement',
     location: 'Walter Pyramid',
-    start_time: new Date('2025-05-17T09:00:00Z'),
-    end_time: new Date('2025-05-17T18:00:00Z'),
-    expected_attendance: 12000,
+    start_time: daysFromNow(2, 9),
+    end_time: daysFromNow(2, 18),
   },
   {
-    event_name: 'Winter Concert Series',
-    event_type: CampusEventType.PERFORMANCE,
-    location: 'University Theatre',
-    start_time: new Date('2025-12-20T19:30:00Z'),
-    end_time: new Date('2025-12-20T21:30:00Z'),
-    expected_attendance: 800,
-  },
-  {
+    external_id: 'seed-career-fair',
     event_name: 'Spring Career Fair',
-    event_type: CampusEventType.ACADEMIC,
     location: 'USU Ballroom',
-    start_time: new Date('2025-01-15T10:00:00Z'),
-    end_time: new Date('2025-01-15T16:00:00Z'),
-    expected_attendance: 2500,
+    start_time: daysFromNow(4, 10),
+    end_time: daysFromNow(4, 16),
+  },
+  {
+    external_id: 'seed-concert',
+    event_name: 'Spring Concert Series',
+    location: 'University Theatre',
+    start_time: daysFromNow(6, 19),
+    end_time: daysFromNow(6, 21),
   },
 ];
 
@@ -230,12 +235,11 @@ async function main() {
     await prisma.campusEvent.create({
       data: {
         school_id: school.id,
+        external_id: event.external_id,
         event_name: event.event_name,
-        event_type: event.event_type,
         location: event.location,
         start_time: event.start_time,
         end_time: event.end_time,
-        expected_attendance: event.expected_attendance,
       },
     });
   }

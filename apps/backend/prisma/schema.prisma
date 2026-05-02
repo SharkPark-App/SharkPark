@@ -178,19 +178,20 @@ model DeviceState {
 // ─── Campus Context Tables ────────────────────────────────
 
 model CampusEvent {
-  id                  String          @id @default(cuid())
-  school_id           String
-  event_name          String
-  event_type          CampusEventType
-  start_time          DateTime
-  end_time            DateTime
-  location            String
-  expected_attendance Int
-  created_at          DateTime        @default(now())
+  id          String   @id @default(cuid())
+  school_id   String
+  external_id String   @unique
+  event_name  String
+  location    String
+  description String?
+  event_url   String?
+  start_time  DateTime
+  end_time    DateTime
+  created_at  DateTime @default(now())
 
-  school  School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
 
-  @@index([school_id])
+  @@index([school_id, start_time])
   @@map("campus_events")
 }
 
@@ -329,13 +330,6 @@ enum ConfidenceLevel {
   LOW
   MEDIUM
   HIGH
-}
-
-enum CampusEventType {
-  ATHLETIC
-  ACADEMIC
-  PERFORMANCE
-  OTHER
 }
 
 enum ReportType {
