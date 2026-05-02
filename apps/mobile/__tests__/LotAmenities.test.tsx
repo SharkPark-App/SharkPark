@@ -45,7 +45,7 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   capacity: 500,
   current_occupancy: 250,
   location_description: 'East Campus near ECS Building',
-  building_proximity: ['ECS', 'Library'],
+  buildings: ['ECS', 'Library'],
   center_lat: 33.78,
   center_lng: -118.11,
   geofence_polygon: [],
@@ -137,14 +137,14 @@ describe('LotAmenities', () => {
   });
 
   it('renders building proximity when non-empty', () => {
-    const tree = renderLot({ building_proximity: ['Library', 'ECS'] });
+    const tree = renderLot({ buildings: ['Library', 'ECS'] });
     const texts = collectTexts(tree.root);
     expect(texts).toContain('Near');
     expect(texts).toContain('Library, ECS');
   });
 
-  it('does not render Near when building_proximity is empty', () => {
-    const tree = renderLot({ building_proximity: [] });
+  it('does not render Near when buildings is empty', () => {
+    const tree = renderLot({ buildings: [] });
     const texts = collectTexts(tree.root);
     expect(texts).not.toContain('Near');
   });

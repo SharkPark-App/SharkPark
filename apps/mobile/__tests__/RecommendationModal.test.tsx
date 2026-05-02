@@ -92,7 +92,7 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   capacity: 200,
   current_occupancy: 100,
   location_description: '',
-  building_proximity: [],
+  buildings: [],
   center_lat: 0,
   center_lng: 0,
   geofence_polygon: [],
