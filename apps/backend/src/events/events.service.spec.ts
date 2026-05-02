@@ -5,11 +5,13 @@ import { PrismaService } from '../database/database.module';
 describe('EventsService', () => {
   let service: EventsService;
   let prisma: {
+    lot: { findFirst: jest.Mock };
     campusEvent: { findMany: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
+      lot: { findFirst: jest.fn() },
       campusEvent: { findMany: jest.fn() },
     };
 
@@ -27,88 +29,59 @@ describe('EventsService', () => {
     expect(service).toBeDefined();
   });
 
-  describe('findAll', () => {
-    it('should return array of campus events', async () => {
+  describe('getEventsForLot', () => {
+    it('should return events for lots with building associations', async () => {
+      prisma.lot.findFirst.mockResolvedValue({
+        lot_buildings: [{ building_id: 'bldg-1' }, { building_id: 'bldg-2' }],
+      });
       const mockEvents = [
-        {
-          id: 'uuid-1',
-          event_name: 'Basketball Game',
-          event_type: 'ATHLETIC',
-          start_time: new Date(),
-          end_time: new Date(),
-        },
-      ];
-
-      prisma.campusEvent.findMany.mockResolvedValue(mockEvents);
-
-      const result = await service.findAll();
-
-      expect(result).toBeDefined();
-      expect(Array.isArray(result)).toBe(true);
-      expect(result).toHaveLength(1);
-    });
-
-    it('should filter by event type when provided', async () => {
-      prisma.campusEvent.findMany.mockResolvedValue([]);
-
-      await service.findAll('ATHLETIC');
-
-      expect(prisma.campusEvent.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { event_type: 'ATHLETIC' },
-        }),
-      );
-    });
-
-    it('should reject invalid event type', async () => {
-      await expect(service.findAll('INVALID')).rejects.toThrow('Invalid event type');
-    });
-
-    it('should pass undefined where when no filter', async () => {
-      prisma.campusEvent.findMany.mockResolvedValue([]);
-
-      await service.findAll();
-
-      expect(prisma.campusEvent.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: undefined,
-        }),
-      );
-    });
-  });
-
-  describe('findUpcoming', () => {
-    it('should return events within the time window', async () => {
-      const mockEvents = [
-        { id: 'ev-1', event_name: 'Game', start_time: new Date(), end_time: new Date(Date.now() + 3600000) },
+        { id: 'ev-1', event_name: 'Basketball Game', location: 'The Pyramid' },
       ];
       prisma.campusEvent.findMany.mockResolvedValue(mockEvents);
 
-      const windowEnd = new Date(Date.now() + 24 * 3600000);
-      const result = await service.findUpcoming(windowEnd);
+      const result = await service.getEventsForLot('G1');
 
       expect(result).toEqual(mockEvents);
-      expect(prisma.campusEvent.findMany).toHaveBeenCalledWith({
-        where: {
-          start_time: { lte: windowEnd },
-          end_time: { gte: expect.any(Date) },
-        },
-        orderBy: { start_time: 'asc' },
-      });
+      expect(prisma.lot.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { lot_id: 'G1' } }),
+      );
+      expect(prisma.campusEvent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            building_id: { in: ['bldg-1', 'bldg-2'] },
+          }),
+        }),
+      );
     });
 
-    it('should return empty array when no upcoming events', async () => {
-      prisma.campusEvent.findMany.mockResolvedValue([]);
+    it('should return [] when lot has no building associations', async () => {
+      prisma.lot.findFirst.mockResolvedValue({
+        lot_buildings: [],
+      });
 
-      const result = await service.findUpcoming(new Date(Date.now() + 3600000));
+      const result = await service.getEventsForLot('G1');
 
       expect(result).toEqual([]);
+      expect(prisma.campusEvent.findMany).not.toHaveBeenCalled();
     });
 
-    it('should throw on database error', async () => {
-      prisma.campusEvent.findMany.mockRejectedValue(new Error('DB error'));
+    it('should return [] when lot is not found', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
 
-      await expect(service.findUpcoming(new Date())).rejects.toThrow('DB error');
+      const result = await service.getEventsForLot('UNKNOWN');
+
+      expect(result).toEqual([]);
+      expect(prisma.campusEvent.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should uppercase the lot_id for the lookup', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
+
+      await service.getEventsForLot('g1');
+
+      expect(prisma.lot.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { lot_id: 'G1' } }),
+      );
     });
   });
 });

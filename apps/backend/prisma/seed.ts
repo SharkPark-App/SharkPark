@@ -18,7 +18,7 @@ import 'dotenv/config';
 import { PrismaClient, UserType, EventType, ConfidenceLevel } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
-import { CSULB_SCHOOL, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
+import { CSULB_SCHOOL, CSULB_BUILDINGS, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
 import { getSemester, getWeekOfSemester } from '../src/lots/academic-calendar';
 
 // Prisma v7: "client" engine requires a driver adapter for direct DB connections
@@ -164,7 +164,6 @@ async function main() {
         capacity: lot.capacity,
         current_occupancy: lot.current_occupancy,
         location_description: lot.location_description,
-        building_proximity: lot.building_proximity,
         center_lat: lot.center_lat,
         center_lng: lot.center_lng,
         geofence_polygon: GEOFENCE_POLYGONS[lot.lot_id] ?? generateGeofence(lot.center_lat, lot.center_lng, lot.geofence_radius),
@@ -193,7 +192,38 @@ async function main() {
   }
   console.log(`[seed] Seeded ${parkingLots.length} parking lots\n`);
 
-  // 4. Seed Users & Favorites
+  // 4. Seed Buildings
+  console.log('[seed] Seeding buildings...');
+  const buildingMap = new Map<string, { id: string; alternate_names: string[] }>(); // name -> { id, alternate_names }
+
+  for (const b of CSULB_BUILDINGS) {
+    const created = await prisma.building.create({
+      data: { school_id: school.id, name: b.name, alternate_names: b.alternate_names },
+    });
+    buildingMap.set(b.name, { id: created.id, alternate_names: b.alternate_names });
+  }
+  console.log(`[seed] Seeded ${CSULB_BUILDINGS.length} buildings\n`);
+
+  // 5. Seed Lot-Building associations
+  console.log('[seed] Seeding lot-building associations...');
+  let lotBuildingCount = 0;
+
+  for (const lot of parkingLots) {
+    const lotDbId = lotMap.get(lot.lot_id);
+    if (!lotDbId) continue;
+
+    for (const proximity of lot.buildings) {
+      const building = buildingMap.get(proximity); // exact name match — no duplicates possible
+      if (!building) continue;
+      await prisma.lotBuilding.create({
+        data: { lot_id: lotDbId, building_id: building.id },
+      });
+      lotBuildingCount++;
+    }
+  }
+  console.log(`[seed] Seeded ${lotBuildingCount} lot-building associations\n`);
+
+  // 7. Seed Users & Favorites
   console.log('[seed] Seeding users...');
   let totalFavorites = 0;
 
@@ -228,10 +258,19 @@ async function main() {
   }
   console.log(`[seed] Seeded ${testUsers.length} users with ${totalFavorites} favorites\n`);
 
-  // 5. Seed Campus Events
+  // 8. Seed Campus Events
   console.log('[seed] Seeding campus events...');
 
   for (const event of campusEvents) {
+    const loc = event.location.toLowerCase();
+    let buildingId: string | null = null;
+    for (const [, b] of buildingMap) {
+      if (b.alternate_names.some(alt => loc.includes(alt.toLowerCase()))) {
+        buildingId = b.id;
+        break;
+      }
+    }
+
     await prisma.campusEvent.create({
       data: {
         school_id: school.id,
@@ -240,6 +279,7 @@ async function main() {
         location: event.location,
         start_time: event.start_time,
         end_time: event.end_time,
+        building_id: buildingId,
       },
     });
   }

@@ -1,55 +1,33 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
-import type { CampusEvent, CampusEventType } from '@prisma/client';
+import type { CampusEvent } from '@prisma/client';
 
-const VALID_EVENT_TYPES: string[] = ['ATHLETIC', 'ACADEMIC', 'PERFORMANCE', 'OTHER'];
-
-/**
- * Service for campus events that may affect parking availability.
- * Events include sports games, graduation, orientations, etc.
- */
 @Injectable()
 export class EventsService {
-  private readonly logger = new Logger(EventsService.name);
-
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Retrieves all campus events, optionally filtered by event type. */
-  async findAll(eventType?: string): Promise<CampusEvent[]> {
-    try {
-      let where: { event_type?: CampusEventType } | undefined;
-      if (eventType) {
-        if (!VALID_EVENT_TYPES.includes(eventType)) {
-          throw new BadRequestException(
-            `Invalid event type '${eventType}'. Valid types: ${VALID_EVENT_TYPES.join(', ')}`,
-          );
-        }
-        where = { event_type: eventType as CampusEventType };
-      }
-      return await this.prisma.campusEvent.findMany({
-        where,
-        orderBy: { start_time: 'asc' },
-      });
-    } catch (error) {
-      this.logger.error('Failed to fetch campus events', error);
-      throw error;
-    }
-  }
+  /** Upcoming events for a specific lot, matched via the lot's linked buildings */
+  async getEventsForLot(lotId: string): Promise<CampusEvent[]> {
+    const lot = await this.prisma.lot.findFirst({
+      where: { lot_id: lotId.toUpperCase() },
+      select: {
+        lot_buildings: { select: { building_id: true } },
+      },
+    });
 
-  /** Retrieves upcoming events within a time window using a DB query. */
-  async findUpcoming(windowEnd: Date): Promise<CampusEvent[]> {
-    try {
-      const now = new Date();
-      return await this.prisma.campusEvent.findMany({
-        where: {
-          start_time: { lte: windowEnd },
-          end_time: { gte: now },
-        },
-        orderBy: { start_time: 'asc' },
-      });
-    } catch (error) {
-      this.logger.error('Failed to fetch upcoming campus events', error);
-      throw error;
-    }
+    if (!lot || !lot.lot_buildings.length) return [];
+
+    const buildingIds = lot.lot_buildings.map(lb => lb.building_id);
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // next 7 days
+
+    return this.prisma.campusEvent.findMany({
+      where: {
+        building_id: { in: buildingIds },
+        start_time: { lte: windowEnd },
+        end_time: { gte: now },
+      },
+      orderBy: { start_time: 'asc' },
+    });
   }
 }
