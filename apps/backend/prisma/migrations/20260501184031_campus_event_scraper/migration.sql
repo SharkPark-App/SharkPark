@@ -28,3 +28,7 @@ CREATE INDEX "campus_events_school_id_start_time_idx" ON "campus_events"("school
 
 -- Drop obsolete enum
 DROP TYPE IF EXISTS "CampusEventType";
+
+-- Add optional description and event_url
+ALTER TABLE "campus_events" ADD COLUMN "description" TEXT;
+ALTER TABLE "campus_events" ADD COLUMN "event_url"   TEXT;
