@@ -39,7 +39,7 @@ const defaultProps = {
   lotId: 'G6',
   isOpen: true,
   onClose: jest.fn(),
-  onSubmit: jest.fn(),
+  onSubmit: jest.fn().mockResolvedValue(undefined),
 };
 
 function render(props = defaultProps) {
@@ -254,5 +254,92 @@ describe('ReportModal -- submit button accessibility', () => {
       node => node.props.accessibilityLabel === 'Additional details',
     );
     expect(input.props.accessibilityHint).toBe('Describe the incident');
+  });
+});
+
+describe('ReportModal -- onSubmit wiring', () => {
+  beforeEach(() => {
+    defaultProps.onSubmit.mockResolvedValue(undefined);
+    defaultProps.onClose.mockClear();
+  });
+
+  it('calls onSubmit with correct payload on blockage submit', async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    const onClose = jest.fn();
+    const tree = render({ ...defaultProps, onSubmit, onClose });
+
+    const blockageRadio = tree.root.find(
+      node =>
+        node.props.accessibilityRole === 'radio' &&
+        node.props.accessibilityLabel?.includes('Blockage'),
+    );
+    await ReactTestRenderer.act(async () => {
+      blockageRadio.props.onPress();
+    });
+
+    const submitBtn = tree.root.find(
+      node => node.props.accessibilityLabel === 'Submit report',
+    );
+    await ReactTestRenderer.act(async () => {
+      submitBtn.props.onPress();
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const call = onSubmit.mock.calls[0][0];
+    expect(call.type).toBe('blockage');
+    expect(call.lotId).toBe('G6');
+    expect(call.timestamp).toBeInstanceOf(Date);
+  });
+
+  it('closes the modal after a successful submit', async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    const onClose = jest.fn();
+    const tree = render({ ...defaultProps, onSubmit, onClose });
+
+    const crashRadio = tree.root.find(
+      node =>
+        node.props.accessibilityRole === 'radio' &&
+        node.props.accessibilityLabel?.includes('Crash'),
+    );
+    await ReactTestRenderer.act(async () => {
+      crashRadio.props.onPress();
+    });
+
+    const submitBtn = tree.root.find(
+      node => node.props.accessibilityLabel === 'Submit report',
+    );
+    await ReactTestRenderer.act(async () => {
+      submitBtn.props.onPress();
+    });
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows error banner when onSubmit rejects', async () => {
+    const onSubmit = jest.fn().mockRejectedValue(new Error('Rate limit exceeded'));
+    const tree = render({ ...defaultProps, onSubmit });
+
+    const crashRadio = tree.root.find(
+      node =>
+        node.props.accessibilityRole === 'radio' &&
+        node.props.accessibilityLabel?.includes('Crash'),
+    );
+    await ReactTestRenderer.act(async () => {
+      crashRadio.props.onPress();
+    });
+
+    const submitBtn = tree.root.find(
+      node => node.props.accessibilityLabel === 'Submit report',
+    );
+    await ReactTestRenderer.act(async () => {
+      submitBtn.props.onPress();
+    });
+
+    const errorView = tree.root.find(
+      node => node.props.accessibilityRole === 'alert',
+    );
+    expect(errorView).toBeTruthy();
+    const texts = collectTexts(errorView);
+    expect(hasText(texts, 'Rate limit exceeded')).toBe(true);
   });
 });

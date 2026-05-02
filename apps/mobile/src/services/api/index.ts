@@ -22,6 +22,10 @@ export type {
   LotRecommendation,
 } from './lots';
 
+// Reports service
+export { reportsApi, ReportUnauthorizedError, ReportThrottledError } from './reports';
+export type { CreateReportPayload, CreateReportResponse, ReportType } from './reports';
+
 // Import for default export
 import API_CONFIG from './config';
 import { apiService } from './base';

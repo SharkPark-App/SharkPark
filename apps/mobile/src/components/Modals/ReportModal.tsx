@@ -3,6 +3,7 @@ import {
   View, Modal,
   TouchableOpacity,
   ScrollView, StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
 import { Text } from '../CustomText';
 import { TextInput } from '../CustomTextInput';
@@ -13,7 +14,7 @@ interface ReportModalProps {
   lotId: string;
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (report: IncidentReport) => void;
+  onSubmit: (report: IncidentReport) => Promise<void>;
 }
 
 export interface IncidentReport {
@@ -26,28 +27,41 @@ export interface IncidentReport {
 export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalProps) {
   const [selectedType, setSelectedType] = useState<'blockage' | 'crash' | 'other' | null>(null);
   const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const { colors } = useTheme();
 
   const styles = useMemo(() => getStyles(colors), [colors]);
 
   const handleClose = () => {
+    if (isSubmitting) return;
     setSelectedType(null);
     setMessage('');
+    setSubmitError(null);
     onClose();
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!selectedType) return;
     if (selectedType === 'other' && !message.trim()) return;
+    if (isSubmitting) return;
 
-    onSubmit({
-      lotId,
-      type: selectedType,
-      message,
-      timestamp: new Date(),
-    });
-
-    handleClose();
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onSubmit({
+        lotId,
+        type: selectedType,
+        message,
+        timestamp: new Date(),
+      });
+      handleClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      setSubmitError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const incidentTypes = [
@@ -169,20 +183,32 @@ export function ReportModal({ lotId, isOpen, onClose, onSubmit }: ReportModalPro
               </View>
             )}
 
+            {/* Error banner */}
+            {submitError && (
+              <View style={styles.errorBanner} accessibilityRole="alert">
+                <Text style={styles.errorText}>{submitError}</Text>
+              </View>
+            )}
+
             {/* Submit Button */}
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={!selectedType || (selectedType === 'other' && !message.trim())}
-              style={[
-                styles.submitButton,
-                (!selectedType || (selectedType === 'other' && !message.trim())) && styles.submitButtonDisabled
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Submit report"
-              accessibilityState={{ disabled: !selectedType || (selectedType === 'other' && !message.trim()) }}
-            >
-              <Text style={styles.submitButtonText}>Submit Report</Text>
-            </TouchableOpacity>
+            {(() => {
+              const isDisabled = !selectedType || (selectedType === 'other' && !message.trim()) || isSubmitting;
+              return (
+                <TouchableOpacity
+                  onPress={handleSubmit}
+                  disabled={isDisabled}
+                  style={[styles.submitButton, isDisabled && styles.submitButtonDisabled]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Submit report"
+                  accessibilityState={{ disabled: isDisabled }}
+                >
+                  {isSubmitting
+                    ? <ActivityIndicator color={colors.white} />
+                    : <Text style={styles.submitButtonText}>Submit Report</Text>
+                  }
+                </TouchableOpacity>
+              );
+            })()}
           </ScrollView>
         </View>
       </View>
@@ -361,5 +387,16 @@ const getStyles = (
     color: colors.white,
     fontSize: 16,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  errorBanner: {
+    backgroundColor: colors.errorLight,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: 14,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
   },
 });
