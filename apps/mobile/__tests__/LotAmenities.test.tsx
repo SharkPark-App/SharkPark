@@ -140,7 +140,7 @@ describe('LotAmenities', () => {
     const tree = renderLot({ buildings: ['Library', 'ECS'] });
     const texts = collectTexts(tree.root);
     expect(texts).toContain('Near');
-    expect(texts).toContain('Library, ECS');
+    expect(texts).toContain('Library,\nECS');
   });
 
   it('does not render Near when buildings is empty', () => {
