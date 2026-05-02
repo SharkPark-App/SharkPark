@@ -1,5 +1,8 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginWithAzure, logoutFromAzure, loadAuth, saveAuth, AuthResult } from '../auth/AzureAuth';
+
+const GUEST_MODE_KEY = '@SharkPark:isGuest';
 
 export const geofenceLotFilterKey = (email: string) => `@geofence_lot_filter/${email}`;
 
@@ -12,8 +15,8 @@ interface AuthContextType {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<AuthState | null>;
-  continueAsGuest: () => void;
-  exitGuestMode: () => void;
+  continueAsGuest: () => Promise<void>;
+  exitGuestMode: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -28,10 +31,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // check for valid token on app launch
   useEffect(() => {
     const initAuth = async () => {
-      const savedUser = await loadAuth();
+      const [savedUser, guestFlag] = await Promise.all([
+        loadAuth(),
+        AsyncStorage.getItem(GUEST_MODE_KEY).catch(() => null),
+      ]);
       if (savedUser) {
         setUser(savedUser);
         setIsAuthenticated(true);
+      } else if (guestFlag === 'true') {
+        setIsGuest(true);
       }
       setIsLoading(false);
     };
@@ -50,6 +58,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       await saveAuth(tokens);
       if (__DEV__) console.log('[AuthContext] Tokens saved, setting authenticated');
+      await AsyncStorage.removeItem(GUEST_MODE_KEY);
+      setIsGuest(false);
       setUser(tokens);
       setIsAuthenticated(true);
       if (__DEV__) console.log('[AuthContext] Login complete, isAuthenticated=true');
@@ -101,11 +111,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return savedUser;
   };
 
-  const continueAsGuest = () => {
+  const continueAsGuest = async () => {
+    await AsyncStorage.setItem(GUEST_MODE_KEY, 'true').catch(() => {});
     setIsGuest(true);
   };
 
-  const exitGuestMode = () => {
+  const exitGuestMode = async () => {
+    await AsyncStorage.removeItem(GUEST_MODE_KEY).catch(() => {});
     setIsGuest(false);
   };
 
