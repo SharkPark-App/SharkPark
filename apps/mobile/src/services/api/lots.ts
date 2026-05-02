@@ -57,7 +57,7 @@ export interface ParkingLot {
    */
   current_occupancy: number | null;
   location_description: string;
-  building_proximity: string[];
+  buildings: string[];
   center_lat: number;
   center_lng: number;
   geofence_polygon: Array<{ lat: number; lng: number }>;

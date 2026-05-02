@@ -69,7 +69,7 @@ export const API_CONFIG = {
     CONTRIBUTOR_REVOKE: '/contributor/revoke',
     USERS: '/users',
     WEATHER: '/weather',
-    EVENTS: '/events',
+    EVENTS_FOR_LOT: (lotId: string) => `/events/for-lot/${lotId}`,
   },
 
   // Default headers for all requests
