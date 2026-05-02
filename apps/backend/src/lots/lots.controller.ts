@@ -2,6 +2,7 @@ import {
   Controller, 
   Get, 
   Header,
+  Headers,
   Param, 
   Query, 
   HttpCode, 
@@ -16,6 +17,7 @@ import { LotsService } from './lots.service';
 import type { GetLotsQueryParams } from './interfaces/parking-lot.interface';
 import { Public } from '../auth/public.decorator';
 import { ContributorGuard } from '../auth/contributor.guard';
+import { ContributorService } from '../auth/contributor.service';
 
 /**
  * Handles parking lot queries including filtering, individual lot details,
@@ -34,12 +36,22 @@ import { ContributorGuard } from '../auth/contributor.guard';
 @Controller('lots')
 @Throttle({ read: { ttl: 60_000, limit: 600 } })
 export class LotsController {
-  constructor(private readonly lotsService: LotsService) {}
+  constructor(
+    private readonly lotsService: LotsService,
+    private readonly contributorService: ContributorService,
+  ) {}
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  @Header('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=60')
+  // `private` (not `public`) is REQUIRED here: the response shape varies by
+  // device tier (live fields are nulled for non-contributors). A shared CDN
+  // cache would happily serve a contributor's full payload to anyone hitting
+  // the same URL afterwards, defeating the redaction. We pay a small origin-
+  // throughput cost in exchange for that correctness; the underlying Postgres
+  // reads are cheap and Throttle keeps the bucket bounded.
+  @Header('Cache-Control', 'private, max-age=15')
   async getAllLots(
+    @Headers('x-device-id') deviceId: string | string[] | undefined,
     @Query('type') type?: 'STUDENT' | 'EMPLOYEE',
     @Query('available_only', new ParseBoolPipe({ optional: true })) availableOnly?: boolean,
     @Query('min_available', new ParseIntPipe({ optional: true })) minAvailable?: number,
@@ -60,7 +72,8 @@ export class LotsController {
       ev_charging: evCharging,
     };
 
-    const lots = await this.lotsService.findAll(queryParams);
+    const redactLive = !(await this.contributorService.isContributor(deviceId));
+    const lots = await this.lotsService.findAll(queryParams, { redactLive });
 
     return {
       success: true,
@@ -84,9 +97,14 @@ export class LotsController {
 
   @Get(':id')
   @HttpCode(HttpStatus.OK)
-  @Header('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=60')
-  async getLot(@Param('id') id: string) {
-    const lot = await this.lotsService.findOne(id.toUpperCase());
+  // See note on `getAllLots` for why this is `private` rather than `public`.
+  @Header('Cache-Control', 'private, max-age=15')
+  async getLot(
+    @Param('id') id: string,
+    @Headers('x-device-id') deviceId: string | string[] | undefined,
+  ) {
+    const redactLive = !(await this.contributorService.isContributor(deviceId));
+    const lot = await this.lotsService.findOne(id.toUpperCase(), { redactLive });
 
     return {
       success: true,

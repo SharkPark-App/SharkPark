@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ReliabilityController } from './reliability.controller';
 import { ReliabilityService } from './reliability.service';
 import { ReliabilityComputationService } from './reliability-computation.service';
+import { ContributorGuard } from '../auth/contributor.guard';
 
 describe('ReliabilityController', () => {
   let controller: ReliabilityController;
@@ -106,7 +107,13 @@ describe('ReliabilityController', () => {
         { provide: ReliabilityService, useValue: mockReliabilityService },
         { provide: ReliabilityComputationService, useValue: mockComputationService },
       ],
-    }).compile();
+    })
+      // Routes are now wrapped in ContributorGuard. Tests don't bootstrap
+      // the AuthModule, so override the guard with a permissive stub so we
+      // can assert pure controller behavior.
+      .overrideGuard(ContributorGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<ReliabilityController>(ReliabilityController);
     reliabilityService = module.get(ReliabilityService);

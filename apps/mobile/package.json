@@ -9,6 +9,7 @@
     "lint": "eslint . --config ./eslint.config.mjs",
     "typecheck": "tsc --noEmit",
     "start": "react-native start",
+    "dev": "react-native start",
     "test": "jest",
     "postinstall": "test -n \"$CI\" || (cd ios && pod install && cd ..)"
   },

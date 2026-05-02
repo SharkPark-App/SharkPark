@@ -3,10 +3,18 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/database/database.module';
+import { hashDeviceId } from '../src/occupancy-events/utils/privacy.util';
 import { bootstrapTestApp } from './utils/bootstrap';
 
 describe('ReliabilityController (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
+  // Reusable contributor identity for gated endpoints. Mirrors the pattern
+  // in lots.e2e-spec: pre-register a device hash in `contributor_ping` and
+  // send the matching x-device-id header so ContributorGuard short-circuits
+  // to the contributor branch.
+  const contributorDeviceId = `e2e-reliability-${Date.now()}`;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -17,9 +25,19 @@ describe('ReliabilityController (e2e)', () => {
 
     bootstrapTestApp(app);
     await app.init();
+
+    prisma = moduleFixture.get<PrismaService>(PrismaService);
+    await prisma.contributorPing.upsert({
+      where: { device_hash: hashDeviceId(contributorDeviceId) },
+      update: { last_seen_at: new Date() },
+      create: { device_hash: hashDeviceId(contributorDeviceId), last_seen_at: new Date() },
+    });
   });
 
   afterAll(async () => {
+    await prisma.contributorPing.deleteMany({
+      where: { device_hash: hashDeviceId(contributorDeviceId) },
+    });
     await app.close();
   });
 
@@ -27,6 +45,7 @@ describe('ReliabilityController (e2e)', () => {
     it('should return reliability score for a valid lot', () => {
       return request(app.getHttpServer())
         .get('/api/v1/reliability/lots/G1')
+        .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
@@ -67,10 +86,23 @@ describe('ReliabilityController (e2e)', () => {
     it('should return 404 for non-existent lot', () => {
       return request(app.getHttpServer())
         .get('/api/v1/reliability/lots/INVALID')
+        .set('x-device-id', contributorDeviceId)
         .expect(404)
         .expect((res: Response) => {
           expect(res.body.success).toBe(false);
           expect(res.body.message).toContain('not found');
+        });
+    });
+
+    // Reliability is a contributor-tier signal: non-contributors must be
+    // gated out the same way they are for /lots/summary and forecasts.
+    it('should return 403 BG_LOCATION_REQUIRED for non-contributors', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/reliability/lots/G1')
+        .set('x-device-id', `e2e-non-contributor-${Date.now()}`)
+        .expect(403)
+        .expect((res: Response) => {
+          expect(res.body.code).toBe('BG_LOCATION_REQUIRED');
         });
     });
   });
@@ -79,6 +111,7 @@ describe('ReliabilityController (e2e)', () => {
     it('should return reliability summaries for all lots', () => {
       return request(app.getHttpServer())
         .get('/api/v1/reliability/lots')
+        .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);

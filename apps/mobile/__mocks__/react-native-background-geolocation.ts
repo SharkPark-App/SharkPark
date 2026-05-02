@@ -30,7 +30,16 @@ const mockBackgroundGeolocation = {
     coords: { latitude: 33.7838, longitude: -118.1089, speed: 0, accuracy: 10 },
   }),
   getState: jest.fn().mockResolvedValue({ enabled: false }),
-  getProviderState: jest.fn().mockResolvedValue({ accuracyAuthorization: 0 }),
+  // getProviderState defaults to the contributor-eligible state (Always +
+  // FullAccuracy) so tests don't have to opt into it. Override per-test
+  // via mockResolvedValueOnce when exercising denied/reduced paths.
+  getProviderState: jest.fn().mockResolvedValue({
+    status: 4, // Always
+    accuracyAuthorization: 0, // Full
+    enabled: true,
+    network: true,
+    gps: true,
+  }),
 
   // Permissions
   requestPermission: jest.fn().mockResolvedValue(4), // Always
