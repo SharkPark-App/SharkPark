@@ -98,6 +98,11 @@ export class EventsScraperService {
       return building ? [{ ...event, building_id: building.id }] : [];
     });
 
+    // Log unique unmatched locations to potentially add to building.alternate_names
+    const skipped = rawEvents.filter(e => !this.findBuilding(e.location, buildings));
+    const uniqueLocs = [...new Set(skipped.map(e => e.location))].sort();
+    uniqueLocs.forEach(loc => this.logger.warn(`UNMATCHED: ${JSON.stringify(loc)}`));
+
     await Promise.all(
       matched.map(event =>
         this.prisma.campusEvent.upsert({
