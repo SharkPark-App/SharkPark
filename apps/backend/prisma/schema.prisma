@@ -324,11 +324,20 @@ model AuditEvent {
 // which still prove the device is alive and reporting).
 
 model ContributorPing {
-  device_hash    String   @id           // SHA-256(salt:device_id) — same hash used in OccupancyEvent
-  first_seen_at  DateTime @default(now())
-  last_seen_at   DateTime @default(now())
+  device_hash    String    @id           // SHA-256(salt:device_id) — same hash used in OccupancyEvent
+  first_seen_at  DateTime  @default(now())
+  last_seen_at   DateTime  @default(now())
+  // Permission-grant grace pass. Set when the device confirms it has granted
+  // location permissions but hasn't necessarily produced an occupancy event
+  // yet (e.g. a fresh install on opening day). The ContributorGuard accepts a
+  // request as long as EITHER `last_seen_at` is within CONTRIBUTOR_PING_TTL_MS
+  // OR `granted_at` is within CONTRIBUTOR_GRANT_TTL_MS (24h by default). This
+  // unblocks first-run UX without giving away unlimited free reads — the
+  // grant expires unless the device starts contributing real events.
+  granted_at     DateTime?
 
   @@index([last_seen_at], name: "idx_contributor_last_seen")
+  @@index([granted_at],   name: "idx_contributor_granted_at")
   @@map("contributor_pings")
 }
 

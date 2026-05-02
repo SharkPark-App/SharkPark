@@ -15,6 +15,7 @@ import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
+import { useContributorState } from '../services/api/contributor';
 import { ParkingLotResponse } from '../services';
 import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
@@ -24,6 +25,7 @@ import { useTransitData } from '../hooks/useTransitData';
 import { useStopETAs } from '../hooks/useStopETAs';
 import { ShuttleMarker } from '../components/Map/ShuttleMarker';
 import { StopModal } from '../components/Modals/StopModal';
+import { ShuttleModal } from '../components/Modals/ShuttleModal';
 import type { MapStop } from '../types/transit';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -33,15 +35,37 @@ const InteractiveLot: React.FC<{
   lot: ParkingLotResponse;
   onPress: (lot: ParkingLotResponse) => void;
   colors: ThemeColors;
-}> = ({ lot, onPress, colors }) => {
-  const occupancyColor = getOccupancyColor(lot.current_occupancy);
+  isContributor: boolean;
+}> = ({ lot, onPress, colors, isContributor }) => {
+  // Pin lock state is driven by live OS contributor permission, not by
+  // whether the most recent fetch returned null fields. The redactor in
+  // lots.ts will eventually null out non-contributor data, but until that
+  // refetch lands the in-memory `lot` may still hold colored values from
+  // before the user revoked (or null values from before they granted).
+  // Keying on contributor state directly makes the pin flip the instant
+  // OS permission changes — no perceived lag waiting for the next poll.
+  const liveOccupancy =
+    lot.occupancy_rate ?? lot.estimated_occupancy ?? lot.current_occupancy;
+  const isRedacted = !isContributor || liveOccupancy === null;
+  const pct = isRedacted
+    ? null
+    : Math.round(
+        (lot.occupancy_rate ?? liveOccupancy / Math.max(lot.capacity, 1)) * 100,
+      );
+  const occupancyColor = isRedacted ? colors.neutralPin : getOccupancyColor(pct!);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
-  
+
   return (
     <Marker
       coordinate={{ latitude: lot.center_lat, longitude: lot.center_lng }}
       onPress={() => onPress(lot)}
-      tracksViewChanges={false}
+      // Must stay true so iOS re-snapshots the marker bitmap when the
+      // pin's color flips (live\u2194redacted on contributor grant/revoke,
+      // or band change on poll). With ~30 lots the perf cost is
+      // negligible; tracksViewChanges={false} silently caches the very
+      // first render and never updates, which is the bug the user hit
+      // where pins stayed neutral after granting Always.
+      tracksViewChanges={true}
     >
       <View
         style={[
@@ -53,7 +77,11 @@ const InteractiveLot: React.FC<{
           }
         ]}
         accessibilityRole="button"
-        accessibilityLabel={`${lot.lot_name} parking lot, ${lot.current_occupancy} percent full`}
+        accessibilityLabel={
+          isRedacted
+            ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
+            : `${lot.lot_name} parking lot, ${pct} percent full`
+        }
       >
         <Text
           style={[styles.lotText, { color: colors.white }]}
@@ -99,15 +127,41 @@ const MapScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   const isFocused = useIsFocused();
   const { favoriteLots, refreshFavorites } = useFavorites();
-  const { lots } = useLotsList();
+  const { lots, bgLocationRequired, clearBgLocationRequired } = useLotsList();
   const { routes, stops, shuttles } = useTransitData();
+
+  // Live OS contributor state. Drives pin color/lock decisions so a
+  // permission toggle flips the map immediately rather than waiting for
+  // the next 30s poll tick. The lot-data redactor catches up via the
+  // contributor pub-sub triggering an immediate refetch in useLotsList.
+  const contributorState = useContributorState();
+  const isContributor = contributorState === 'granted';
+
+  // Apple App Review 5.1.1: never push the user into the permission screen
+  // automatically. The redacted UI (neutral pins + per-lot "Unlock live
+  // occupancy" CTA) is the user-controlled path. We still clear the flag so
+  // a stale `true` doesn't loop subsequent fetches into a no-op.
+  React.useEffect(() => {
+    if (bgLocationRequired && isFocused) {
+      clearBgLocationRequired();
+    }
+  }, [bgLocationRequired, isFocused, clearBgLocationRequired]);
 
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
   const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
+  const [selectedShuttleId, setSelectedShuttleId] = useState<string | null>(null);
   const { arrivals, isLoading: stopLoading } = useStopETAs(selectedStop?.id);
+
+  // Re-derive the selected shuttle from the live `shuttles` array on every
+  // render so the modal's content (paxLoad, route, etc.) reflects socket
+  // updates in real time. If the shuttle drops out of the feed, the lookup
+  // returns null and the modal hides itself.
+  const selectedShuttle = selectedShuttleId
+    ? shuttles?.find((s) => s.id === selectedShuttleId) ?? null
+    : null;
 
   const handleLotPress = (lot: ParkingLotResponse) => {
     // Navigate to ShortTermForecastScreen with lot data
@@ -185,14 +239,33 @@ const MapScreen: React.FC = () => {
           moveOnMarkerPress={false}
           userInterfaceStyle={isDark ? 'dark' : 'light'}
         >
-          {filteredParkingLots?.map((lot) => (
-            <InteractiveLot
-              key={lot.lot_id}
-              lot={lot}
-              onPress={handleLotPress}
-              colors={colors}
-            />
-          ))}
+          {filteredParkingLots?.map((lot) => {
+            // Force remount of the Marker whenever the visual state changes
+            // (live → redacted on contributor revoke, color band change on
+            // poll, or null → number on grant). Apple Maps' Marker caches
+            // its bitmap snapshot on first render and doesn't reliably
+            // re-snapshot when child View props change, even with
+            // tracksViewChanges={true}. Encoding the relevant state in
+            // the key is the only approach that consistently flips the
+            // pin color in real time on iOS. Cheap at ~30 markers.
+            const liveOcc =
+              lot.occupancy_rate ?? lot.estimated_occupancy ?? lot.current_occupancy;
+            const visualKey =
+              !isContributor || liveOcc === null
+                ? 'redacted'
+                : Math.round(
+                    (lot.occupancy_rate ?? liveOcc / Math.max(lot.capacity, 1)) * 100,
+                  );
+            return (
+              <InteractiveLot
+                key={`${lot.lot_id}:${visualKey}`}
+                lot={lot}
+                onPress={handleLotPress}
+                colors={colors}
+                isContributor={isContributor}
+              />
+            );
+          })}
           
           {/* Draw route paths */}
           {isFocused && routes?.map((route) => (
@@ -234,10 +307,11 @@ const MapScreen: React.FC = () => {
 
           {/* Draw live shuttles */}
           {isFocused && shuttles?.map((shuttle) => (
-            <ShuttleMarker 
-              key={shuttle.id} 
-              shuttle={shuttle} 
-              colors={colors} 
+            <ShuttleMarker
+              key={shuttle.id}
+              shuttle={shuttle}
+              colors={colors}
+              onPress={(s) => setSelectedShuttleId(s.id)}
             />
           ))}
         </MapView>
@@ -278,6 +352,14 @@ const MapScreen: React.FC = () => {
         colors={colors}
       />
     )}
+
+      {/* Live Shuttle Details Modal */}
+      <ShuttleModal
+        visible={!!selectedShuttle}
+        onClose={() => setSelectedShuttleId(null)}
+        shuttle={selectedShuttle}
+        colors={colors}
+      />
     </View>
   );
 };

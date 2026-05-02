@@ -23,8 +23,18 @@ export class LotsService {
   /**
    * Retrieves all parking lots, with optional filtering.
    * Prisma WHERE clauses replace client-side filtering from DynamoDB.
+   *
+   * `redactLive` strips live-occupancy fields from the response so non-
+   * contributor callers see metadata only. Filters that depend on availability
+   * (`min_available`, `available_only`) are silently ignored when redacting,
+   * since the underlying value isn't visible to the caller anyway — returning
+   * a filtered subset would leak the very signal we're hiding.
    */
-  async findAll(query: GetLotsQueryParams = {}): Promise<ParkingLotResponse[]> {
+  async findAll(
+    query: GetLotsQueryParams = {},
+    options: { redactLive?: boolean } = {},
+  ): Promise<ParkingLotResponse[]> {
+    const { redactLive = false } = options;
     try {
       const lots = await this.prisma.lot.findMany({
         where: {
@@ -35,19 +45,24 @@ export class LotsService {
         },
       });
 
-      // Batch-estimate penetration for all lots at once (single set of DB queries)
-      const estimates = await this.penetrationService.estimateForAllLots(lots);
+      // Skip the (relatively expensive) penetration estimate entirely when
+      // we're going to redact the result — the estimate would only feed the
+      // fields we're about to null out.
+      const estimates = redactLive
+        ? new Map<string, PenetrationEstimate>()
+        : await this.penetrationService.estimateForAllLots(lots);
 
-      // Transform to responses first so filters can use estimated values
-      let responses = lots.map(lot => this.transformToResponse(lot, estimates.get(lot.id)));
+      let responses = lots.map(lot => this.transformToResponse(lot, estimates.get(lot.id), { redactLive }));
 
-      // Post-estimation filters — use estimated availability for accuracy
-      if (query.min_available) {
-        responses = responses.filter(r => r.estimated_available >= query.min_available!);
+      // Post-estimation filters — only meaningful when live data is visible.
+      // For redacted callers we'd be filtering on a value we won't return,
+      // which would leak occupancy through the result set's *cardinality*.
+      if (!redactLive && query.min_available) {
+        responses = responses.filter(r => (r.estimated_available ?? 0) >= query.min_available!);
       }
 
-      if (query.available_only) {
-        responses = responses.filter(r => r.estimated_available > 0);
+      if (!redactLive && query.available_only) {
+        responses = responses.filter(r => (r.estimated_available ?? 0) > 0);
       }
 
       return responses;
@@ -57,7 +72,8 @@ export class LotsService {
     }
   }
 
-  async findOne(lotId: string): Promise<ParkingLotResponse> {
+  async findOne(lotId: string, options: { redactLive?: boolean } = {}): Promise<ParkingLotResponse> {
+    const { redactLive = false } = options;
     try {
       const lot = await this.prisma.lot.findFirst({
         where: { lot_id: lotId },
@@ -67,7 +83,8 @@ export class LotsService {
         throw new NotFoundException(`Parking lot ${lotId} not found`);
       }
 
-      return this.transformToResponse(lot, await this.penetrationService.estimateForLot(lot));
+      const estimate = redactLive ? undefined : await this.penetrationService.estimateForLot(lot);
+      return this.transformToResponse(lot, estimate, { redactLive });
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -166,10 +183,13 @@ export class LotsService {
       const totalCapacity = studentCapacity + employeeCapacity;
       const totalOccupied = studentEstimated + employeeEstimated;
 
-      // Lots at or above NEARLY_FULL threshold
+      // Lots at or above NEARLY_FULL threshold. `occupancy_rate` is non-null
+      // here because we never pass `redactLive` to transformToResponse on this
+      // path (the summary endpoint is itself contributor-gated), but the
+      // narrowing is local so we use `?? 0` for compile safety.
       const highOccupancyLots = responses
-        .filter(r => r.occupancy_rate >= OCCUPANCY_THRESHOLDS.NEARLY_FULL)
-        .sort((a, b) => b.occupancy_rate - a.occupancy_rate);
+        .filter(r => (r.occupancy_rate ?? 0) >= OCCUPANCY_THRESHOLDS.NEARLY_FULL)
+        .sort((a, b) => (b.occupancy_rate ?? 0) - (a.occupancy_rate ?? 0));
 
       return {
         total_lots: lots.length,
@@ -254,12 +274,14 @@ export class LotsService {
         const estimate = estimates.get(candidate.id);
         const response = this.transformToResponse(candidate, estimate);
 
-        // Skip lots that are full (based on estimated occupancy)
-        if (response.occupancy_rate >= LotsService.FULL_THRESHOLD) return null;
+        // Skip lots that are full (based on estimated occupancy). `redactLive`
+        // is never passed on the recommendation path — the endpoint is
+        // contributor-gated — so these are non-null in practice.
+        if ((response.occupancy_rate ?? 0) >= LotsService.FULL_THRESHOLD) return null;
 
         // --- Availability score (0–1): higher = more space available ---
         const availabilityScore = candidate.capacity > 0
-          ? response.estimated_available / candidate.capacity
+          ? (response.estimated_available ?? 0) / candidate.capacity
           : 0;
 
         // --- Distance score (0–1): closer = higher ---
@@ -350,8 +372,33 @@ export class LotsService {
    * When a PenetrationEstimate is provided, uses estimated occupancy for
    * availability, occupancy_rate, and fill_status calculations.
    */
-  private transformToResponse(lot: Lot, estimate?: PenetrationEstimate): ParkingLotResponse {
-    const rawOccupancy = lot.current_occupancy;
+  private transformToResponse(
+    lot: Lot,
+    estimate?: PenetrationEstimate,
+    options: { redactLive?: boolean } = {},
+  ): ParkingLotResponse {
+    const { redactLive = false } = options;
+
+    // Strip Prisma `current_occupancy` from the spread — we set it explicitly
+    // below (or null it for redacted callers) so the type stays accurate.
+    const { current_occupancy, daily_rate, ...meta } = lot;
+
+    if (redactLive) {
+      return {
+        ...meta,
+        daily_rate: daily_rate != null ? Number(daily_rate) : null,
+        current_occupancy: null,
+        available: null,
+        occupancy_rate: null,
+        fill_status: null,
+        estimated_occupancy: null,
+        estimated_available: null,
+        raw_occupancy: null,
+        effective_penetration_rate: null,
+      };
+    }
+
+    const rawOccupancy = current_occupancy;
     const estimatedOccupancy = estimate ? estimate.estimatedOccupancy : rawOccupancy;
 
     // `available` uses estimated occupancy — represents the best-guess true availability.
@@ -371,10 +418,9 @@ export class LotsService {
     }
 
     return {
-      ...lot,
-      // Prisma Decimal serializes to string over JSON; coerce to number so
-      // mobile clients can call numeric methods (.toFixed, etc.) directly.
-      daily_rate: lot.daily_rate != null ? Number(lot.daily_rate) : null,
+      ...meta,
+      daily_rate: daily_rate != null ? Number(daily_rate) : null,
+      current_occupancy: rawOccupancy,
       available: Math.max(0, available),
       occupancy_rate: Math.round(occupancy_rate * 1000) / 1000,
       fill_status,

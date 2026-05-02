@@ -16,9 +16,22 @@ import type { ParkingLotResponse, LotRecommendation } from '../src/services/api/
 
 const mockGetRecommendedLots = jest.fn();
 
-jest.mock('../src/services/api', () => ({
-  lotsApi: { getRecommendedLots: (...args: unknown[]) => mockGetRecommendedLots(...args) },
-}));
+jest.mock('../src/services/api', () => {
+  // Inline class so jest.mock's hoisted factory doesn't reference an
+  // out-of-scope binding. RecommendationModal's catch block uses
+  // `err instanceof BackgroundLocationRequiredError`, so this must be a
+  // real constructor.
+  class MockBackgroundLocationRequiredError extends Error {
+    constructor(message = 'BG_LOCATION_REQUIRED') {
+      super(message);
+      this.name = 'BackgroundLocationRequiredError';
+    }
+  }
+  return {
+    lotsApi: { getRecommendedLots: (...args: unknown[]) => mockGetRecommendedLots(...args) },
+    BackgroundLocationRequiredError: MockBackgroundLocationRequiredError,
+  };
+});
 
 const mockUseLotsList = jest.fn();
 jest.mock('../src/hooks/useLotData', () => ({
@@ -526,9 +539,10 @@ describe('RecommendationModal', () => {
         );
       });
       const json = JSON.stringify(tree!.toJSON());
-      // Percentage badges render as ["50", "%"] and ["80", "%"]
-      expect(json).toContain('"50"');
-      expect(json).toContain('"80"');
+      // Percentage badges now render as combined strings "50%" and "80%"
+      // (template literal in the component) rather than split children.
+      expect(json).toContain('"50%"');
+      expect(json).toContain('"80%"');
       expect(json).toContain('spots taken');
     });
 

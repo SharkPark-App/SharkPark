@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { LotsController } from './lots.controller';
 import { LotsService } from './lots.service';
 import { ContributorGuard } from '../auth/contributor.guard';
+import { ContributorService } from '../auth/contributor.service';
 
 describe('LotsController', () => {
   let controller: LotsController;
@@ -15,7 +16,16 @@ describe('LotsController', () => {
     getRecommendations: jest.fn(),
   };
 
+  // Default to "is contributor" so existing test cases see the unredacted shape.
+  // Individual tests can override per-call to exercise the redaction path.
+  const mockContributorService = {
+    isContributor: jest.fn().mockResolvedValue(true),
+  };
+
   beforeEach(async () => {
+    mockContributorService.isContributor.mockClear();
+    mockContributorService.isContributor.mockResolvedValue(true);
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LotsController],
       providers: [
@@ -23,11 +33,15 @@ describe('LotsController', () => {
           provide: LotsService,
           useValue: mockLotsService,
         },
+        {
+          provide: ContributorService,
+          useValue: mockContributorService,
+        },
       ],
     })
-      // ContributorGuard depends on PrismaService which isn't wired in this
-      // unit-test module. The guard's behavior is covered by its own spec
-      // and by the e2e suite; here we just need the controller to resolve.
+      // ContributorGuard depends on ContributorService which is mocked above,
+      // but the guard's own behavior is covered by its dedicated spec; here we
+      // just need the controller to resolve and let the request through.
       .overrideGuard(ContributorGuard)
       .useValue({ canActivate: () => true })
       .compile();
@@ -54,29 +68,41 @@ describe('LotsController', () => {
 
       mockLotsService.findAll.mockResolvedValue(mockLots);
 
-      const result = await controller.getAllLots();
+      const result = await controller.getAllLots('device-abc');
 
       expect(result).toEqual({
         success: true,
         count: mockLots.length,
         data: mockLots,
       });
-      expect(service.findAll).toHaveBeenCalled();
+      expect(service.findAll).toHaveBeenCalledWith(expect.any(Object), { redactLive: false });
     });
 
     it('should pass query parameters to service', async () => {
       mockLotsService.findAll.mockResolvedValue([]);
 
-      await controller.getAllLots('STUDENT', true, 10, 'Gold', false, true);
+      await controller.getAllLots('device-abc', 'STUDENT', true, 10, 'Gold', false, true);
 
-      expect(service.findAll).toHaveBeenCalledWith({
-        type: 'STUDENT',
-        available_only: true,
-        min_available: 10,
-        permit_type: 'Gold',
-        daily_permit: false,
-        ev_charging: true,
-      });
+      expect(service.findAll).toHaveBeenCalledWith(
+        {
+          type: 'STUDENT',
+          available_only: true,
+          min_available: 10,
+          permit_type: 'Gold',
+          daily_permit: false,
+          ev_charging: true,
+        },
+        { redactLive: false },
+      );
+    });
+
+    it('redacts live fields when caller is not a contributor', async () => {
+      mockContributorService.isContributor.mockResolvedValue(false);
+      mockLotsService.findAll.mockResolvedValue([]);
+
+      await controller.getAllLots(undefined);
+
+      expect(service.findAll).toHaveBeenCalledWith(expect.any(Object), { redactLive: true });
     });
   });
 
@@ -90,13 +116,13 @@ describe('LotsController', () => {
 
       mockLotsService.findOne.mockResolvedValue(mockLot);
 
-      const result = await controller.getLot('G1');
+      const result = await controller.getLot('G1', 'device-abc');
 
       expect(result).toEqual({
         success: true,
         data: mockLot,
       });
-      expect(service.findOne).toHaveBeenCalledWith('G1');
+      expect(service.findOne).toHaveBeenCalledWith('G1', { redactLive: false });
     });
   });
 

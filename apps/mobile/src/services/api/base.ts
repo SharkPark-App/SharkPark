@@ -66,7 +66,6 @@ function parseBgLocationRequired(rawBody: string | null): Record<string, unknown
   }
   return null;
 }
-
 const RETRY_CONFIG = {
   maxRetries: 2,
   baseDelay: 1000,
@@ -182,6 +181,21 @@ class ApiService {
           `HTTP ${response.status}: ${response.statusText}`,
           rawBody
         );
+      }
+
+      // Handle 204 No Content (and any other empty-body 2xx) without
+      // attempting to JSON.parse('') — which throws SyntaxError and
+      // bubbles up as a fake "Network error". Endpoints like
+      // /contributor/grant and /contributor/revoke are 204 by contract;
+      // before this, every grant/revoke silently appeared to fail
+      // client-side even though the server-side write succeeded, which
+      // broke the contributor pub-sub (no 'granted' / 'revoked' emit →
+      // lot hooks waited up to a full poll interval to see the change).
+      if (response.status === 204 || response.headers?.get?.('content-length') === '0') {
+        // Cast through unknown — callers of 204 endpoints (grant/revoke)
+        // ignore the body and we don't want to force them to widen their
+        // generic. The runtime shape is "no body".
+        return undefined as unknown as ApiResponse<T>;
       }
 
       const data: ApiResponse<T> = await response.json();

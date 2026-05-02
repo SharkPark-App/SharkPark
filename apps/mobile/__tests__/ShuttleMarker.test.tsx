@@ -5,7 +5,6 @@
  * - Basic rendering
  * - Rotation logic (marker heading vs icon counter-rotation)
  * - Color fallbacks
- * - Rendering of the nested ShuttleCallout
  * - Accessibility labels
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,14 +28,6 @@ jest.mock('react-native-vector-icons/Ionicons', () => {
   const { Text } = require('react-native');
   return (props: any) => <Text testID={`icon-${props.name}`} {...props} />;
 });
-
-jest.mock('../src/components/Map/ShuttleCallout', () => ({
-  ShuttleCallout: (props: any) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { View } = require('react-native');
-    return <View testID="shuttle-callout" {...props} />;
-  }
-}));
 
 // ────────────────────── Mock Data ──────────────────────
 
@@ -80,10 +71,12 @@ describe('ShuttleMarker', () => {
     it('applies the correct heading rotation to the main container', () => {
       const renderer = renderMarker({ shuttle: baseShuttle, colors: mockColors });
       
-      // The container is the first view inside the Marker, holding the arrow and circle
-      // We can find it by looking for the child immediately before the callout
+      // The container is the first (and only) view inside the Marker,
+      // holding the arrow and circle.
       const marker = renderer.root.findByProps({ testID: 'marker' });
-      const containerView = marker.props.children[0];
+      const containerView = Array.isArray(marker.props.children)
+        ? marker.props.children[0]
+        : marker.props.children;
       
       const flatStyle = StyleSheet.flatten(containerView.props.style);
       expect(flatStyle.transform).toEqual([{ rotate: '90deg' }]);
@@ -142,16 +135,6 @@ describe('ShuttleMarker', () => {
   });
 
   describe('Nested Components and Accessibility', () => {
-    it('renders the ShuttleCallout with the correct props', () => {
-      const renderer = renderMarker({ shuttle: baseShuttle, colors: mockColors });
-      
-      const callout = renderer.root.findByProps({ testID: 'shuttle-callout' });
-      
-      expect(callout).toBeTruthy();
-      expect(callout.props.shuttle).toEqual(baseShuttle);
-      expect(callout.props.colors).toEqual(mockColors);
-    });
-
     it('sets the correct accessibility label for screen readers', () => {
       const renderer = renderMarker({ shuttle: baseShuttle, colors: mockColors });
       

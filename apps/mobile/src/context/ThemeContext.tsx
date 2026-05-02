@@ -18,6 +18,7 @@ export type ThemeColors = {
   mediumLightGray: string;
   borderGray: string;
   toggleGray: string;
+  neutralPin: string;
   warningLight: string;
   warningBorder: string;
   warningText: string;
@@ -61,6 +62,9 @@ const createThemeColors = (isDark: boolean): ThemeColors => {
       borderGray: COLORS.mediumGray, // Use existing medium gray
       borderLight: COLORS.mediumGray, // Use existing medium gray
       toggleGray: COLORS.mediumGray, // Use existing medium gray
+      // Cool steel-blue reads well on both light and dark map tiles; reuse
+      // the single token so redacted-pin styling is consistent across themes.
+      neutralPin: COLORS.neutralPin,
       
       // Warning colors for dark theme
       warningLight: '#451a03' as const, // Keep custom dark warning
@@ -96,6 +100,7 @@ const createThemeColors = (isDark: boolean): ThemeColors => {
     mediumLightGray: COLORS.mediumLightGray,
     borderGray: COLORS.borderGray,
     toggleGray: COLORS.toggleGray,
+    neutralPin: COLORS.neutralPin,
     warningLight: COLORS.warningLight,
     warningBorder: COLORS.warningBorder,
     warningText: COLORS.warningText,

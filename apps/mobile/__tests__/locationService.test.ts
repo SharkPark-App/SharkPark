@@ -119,22 +119,36 @@ describe('LocationService (SDK Wrapper)', () => {
   });
 
   describe('requestPermissions', () => {
-    it('should return true when always permission granted', async () => {
+    it('should return true when always permission granted with full accuracy', async () => {
       mockBG.requestPermission.mockResolvedValue(4);
-      mockBG.getProviderState.mockResolvedValue({ accuracyAuthorization: 0 });
+      mockBG.getProviderState.mockResolvedValue({ status: 4, accuracyAuthorization: 0 });
       const result = await locationService.requestPermissions();
       expect(result).toBe(true);
     });
 
     it('should return false when denied', async () => {
       mockBG.requestPermission.mockResolvedValue(1);
+      mockBG.getProviderState.mockResolvedValue({ status: 1, accuracyAuthorization: 0 });
+      const result = await locationService.requestPermissions();
+      expect(result).toBe(false);
+    });
+
+    it('should return false when always granted but accuracy is reduced', async () => {
+      // Contributor tier requires both Always + FullAccuracy. Reduced
+      // accuracy fuzzes coords to ~hectares which breaks lot detection,
+      // so we refuse the contributor grant under it.
+      mockBG.requestPermission.mockResolvedValue(4);
+      mockBG.getProviderState.mockResolvedValue({ status: 4, accuracyAuthorization: 1 });
+      // Simulate the user dismissing the temp-full-accuracy prompt:
+      // accuracy stays Reduced after the request.
+      mockBG.requestTemporaryFullAccuracy.mockResolvedValue(1);
       const result = await locationService.requestPermissions();
       expect(result).toBe(false);
     });
 
     it('should request full accuracy when reduced on iOS 14+', async () => {
       mockBG.requestPermission.mockResolvedValue(4);
-      mockBG.getProviderState.mockResolvedValue({ accuracyAuthorization: 1 });
+      mockBG.getProviderState.mockResolvedValue({ status: 4, accuracyAuthorization: 1 });
       await locationService.requestPermissions();
       expect(mockBG.requestTemporaryFullAccuracy).toHaveBeenCalledWith('ParkingDetection');
     });

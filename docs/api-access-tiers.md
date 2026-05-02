@@ -28,13 +28,15 @@ A few endpoints stack tiers (e.g. *favorites* requires both Authenticated and Co
 
 | Method | Path                              | Notes                                |
 |--------|-----------------------------------|--------------------------------------|
-| `GET`  | `/api/v1/lots`                    | All lots, static metadata + last-known occupancy snapshot |
-| `GET`  | `/api/v1/lots/:id`                | Single-lot details                   |
+| `GET`  | `/api/v1/lots`                    | All lots, **static metadata only** for non-contributors. Live-occupancy fields (`current_occupancy`, `available`, `occupancy_rate`, `fill_status`, `estimated_occupancy`, `estimated_available`, `raw_occupancy`, `effective_penetration_rate`) are redacted to `null` unless the caller passes a valid `x-device-id` with a fresh `ContributorPing` — see [Public-with-redaction](#public-with-redaction). `Cache-Control: private, max-age=15`. |
+| `GET`  | `/api/v1/lots/:id`                | Single-lot details. Same redaction + cache rules as `/api/v1/lots`. |
 | `GET`  | `/api/v1/lots/:id/history`        | Historical occupancy. Public: per-day aggregates, cached 5–10min, no live signal. Same data class as `/occupancy-events/snapshots/:lotId`. (Locked Public 2026-04-29.) |
 | `GET`  | `/api/v1/health`                  | Liveness                             |
 | `GET`  | `/api/v1/weather/current`         | Current weather (via OpenWeather proxy) |
 | `GET`  | `/api/v1/events`                  | Campus event calendar                |
 | `POST` | `/api/v1/occupancy-events`        | Anonymous device contribution. **This is the contribution mechanism that unlocks the Contributor tier.** Server hashes `device_id` and bumps `ContributorPing.last_seen_at` on every successful (or even deduplicated) call. |
+| `POST` | `/api/v1/contributor/grant`       | Records a permission-grant grace pass for the calling device. Requires `x-device-id` (no body). Sets `ContributorPing.granted_at = NOW()` so subsequent gated reads succeed for `CONTRIBUTOR_GRANT_TTL_MS` (24h) before any geofence event lands. Solves the cold-start chicken-and-egg without violating Apple App Review 5.1.1. Idempotent. Returns `204`. Throws `403 BG_LOCATION_REQUIRED` if `x-device-id` is missing. |
+| `POST` | `/api/v1/contributor/revoke`      | Companion to `/grant`. Mobile calls this immediately when it detects that background-location permission has been revoked (Settings toggle, SDK reports `Denied`). Clears `granted_at` and backdates `last_seen_at` to epoch so neither freshness check passes. Without it, the server would keep serving live data for up to 24h after revocation. Idempotent — returns `204` even if the device was never seen. Missing/empty `x-device-id` is a silent no-op (not an error). |
 
 ### Contributor (`x-device-id` header + fresh ping)
 
@@ -112,7 +114,39 @@ After grant, the next gated GET should succeed within seconds (the first geofenc
 | Var                         | Default        | Effect                                                 |
 |-----------------------------|----------------|--------------------------------------------------------|
 | `CONTRIBUTOR_PING_TTL_MS`   | `1800000` (30m)| Maximum age of `ContributorPing.last_seen_at` for the guard to allow the request |
+| `CONTRIBUTOR_GRANT_TTL_MS`  | `86400000` (24h)| Maximum age of `ContributorPing.granted_at` (set on permission grant) — lets a freshly-granting device read live data even before the first geofence event lands |
 | `DEVICE_HASH_SALT`          | required in prod, dev-only fallback | Salt for `SHA-256(salt:device_id)` |
+
+## Public-with-redaction
+
+A subset of Public endpoints (`GET /api/v1/lots`, `GET /api/v1/lots/:id`) return a *partially redacted* payload to non-contributors instead of the full document. The motivation:
+
+- **Apple App Review 5.1.1**: the app must remain usable without granting background location, so the lot map and lot-detail screens cannot 403 — they must always return enough static metadata (name, capacity, coordinates, amenities, hours) for the user to find and choose a lot.
+- **Reciprocity**: live occupancy / availability / fill-status are still gated to contributors, exactly like the dedicated Contributor endpoints. Non-contributors see `null` for all eight live fields and a neutral "locked" pin/badge in the mobile UI.
+- **No CDN cross-tenanting**: redacted endpoints set `Cache-Control: private, max-age=15` so the Cloudflare edge cannot serve a contributor's response to a non-contributor (or vice versa). We give up shared-cache throughput to guarantee correctness.
+- **No cardinality leak**: when redacting, the server also silently drops `available_only` and `min_available` filters (returning the full result set unchanged) — otherwise the size of the response would itself leak which lots have spots. This is graceful degradation, not a 400.
+
+For a non-contributor, the response shape is:
+
+```json
+{
+  "lot_id": "G1",
+  "lot_name": "Lot G1",
+  "capacity": 350,
+  "center_lat": 27.x,
+  "center_lng": -82.x,
+  "current_occupancy": null,
+  "available": null,
+  "occupancy_rate": null,
+  "fill_status": null,
+  "estimated_occupancy": null,
+  "estimated_available": null,
+  "raw_occupancy": null,
+  "effective_penetration_rate": null
+}
+```
+
+For a contributor (valid `x-device-id` + fresh ping or grant), every field is populated as before.
 
 ## Test coverage
 
