@@ -208,15 +208,10 @@ export class ReliabilityService {
     );
 
 
-    if (weakestFactor === factors.userReports) {
-      switch (confidence) {
-        case 'HIGH':
-          return 'High confidence in occupancy data. Sufficient user participation and recent activity.';
-        case 'MEDIUM':
-          return 'Moderate confidence. Recent user reports suggest the live count may not match conditions on the ground.';
-        case 'LOW':
-          return 'Low confidence due to recent user reports. Use estimates with caution.';
-      }
+    if (weakestFactor === factors.userReports && confidence !== 'HIGH') {
+      return confidence === 'MEDIUM'
+        ? 'Moderate confidence. Recent user reports suggest the live count may not match conditions on the ground.'
+        : 'Low confidence due to recent user reports. Use estimates with caution.';
     }
 
     switch (confidence) {

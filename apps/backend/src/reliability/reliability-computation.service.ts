@@ -5,6 +5,7 @@ import {
   ReliabilityScore,
   ReliabilityScoreSummary,
   ReliabilityInput,
+  ReliabilityThresholds,
 } from './interfaces';
 
 @Injectable()
@@ -16,14 +17,17 @@ export class ReliabilityComputationService {
     private readonly reliabilityService: ReliabilityService,
   ) {}
 
-  async computeReliabilityForLot(lotId: string): Promise<ReliabilityScore> {
+  async computeReliabilityForLot(
+    lotId: string,
+    thresholds: ReliabilityThresholds = this.reliabilityService.getDefaultThresholds(),
+  ): Promise<ReliabilityScore> {
     const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
     if (!lot) {
       throw new NotFoundException(`Lot ${lotId} not found`);
     }
 
-    const input = await this.gatherReliabilityInput(lotId, lot);
-    return this.reliabilityService.computeReliability(lotId, input);
+    const input = await this.gatherReliabilityInput(lotId, lot, thresholds);
+    return this.reliabilityService.computeReliability(lotId, input, undefined, thresholds);
   }
 
   async computeReliabilityForAllLots(): Promise<ReliabilityScoreSummary[]> {
@@ -63,6 +67,7 @@ export class ReliabilityComputationService {
   async gatherReliabilityInput(
     lotId: string,
     lot: { id: string; penetration_rate: number },
+    thresholds: ReliabilityThresholds = this.reliabilityService.getDefaultThresholds(),
   ): Promise<ReliabilityInput> {
     const now = new Date();
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
@@ -107,8 +112,7 @@ export class ReliabilityComputationService {
     const historicalAccuracy = await this.getHistoricalAccuracy(lotId);
 
     // Distinct reporters in the configured window - deduped per user so spamming counts as 1.
-    const { userReportsWindowMinutes } = this.reliabilityService.getDefaultThresholds();
-    const reportsWindowStart = new Date(now.getTime() - userReportsWindowMinutes * 60 * 1000);
+    const reportsWindowStart = new Date(now.getTime() - thresholds.userReportsWindowMinutes * 60 * 1000);
     const distinctReporters = await this.prisma.report.findMany({
       where: {
         lot_id: lot.id,
