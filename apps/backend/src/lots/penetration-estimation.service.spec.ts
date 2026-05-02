@@ -37,7 +37,6 @@ const makeLot = (overrides: Partial<Lot> = {}): Lot => ({
   current_occupancy: 100,
   lot_type: 'STUDENT',
   location_description: 'Near Science Building',
-  building_proximity: ['Science'],
   center_lat: 33.78,
   center_lng: -118.11,
   geofence_polygon: [],

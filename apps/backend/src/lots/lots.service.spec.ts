@@ -294,7 +294,7 @@ describe('LotsService', () => {
       capacity: 200,
       current_occupancy: 190, // 95% — full
       location_description: 'East Campus',
-      building_proximity: ['ECS'],
+      lot_buildings: [{ building: { name: 'ECS' } }],
       center_lat: 33.7838,
       center_lng: -118.1089,
       geofence_polygon: [],

@@ -1,10 +1,16 @@
 import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
-import type { Lot, LotType } from '@prisma/client';
+import type { LotType, Prisma } from '@prisma/client';
 import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
+
+const LOT_WITH_BUILDINGS_INCLUDE = {
+  lot_buildings: { include: { building: { select: { name: true } } } },
+} satisfies Prisma.LotInclude;
+
+type LotWithBuildings = Prisma.LotGetPayload<{ include: typeof LOT_WITH_BUILDINGS_INCLUDE }>;
 
 /**
  * Service for parking lot data access and business logic.
@@ -43,6 +49,7 @@ export class LotsService {
           ...(query.daily_permit !== undefined && { daily_permit_allowed: query.daily_permit }),
           ...(query.ev_charging && { ev_charging_stations: { gt: 0 } }),
         },
+        include: LOT_WITH_BUILDINGS_INCLUDE,
       });
 
       // Skip the (relatively expensive) penetration estimate entirely when
@@ -77,6 +84,7 @@ export class LotsService {
     try {
       const lot = await this.prisma.lot.findFirst({
         where: { lot_id: lotId },
+        include: LOT_WITH_BUILDINGS_INCLUDE,
       });
 
       if (!lot) {
@@ -160,7 +168,7 @@ export class LotsService {
       });
 
       // Fetch all lots for penetration estimation (already batched in one call)
-      const lots = await this.prisma.lot.findMany();
+      const lots = await this.prisma.lot.findMany({ include: LOT_WITH_BUILDINGS_INCLUDE });
       const estimates = await this.penetrationService.estimateForAllLots(lots);
 
       let studentEstimated = 0;
@@ -262,6 +270,7 @@ export class LotsService {
         lot_type: sourceLot.lot_type,
         id: { not: sourceLot.id },
       },
+      include: LOT_WITH_BUILDINGS_INCLUDE,
     });
 
     // Batch-estimate penetration for candidates
@@ -373,15 +382,16 @@ export class LotsService {
    * availability, occupancy_rate, and fill_status calculations.
    */
   private transformToResponse(
-    lot: Lot,
+    lot: LotWithBuildings,
     estimate?: PenetrationEstimate,
     options: { redactLive?: boolean } = {},
   ): ParkingLotResponse {
     const { redactLive = false } = options;
 
-    // Strip Prisma `current_occupancy` from the spread — we set it explicitly
-    // below (or null it for redacted callers) so the type stays accurate.
-    const { current_occupancy, daily_rate, ...meta } = lot;
+    // Strip Prisma `current_occupancy`, `daily_rate`, and the join relation from
+    // the spread — we set them explicitly below so the type stays accurate.
+    const { current_occupancy, daily_rate, lot_buildings, ...meta } = lot;
+    const buildings = lot_buildings.map(lb => lb.building.name);
 
     if (redactLive) {
       return {
@@ -395,6 +405,7 @@ export class LotsService {
         estimated_available: null,
         raw_occupancy: null,
         effective_penetration_rate: null,
+        buildings,
       };
     }
 
@@ -430,6 +441,7 @@ export class LotsService {
       effective_penetration_rate: estimate
         ? Math.round(estimate.effectiveRate * 10000) / 10000
         : 1,
+      buildings,
     };
   }
 

@@ -38,6 +38,8 @@ export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'curr
   raw_occupancy: number | null;
   /** Effective penetration rate used for this estimate (0.01–1.0) */
   effective_penetration_rate: number | null;
+  /** Canonical names of buildings this lot serves (derived from LotBuilding join) */
+  buildings: string[];
 }
 
 export interface GetLotsQueryParams {
