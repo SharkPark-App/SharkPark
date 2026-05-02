@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { Text } from './CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
@@ -19,22 +19,27 @@ export function EventBanner({ events }: EventBannerProps) {
   return (
     <View style={styles.container}>
       {events.map(event => (
-        <View
+        <TouchableOpacity
           key={event.id}
+          testID="event-card"
           style={styles.card}
           accessible={true}
+          accessibilityRole="link"
           accessibilityLabel={[
             event.name,
             event.date.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' }),
             event.location,
             event.description,
           ].filter(Boolean).join(', ')}
+          accessibilityHint={event.url ? 'Opens event details in browser' : undefined}
+          onPress={() => { if (event.url) Linking.openURL(event.url); }}
+          disabled={!event.url}
         >
           <View style={styles.icon} accessible={false} importantForAccessibility="no-hide-descendants">
             <Icon
               name="calendar-outline"
               size={TYPOGRAPHY.fontSize.xl}
-              color={colors.textPrimary}
+              color={colors.warningText}
             />
           </View>
           <View style={styles.content}>
@@ -47,10 +52,17 @@ export function EventBanner({ events }: EventBannerProps) {
               • {event.location}
             </Text>
             {event.description && (
-              <Text style={styles.description}>{event.description}</Text>
+              <Text style={styles.description} numberOfLines={2}>
+                {event.description}
+              </Text>
             )}
           </View>
-        </View>
+          {event.url && (
+            <View style={styles.chevron} accessible={false} importantForAccessibility="no-hide-descendants">
+              <Icon name="chevron-forward" size={TYPOGRAPHY.fontSize.md} color={colors.warningTextSecondary} />
+            </View>
+          )}
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -68,6 +80,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: SPACING.md,
     padding: SPACING.lg,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: SPACING.sm,
     ...SHADOWS.cardSubtle,
   },
@@ -91,5 +104,9 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   description: {
     fontSize: TYPOGRAPHY.fontSize.xxs2,
     color: colors.warningTextSecondary,
+    marginTop: 2,
+  },
+  chevron: {
+    alignSelf: 'center',
   },
 });

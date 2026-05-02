@@ -120,11 +120,11 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
           label="Location"
           value={lot.location_description}
         />
-        {lot.building_proximity.length > 0 && (
+        {lot.buildings.length > 0 && (
           <AmenityRow
             icon="business-outline"
             label="Near"
-            value={lot.building_proximity.join(', ')}
+            value={lot.buildings.join(',\n')}
           />
         )}
       </View>
