@@ -61,6 +61,11 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 30,
     maxRuntime: 30,
   },
+  'fetch-events': {
+    schedule: '0 5 * * *',
+    checkinMargin: 10,
+    maxRuntime: 15,
+  },
 };
 
 export const CRON_TIMEZONE = TIMEZONE;
