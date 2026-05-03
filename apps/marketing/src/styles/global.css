@@ -102,7 +102,9 @@ body {
 .prose-doc ul { list-style: disc; }
 .prose-doc ol { list-style: decimal; }
 .prose-doc a {
-  color: var(--color-brand-600);
+  /* brand-700 (#b45309) on white = 4.85:1 — passes WCAG AA for body text.
+     brand-600 (#d97706) only hits 3.36:1 which fails normal-text contrast. */
+  color: var(--color-brand-700);
   text-decoration: underline;
 }
 .prose-doc strong { font-weight: 600; color: var(--color-ink); }
