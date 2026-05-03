@@ -295,9 +295,9 @@ describe('ShuttleTrackerService', () => {
       const mockEtaPayload = {
         ETAs: {
           [stopId]: [
-            { routeId: 'route-1', eta: 'Arriving in 3 mins', bg: '#000' }, // Match cached route
-            { routeId: 'route-2', eta: 10, theStop: { routeName: 'Blue', shortName: 'BL' } }, // No cached route match
-            { routeId: 'route-3', eta: 'no vehicles' }, // Should be skipped
+            { routeId: 'route-1', eta: 'Arriving in 3 mins', bg: '#000', busName: 'Bus A', theStop: {} }, // Match cached route
+            { routeId: 'route-2', eta: 10, busName: 'Bus B', theStop: { routeName: 'Blue', shortName: 'BL' } }, // No cached route match
+            { routeId: 'route-3', eta: 'no vehicles', busName: 'Bus C', theStop: {} }, // Should be skipped
           ],
         },
       };
