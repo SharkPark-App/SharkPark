@@ -48,4 +48,10 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy apps/marketing/dist --project-name=sharkpark-marketing --branch=main
+          # Run from the marketing workspace so wrangler-action finds the
+          # locally-installed `wrangler` devDep (in apps/marketing/package.json)
+          # instead of trying to install it at the monorepo root, where pnpm
+          # rejects implicit root installs (-w required).
+          workingDirectory: apps/marketing
+          packageManager: pnpm
+          command: pages deploy dist --project-name=sharkpark-marketing --branch=main
