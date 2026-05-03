@@ -36,7 +36,7 @@ jest.mock('../src/components/CustomTextInput', () => ({
 // ────────────────────── Helpers ──────────────────────
 
 const defaultProps = {
-  lotId: 'G6',
+  lotDisplayName: 'G6',
   isOpen: true,
   onClose: jest.fn(),
   onSubmit: jest.fn().mockResolvedValue(undefined),
@@ -287,7 +287,6 @@ describe('ReportModal -- onSubmit wiring', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     const call = onSubmit.mock.calls[0][0];
     expect(call.type).toBe('blockage');
-    expect(call.lotId).toBe('G6');
     expect(call.timestamp).toBeInstanceOf(Date);
   });
 
@@ -341,5 +340,34 @@ describe('ReportModal -- onSubmit wiring', () => {
     expect(errorView).toBeTruthy();
     const texts = collectTexts(errorView);
     expect(hasText(texts, 'Rate limit exceeded')).toBe(true);
+  });
+
+  it('submit button is disabled while submission is in-flight', async () => {
+    // onSubmit never resolves during this test — simulates a slow network
+    const onSubmit = jest.fn().mockReturnValue(new Promise(() => {}));
+    const tree = render({ ...defaultProps, onSubmit });
+
+    const crashRadio = tree.root.find(
+      node =>
+        node.props.accessibilityRole === 'radio' &&
+        node.props.accessibilityLabel?.includes('Crash'),
+    );
+    await ReactTestRenderer.act(async () => {
+      crashRadio.props.onPress();
+    });
+
+    const submitBtn = tree.root.find(
+      node => node.props.accessibilityLabel === 'Submit report',
+    );
+    // Kick off submit but don't await — leave it in-flight
+    ReactTestRenderer.act(() => {
+      submitBtn.props.onPress();
+    });
+
+    const submitBtnDuring = tree.root.find(
+      node => node.props.accessibilityLabel === 'Submit report',
+    );
+    expect(submitBtnDuring.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(submitBtnDuring.props.disabled).toBe(true);
   });
 });

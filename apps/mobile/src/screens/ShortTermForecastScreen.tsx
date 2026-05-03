@@ -401,7 +401,7 @@ export function ShortTermForecastScreen() {
 
       {/* Incident Report Modal */}
       <ReportModal
-        lotId={lot.lot_id}
+        lotDisplayName={lot.lot_id}
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         onSubmit={handleReportSubmit}

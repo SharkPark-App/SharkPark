@@ -46,6 +46,10 @@ const reportsApi = {
         '/reports',
         payload,
       );
+      // apiService.post<T> is typed as returning { success, data: T }, but
+      // ReportsController returns the object raw (not wrapped). The fallback
+      // cast is load-bearing — don't remove it without aligning the backend
+      // response shape or the base apiService generic.
       return response.data ?? (response as unknown as CreateReportResponse);
     } catch (error) {
       if (error instanceof ApiError) {
