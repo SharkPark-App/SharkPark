@@ -65,6 +65,8 @@ export const API_CONFIG = {
     TRANSIT_STOPS: '/transit/stops',
     TRANSIT_ETAS: (id: string) => `/transit/etas/${id}`,
     OCCUPANCY_EVENTS: '/occupancy-events',
+    CONTRIBUTOR_GRANT: '/contributor/grant',
+    CONTRIBUTOR_REVOKE: '/contributor/revoke',
     USERS: '/users',
     WEATHER: '/weather',
     EVENTS: '/events',

@@ -27,8 +27,10 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { Text } from '../components/CustomText';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { LOCATION_DATA_POINTS, DataPoint } from '../constants/permissions';
 import sharkParkLogo from '../assets/images/SharkParkV4.webp';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -40,6 +42,8 @@ interface Slide {
   emoji: string | null;
   title: string;
   body: string;
+  /** Optional bullet list rendered between body and note (used on the permissions slide). */
+  bullets?: DataPoint[];
   /** Shown below the body only on the last slide */
   note?: string;
 }
@@ -68,6 +72,7 @@ const SLIDES: Slide[] = [
     emoji: '📍',
     title: 'Optional: Help Power the Map',
     body: 'You can browse lots, directions, and shuttle info without granting any permissions. Sharing background location is optional — it unlocks live occupancy and forecasts by anonymously contributing your own lot entry/exit events.',
+    bullets: LOCATION_DATA_POINTS,
     note: 'iOS asks in two steps: first "Allow While Using" so you can try it out, then later offers "Always Allow" for background detection. You can change your mind anytime in Settings.',
   },
 ];
@@ -111,6 +116,21 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
       )}
       <Text style={styles.title}>{item.title}</Text>
       <Text style={styles.body}>{item.body}</Text>
+      {item.bullets ? (
+        <View style={styles.bulletList}>
+          {item.bullets.map((point) => (
+            <View key={point.text} style={styles.bulletRow}>
+              <Icon
+                name={point.icon}
+                size={18}
+                color={point.icon.startsWith('checkmark') ? '#10b981' : COLORS.mediumGray}
+                style={styles.bulletIcon}
+              />
+              <Text style={styles.bulletText}>{point.text}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
       {item.note ? (
         <View style={styles.noteBox}>
           <Text style={styles.noteText}>{item.note}</Text>
@@ -239,6 +259,25 @@ const styles = StyleSheet.create({
     color: COLORS.warningText,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  bulletList: {
+    marginTop: SPACING.lg,
+    width: '100%',
+    gap: SPACING.sm,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  bulletIcon: {
+    marginRight: SPACING.sm,
+    marginTop: 2,
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.darkGray,
+    lineHeight: 20,
   },
 
   // ── dots

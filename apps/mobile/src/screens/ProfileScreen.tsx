@@ -1,11 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, Linking } from 'react-native';
 import { Text } from '../components/CustomText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SectionCard } from '../components/SectionCard';
 import { Header } from '../components';
+import { useNavigation } from '@react-navigation/native';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import type { RootTabParamList, MapStackParamList } from '../types/navigation';
 // Dev-only components: loaded conditionally so Metro strips them from production bundles
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GeofencingTestButton = __DEV__ ? require('../components/GeofencingTestButton').GeofencingTestButton : null;
@@ -24,6 +29,15 @@ const ProfileScreen: React.FC = () => {
     highOccupancy: true, favoriteLots: true, incidents: false,
   });
   const { logout } = useAuth();
+
+  // Composite nav: from the Profile tab we need to jump into the Map stack to
+  // push the LocationPermission soft-ask screen.
+  const navigation = useNavigation<
+    CompositeNavigationProp<
+      BottomTabNavigationProp<RootTabParamList, 'Profile'>,
+      StackNavigationProp<MapStackParamList>
+    >
+  >();
 
   // Location service hook for permission checking
   const {
@@ -53,20 +67,12 @@ const ProfileScreen: React.FC = () => {
     return 'Initializing...';
   };
 
-  // Open device settings for location permissions
+  // Open the SharkPark soft-ask screen so users can re-read what we collect
+  // and (if iOS still has no decision) re-trigger the OS dialog. If the OS has
+  // already cached a decision, the SDK won't re-prompt — in that case the
+  // soft-ask screen offers an "Open device settings" link instead.
   const openLocationSettings = () => {
-    Alert.alert(
-      'Location Permission Required',
-      'SharkPark needs location access to automatically detect when you enter and leave campus parking lots. This helps provide real-time parking data to help other students.\n\nYour specific location is never stored or shared - only anonymous parking lot events are recorded.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Settings', onPress: () => {
-            // In a real app, you'd open device settings
-            // Open device settings for location permissions
-            // Could use: Linking.openSettings();
-        }},
-      ]
-    );
+    navigation.navigate('Map', { screen: 'LocationPermission', params: {} });
   };
 
   // Simple toggle component for notifications
@@ -216,6 +222,21 @@ const ProfileScreen: React.FC = () => {
                   </Text>
                 </TouchableOpacity>
               )}
+
+              {/* Always-visible privacy disclosure entry — required by App Review
+                  guidelines so users (and reviewers) can re-read what we collect
+                  without needing to first deny permissions. */}
+              <TouchableOpacity
+                style={styles.privacyLink}
+                onPress={openLocationSettings}
+                accessibilityRole="button"
+                accessibilityLabel="Learn how SharkPark uses your location"
+              >
+                <Icon name="shield-checkmark-outline" size={16} color={colors.primary} />
+                <Text style={[styles.privacyLinkText, { color: colors.primary }]}>
+                  How SharkPark uses your location
+                </Text>
+              </TouchableOpacity>
 
               {currentLotId && (
               <View style={[styles.statusInfo, { backgroundColor: '#ecfdf5', borderColor: '#10b981' }]}>
@@ -445,6 +466,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
     textAlign: 'center',
+  },
+  privacyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  privacyLinkText: {
+    fontSize: 13,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    textDecorationLine: 'underline',
   },
 });
 

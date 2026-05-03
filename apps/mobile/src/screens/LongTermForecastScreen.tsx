@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Header } from '../components';
 import { Text } from '../components/CustomText';
 import { useTheme } from '../context/ThemeContext';
@@ -81,7 +80,12 @@ const LongTermForecastScreen: React.FC = () => {
 
   const forecast = useMemo(
     () => (activeLot ? lotsApi.generateForecast(activeLot) : []),
-    // TODO: pass selectedDayIndex to generateForecast once real per-day API is wired in
+    // TODO(long-term-forecast): when the real GET /lots/:id/predictions/long-term
+    // call replaces this local heuristic, the wrapping hook MUST surface
+    // `bgLocationRequired` (see useLotData) and this screen MUST early-return a
+    // loading state + navigate to 'LocationPermission' — same pattern as
+    // ShortTermForecastScreen — otherwise the screen will flash a partial UI
+    // before the soft-ask appears. Also pass selectedDayIndex through.
     [activeLot, selectedDayIndex],
   );
 
@@ -98,7 +102,7 @@ const LongTermForecastScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       <Header />
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Lot Selection */}
         <View style={styles.lotPickerContainer}>
           <TouchableOpacity
@@ -241,7 +245,6 @@ const LongTermForecastScreen: React.FC = () => {
         <EventBanner events={selectedDayEvents} />
         <HourlyChart data={forecast} />
       </ScrollView>
-      <SafeAreaView style={styles.content} />
     </View>
   );
 };
@@ -250,7 +253,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  scroll: {
     flex: 1,
   },
   // Day of Week Filter

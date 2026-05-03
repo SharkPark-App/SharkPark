@@ -201,7 +201,16 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
           <Text style={styles.currentLotDetails}>
             Capacity: {currentLotInfo.capacity} • 
             Available: ~{currentLotInfo.estimated_available ?? currentLotInfo.available ?? 'N/A'} • 
-            {Math.round((currentLotInfo.occupancy_rate ?? (currentLotInfo.current_occupancy / currentLotInfo.capacity)) * 100)}% full
+            {/* If the user is geofenced inside a lot they are by definition a
+                contributor (background location is granted), so live fields
+                should be non-null. The fallbacks below are belt-and-suspenders
+                for the brief window between geofence entry and the next
+                contributor-tier read settling. */}
+            {currentLotInfo.occupancy_rate != null
+              ? `${Math.round(currentLotInfo.occupancy_rate * 100)}% full`
+              : currentLotInfo.current_occupancy != null
+              ? `${Math.round((currentLotInfo.current_occupancy / currentLotInfo.capacity) * 100)}% full`
+              : 'live data unavailable'}
           </Text>
         </View>
       )}

@@ -78,12 +78,13 @@ export const useTransitData = () => {
           const index = updatedShuttles.findIndex((s) => s.id === update.id);
 
           if (index !== -1) {
-            // Perform update (coords/heading)
+            // Perform update (coords/heading/paxLoad)
             updatedShuttles[index] = {
               ...updatedShuttles[index],
               latitude: update.latitude,
               longitude: update.longitude,
               heading: update.heading,
+              paxLoad: update.paxLoad ?? updatedShuttles[index].paxLoad,
             };
           } else {
             // Shuttle not seeded by the daily cron yet (e.g. went on-route

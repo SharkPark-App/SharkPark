@@ -5,17 +5,17 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { ThemeColors } from '../../context/ThemeContext';
 import { TYPOGRAPHY } from '../../constants/theme';
 import type { MapShuttle } from '../../types/transit';
-import { ShuttleCallout } from './ShuttleCallout';
 
 interface ShuttleMarkerProps {
   shuttle: MapShuttle;
   colors: ThemeColors;
+  onPress?: (shuttle: MapShuttle) => void;
 }
 
-export const ShuttleMarker: React.FC<ShuttleMarkerProps> = ({ shuttle, colors }) => {
+export const ShuttleMarker: React.FC<ShuttleMarkerProps> = ({ shuttle, colors, onPress }) => {
   const heading = shuttle.heading || 0;
   // Color should be provided, but is not necessary to have if not
-  const markerColor = shuttle.color || colors.white; 
+  const markerColor = shuttle.color || colors.white;
 
   return (
     <Marker
@@ -26,13 +26,15 @@ export const ShuttleMarker: React.FC<ShuttleMarkerProps> = ({ shuttle, colors })
       accessible={true}
       accessibilityRole="button"
       accessibilityLabel={`Shuttle: ${shuttle.busName} on route ${shuttle.route}`}
+      onPress={() => onPress?.(shuttle)}
+      stopPropagation={true}
     >
       {/* Rotate full marker (circle & arrow) */}
       <View style={[styles.shuttleMarkerContainer, { transform: [{ rotate: `${heading}deg` }] }]}>
-        
+
         {/* Directional nib pointing North relative to the container */}
         <View style={[styles.shuttleArrow, { borderBottomColor: markerColor }]} />
-        
+
         {/* Main bus circle */}
         <View
           style={[
@@ -48,14 +50,11 @@ export const ShuttleMarker: React.FC<ShuttleMarkerProps> = ({ shuttle, colors })
           <Icon
             name="bus"
             size={TYPOGRAPHY.fontSize.xl}
-            color={colors.white} 
+            color={colors.white}
             style={{ transform: [{ rotate: `-${heading}deg` }] }}
           />
         </View>
       </View>
-
-      {/* Shuttle callout */}
-      <ShuttleCallout shuttle={shuttle} colors={colors} />
     </Marker>
   );
 };

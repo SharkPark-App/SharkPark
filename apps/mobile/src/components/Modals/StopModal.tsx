@@ -59,10 +59,14 @@ export const StopModal: React.FC<StopModalProps> = ({
             {/* Divider Line */}
             <View style={[styles.divider, { backgroundColor: colors.borderLight }]} />
 
-            {/* Arrivals List */}
+            {/* Arrivals List. Reserve a min-height on the container so the
+                loading spinner / empty state / populated list don't cause the
+                modal card to jump in size as state transitions. Loading and
+                empty branches center their content vertically inside the
+                reserved space. */}
             <View style={styles.arrivalsContainer}>
               {isLoading ? (
-                <View style={styles.loadingContainer}>
+                <View style={styles.stateContainer}>
                   <ActivityIndicator
                     size="large"
                     color={colors.primary}
@@ -74,7 +78,9 @@ export const StopModal: React.FC<StopModalProps> = ({
                   </Text>
                 </View>
               ) : arrivals.length === 0 ? (
-                <Text style={[styles.emptyText, { color: colors.darkGray }]}>No upcoming arrivals.</Text>
+                <View style={styles.stateContainer}>
+                  <Text style={[styles.emptyText, { color: colors.darkGray }]}>No upcoming arrivals.</Text>
+                </View>
               ) : (
                 arrivals.map((arrival, index) => (
                   <View
@@ -159,6 +165,10 @@ const styles = StyleSheet.create({
   },
   arrivalsContainer: {
     gap: SPACING.md,
+    // Reserve enough vertical space for ~3 arrival rows so the modal stays the
+    // same size whether we're loading, showing an empty state, or rendering
+    // a populated list. Without this the card visibly jumps as states change.
+    minHeight: 140,
   },
   arrivalRow: {
     flexDirection: 'row',
@@ -198,6 +208,14 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     padding: SPACING.xl,
+    alignItems: 'center',
+  },
+  // Centers loading spinner / empty-state text inside the reserved minHeight
+  // of arrivalsContainer so transitions don't bounce the modal card.
+  stateContainer: {
+    flex: 1,
+    minHeight: 140,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
