@@ -1,7 +1,11 @@
 ---
 import { SITE, NAV_LINKS } from '../consts';
 
-const pathname = Astro.url.pathname.replace(/\/$/, '') || '/';
+const normalize = (p: string) => {
+  const stripped = p.replace(/\/+$/, '');
+  return stripped === '' ? '/' : stripped;
+};
+const pathname = normalize(Astro.url.pathname);
 ---
 <header class="sticky top-0 z-50 w-full border-b border-[var(--color-border)] bg-white/85 backdrop-blur">
   <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
@@ -12,7 +16,7 @@ const pathname = Astro.url.pathname.replace(/\/$/, '') || '/';
     <nav aria-label="Primary">
       <ul class="flex items-center gap-6 text-sm font-medium text-[var(--color-ink-soft)]">
         {NAV_LINKS.map((l) => {
-          const isCurrent = pathname === l.href;
+          const isCurrent = pathname === normalize(l.href);
           return (
             <li>
               <a
