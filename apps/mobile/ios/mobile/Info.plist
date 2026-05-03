@@ -27,12 +27,12 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth.com.sharkpark.mobile</string>
+				<string>msauth.app.sharkpark.mobile</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.sharkpark.mobile</string>
+			<string>app.sharkpark.mobile</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>sharkpark</string>
