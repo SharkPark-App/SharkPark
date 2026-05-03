@@ -59,6 +59,12 @@ A few endpoints stack tiers (e.g. *favorites* requires both Authenticated and Co
 | `DELETE`   | `/api/v1/users/me`                         | Account deletion (P11.108e)        |
 | `DELETE`   | `/api/v1/users/:userId`                    | Own account only                   |
 
+### Authenticated + Contributor
+
+| Method     | Path                                       | Notes                              |
+|------------|--------------------------------------------|------------------------------------|
+| `GET`      | `/api/v1/users/me/forecast`                | Short-term forecast for favorites  |
+
 ## How the Contributor tier works
 
 1. Mobile client generates a stable, opaque `device_id` (UUID, kept in secure storage).
@@ -116,6 +122,30 @@ After grant, the next gated GET should succeed within seconds (the first geofenc
 | `CONTRIBUTOR_PING_TTL_MS`   | `1800000` (30m)| Maximum age of `ContributorPing.last_seen_at` for the guard to allow the request |
 | `CONTRIBUTOR_GRANT_TTL_MS`  | `86400000` (24h)| Maximum age of `ContributorPing.granted_at` (set on permission grant) — lets a freshly-granting device read live data even before the first geofence event lands |
 | `DEVICE_HASH_SALT`          | required in prod, dev-only fallback | Salt for `SHA-256(salt:device_id)` |
+
+## Global rate-limiting (x-app-mode)
+
+Every request is inspected by `TierThrottlerGuard` (the global `APP_GUARD`). The client self-reports its tier via the `x-app-mode` header; the guard maps this to one of three named throttler buckets:
+
+| `x-app-mode` value | Effective limit | Throttler name    |
+|--------------------|-----------------|-------------------|
+| `public` (default) | 60 req/min      | `tier-public`     |
+| `contributor`      | 300 req/min     | `tier-contributor`|
+| `authed`           | 600 req/min     | `tier-authed`     |
+
+Routes that declare an explicit `@Throttle({ read: {...} })` override bypass the tier buckets and use their own limit (e.g. `LotsController` keeps its 600 req/min `read` budget regardless of `x-app-mode`).
+
+## Reliability source weights
+
+`ReliabilityService.computeReliability` accepts an optional `sourceType` parameter that scales the computed score by a trust multiplier before it is returned:
+
+| `sourceType` | Multiplier          | When to use                                      |
+|--------------|---------------------|--------------------------------------------------|
+| `anonymous`  | 0.3 – 0.6 (dynamic) | Default. Scales with penetration rate vs target. |
+| `authed`     | 1.0                 | Contributor is Azure AD authenticated.            |
+| `flagged`    | 0                   | Device/user marked as bad actor; score is zeroed.|
+
+The anonymous multiplier formula: `0.3 + 0.3 × min(1, penetrationRate / penetrationRateTarget)`. At zero penetration → 0.3; at or above the target penetration rate → 0.6.
 
 ## Public-with-redaction
 
