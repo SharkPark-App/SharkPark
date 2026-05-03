@@ -5,7 +5,7 @@ import {
   Req,
   HttpCode,
   HttpStatus,
-  ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { NotificationsService } from './notifications.service';
@@ -31,7 +31,7 @@ export class NotificationsController {
   ): Promise<void> {
     const email = req.user?.email;
     if (!email) {
-      throw new ForbiddenException('Authenticated user email missing');
+      throw new UnauthorizedException('Authenticated user email missing');
     }
     await this.notificationsService.registerPushTokenByEmail(email, dto.token, dto.platform);
   }
