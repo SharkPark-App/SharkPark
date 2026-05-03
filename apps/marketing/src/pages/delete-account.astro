@@ -1,0 +1,46 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { SITE } from '../consts';
+---
+<DocsLayout
+  title="Delete your account"
+  description={`How to permanently delete your ${SITE.name} account and associated data.`}
+>
+  <p>
+    You can permanently delete your {SITE.name} account and the personal information associated with it at any time. There are two ways to do this.
+  </p>
+
+  <h2>Option 1 — Delete from inside the app (recommended)</h2>
+  <ol>
+    <li>Open the {SITE.name} app on your phone.</li>
+    <li>Sign in if you aren&rsquo;t already.</li>
+    <li>Go to <strong>Settings → Account → Delete Account</strong>.</li>
+    <li>Confirm the deletion when prompted.</li>
+  </ol>
+  <p>
+    Deletion completes within a few minutes. You will be signed out of all devices, and your account, favorites, push tokens, and incident reports will be removed.
+  </p>
+
+  <h2>Option 2 — Email us</h2>
+  <p>
+    If you cannot access the app, email <a href={`mailto:${SITE.privacyEmail}`}>{SITE.privacyEmail}</a> from the address associated with your account, with the subject line <em>&ldquo;Delete my account.&rdquo;</em> We will verify the request and confirm deletion within 30 days.
+  </p>
+
+  <h2>What gets deleted</h2>
+  <ul>
+    <li>Your account record and profile.</li>
+    <li>Your favorite lots and notification preferences.</li>
+    <li>Your push notification tokens.</li>
+    <li>Any incident reports you submitted that are linked to your account.</li>
+  </ul>
+
+  <h2>What is retained</h2>
+  <ul>
+    <li><strong>Aggregated, anonymous occupancy data.</strong> The hashed geofence events your device contributed cannot be linked back to you, and they are statistically combined with everyone else&rsquo;s data into lot-level summaries that do not identify any individual. These aggregated summaries are retained.</li>
+    <li><strong>Diagnostic and security logs</strong> required for fraud prevention or legal compliance, retained for the minimum period required.</li>
+  </ul>
+
+  <p>
+    For full details on what we collect and how long we keep it, see our <a href="/privacy">Privacy Policy</a>.
+  </p>
+</DocsLayout>

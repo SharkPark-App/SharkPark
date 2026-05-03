@@ -37,7 +37,46 @@
 
 ---
 
-# 🔴 Pre-launch credentials & signing — DO NOT FORGET
+# � App Store submission sequence (added 2026-05-02)
+
+Ordered list of what's actively in flight to get SharkPark submitted. Don't reorder — each step unblocks the next.
+
+**Step 0 — Email migrations** (independent, ~30 min total). Mailbox plan:
+- `ops@sharkpark.app` → Fly, Neon, Sentry, Better Stack, Prisma (operational alerts)
+- `security@sharkpark.app` → GitHub security advisories, future Snyk
+- `billing@sharkpark.app` → Apple Developer billing, Google Play billing, future Stripe
+- `support@sharkpark.app` → user-facing (App Store support URL, in-app email, press contact via `hello@`)
+- `hello@sharkpark.app` → press / general inbound (already used on marketing site)
+- All forward to personal inbox via Cloudflare Email Routing.
+
+Migration order (avoids lockouts):
+1. ⏳ Cloudflare Email Routing — set up forwarding for `ops@`, `security@`, `billing@`, `support@`, `hello@`
+2. ⏳ Fly.io account email → `ops@`
+3. ⏳ Neon account email → `ops@` (keep billing owner = Charles personal)
+4. ⏳ Sentry account + org owner email → `ops@`
+5. ⏳ Better Stack account email → `ops@`
+6. ⏳ Prisma Data Platform email → `ops@` (skip if not using Accelerate/Pulse)
+7. ⏳ GitHub — add `security@` as verified secondary email (don't replace primary)
+8. ⏳ Apple Developer — update billing email → `billing@` (defer if mid-onboarding)
+9. ⏳ Google Play Console — create new account with `ops@` ($25 fee, deferred until Android submission)
+
+**Step 1 — Land marketing scaffold PR** (separate from #154). Includes [`apps/marketing/`](apps/marketing/) + [`.github/workflows/deploy-marketing.yml`](.github/workflows/deploy-marketing.yml) + AASA/assetlinks updates with real Team ID `4K793ZW77F` and `app.sharkpark.mobile` bundle ID.
+
+**Step 2 — Cloudflare Pages project** — create `sharkpark-marketing`, connect repo, add `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` GH secrets.
+
+**Step 3 — DNS** — apex `sharkpark.app` + `www` → Pages project via custom-domain UI. Verify `https://sharkpark.app/.well-known/apple-app-site-association` returns JSON with `Content-Type: application/json`.
+
+**Step 4 — Merge marketing PR** once #154 is in.
+
+**Step 5 — App Store Connect** — paste `https://sharkpark.app/privacy`, run App Privacy questionnaire (cheat sheet: Email/Name/UserID/Location/DeviceID/CrashData/PerformanceData/ProductInteraction; Tracking = NO for everything), fill App Information (Navigation primary, Utilities secondary, support URL `https://sharkpark.app/support`), Pricing (Free, all territories), App Review contact + demo Azure AD creds.
+
+**Step 6 — Build upload** — Xcode → Archive → Distribute → App Store Connect (blocked on Lawrence's QA pass).
+
+**Step 7 — Submit for review.**
+
+---
+
+# �🔴 Pre-launch credentials & signing — DO NOT FORGET
 
 These four are all "the binary won't ship without them." Cheap individually, catastrophic if discovered the day of submission. Owners split between Charles (CI/CD secrets) and Lawrence (Xcode/Apple developer console).
 
@@ -91,8 +130,19 @@ Easiest: add a NestJS controller that returns the static JSON, or serve via Clou
 🔴 **Charles — Pre-launch credential rotation** *(do LAST, before store submission)*
 - Neon password (`npg_QTZNAxE96jDp`) and R2 token were both pasted in chat history during initial setup — treat as compromised. Rotate both, update GH Actions secrets (`NEON_DATABASE_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) and Fly secrets (`DATABASE_URL`, `DIRECT_URL`, R2 keys), redeploy backend, re-verify cron + backup. Per user mandate this is the very last item before App Store / Play submission.
 
-🔴 **Charles — Marketing site at `sharkpark.app`** *(blocks store submission)*
-- DNS for `sharkpark.app` (the apex, not `api.sharkpark.app`) is not pointed anywhere. Stores reject without working privacy + support URLs. Single Cloudflare Pages static site is enough — needs to host: `/privacy` (content from Zach + Ly), `/support` (contact email + FAQ), `/terms`. Universal-link manifests (`.well-known/apple-app-site-association` + `assetlinks.json`) can also live here instead of on `api.sharkpark.app`.
+� **Charles — Marketing site at `sharkpark.app`** *(scaffold landed; deploy + DNS still blocking store submission)*
+- ✅ Astro + Tailwind v4 scaffold landed in [`apps/marketing/`](apps/marketing/) with pages: `/`, `/privacy`, `/terms`, `/support`, `/delete-account`, plus `_headers`, `robots.txt`, sitemap, favicon, and both `.well-known/` manifests. Build verified green (5 pages, 1.06s).
+- ✅ Deploy workflow at [`.github/workflows/deploy-marketing.yml`](.github/workflows/deploy-marketing.yml) (Cloudflare Pages via wrangler-action, triggered on `apps/marketing/**` changes).
+- ✅ All copy explicitly states SharkPark is **independent and not affiliated with CSULB** (hero, footer, privacy §intro, terms §1, support FAQ).
+- ⏳ **Cloudflare Pages project** — create project `sharkpark-marketing` in CF dashboard, connect GitHub repo, set build output `apps/marketing/dist` (build command blank — workflow handles it). One-time setup steps in [`apps/marketing/README.md`](apps/marketing/README.md#one-time-cloudflare-pages-setup).
+- ⏳ **GitHub Actions secrets** — add `CLOUDFLARE_API_TOKEN` (Pages:Edit scope) and `CLOUDFLARE_ACCOUNT_ID` to repo secrets. Workflow will fail loudly without them (per [development-principles](#) — no graceful skip gates).
+- ⏳ **DNS** — point apex `sharkpark.app` (and `www.sharkpark.app`) at the Pages project via custom-domain UI in CF.
+- ⏳ **Placeholder swaps** before first production deploy:
+  - `TEAMID` → real Apple Team ID in `apps/marketing/public/.well-known/apple-app-site-association` (and keep in sync with `apps/mobile/docs/apple-app-site-association.json` — Lawrence's item)
+  - `REPLACE_WITH_RELEASE_KEYSTORE_SHA256_FINGERPRINT` → release keystore fingerprint in `apps/marketing/public/.well-known/assetlinks.json` (Play Console → App integrity → App signing key certificate)
+  - `appStoreUrl` / `playStoreUrl` in [`apps/marketing/src/consts.ts`](apps/marketing/src/consts.ts) once listings are live (currently `#`)
+- ⏳ **Email routing** — confirm Cloudflare Email Routing is forwarding `support@`, `security@`, and `hello@sharkpark.app` to your real inbox (the site uses `support@` for general help, `security@` for privacy/data requests, `hello@` for press). `postmaster@` and `abuse@` are RFC-mandated and stay internal — not surfaced on the site.
+- ⏳ **Mailing address in privacy policy** — some store reviewers require it; placeholder needs swap before submission (currently omitted in `privacy.astro`).
 
 ---
 

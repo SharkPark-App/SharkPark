@@ -31,12 +31,12 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth.com.sharkpark.mobile</string>
+				<string>msauth.app.sharkpark.mobile</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.sharkpark.mobile</string>
+			<string>app.sharkpark.mobile</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>sharkpark</string>
@@ -45,6 +45,18 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!--
+	  Export-compliance declaration. SharkPark only uses HTTPS/TLS via Apple's
+	  Network framework + standard URLSession, which qualifies for the
+	  exemption under EAR 740.17(b)(1) (mass-market software using only
+	  encryption already provided by the operating system). Setting this to
+	  false avoids the recurring TestFlight export-compliance prompt on every
+	  build. If we ever add custom crypto, proprietary algorithms, or shipped
+	  CryptoKit operations beyond TLS, flip this to true and file an annual
+	  self-classification report with the BIS.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>comgooglemaps</string>
