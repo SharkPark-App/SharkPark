@@ -71,6 +71,13 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// Maps API Key (Google Maps SDK; needed by react-native-maps for Android only)
+Properties properties = new Properties()
+if (rootProject.file("local.properties").exists()) {
+    properties.load(rootProject.file("local.properties").newDataInputStream())
+}
+def mapsApiKey = properties.getProperty("MAPS_API_KEY", "")
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -86,6 +93,7 @@ android {
 
         manifestPlaceholders = [
             appAuthRedirectScheme: 'msauth',
+            MAPS_API_KEY: mapsApiKey,
             BG_GEOLOCATION_LICENSE: System.getenv("BG_GEOLOCATION_LICENSE") ?: ""
         ]
     }
@@ -134,3 +142,35 @@ project.ext.vectoricons = [
     iconFontsDir: "../../../../node_modules/react-native-vector-icons/Fonts"
 ]
 apply from: file("../../../../node_modules/react-native-vector-icons/fonts.gradle")
+
+// Fail loudly if release signing secrets are missing when a release build is requested.
+// Required env vars (set as GitHub Actions secrets in CI, or via local env for manual builds):
+//   RELEASE_KEYSTORE_PATH, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD
+// Without this guard the silent `?: ""` fallbacks in signingConfigs.release would produce
+// an unsigned-or-garbage-signed APK/AAB that Play Console rejects only after upload.
+gradle.taskGraph.whenReady { graph ->
+    def needsReleaseSigning = graph.allTasks.any { task ->
+        task.name ==~ /(?i).*(assemble|bundle).*Release/
+    }
+    if (needsReleaseSigning) {
+        def required = [
+            'RELEASE_KEYSTORE_PATH',
+            'RELEASE_KEYSTORE_PASSWORD',
+            'RELEASE_KEY_ALIAS',
+            'RELEASE_KEY_PASSWORD',
+        ]
+        def missing = required.findAll { !System.getenv(it) }
+        if (missing) {
+            throw new GradleException(
+                "Missing required release signing env vars: ${missing.join(', ')}. " +
+                "Set these as GitHub Actions secrets (or local env) before assembling/bundling a release build."
+            )
+        }
+        def keystorePath = System.getenv('RELEASE_KEYSTORE_PATH')
+        if (!file(keystorePath).exists()) {
+            throw new GradleException(
+                "RELEASE_KEYSTORE_PATH points to a file that does not exist: ${keystorePath}"
+            )
+        }
+    }
+}

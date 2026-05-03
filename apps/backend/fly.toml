@@ -77,6 +77,12 @@ primary_region = 'lax'
   size = 'shared-cpu-1x'
   # 256MB OOM-kills snapshot.js / fetch-weather.js — they bootstrap the
   # full Nest application context (Prisma client + all modules) which
-  # needs ~150-200MB heap + headroom. 512MB is the safe minimum.
-  memory = '512mb'
+  # needs ~150-200MB heap + headroom. 512MB was the safe minimum for the
+  # node-only crons. Bumped to 1024MB on 2026-04-30 ahead of the ML
+  # prediction + retraining crons (predict-all-lots.ts, retrain-models.ts)
+  # which spawn Python with xgboost + pandas; those reliably need 700MB+
+  # in our local profiling and OOM-killed (exit 137) at 512MB. If we
+  # instead move retraining to an ephemeral `fly machine run` Machine,
+  # this can drop back to 512MB — pick one before retraining ships.
+  memory = '1024mb'
   processes = ['cron']

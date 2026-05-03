@@ -177,8 +177,8 @@ export class ReliabilityComputationService {
         }
       }
 
-      if (closestSnapshot && closestSnapshot.occupancy > 0) {
-        const error = Math.abs(pred.predicted_occupancy - closestSnapshot.occupancy) / closestSnapshot.occupancy;
+      if (closestSnapshot && closestSnapshot.occupancy_rate > 0) {
+        const error = Math.abs(pred.predicted_occupancy - closestSnapshot.occupancy_rate) / closestSnapshot.occupancy_rate;
         totalError += error;
         comparisons++;
       }

@@ -2,10 +2,44 @@
  * Lots API Service
  * Handles all parking lot related API calls
  */
-import { apiService } from './base';
+import { apiService, BackgroundLocationRequiredError } from './base';
 import API_CONFIG from './config';
 import { getDeviceId } from './deviceCredentials';
 import { cacheService } from './cache';
+import { getContributorStateSync } from './contributor';
+
+/**
+ * Single source of truth for contributor-gated response shaping.
+ *
+ * The OS-reported permission state is authoritative: if the device is
+ * currently revoked, we MUST present every contributor-gated field as
+ * locked (null occupancy / forecast 403) regardless of what the backend
+ * returned. The backend can lag local OS state by a single round-trip
+ * (the revoke POST may not have committed before an in-flight GET landed),
+ * so trusting the backend response in that window flickers colored data
+ * back onto a screen the user just locked.
+ *
+ * This helper runs at the API service layer — every consumer (hooks,
+ * cache reads, polling intervals, focus refetches) gets the same answer
+ * without needing per-call dedup, generation counters, or in-memory
+ * clobbering. Cache stores raw server responses; redaction happens on
+ * the way out, so when state flips back to granted the cached colored
+ * response is once again served as colored without an extra refetch.
+ */
+function redactLotIfRevoked<T extends ParkingLotResponse>(lot: T): T {
+  if (getContributorStateSync() === 'granted') return lot;
+  return {
+    ...lot,
+    current_occupancy: null,
+    available: null,
+    occupancy_rate: null,
+    fill_status: null,
+    estimated_occupancy: null,
+    estimated_available: null,
+    raw_occupancy: null,
+    effective_penetration_rate: null,
+  };
+}
 
 // Backend response interfaces (matching the backend)
 export interface ParkingLot {
@@ -15,7 +49,13 @@ export interface ParkingLot {
   lot_number: string;
   lot_type: 'STUDENT' | 'EMPLOYEE';
   capacity: number;
-  current_occupancy: number;
+  /**
+   * REDACTED for non-contributors. The backend strips live occupancy
+   * from `GET /lots` and `GET /lots/:id` for devices that haven't granted
+   * background location (no reciprocity → no live data). Treat as nullable
+   * and render a "locked" placeholder + soft-ask CTA when null.
+   */
+  current_occupancy: number | null;
   location_description: string;
   building_proximity: string[];
   center_lat: number;
@@ -44,17 +84,19 @@ export interface ParkingLot {
 }
 
 export interface ParkingLotResponse extends ParkingLot {
-  available: number;
-  occupancy_rate: number;
-  fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
+  // All live-occupancy fields are nullable: redacted to `null` for non-
+  // contributor callers (see ParkingLot.current_occupancy).
+  available: number | null;
+  occupancy_rate: number | null;
+  fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL' | null;
   /** Estimated true occupancy (scaled up from raw device count) */
-  estimated_occupancy: number;
+  estimated_occupancy: number | null;
   /** Estimated available spots (capacity - estimated_occupancy) */
-  estimated_available: number;
+  estimated_available: number | null;
   /** Raw device count (current_occupancy before scaling) */
-  raw_occupancy: number;
+  raw_occupancy: number | null;
   /** Effective penetration rate used for estimation (0.01–1.0) */
-  effective_penetration_rate: number;
+  effective_penetration_rate: number | null;
 }
 
 export interface OccupancySummary {
@@ -142,7 +184,7 @@ class LotsApiService {
       },
       { ttl: LotsApiService.CACHE_TTL.ALL_LOTS },
     );
-    return result.data;
+    return result.data.map(redactLotIfRevoked);
   }
 
   /**
@@ -158,14 +200,25 @@ class LotsApiService {
       },
       { ttl: LotsApiService.CACHE_TTL.SUMMARY },
     );
-    return result.data;
+    return {
+      ...result.data,
+      high_occupancy_lots: (result.data.high_occupancy_lots ?? []).map(redactLotIfRevoked),
+    };
   }
 
   /**
    * Get details for a specific lot.
    * Cached per-lot for offline detail views.
+   *
+   * `forceRefresh` skips the cache READ but still updates the cache with the
+   * fresh response. The lot detail screen passes this on every refetch so a
+   * just-revoked user never sees a 30-second-stale colored response after
+   * navigating back into the lot. Cache is still warm for offline fallback.
    */
-  async getLotDetails(lotId: string): Promise<ParkingLotResponse> {
+  async getLotDetails(
+    lotId: string,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<ParkingLotResponse> {
     const endpoint = API_CONFIG.ENDPOINTS.LOT_DETAILS(lotId);
     const result = await cacheService.getOrFetch(
       `lots:detail:${lotId}`,
@@ -173,9 +226,9 @@ class LotsApiService {
         const response = await apiService.get<ParkingLotResponse>(endpoint);
         return response.data;
       },
-      { ttl: LotsApiService.CACHE_TTL.LOT_DETAILS },
+      { ttl: LotsApiService.CACHE_TTL.LOT_DETAILS, forceRefresh: options.forceRefresh },
     );
-    return result.data;
+    return redactLotIfRevoked(result.data);
   }
 
   /**
@@ -221,21 +274,14 @@ class LotsApiService {
       },
       { ttl: LotsApiService.CACHE_TTL.RECOMMENDATIONS },
     );
-    return result.data;
-  }
-
-  /**
-   * Convert UI lot format to API format for backward compatibility
-   */
-  convertToUIFormat(apiLot: ParkingLotResponse): import('../../types/ui').ParkingLotUI {
-    return {
-      id: apiLot.lot_id,
-      name: apiLot.display_name || apiLot.lot_name,
-      occupancy: Math.round(apiLot.occupancy_rate * 100),
-      category: apiLot.lot_type.toLowerCase() as 'general' | 'employee',
-      // Note: position will need to be mapped from coordinates or maintained separately
-      position: { x: 0, y: 0 }, // TODO: Map from lat/lng to UI coordinates
-    };
+    // Recommendations extend ParkingLotResponse — redact the live fields
+    // while keeping recommendation-specific fields (score, distance, reason).
+    return result.data.map((rec) => ({
+      ...redactLotIfRevoked(rec),
+      recommendation_score: rec.recommendation_score,
+      distance_meters: rec.distance_meters,
+      reason: rec.reason,
+    }));
   }
 
   /**
@@ -243,13 +289,26 @@ class LotsApiService {
    * Uses cache for offline support; falls back to local heuristic if
    * neither the backend nor a cached result is available.
    */
-  async getForecast(lot: ParkingLotResponse): Promise<Array<{
+  async getForecast(
+    lot: Pick<ParkingLotResponse, 'lot_id' | 'confidence'>,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<Array<{
     time: string;
     occupancy: number;
     lowerBound: number;
     upperBound: number;
     accuracy: number;
   }>> {
+    // Local short-circuit: if the OS says we're revoked, the forecast
+    // endpoint will 403 anyway. Throw the same error the backend would
+    // throw, without burning a network round-trip — the screen handles
+    // BackgroundLocationRequiredError by showing the locked card.
+    if (getContributorStateSync() !== 'granted') {
+      throw new BackgroundLocationRequiredError(
+        'Forecast unavailable while location permission is revoked.',
+        { code: BackgroundLocationRequiredError.CODE },
+      );
+    }
     try {
       const result = await cacheService.getOrFetch(
         `lots:forecast:${lot.lot_id}`,
@@ -268,15 +327,9 @@ class LotsApiService {
           if (predictions && predictions.length > 0) {
             return predictions.map((p) => {
               const hour = new Date(p.target_time).getHours();
-              const occupancyPercent = lot.capacity > 0
-                ? Math.round((p.predicted_occupancy / lot.capacity) * 100)
-                : p.predicted_occupancy;
-              const lower = lot.capacity > 0
-                ? Math.round((p.confidence_lower / lot.capacity) * 100)
-                : p.confidence_lower;
-              const upper = lot.capacity > 0
-                ? Math.round((p.confidence_upper / lot.capacity) * 100)
-                : p.confidence_upper;
+              const occupancyPercent = Math.round(p.predicted_occupancy * 100);
+              const lower = Math.round(p.confidence_lower * 100);
+              const upper = Math.round(p.confidence_upper * 100);
 
               return {
                 time: hour.toString(),
@@ -291,10 +344,13 @@ class LotsApiService {
           // No predictions from backend — return local heuristic (still cache it)
           return this.generateForecast(lot);
         },
-        { ttl: LotsApiService.CACHE_TTL.FORECAST },
+        { ttl: LotsApiService.CACHE_TTL.FORECAST, forceRefresh: options.forceRefresh },
       );
       return result.data;
-    } catch {
+    } catch (err) {
+      // BG_LOCATION_REQUIRED must propagate so the UI can show the soft-ask
+      // screen instead of silently serving a local heuristic forecast.
+      if (err instanceof BackgroundLocationRequiredError) throw err;
       // Cache miss + network failure — generate locally
       return this.generateForecast(lot);
     }
@@ -303,7 +359,7 @@ class LotsApiService {
   /**
    * Generate forecast data for short-term predictions (local fallback)
    */
-  generateForecast(lot: ParkingLotResponse): Array<{
+  generateForecast(lot: Pick<ParkingLotResponse, 'confidence'>): Array<{
     time: string;
     occupancy: number;
     lowerBound: number;

@@ -45,6 +45,7 @@ describe('LotsController (e2e)', () => {
     it('should return all parking lots', () => {
       return request(app.getHttpServer())
         .get('/api/v1/lots')
+        .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
@@ -56,6 +57,7 @@ describe('LotsController (e2e)', () => {
     it('should filter by lot type', () => {
       return request(app.getHttpServer())
         .get('/api/v1/lots?type=STUDENT')
+        .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
@@ -68,6 +70,7 @@ describe('LotsController (e2e)', () => {
     it('should filter by available_only', () => {
       return request(app.getHttpServer())
         .get('/api/v1/lots?available_only=true')
+        .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
@@ -75,6 +78,65 @@ describe('LotsController (e2e)', () => {
             expect(lot.available).toBeGreaterThan(0);
           });
         });
+    });
+
+    // ─── Live-data redaction (Apple App Review 5.1.1 compliance) ───
+    //
+    // /lots is publicly readable (lot metadata is non-sensitive), but the
+    // live occupancy fields are derived from contributor-tier device pings
+    // and must NOT leak to non-contributors. We redact those fields to null
+    // and serve `Cache-Control: private` so the CDN never cross-tenants the
+    // response.
+    it('redacts live occupancy fields when caller is not a contributor', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.success).toBe(true);
+          expect(Array.isArray(res.body.data)).toBe(true);
+          expect(res.body.data.length).toBeGreaterThan(0);
+          for (const lot of res.body.data) {
+            // Static metadata still present
+            expect(lot.lot_id).toBeDefined();
+            expect(lot.lot_name).toBeDefined();
+            expect(typeof lot.capacity).toBe('number');
+            // All eight live-data fields redacted to null
+            expect(lot.current_occupancy).toBeNull();
+            expect(lot.available).toBeNull();
+            expect(lot.occupancy_rate).toBeNull();
+            expect(lot.fill_status).toBeNull();
+            expect(lot.estimated_occupancy).toBeNull();
+            expect(lot.estimated_available).toBeNull();
+            expect(lot.raw_occupancy).toBeNull();
+            expect(lot.effective_penetration_rate).toBeNull();
+          }
+        });
+    });
+
+    it('serves Cache-Control: private on redactable list endpoint', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots')
+        .expect(200)
+        .expect((res: Response) => {
+          // Must NOT be `public` — that would let the CDN serve a contributor
+          // response to a non-contributor (or vice versa) within the TTL.
+          expect(res.headers['cache-control']).toContain('private');
+          expect(res.headers['cache-control']).not.toContain('public');
+        });
+    });
+
+    it('silently drops available_only filter for non-contributors (cardinality-leak prevention)', () => {
+      // Because we redact `available` to null, honoring `available_only=true`
+      // would still narrow the result-set and effectively leak which lots
+      // have spots. We degrade gracefully: return the full unfiltered list.
+      return Promise.all([
+        request(app.getHttpServer()).get('/api/v1/lots').expect(200),
+        request(app.getHttpServer())
+          .get('/api/v1/lots?available_only=true&min_available=50')
+          .expect(200),
+      ]).then(([all, filtered]) => {
+        expect(filtered.body.count).toBe(all.body.count);
+      });
     });
   });
 
@@ -98,6 +160,7 @@ describe('LotsController (e2e)', () => {
     it('should return specific lot', () => {
       return request(app.getHttpServer())
         .get('/api/v1/lots/G1')
+        .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
@@ -114,6 +177,22 @@ describe('LotsController (e2e)', () => {
       return request(app.getHttpServer())
         .get('/api/v1/lots/INVALID')
         .expect(404);
+    });
+
+    it('redacts live fields for non-contributors but preserves metadata', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.data.lot_id).toBe('G1');
+          expect(res.body.data.lot_name).toBeDefined();
+          expect(typeof res.body.data.capacity).toBe('number');
+          expect(res.body.data.current_occupancy).toBeNull();
+          expect(res.body.data.occupancy_rate).toBeNull();
+          expect(res.body.data.fill_status).toBeNull();
+          // Cache must be private on this endpoint too
+          expect(res.headers['cache-control']).toContain('private');
+        });
     });
   });
 

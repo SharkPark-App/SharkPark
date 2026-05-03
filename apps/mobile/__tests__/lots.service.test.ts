@@ -123,7 +123,8 @@ describe('LotsService', () => {
         total_lots: 25,
         total_capacity: 3500,
         total_occupied: 2100,
-        average_occupancy: 0.6
+        average_occupancy: 0.6,
+        high_occupancy_lots: [],
       };
 
       mockApiService.get.mockResolvedValueOnce({
@@ -326,9 +327,9 @@ describe('LotsService', () => {
       const predictions = [
         {
           target_time: new Date().toISOString(),
-          predicted_occupancy: 60,
-          confidence_lower: 50,
-          confidence_upper: 70,
+          predicted_occupancy: 0.6,
+          confidence_lower: 0.5,
+          confidence_upper: 0.7,
         },
       ];
 
@@ -396,25 +397,6 @@ describe('LotsService', () => {
 
       expect(low[0].accuracy).toBe(70);
       expect(high[0].accuracy).toBe(95);
-    });
-  });
-
-  describe('convertToUIFormat', () => {
-    it('should convert API lot to UI format', () => {
-      const apiLot = {
-        lot_id: 'G1',
-        display_name: 'Lot G1',
-        lot_name: 'G1',
-        occupancy_rate: 0.75,
-        lot_type: 'STUDENT',
-      } as unknown as ParkingLotResponse;
-
-      const result = lotsApi.convertToUIFormat(apiLot);
-
-      expect(result.id).toBe('G1');
-      expect(result.name).toBe('Lot G1');
-      expect(result.occupancy).toBe(75);
-      expect(result.category).toBe('student');
     });
   });
 });

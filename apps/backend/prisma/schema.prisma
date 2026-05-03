@@ -69,7 +69,6 @@ model Lot {
   occupancy_events    OccupancyEvent[]
   occupancy_snapshots OccupancySnapshot[]
   device_states       DeviceState[]
-  event_impacts       EventImpact[]
   predictions_short   PredictionShortTerm[]
   predictions_long    PredictionLongTerm[]
   reports             Report[]
@@ -190,24 +189,9 @@ model CampusEvent {
   created_at          DateTime        @default(now())
 
   school  School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  impacts EventImpact[]
 
   @@index([school_id])
   @@map("campus_events")
-}
-
-model EventImpact {
-  id                       String      @id @default(cuid())
-  event_id                 String
-  lot_id                   String
-  impact_level             ImpactLevel
-  expected_increase_percent Float
-
-  event CampusEvent @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  lot   Lot         @relation(fields: [lot_id], references: [id], onDelete: Cascade)
-
-  @@unique([event_id, lot_id])
-  @@map("event_impacts")
 }
 
 model Weather {
@@ -253,9 +237,9 @@ model PredictionShortTerm {
   lot_id          String
   predicted_at    DateTime
   target_time     DateTime
-  predicted_occupancy Int
-  confidence_lower    Int
-  confidence_upper    Int
+  predicted_occupancy Float   // rate [0, 1] — CHECK constraint in DB
+  confidence_lower    Float
+  confidence_upper    Float
   model_version   String
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
@@ -270,9 +254,9 @@ model PredictionLongTerm {
   predicted_at    DateTime
   target_date     DateTime
   target_hour     Int      // 0-23
-  predicted_occupancy Int
-  confidence_lower    Int
-  confidence_upper    Int
+  predicted_occupancy Float   // rate [0, 1] — CHECK constraint in DB
+  confidence_lower    Float
+  confidence_upper    Float
   model_version   String
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
@@ -307,11 +291,20 @@ model AuditEvent {
 // which still prove the device is alive and reporting).
 
 model ContributorPing {
-  device_hash    String   @id           // SHA-256(salt:device_id) — same hash used in OccupancyEvent
-  first_seen_at  DateTime @default(now())
-  last_seen_at   DateTime @default(now())
+  device_hash    String    @id           // SHA-256(salt:device_id) — same hash used in OccupancyEvent
+  first_seen_at  DateTime  @default(now())
+  last_seen_at   DateTime  @default(now())
+  // Permission-grant grace pass. Set when the device confirms it has granted
+  // location permissions but hasn't necessarily produced an occupancy event
+  // yet (e.g. a fresh install on opening day). The ContributorGuard accepts a
+  // request as long as EITHER `last_seen_at` is within CONTRIBUTOR_PING_TTL_MS
+  // OR `granted_at` is within CONTRIBUTOR_GRANT_TTL_MS (24h by default). This
+  // unblocks first-run UX without giving away unlimited free reads — the
+  // grant expires unless the device starts contributing real events.
+  granted_at     DateTime?
 
   @@index([last_seen_at], name: "idx_contributor_last_seen")
+  @@index([granted_at],   name: "idx_contributor_granted_at")
   @@map("contributor_pings")
 }
 
@@ -343,12 +336,6 @@ enum CampusEventType {
   ACADEMIC
   PERFORMANCE
   OTHER
-}
-
-enum ImpactLevel {
-  LOW
-  MEDIUM
-  HIGH
 }
 
 enum ReportType {

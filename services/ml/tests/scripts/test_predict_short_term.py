@@ -71,14 +71,12 @@ class TestBuildPredictionDf:
         preds = np.array([0.5, 0.7])
         preds_lower = np.array([0.4, 0.6])
         preds_upper = np.array([0.6, 0.8])
-        capacities = {"G1": 180}
 
         result = _build_prediction_df(
             features=features,
             preds=preds,
             preds_lower=preds_lower,
             preds_upper=preds_upper,
-            lot_capacities=capacities,
             model_version="test-v1",
             prediction_time=datetime(2025, 10, 15, 9, 0),
         )
@@ -86,8 +84,8 @@ class TestBuildPredictionDf:
         for col in EXPECTED_COLUMNS:
             assert col in result.columns, f"Missing column: {col}"
 
-    def test_predicted_occupancy_is_int(self):
-        """Predicted occupancy should be integer counts."""
+    def test_predicted_occupancy_is_rate(self):
+        """Predicted occupancy is a rate in [0, 1]."""
         features = pd.DataFrame(
             {
                 "lot_id": ["G1"],
@@ -97,19 +95,18 @@ class TestBuildPredictionDf:
         preds = np.array([0.55])
         preds_lower = np.array([0.45])
         preds_upper = np.array([0.65])
-        capacities = {"G1": 180}
 
         result = _build_prediction_df(
             features=features,
             preds=preds,
             preds_lower=preds_lower,
             preds_upper=preds_upper,
-            lot_capacities=capacities,
             model_version="test-v1",
             prediction_time=datetime(2025, 10, 15, 9, 0),
         )
 
-        assert result["predicted_occupancy"].dtype in [np.int64, np.int32, int]
+        assert (result["predicted_occupancy"] >= 0).all()
+        assert (result["predicted_occupancy"] <= 1).all()
 
     def test_confidence_bounds_ordered(self):
         """confidence_lower <= predicted_occupancy <= confidence_upper."""
@@ -122,14 +119,12 @@ class TestBuildPredictionDf:
         preds = np.array([0.5, 0.8])
         preds_lower = np.array([0.4, 0.7])
         preds_upper = np.array([0.6, 0.9])
-        capacities = {"G1": 180, "E1": 185}
 
         result = _build_prediction_df(
             features=features,
             preds=preds,
             preds_lower=preds_lower,
             preds_upper=preds_upper,
-            lot_capacities=capacities,
             model_version="test-v1",
             prediction_time=datetime(2025, 10, 15, 9, 0),
         )

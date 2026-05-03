@@ -6,18 +6,38 @@ import type { Lot as PrismaLot } from '@prisma/client';
  */
 export type ParkingLot = PrismaLot;
 
-export interface ParkingLotResponse extends PrismaLot {
-  available: number;
-  occupancy_rate: number;
-  fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL';
+export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'current_occupancy'> {
+  /**
+   * Prisma stores this as `Decimal` but it is coerced to `number` at the
+   * response boundary so JSON clients can do arithmetic / `.toFixed(...)`
+   * directly without parsing strings.
+   */
+  daily_rate: number | null;
+
+  /**
+   * Live-occupancy fields below are REDACTED (returned as `null`) for
+   * non-contributor callers on Public endpoints (`GET /lots`, `GET /lots/:id`).
+   * This is the reciprocity model: a device that does not contribute its own
+   * presence does not see live counts. Static metadata (capacity, permits,
+   * coordinates, amenities, etc.) is always present so the App Store reviewer
+   * — and any user who hasn't granted background location — can still see
+   * which lots exist on campus.
+   *
+   * Mobile clients MUST treat each of these as nullable and render a
+   * "locked" placeholder + soft-ask CTA when null. See LocationPermissionScreen.
+   */
+  current_occupancy: number | null;
+  available: number | null;
+  occupancy_rate: number | null;
+  fill_status: 'AVAILABLE' | 'FILLING' | 'NEARLY_FULL' | 'FULL' | null;
   /** Scaled-up occupancy estimate based on penetration rate */
-  estimated_occupancy: number;
+  estimated_occupancy: number | null;
   /** Spots available based on estimated occupancy */
-  estimated_available: number;
+  estimated_available: number | null;
   /** The raw device count before scaling (same as current_occupancy) */
-  raw_occupancy: number;
+  raw_occupancy: number | null;
   /** Effective penetration rate used for this estimate (0.01–1.0) */
-  effective_penetration_rate: number;
+  effective_penetration_rate: number | null;
 }
 
 export interface GetLotsQueryParams {

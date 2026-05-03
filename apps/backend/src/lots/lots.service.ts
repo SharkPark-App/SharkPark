@@ -3,7 +3,6 @@ import { PrismaService } from '../database/database.module';
 import type { Lot, LotType } from '@prisma/client';
 import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
-import { EventsService } from '../events/events.service';
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
 
@@ -18,15 +17,24 @@ export class LotsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly penetrationService: PenetrationEstimationService,
-    private readonly eventsService: EventsService,
     private readonly weatherService: WeatherService,
   ) {}
 
   /**
    * Retrieves all parking lots, with optional filtering.
    * Prisma WHERE clauses replace client-side filtering from DynamoDB.
+   *
+   * `redactLive` strips live-occupancy fields from the response so non-
+   * contributor callers see metadata only. Filters that depend on availability
+   * (`min_available`, `available_only`) are silently ignored when redacting,
+   * since the underlying value isn't visible to the caller anyway — returning
+   * a filtered subset would leak the very signal we're hiding.
    */
-  async findAll(query: GetLotsQueryParams = {}): Promise<ParkingLotResponse[]> {
+  async findAll(
+    query: GetLotsQueryParams = {},
+    options: { redactLive?: boolean } = {},
+  ): Promise<ParkingLotResponse[]> {
+    const { redactLive = false } = options;
     try {
       const lots = await this.prisma.lot.findMany({
         where: {
@@ -37,19 +45,24 @@ export class LotsService {
         },
       });
 
-      // Batch-estimate penetration for all lots at once (single set of DB queries)
-      const estimates = await this.penetrationService.estimateForAllLots(lots);
+      // Skip the (relatively expensive) penetration estimate entirely when
+      // we're going to redact the result — the estimate would only feed the
+      // fields we're about to null out.
+      const estimates = redactLive
+        ? new Map<string, PenetrationEstimate>()
+        : await this.penetrationService.estimateForAllLots(lots);
 
-      // Transform to responses first so filters can use estimated values
-      let responses = lots.map(lot => this.transformToResponse(lot, estimates.get(lot.id)));
+      let responses = lots.map(lot => this.transformToResponse(lot, estimates.get(lot.id), { redactLive }));
 
-      // Post-estimation filters — use estimated availability for accuracy
-      if (query.min_available) {
-        responses = responses.filter(r => r.estimated_available >= query.min_available!);
+      // Post-estimation filters — only meaningful when live data is visible.
+      // For redacted callers we'd be filtering on a value we won't return,
+      // which would leak occupancy through the result set's *cardinality*.
+      if (!redactLive && query.min_available) {
+        responses = responses.filter(r => (r.estimated_available ?? 0) >= query.min_available!);
       }
 
-      if (query.available_only) {
-        responses = responses.filter(r => r.estimated_available > 0);
+      if (!redactLive && query.available_only) {
+        responses = responses.filter(r => (r.estimated_available ?? 0) > 0);
       }
 
       return responses;
@@ -59,7 +72,8 @@ export class LotsService {
     }
   }
 
-  async findOne(lotId: string): Promise<ParkingLotResponse> {
+  async findOne(lotId: string, options: { redactLive?: boolean } = {}): Promise<ParkingLotResponse> {
+    const { redactLive = false } = options;
     try {
       const lot = await this.prisma.lot.findFirst({
         where: { lot_id: lotId },
@@ -69,7 +83,8 @@ export class LotsService {
         throw new NotFoundException(`Parking lot ${lotId} not found`);
       }
 
-      return this.transformToResponse(lot, await this.penetrationService.estimateForLot(lot));
+      const estimate = redactLive ? undefined : await this.penetrationService.estimateForLot(lot);
+      return this.transformToResponse(lot, estimate, { redactLive });
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -168,10 +183,13 @@ export class LotsService {
       const totalCapacity = studentCapacity + employeeCapacity;
       const totalOccupied = studentEstimated + employeeEstimated;
 
-      // Lots at or above NEARLY_FULL threshold
+      // Lots at or above NEARLY_FULL threshold. `occupancy_rate` is non-null
+      // here because we never pass `redactLive` to transformToResponse on this
+      // path (the summary endpoint is itself contributor-gated), but the
+      // narrowing is local so we use `?? 0` for compile safety.
       const highOccupancyLots = responses
-        .filter(r => r.occupancy_rate >= OCCUPANCY_THRESHOLDS.NEARLY_FULL)
-        .sort((a, b) => b.occupancy_rate - a.occupancy_rate);
+        .filter(r => (r.occupancy_rate ?? 0) >= OCCUPANCY_THRESHOLDS.NEARLY_FULL)
+        .sort((a, b) => (b.occupancy_rate ?? 0) - (a.occupancy_rate ?? 0));
 
       return {
         total_lots: lots.length,
@@ -229,7 +247,6 @@ export class LotsService {
   /**
    * Recommends alternative lots when a preferred lot is full or nearly full.
    * Scores candidates using weighted factors: availability, distance, type match, permit compatibility.
-   * Factors in active event impacts (lots with high-impact events get penalized).
    * Excludes the source lot and any lots at ≥75% occupancy.
    */
   async getRecommendations(lotId: string, limit: number = 5): Promise<LotRecommendation[]> {
@@ -247,12 +264,8 @@ export class LotsService {
       },
     });
 
-    // Batch-estimate penetration and fetch event impacts in parallel
-    const candidateIds = candidates.map(c => c.id);
-    const [estimates, eventImpacts] = await Promise.all([
-      this.penetrationService.estimateForAllLots(candidates),
-      this.eventsService.getActiveImpactsForLots(candidateIds),
-    ]);
+    // Batch-estimate penetration for candidates
+    const estimates = await this.penetrationService.estimateForAllLots(candidates);
 
     const W = LotsService.RECOMMENDATION_WEIGHTS;
 
@@ -261,12 +274,14 @@ export class LotsService {
         const estimate = estimates.get(candidate.id);
         const response = this.transformToResponse(candidate, estimate);
 
-        // Skip lots that are full (based on estimated occupancy)
-        if (response.occupancy_rate >= LotsService.FULL_THRESHOLD) return null;
+        // Skip lots that are full (based on estimated occupancy). `redactLive`
+        // is never passed on the recommendation path — the endpoint is
+        // contributor-gated — so these are non-null in practice.
+        if ((response.occupancy_rate ?? 0) >= LotsService.FULL_THRESHOLD) return null;
 
         // --- Availability score (0–1): higher = more space available ---
         const availabilityScore = candidate.capacity > 0
-          ? response.estimated_available / candidate.capacity
+          ? (response.estimated_available ?? 0) / candidate.capacity
           : 0;
 
         // --- Distance score (0–1): closer = higher ---
@@ -284,23 +299,15 @@ export class LotsService {
         const overlap = candidate.permit_types.filter(p => sourcePermits.has(p)).length;
         const permitScore = sourcePermits.size > 0 ? overlap / sourcePermits.size : 1;
 
-        // --- Event penalty (0–1): reduce score if active high-impact event ---
-        const eventIncrease = eventImpacts.get(candidate.id) ?? 0;
-        // Normalize: 50%+ expected increase → 0 penalty margin, 0% → no penalty
-        const eventPenalty = Math.min(1, eventIncrease / 50);
-
-        let score = W.availability * availabilityScore +
-           W.distance    * distanceScore +
-           W.typeMatch   * typeScore +
-           W.permitCompat * permitScore;
-
-        // Apply event penalty: reduce score by up to 20%
-        score *= (1 - eventPenalty * 0.20);
-
-        score = Math.round(score * 100);
+        const score = Math.round(
+          (W.availability * availabilityScore +
+            W.distance    * distanceScore +
+            W.typeMatch   * typeScore +
+            W.permitCompat * permitScore) * 100,
+        );
 
         // Build a human-readable reason
-        const reason = this.buildRecommendationReason(response, distance, eventIncrease);
+        const reason = this.buildRecommendationReason(response, distance);
 
         return {
           ...response,
@@ -338,7 +345,6 @@ export class LotsService {
   private buildRecommendationReason(
     lot: ParkingLotResponse,
     distanceMeters: number,
-    eventIncrease: number = 0,
   ): string {
     const parts: string[] = [];
 
@@ -358,10 +364,6 @@ export class LotsService {
       parts.push(`~${Math.round(distanceMeters / 100) * 100}m away`);
     }
 
-    if (eventIncrease > 0) {
-      parts.push(`event nearby (+${Math.round(eventIncrease)}% demand)`);
-    }
-
     return parts.join(' · ');
   }
 
@@ -370,8 +372,33 @@ export class LotsService {
    * When a PenetrationEstimate is provided, uses estimated occupancy for
    * availability, occupancy_rate, and fill_status calculations.
    */
-  private transformToResponse(lot: Lot, estimate?: PenetrationEstimate): ParkingLotResponse {
-    const rawOccupancy = lot.current_occupancy;
+  private transformToResponse(
+    lot: Lot,
+    estimate?: PenetrationEstimate,
+    options: { redactLive?: boolean } = {},
+  ): ParkingLotResponse {
+    const { redactLive = false } = options;
+
+    // Strip Prisma `current_occupancy` from the spread — we set it explicitly
+    // below (or null it for redacted callers) so the type stays accurate.
+    const { current_occupancy, daily_rate, ...meta } = lot;
+
+    if (redactLive) {
+      return {
+        ...meta,
+        daily_rate: daily_rate != null ? Number(daily_rate) : null,
+        current_occupancy: null,
+        available: null,
+        occupancy_rate: null,
+        fill_status: null,
+        estimated_occupancy: null,
+        estimated_available: null,
+        raw_occupancy: null,
+        effective_penetration_rate: null,
+      };
+    }
+
+    const rawOccupancy = current_occupancy;
     const estimatedOccupancy = estimate ? estimate.estimatedOccupancy : rawOccupancy;
 
     // `available` uses estimated occupancy — represents the best-guess true availability.
@@ -391,7 +418,9 @@ export class LotsService {
     }
 
     return {
-      ...lot,
+      ...meta,
+      daily_rate: daily_rate != null ? Number(daily_rate) : null,
+      current_occupancy: rawOccupancy,
       available: Math.max(0, available),
       occupancy_rate: Math.round(occupancy_rate * 1000) / 1000,
       fill_status,
@@ -406,7 +435,12 @@ export class LotsService {
 
   /**
    * Fetches short-term ML predictions for a lot from predictions_short_term.
-   * Includes active/upcoming event impacts and current weather context.
+   * Includes current weather context.
+   *
+   * Note: campus events are intentionally NOT bundled here — per the 2026-04-30
+   * product decision they are surfaced to the client as a separate display
+   * layer (see the planned `GET /lots/:id/nearby-events` endpoint), not as a
+   * forecasting input or a prediction-response field.
    */
   async getShortTermPredictions(lotId: string): Promise<{
     lot_id: string;
@@ -416,14 +450,6 @@ export class LotsService {
       confidence_lower: number;
       confidence_upper: number;
       model_version: string;
-    }>;
-    event_impacts: Array<{
-      event_name: string;
-      event_type: string;
-      start_time: string;
-      end_time: string;
-      impact_level: string;
-      expected_increase_percent: number;
     }>;
     weather: {
       conditions: string;
@@ -437,8 +463,7 @@ export class LotsService {
 
     const now = new Date();
 
-    // Fetch predictions, event impacts, and weather in parallel
-    const [predictions, eventImpacts, weather] = await Promise.all([
+    const [predictions, weather] = await Promise.all([
       this.prisma.predictionShortTerm.findMany({
         where: {
           lot_id: lot.id,
@@ -447,7 +472,6 @@ export class LotsService {
         orderBy: { target_time: 'asc' },
         take: 20,
       }),
-      this.eventsService.getUpcomingImpactsForLot(lot.id, 6),
       this.weatherService.getCurrent(),
     ]);
 
@@ -459,14 +483,6 @@ export class LotsService {
         confidence_lower: p.confidence_lower,
         confidence_upper: p.confidence_upper,
         model_version: p.model_version,
-      })),
-      event_impacts: eventImpacts.map(({ event, impact }) => ({
-        event_name: event.event_name,
-        event_type: event.event_type,
-        start_time: event.start_time.toISOString(),
-        end_time: event.end_time.toISOString(),
-        impact_level: impact.impact_level,
-        expected_increase_percent: impact.expected_increase_percent,
       })),
       weather: weather
         ? {
@@ -530,7 +546,7 @@ export class LotsService {
     return {
       lot_id: lotId,
       source: 'heuristic',
-      predictions: this.generateHeuristicPredictions(lot, days, now),
+      predictions: this.generateHeuristicPredictions(days, now),
     };
   }
 
@@ -539,7 +555,6 @@ export class LotsService {
    * Provides useful predictions even before the ML model is trained.
    */
   private generateHeuristicPredictions(
-    lot: Lot,
     days: number,
     startDate: Date,
   ): Array<{
@@ -583,17 +598,18 @@ export class LotsService {
 
       for (let hour = CAMPUS_OPEN; hour < CAMPUS_CLOSE; hour++) {
         const baseRate = (hourlyPattern[hour] ?? 0.10) * dayMultiplier;
-        const predicted = Math.round(baseRate * lot.capacity);
 
         // Wider confidence intervals for heuristic predictions
-        const margin = Math.round(lot.capacity * 0.12);
+        const margin = 0.12;
 
         predictions.push({
           target_date: dateStr,
           target_hour: hour,
-          predicted_occupancy: Math.min(predicted, lot.capacity),
-          confidence_lower: Math.max(0, predicted - margin),
-          confidence_upper: Math.min(lot.capacity, predicted + margin),
+          // baseRate is bounded by hourlyPattern (max 0.85) * dayMultiplier (max 1.0),
+          // so it can never exceed 1; no upper clamp needed here.
+          predicted_occupancy: baseRate,
+          confidence_lower: Math.max(0, baseRate - margin),
+          confidence_upper: Math.min(1, baseRate + margin),
           model_version: 'heuristic-v1',
         });
       }

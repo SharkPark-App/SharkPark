@@ -506,7 +506,7 @@ WHERE l.school_id = 'csulb';
 | `occupancy_snapshots` | Permanent | Primary ML training source (archival to S3 optional at Tier 2) |
 | `predictions_short_term` | Overwritten each cycle | UPSERT every 15 min |
 | `predictions_long_term` | Overwritten daily | UPSERT daily |
-| `campus_events` | Permanent | Historical event impact analysis |
+| `campus_events` | Permanent | Powers the mobile nearby-events display + notification surface (not a forecasting input as of 2026-04-30) |
 
 ---
 

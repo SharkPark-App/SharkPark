@@ -26,7 +26,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlo
     reactNativeFactory = factory
 
     // Initialize background fetch for Transistor Background Geolocation SDK
-    TSBackgroundFetch.sharedInstance()?.didFinishLaunching()
+    TSBackgroundFetch.sharedInstance().didFinishLaunching()
 
     window = UIWindow(frame: UIScreen.main.bounds)
 

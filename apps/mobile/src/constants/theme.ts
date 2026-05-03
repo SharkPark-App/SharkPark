@@ -15,6 +15,12 @@ export const COLORS = {
   darkGray: '#374151',
   borderGray: '#e5e7eb',
   toggleGray: '#d1d5db',
+  // Cool steel-blue used for "data locked" map pins (lots whose live
+  // occupancy is redacted because the user hasn't granted background
+  // location). Distinct from the availability palette (green/yellow/red)
+  // so users can't misread it as an availability signal, but visually
+  // present enough that the lot is still discoverable on the map.
+  neutralPin: '#8E9AAF',
 
   // Warning colors (for events)
   warningLight: '#fef3c7',
@@ -96,11 +102,4 @@ export const SHADOWS = {
     shadowRadius: 6,
     elevation: 8,
   },
-} as const;
-
-export const MAP = {
-  // The original map image size in pixels (square dimensions)
-  IMAGE_SIZE: 1098,
-  // Scale multiplier for map display size relative to screen width
-  SCALE_MULTIPLIER: 2.5,
 } as const;
