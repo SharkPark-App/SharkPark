@@ -1,6 +1,6 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { SentryModule } from '@sentry/nestjs/setup';
@@ -12,6 +12,7 @@ import { EventsModule } from './events/events.module';
 import { WeatherModule } from './weather/weather.module';
 import { AuthModule } from './auth/auth.module';
 import { AzureAdGuard } from './auth/azure-ad.guard';
+import { TierThrottlerGuard } from './common/guards/tier-throttler.guard';
 import { OccupancyEventsModule } from './occupancy-events/occupancy-events.module';
 import { ReliabilityModule } from './reliability/reliability.module';
 import { ShuttleTrackerModule } from './shuttle-tracker/shuttle-tracker.module';
@@ -65,12 +66,18 @@ const isProduction = process.env.NODE_ENV === 'production';
       },
     }),
     DatabaseModule,
-    // Two named throttler buckets:
-    //   `default` — short burst limit applied globally for safety (auth/mutations)
-    //   `read`    — relaxed limit for hot read endpoints behind shared NAT
-    //               (e.g. campus Wi-Fi: hundreds of devices share one IP)
+    // Tier-aware throttler buckets (selected by TierThrottlerGuard via x-app-mode):
+    //   tier-public      — unauthenticated / no contributor ping: 60 req/min
+    //   tier-contributor — device with fresh contributor ping:    300 req/min
+    //   tier-authed      — Azure AD bearer token present:         600 req/min
+    //
+    // `read` is a named bucket kept for hot read endpoints that declare an
+    // explicit @Throttle({ read: {...} }) override (e.g. LotsController).
+    // Those routes bypass the tier buckets and use their own limit directly.
     ThrottlerModule.forRoot([
-      { name: 'default', ttl: 10_000, limit: 20 },
+      { name: 'tier-public', ttl: 60_000, limit: 60 },
+      { name: 'tier-contributor', ttl: 60_000, limit: 300 },
+      { name: 'tier-authed', ttl: 60_000, limit: 600 },
       { name: 'read', ttl: 60_000, limit: 600 },
     ]),
     LotsModule,
@@ -88,7 +95,7 @@ const isProduction = process.env.NODE_ENV === 'production';
   ],
   controllers: [],
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: TierThrottlerGuard },
     { provide: APP_GUARD, useExisting: AzureAdGuard },
   ],
 })
