@@ -19,5 +19,6 @@
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   # Tight CSP for a static marketing site. 'unsafe-inline' is needed for the JSON-LD
   # <script type="application/ld+json"> blocks and Astro's small inline <style> tags.
-  # No third-party scripts, frames, or analytics — keep this list closed.
-  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests
+  # Cloudflare Web Analytics beacon (auto-injected when enabled on the zone) loads
+  # from static.cloudflareinsights.com and POSTs to cloudflareinsights.com.
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' static.cloudflareinsights.com; font-src 'self' data:; connect-src 'self' cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests

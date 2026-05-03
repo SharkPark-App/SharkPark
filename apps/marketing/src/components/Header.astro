@@ -1,8 +1,15 @@
 ---
 import { SITE, NAV_LINKS } from '../consts';
 
+// Astro builds with `build.format: 'file'`, so for `src/pages/support.astro`
+// `Astro.url.pathname` is `/support.html` at build time even though the deployed
+// URL is `/support`. Strip `.html` and any trailing slash so the comparison
+// against `NAV_LINKS` hrefs (`/`, `/support`, …) is stable.
 const normalize = (p: string) => {
-  const stripped = p.replace(/\/+$/, '');
+  const stripped = p
+    .replace(/\/index\.html$/, '/')
+    .replace(/\.html$/, '')
+    .replace(/\/+$/, '');
   return stripped === '' ? '/' : stripped;
 };
 const pathname = normalize(Astro.url.pathname);
