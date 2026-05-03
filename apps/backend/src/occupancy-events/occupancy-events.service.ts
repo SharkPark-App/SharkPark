@@ -181,19 +181,14 @@ export class OccupancyEventsService {
   }
 
   /**
-   * Deletes rows older than `retentionDays` from tables that hold raw,
-   * derivable history:
-   *   - `occupancy_events` — honors the user-facing privacy promise in
-   *     README.md ("raw events purged after 30 days").
-   *   - `weather` — observation rows from the 30-min NWS fetch cron. ML
-   *     only ever reads the latest row (`fetch_latest_weather` LIMIT 1)
-   *     and trains on `occupancy_snapshots`, so historical weather is
-   *     unused after ~3 hours (the WEATHER_MAX_AGE_HOURS staleness gate)
-   *     and safe to drop on the same retention window.
+   * Deletes rows older than `retentionDays` from `occupancy_events` only —
+   * honors the user-facing privacy promise in README.md ("raw events purged
+   * after 30 days").
    *
-   * `occupancy_snapshots` and other aggregated tables are intentionally
-   * NOT pruned here — they are the primary ML training source and kept
-   * permanently (see infrastructure/README.md "Data Retention").
+   * `occupancy_snapshots`, `weather`, and other aggregated/observational
+   * tables are intentionally NOT pruned here — snapshots are the primary ML
+   * training source and weather observations are retained as candidate ML
+   * features (see infrastructure/README.md "Data Retention").
    *
    * Default retention is 30 days; overridable via the `RETENTION_DAYS`
    * env in the cron entry. Called by the scheduler at 4 AM Pacific daily,
@@ -201,7 +196,7 @@ export class OccupancyEventsService {
    */
   async pruneOldData(
     retentionDays: number = 30,
-  ): Promise<{ events_deleted: number; weather_deleted: number; cutoff: string }> {
+  ): Promise<{ events_deleted: number; cutoff: string }> {
     if (!Number.isFinite(retentionDays) || retentionDays < 1) {
       throw new InternalServerErrorException(
         `pruneOldData: retentionDays must be >= 1, got ${retentionDays}`,
@@ -211,22 +206,16 @@ export class OccupancyEventsService {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
     try {
-      const [{ count: eventsDeleted }, { count: weatherDeleted }] = await Promise.all([
-        this.prisma.occupancyEvent.deleteMany({
-          where: { timestamp: { lt: cutoff } },
-        }),
-        this.prisma.weather.deleteMany({
-          where: { timestamp: { lt: cutoff } },
-        }),
-      ]);
+      const { count: eventsDeleted } = await this.prisma.occupancyEvent.deleteMany({
+        where: { timestamp: { lt: cutoff } },
+      });
 
       this.logger.log(
-        `[retention] Pruned ${eventsDeleted} occupancy_events and ${weatherDeleted} weather rows older than ${retentionDays} days (cutoff=${cutoff.toISOString()})`,
+        `[retention] Pruned ${eventsDeleted} occupancy_events older than ${retentionDays} days (cutoff=${cutoff.toISOString()})`,
       );
 
       return {
         events_deleted: eventsDeleted,
-        weather_deleted: weatherDeleted,
         cutoff: cutoff.toISOString(),
       };
     } catch (error) {

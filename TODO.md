@@ -96,6 +96,8 @@ NWS migration + long-term forecast cron landed together. The OWM `/data/2.5/weat
 
 **Follow-ups (separate tickets):**
 - **Ly (ML)** — extend `services/ml/src/postprocess/weather_adjustment.py` to accept a `WeatherForecast` row keyed by `target_time`. Wire into `predict_long_term.py` once it lands.
+- **Ly (ML)** — `_SEVERE_KEYWORDS` in `services/ml/src/postprocess/weather_adjustment.py` matches bare `"thunderstorm"`, which over-corrects on NWS low-probability strings like *"Slight Chance Showers And Thunderstorms"* (50% median reduction triggered on a 20% forecast). Gate severity on `precipitation_probability` (or scope keyword to phrases like `"thunderstorms likely"` / `"severe thunderstorm"`). Folding into the long-term-weather PR.
+- **Ly (ML)** — `weather` table is now retained permanently (PR #173 dropped it from `prune-old-data`) for future model features. Current schema only stores `temperature_f`, `condition`, `precipitation_probability`, `feels_like_f`, `is_raining`, `timestamp`, `school_id`. Revisit column width (wind, humidity, pressure, cloud cover) when wiring weather features into training.
 - **Track separately:** long-term live MAE so we can tell whether the forecast feature actually helps or just stacks two error bands. Folds into the existing model-drift monitoring item.
 - **Ops (Charles)** — on next deploy, `flyctl secrets unset OPENWEATHER_API_KEY -a sharkpark-api`. The default `WEATHER_USER_AGENT` (`SharkPark/1.0 (ops@sharkpark.app)`) is correct as-is; only override the secret if the contact mailbox changes.
 

@@ -435,9 +435,9 @@ describe('OccupancyEventsService', () => {
   });
 
   describe('pruneOldData', () => {
-    it('should delete occupancy_events and weather older than the cutoff (snapshots untouched)', async () => {
+    it('should delete occupancy_events older than the cutoff (snapshots and weather untouched)', async () => {
       (prisma as any).occupancyEvent.deleteMany = jest.fn().mockResolvedValue({ count: 42 });
-      (prisma as any).weather.deleteMany = jest.fn().mockResolvedValue({ count: 7 });
+      (prisma as any).weather.deleteMany = jest.fn();
       (prisma as any).occupancySnapshot.deleteMany = jest.fn();
 
       const before = Date.now();
@@ -445,9 +445,10 @@ describe('OccupancyEventsService', () => {
       const after = Date.now();
 
       expect(result.events_deleted).toBe(42);
-      expect(result.weather_deleted).toBe(7);
+      expect((result as any).weather_deleted).toBeUndefined();
       expect((prisma as any).occupancyEvent.deleteMany).toHaveBeenCalledTimes(1);
-      expect((prisma as any).weather.deleteMany).toHaveBeenCalledTimes(1);
+      // Weather rows are retained as candidate ML features — must not be touched
+      expect((prisma as any).weather.deleteMany).not.toHaveBeenCalled();
       // Snapshots are permanent per docs — must never be touched here
       expect((prisma as any).occupancySnapshot.deleteMany).not.toHaveBeenCalled();
 
@@ -458,13 +459,11 @@ describe('OccupancyEventsService', () => {
 
       const eventCall = (prisma as any).occupancyEvent.deleteMany.mock.calls[0][0];
       expect(eventCall.where.timestamp.lt.toISOString()).toBe(result.cutoff);
-      const weatherCall = (prisma as any).weather.deleteMany.mock.calls[0][0];
-      expect(weatherCall.where.timestamp.lt.toISOString()).toBe(result.cutoff);
     });
 
     it('should default to 30 days when called with no argument', async () => {
       (prisma as any).occupancyEvent.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
-      (prisma as any).weather.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+      (prisma as any).weather.deleteMany = jest.fn();
 
       const before = Date.now();
       const result = await service.pruneOldData();
@@ -472,6 +471,7 @@ describe('OccupancyEventsService', () => {
       const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
       expect(cutoffMs).toBeLessThanOrEqual(before - thirtyDaysMs + 1000);
       expect(cutoffMs).toBeGreaterThanOrEqual(before - thirtyDaysMs - 1000);
+      expect((prisma as any).weather.deleteMany).not.toHaveBeenCalled();
     });
 
     it('should reject retentionDays < 1', async () => {
@@ -487,7 +487,6 @@ describe('OccupancyEventsService', () => {
 
     it('should throw InternalServerErrorException on database error', async () => {
       (prisma as any).occupancyEvent.deleteMany = jest.fn().mockRejectedValue(new Error('Connection lost'));
-      (prisma as any).weather.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
 
       await expect(service.pruneOldData(30))
         .rejects.toThrow('Failed to prune old data');

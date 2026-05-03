@@ -33,6 +33,6 @@ void runCronJob('prune-old-data', async ({ app, logger }) => {
   const svc = app.get(OccupancyEventsService);
   const result = await svc.pruneOldData(retentionDays);
   logger.log(
-    `[cron:prune-old-data] retention=${retentionDays}d events=${result.events_deleted} weather=${result.weather_deleted} cutoff=${result.cutoff}`,
+    `[cron:prune-old-data] retention=${retentionDays}d events=${result.events_deleted} cutoff=${result.cutoff}`,
   );
 });
