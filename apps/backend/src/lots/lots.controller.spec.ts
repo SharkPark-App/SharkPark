@@ -14,6 +14,16 @@ describe('LotsController', () => {
     getHistory: jest.fn(),
     getOccupancySummary: jest.fn(),
     getRecommendations: jest.fn(),
+    getTrends: jest.fn(),
+    getUtilization: jest.fn(),
+    parseRangeDays: jest.fn().mockImplementation(
+      (range: string | undefined, defaultDays: number, maxDays: number) => {
+        if (!range) return defaultDays;
+        const match = /^(\d+)d$/.exec(range);
+        if (!match) return defaultDays;
+        return Math.min(Math.max(1, parseInt(match[1], 10)), maxDays);
+      },
+    ),
   };
 
   // Default to "is contributor" so existing test cases see the unredacted shape.
@@ -227,6 +237,84 @@ describe('LotsController', () => {
         count: 0,
         data: [],
       });
+    });
+  });
+
+  describe('getLotTrends', () => {
+    const mockTrends = [
+      {
+        hour: '2026-04-25T08:00:00.000Z',
+        avg_occupancy_rate: 0.55,
+        avg_occupancy: 55,
+        avg_available: 45,
+        sample_count: 4,
+      },
+    ];
+
+    it('should return trend data with default range', async () => {
+      mockLotsService.getTrends.mockResolvedValue(mockTrends);
+
+      const result = await controller.getLotTrends('g1');
+
+      expect(result).toEqual({
+        success: true,
+        lot_id: 'G1',
+        range_days: 7,
+        count: 1,
+        data: mockTrends,
+      });
+      expect(service.getTrends).toHaveBeenCalledWith('G1', 7);
+    });
+
+    it('should parse range query param', async () => {
+      mockLotsService.getTrends.mockResolvedValue([]);
+
+      await controller.getLotTrends('G1', '30d');
+
+      expect(service.getTrends).toHaveBeenCalledWith('G1', 30);
+    });
+
+    it('should uppercase the lot id', async () => {
+      mockLotsService.getTrends.mockResolvedValue([]);
+
+      await controller.getLotTrends('g7');
+
+      expect(service.getTrends).toHaveBeenCalledWith('G7', expect.any(Number));
+    });
+  });
+
+  describe('getUtilization', () => {
+    const mockUtilization = [
+      {
+        lot_id: 'G1',
+        display_name: 'Lot G1',
+        lot_type: 'STUDENT',
+        capacity: 100,
+        avg_utilization: 0.72,
+        snapshot_count: 10,
+      },
+    ];
+
+    it('should return utilization data with default range', async () => {
+      mockLotsService.getUtilization.mockResolvedValue(mockUtilization);
+
+      const result = await controller.getUtilization();
+
+      expect(result).toEqual({
+        success: true,
+        range_days: 30,
+        count: 1,
+        data: mockUtilization,
+      });
+      expect(service.getUtilization).toHaveBeenCalledWith(30);
+    });
+
+    it('should parse range query param', async () => {
+      mockLotsService.getUtilization.mockResolvedValue([]);
+
+      await controller.getUtilization('14d');
+
+      expect(service.getUtilization).toHaveBeenCalledWith(14);
     });
   });
 });
