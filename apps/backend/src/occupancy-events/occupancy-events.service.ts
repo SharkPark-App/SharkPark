@@ -181,18 +181,18 @@ export class OccupancyEventsService {
   }
 
   /**
-   * Deletes raw `occupancy_events` older than `retentionDays`. Default is
-   * 30 days to honor the user-facing privacy promise in README.md ("raw
-   * events purged after 30 days"); overridable via the `RETENTION_DAYS`
-   * env in the cron entry.
+   * Deletes rows older than `retentionDays` from `occupancy_events` only —
+   * honors the user-facing privacy promise in README.md ("raw events purged
+   * after 30 days").
    *
-   * `occupancy_snapshots` are intentionally NOT pruned here — they are the
-   * primary ML training source and are kept permanently (see
-   * infrastructure/README.md "Data Retention"). Raw events are derivable
-   * history that snapshots already aggregate, so dropping them is safe
-   * and bounds table growth.
+   * `occupancy_snapshots`, `weather`, and other aggregated/observational
+   * tables are intentionally NOT pruned here — snapshots are the primary ML
+   * training source and weather observations are retained as candidate ML
+   * features (see infrastructure/README.md "Data Retention").
    *
-   * Called by the scheduler at 4 AM daily Pacific (after the 2 AM backup).
+   * Default retention is 30 days; overridable via the `RETENTION_DAYS`
+   * env in the cron entry. Called by the scheduler at 4 AM Pacific daily,
+   * after the 2 AM backup, so deleted rows live in the most recent dump.
    */
   async pruneOldData(
     retentionDays: number = 30,
@@ -219,8 +219,8 @@ export class OccupancyEventsService {
         cutoff: cutoff.toISOString(),
       };
     } catch (error) {
-      this.logger.error('Failed to prune old occupancy data', error);
-      throw new InternalServerErrorException('Failed to prune old occupancy data');
+      this.logger.error('Failed to prune old data', error);
+      throw new InternalServerErrorException('Failed to prune old data');
     }
   }
 
@@ -339,7 +339,7 @@ export class OccupancyEventsService {
 
       // Gather reliability input for all lots in parallel (avoids N+1 DB calls)
       const reliabilityInputs = await Promise.all(
-        lots.map((lot) => this.reliabilityComputationService.gatherReliabilityInput(lot.lot_id, lot)),
+        lots.map((lot) => this.reliabilityComputationService.gatherReliabilityInput(lot)),
       );
 
       // Build snapshot data array

@@ -19,10 +19,11 @@ model School {
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
-  lots             Lot[]
-  users            User[]
-  campus_events    CampusEvent[]
-  weather          Weather[]
+  lots              Lot[]
+  users             User[]
+  campus_events     CampusEvent[]
+  weather           Weather[]
+  weather_forecasts WeatherForecast[]
 
   @@map("schools")
 }
@@ -216,6 +217,35 @@ model Weather {
 
   @@index([school_id, timestamp])
   @@map("weather")
+}
+
+/// Hourly forecast rows from NWS api.weather.gov, written by the
+/// `fetch-weather-forecast` cron every 6 hours. Each row represents one
+/// future hour for a given school. The cron itself self-prunes rows whose
+/// `target_time` is in the past before each upsert pass, so this table
+/// never grows beyond the active forecast window.
+model WeatherForecast {
+  id                        String   @id @default(cuid())
+  school_id                 String
+  /// Start of the 1-hour window this forecast applies to (UTC).
+  target_time               DateTime
+  temperature_f             Float
+  /// Stored as a 0-1 rate (NWS returns 0-100 percent; normalized on write).
+  precipitation_probability Float
+  /// Derived via short-forecast keyword + pop threshold; see deriveIsRaining.
+  is_raining                Boolean
+  wind_speed_mph            Float
+  /// Lower-cased short-forecast text from NWS (e.g. "light rain").
+  conditions                String
+  /// When this forecast was retrieved from NWS (used for staleness gating).
+  fetched_at                DateTime @default(now())
+
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+
+  /// One forecast row per (school, target_time). New cron run upserts.
+  /// (No separate @@index — the unique constraint above provides the index.)
+  @@unique([school_id, target_time])
+  @@map("weather_forecasts")
 }
 
 model Report {

@@ -2,12 +2,13 @@ import { runCronJob } from './_bootstrap';
 import { OccupancyEventsService } from '../occupancy-events/occupancy-events.service';
 
 /**
- * Raw-event data retention cron.
+ * Raw-data retention cron.
  *
- * Deletes rows from `occupancy_events` older than 30 days, honoring the
- * user-facing privacy promise in README.md. `occupancy_snapshots` and
- * all aggregated tables are kept permanently (see infrastructure/README.md
- * "Data Retention") — this script never touches them.
+ * Deletes rows older than 30 days from `occupancy_events` only — honors the
+ * privacy promise in README.md ("raw events purged after 30 days").
+ * `weather` observations, `occupancy_snapshots`, and all aggregated tables
+ * are retained permanently — see infrastructure/README.md "Data Retention".
+ * Weather rows are kept as candidate ML feature history.
  *
  * Override the window with the `RETENTION_DAYS` env var (defaults to 30).
  * Runs daily at 4 AM Pacific, after the 2 AM backup, so the deleted rows

@@ -80,17 +80,26 @@ describe('Configuration', () => {
   });
 
   describe('weatherConfig', () => {
-    it('should parse lat/lon as floats with defaults', () => {
-      delete process.env.OPENWEATHER_API_KEY;
+    it('should parse lat/lon as floats with defaults and provide a default UA', () => {
+      delete process.env.WEATHER_USER_AGENT;
       delete process.env.WEATHER_LAT;
       delete process.env.WEATHER_LON;
 
       const config = (weatherConfig as unknown as () => ReturnType<typeof Object>)();
       expect(config).toEqual({
-        openWeatherApiKey: '',
+        userAgent: 'SharkPark/1.0 (ops@sharkpark.app)',
         latitude: 33.7838,
         longitude: -118.1134,
       });
+    });
+
+    it('should respect WEATHER_USER_AGENT override', () => {
+      process.env.WEATHER_USER_AGENT = 'Custom/2.0 (ops@example.com)';
+      const config = (weatherConfig as unknown as () => ReturnType<typeof Object>)();
+      expect(config).toEqual(
+        expect.objectContaining({ userAgent: 'Custom/2.0 (ops@example.com)' }),
+      );
+      delete process.env.WEATHER_USER_AGENT;
     });
 
     it('should read custom lat/lon from env', () => {

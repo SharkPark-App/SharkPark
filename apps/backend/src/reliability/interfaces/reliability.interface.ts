@@ -23,6 +23,7 @@ export interface ReliabilityFactors {
   eventFrequency: FactorScore;
   sampleSize: FactorScore;
   historicalAccuracy: FactorScore;
+  userReports: FactorScore;
 }
 
 export interface ReliabilityScore {
@@ -41,6 +42,7 @@ export interface ReliabilityInput {
   eventsInLastHour: number;
   uniqueDevicesInLastHour: number;
   historicalAccuracy: number | null;
+  uniqueReportersInWindow: number;
 }
 
 export interface ReliabilityScoreSummary {
@@ -57,6 +59,7 @@ export interface ReliabilityWeights {
   eventFrequency: number;
   sampleSize: number;
   historicalAccuracy: number;
+  userReports: number;
 }
 
 export interface ReliabilityThresholds {
@@ -65,5 +68,7 @@ export interface ReliabilityThresholds {
   penetrationRateTarget: number;
   freshnessWindowMinutes: number;
   eventFrequencyTarget: number;
-  sampleSizeTarget: number;
+  sampleSizeTarget: number;  
+  userReportsTarget: number;
+  userReportsWindowMinutes: number;
 }
