@@ -194,13 +194,10 @@ export class ReliabilityComputationService {
     }
 
     const uniqueDevices = new Set(recentEvents.map((e) => e.device_hash));
-    
-    // Cap at 100 — keeps MAPE input consistent across paths regardless of how
-    // predictions were originally fetched.
-    const cappedPredictions = predictions.slice(0, 100);
     const historicalAccuracy = this.computeAccuracyFromSamples(
-      cappedPredictions,
+      predictions,
       snapshots,
+      now,
     );
 
     return {
@@ -276,43 +273,83 @@ export class ReliabilityComputationService {
    * Returns a value between 0 and 1 where 1 = perfect accuracy, or null if
    * insufficient data (< 10 comparisons) to be meaningful.
    *
-   * Uses Mean Absolute Percentage Error (MAPE) inverted to an accuracy score:
-   * accuracy = max(0, 1 - MAPE)
+   * MAPE is recency-weighted via linear decay (newer predictions count more)
+   * so a recent regression isn't masked by clean week-old predictions.   
    */
   private computeAccuracyFromSamples(
     predictions: Array<{ target_time: Date; predicted_occupancy: number }>,
     snapshots: Array<{ timestamp: Date; occupancy_rate: number }>,
+    now: Date,
   ): number | null {
     if (predictions.length < 10) return null;
 
-    let totalError = 0;
-    let comparisons = 0;
+    const sortedSnapshots = [...snapshots].sort(
+      (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+    );
+
     const windowMs = 10 * 60 * 1000;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const maxAgeDays = 7;
+    const minWeight = 0.1;
+
+    let totalWeightedError = 0;
+    let totalWeight = 0;
+    let comparisons = 0;
 
     for (const pred of predictions) {
       const targetTimeMs = pred.target_time.getTime();
-      
-      let closestSnapshot: { timestamp: Date; occupancy_rate: number } | null = null;
-      let minDiffMs = windowMs;
+      const closest = this.findClosestSnapshot(sortedSnapshots, targetTimeMs, windowMs);
 
-      for (const snap of snapshots) {
-        const diffMs = Math.abs(snap.timestamp.getTime() - targetTimeMs);
-        if (diffMs <= minDiffMs) {
-          minDiffMs = diffMs;
-          closestSnapshot = snap;
-        }
-      }
+      if (closest && closest.occupancy_rate > 0) {
+        const error =
+          Math.abs(pred.predicted_occupancy - closest.occupancy_rate) /
+          closest.occupancy_rate;
+        
+          // Linear decay: age=0 -> weight 1.0, 7d -> minWeight (0.1)
+        const ageDays = (now.getTime() - targetTimeMs) / dayMs;
+        const weight = Math.max(minWeight, 1 - ageDays / maxAgeDays);
 
-      if (closestSnapshot && closestSnapshot.occupancy_rate > 0) {
-        const error = Math.abs(pred.predicted_occupancy - closestSnapshot.occupancy_rate) / closestSnapshot.occupancy_rate;
-        totalError += error;
+        totalWeightedError += error * weight;
+        totalWeight += weight;
         comparisons++;
       }
     }
 
     if (comparisons < 10) return null;
 
-    const mape = totalError / comparisons;
+    const mape = totalWeightedError / totalWeight;
     return Math.max(0, Math.round((1 - mape) * 1000) / 1000);
+  }
+
+  /**
+   * Binary search for the snapshot closest in time to targetTimeMs, within
+   * ± windowMs. Snapshots must be sorted ascending by timestamp.
+   */
+  private findClosestSnapshot(
+    sortedSnapshots: Array<{ timestamp: Date; occupancy_rate: number }>,
+    targetTimeMs: number,
+    windowMs: number,
+  ): { timestamp: Date; occupancy_rate: number } | null {
+    let lo = 0;
+    let hi = sortedSnapshots.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (sortedSnapshots[mid].timestamp.getTime() < targetTimeMs) lo = mid + 1;
+      else hi = mid;
+    }
+
+    let closest: { timestamp: Date; occupancy_rate: number } | null = null;
+    let minDiff = windowMs;
+    // The closest snapshot is either at lo or lo-1
+    for (const idx of [lo - 1, lo]) {
+      if (idx < 0 || idx >= sortedSnapshots.length) continue;
+
+      const diff = Math.abs(sortedSnapshots[idx].timestamp.getTime() - targetTimeMs);
+      if (diff <= minDiff) {
+        minDiff = diff;
+        closest = sortedSnapshots[idx];
+      }
+    }
+    return closest;
   }
 }

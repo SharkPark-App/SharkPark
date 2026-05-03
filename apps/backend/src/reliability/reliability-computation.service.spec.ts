@@ -242,4 +242,112 @@ describe('ReliabilityComputationService', () => {
       }));
     });
   });
+
+  describe('computeAccuracyFromSamples (private)', () => {
+    // Tested directly via bracket access — recency weighting and binary search
+    // aren't exercised by the public-path mocks.
+    const callHelper = (
+      predictions: Array<{ target_time: Date; predicted_occupancy: number }>,
+      snapshots: Array<{ timestamp: Date; occupancy_rate: number }>,
+      now: Date,
+    ): number | null =>
+      (service as unknown as {
+        computeAccuracyFromSamples: (
+          p: typeof predictions,
+          s: typeof snapshots,
+          n: Date,
+        ) => number | null;
+      }).computeAccuracyFromSamples(predictions, snapshots, now);
+
+    const buildPair = (target: Date, predicted: number, actual: number) => ({
+      prediction: { target_time: target, predicted_occupancy: predicted },
+      snapshot: { timestamp: target, occupancy_rate: actual },
+    });
+
+    it('returns null when fewer than 10 predictions', () => {
+      const now = new Date('2026-05-02T12:00:00Z');
+      const pairs = Array.from({ length: 9 }, (_, i) =>
+        buildPair(new Date(now.getTime() - i * 60 * 60 * 1000), 0.5, 0.5),
+      );
+
+      const result = callHelper(
+        pairs.map((p) => p.prediction),
+        pairs.map((p) => p.snapshot),
+        now,
+      );
+
+      expect(result).toBeNull();
+    });
+
+    it('weights recent predictions more heavily than old ones', () => {
+      const now = new Date('2026-05-02T12:00:00Z');
+      const dayMs = 24 * 60 * 60 * 1000;
+
+      // Scenario A: recent predictions perfect, old predictions terrible.
+      // Recency weight should pull MAPE down (high accuracy).
+      const recentPerfect = Array.from({ length: 10 }, (_, i) =>
+        buildPair(new Date(now.getTime() - i * 60 * 60 * 1000), 0.5, 0.5),
+      );
+      const oldTerrible = Array.from({ length: 10 }, (_, i) =>
+        buildPair(new Date(now.getTime() - (5 + i * 0.05) * dayMs), 0.9, 0.5),
+      );
+      const scenarioA = [...recentPerfect, ...oldTerrible];
+
+      // Scenario B: same predictions, swapped roles (recent terrible, old perfect).
+      // Recency weight should push MAPE up (low accuracy).
+      const recentTerrible = Array.from({ length: 10 }, (_, i) =>
+        buildPair(new Date(now.getTime() - i * 60 * 60 * 1000), 0.9, 0.5),
+      );
+      const oldPerfect = Array.from({ length: 10 }, (_, i) =>
+        buildPair(new Date(now.getTime() - (5 + i * 0.05) * dayMs), 0.5, 0.5),
+      );
+      const scenarioB = [...recentTerrible, ...oldPerfect];
+
+      const accuracyA = callHelper(
+        scenarioA.map((p) => p.prediction),
+        scenarioA.map((p) => p.snapshot),
+        now,
+      );
+      const accuracyB = callHelper(
+        scenarioB.map((p) => p.prediction),
+        scenarioB.map((p) => p.snapshot),
+        now,
+      );
+
+      expect(accuracyA).not.toBeNull();
+      expect(accuracyB).not.toBeNull();
+      // Same prediction set, same errors — only the temporal distribution differs.
+      // Without recency weighting these would be equal; the gap proves weighting works.
+      expect(accuracyA!).toBeGreaterThan(accuracyB!);
+    });
+
+    it('finds closest snapshot via binary search regardless of input order', () => {
+      const now = new Date('2026-05-02T12:00:00Z');
+      const target = new Date('2026-05-02T10:00:00Z');
+
+      // 10 perfect predictions all matching the same target — predicted == actual.
+      const predictions = Array.from({ length: 10 }, (_, i) => ({
+        target_time: new Date(target.getTime() - i * 60 * 1000),
+        predicted_occupancy: 0.5,
+      }));
+
+      // Snapshots scattered around target time
+      const snapshots = [
+        { timestamp: new Date(target.getTime() + 30 * 60 * 1000), occupancy_rate: 0.9 },
+        { timestamp: new Date(target.getTime()), occupancy_rate: 0.5 },
+        { timestamp: new Date(target.getTime() - 30 * 60 * 1000), occupancy_rate: 0.1 },
+      ];
+      
+      // Generate enough snapshots to actually match each prediction within 10min
+      const denseSnapshots = predictions.map((p) => ({
+        timestamp: p.target_time,
+        occupancy_rate: 0.5,
+      }));
+
+      const result = callHelper(predictions, [...snapshots, ...denseSnapshots].reverse(), now);
+
+      expect(result).not.toBeNull();
+      expect(result).toBe(1); // perfect prediction -> 1
+    });
+  });
 });
