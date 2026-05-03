@@ -519,11 +519,11 @@ describe('ReliabilityService', () => {
     });
 
     it('moves a HIGH lot toward MEDIUM when reports accumulate', () => {
-      const clean = service.computeReliability('lot-clean', baseHighInput);
+      const clean = service.computeReliability('lot-clean', baseHighInput, undefined, undefined, 'AUTHED');
       const reported = service.computeReliability('lot-reported', {
         ...baseHighInput,
         uniqueReportersInWindow: 5,
-      });
+      }, undefined, undefined, 'AUTHED');
       // userReports weight 0.15 -> losing all of it shaves ~15 points off score
       expect(clean.score - reported.score).toBeGreaterThanOrEqual(14);
       expect(clean.score - reported.score).toBeLessThanOrEqual(16);
@@ -539,7 +539,7 @@ describe('ReliabilityService', () => {
         uniqueDevicesInLastHour: 16,
         historicalAccuracy: 0.7,
         uniqueReportersInWindow: 5,
-      });
+      }, undefined, undefined, 'AUTHED');
 
       expect(result.confidence).toBe('MEDIUM');
       expect(result.explanation.toLowerCase()).toContain('user reports');
