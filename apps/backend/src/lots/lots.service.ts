@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
 import type { Lot, LotType } from '@prisma/client';
-import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
+import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation, TrendPoint, LotUtilization } from './interfaces/parking-lot.interface';
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
@@ -365,6 +365,102 @@ export class LotsService {
     }
 
     return parts.join(' · ');
+  }
+
+  /**
+   * Returns hourly average occupancy for a single lot over the past N days.
+   * Uses a raw GROUP BY date_trunc query since Prisma groupBy doesn't support
+   * date truncation.
+   */
+  async getTrends(lotId: string, rangeDays: number): Promise<TrendPoint[]> {
+    try {
+      const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
+      if (!lot) throw new NotFoundException(`Parking lot ${lotId} not found`);
+
+      const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
+
+      const rows = await this.prisma.$queryRaw<Array<{
+        hour: Date;
+        avg_occupancy_rate: number;
+        avg_occupancy: number;
+        avg_available: number;
+        sample_count: bigint;
+      }>>`
+        SELECT
+          date_trunc('hour', timestamp) AS hour,
+          ROUND(AVG(occupancy_rate)::numeric, 3)::float8 AS avg_occupancy_rate,
+          ROUND(AVG(occupancy)::numeric, 1)::float8    AS avg_occupancy,
+          ROUND(AVG(available)::numeric, 1)::float8    AS avg_available,
+          COUNT(*)                                     AS sample_count
+        FROM occupancy_snapshots
+        WHERE lot_id = ${lot.id} AND timestamp >= ${since}
+        GROUP BY date_trunc('hour', timestamp)
+        ORDER BY hour ASC
+      `;
+
+      return rows.map(r => ({
+        hour: r.hour.toISOString(),
+        avg_occupancy_rate: Number(r.avg_occupancy_rate),
+        avg_occupancy: Number(r.avg_occupancy),
+        avg_available: Number(r.avg_available),
+        sample_count: Number(r.sample_count),
+      }));
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      this.logger.error(`Failed to fetch trends for lot ${lotId}`, error);
+      throw new InternalServerErrorException(`Failed to fetch trends for lot ${lotId}`);
+    }
+  }
+
+  /**
+   * Returns per-lot average utilization (occupancy_rate) over the past N days.
+   * Lots with no snapshots in the range get avg_utilization: null.
+   */
+  async getUtilization(rangeDays: number): Promise<LotUtilization[]> {
+    try {
+      const since = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
+
+      const [lots, aggregates] = await Promise.all([
+        this.prisma.lot.findMany({ orderBy: { lot_id: 'asc' } }),
+        this.prisma.occupancySnapshot.groupBy({
+          by: ['lot_id'],
+          where: { timestamp: { gte: since } },
+          _avg: { occupancy_rate: true },
+          _count: { id: true },
+        }),
+      ]);
+
+      const aggMap = new Map(aggregates.map(a => [a.lot_id, a]));
+
+      return lots
+        .map(lot => {
+          const agg = aggMap.get(lot.id);
+          const rate = agg?._avg.occupancy_rate;
+          return {
+            lot_id: lot.lot_id,
+            display_name: lot.display_name,
+            lot_type: lot.lot_type as string,
+            capacity: lot.capacity,
+            avg_utilization: rate != null ? Math.round(rate * 1000) / 1000 : null,
+            snapshot_count: agg?._count.id ?? 0,
+          };
+        })
+        .sort((a, b) => (b.avg_utilization ?? -1) - (a.avg_utilization ?? -1));
+    } catch (error) {
+      this.logger.error('Failed to fetch lot utilization', error);
+      throw new InternalServerErrorException('Failed to fetch lot utilization');
+    }
+  }
+
+  /**
+   * Parses a range string like "7d" or "30d" into a number of days.
+   * Silently defaults when the format is unrecognised.
+   */
+  parseRangeDays(range: string | undefined, defaultDays: number, maxDays: number): number {
+    if (!range) return defaultDays;
+    const match = /^(\d+)d$/.exec(range);
+    if (!match) return defaultDays;
+    return Math.min(Math.max(1, parseInt(match[1], 10)), maxDays);
   }
 
   /**

@@ -66,3 +66,22 @@ export interface LotRecommendation extends ParkingLotResponse {
   /** Why this lot was recommended */
   reason: string;
 }
+
+export interface TrendPoint {
+  /** ISO 8601 datetime truncated to the hour */
+  hour: string;
+  avg_occupancy_rate: number;
+  avg_occupancy: number;
+  avg_available: number;
+  sample_count: number;
+}
+
+export interface LotUtilization {
+  lot_id: string;
+  display_name: string;
+  lot_type: string;
+  capacity: number;
+  /** Average occupancy_rate over the range; null when no snapshots exist */
+  avg_utilization: number | null;
+  snapshot_count: number;
+}

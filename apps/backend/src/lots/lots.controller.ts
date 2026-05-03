@@ -82,6 +82,21 @@ export class LotsController {
     };
   }
 
+  @Get('utilization')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=300, s-maxage=600')
+  async getUtilization(@Query('range') range?: string) {
+    const rangeDays = this.lotsService.parseRangeDays(range, 30, 90);
+    const data = await this.lotsService.getUtilization(rangeDays);
+
+    return {
+      success: true,
+      range_days: rangeDays,
+      count: data.length,
+      data,
+    };
+  }
+
   @Get('summary')
   @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
@@ -164,6 +179,25 @@ export class LotsController {
       date: targetDate,
       count: history.length,
       data: history,
+    };
+  }
+
+  @Get(':id/trends')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=300, s-maxage=600')
+  async getLotTrends(
+    @Param('id') id: string,
+    @Query('range') range?: string,
+  ) {
+    const rangeDays = this.lotsService.parseRangeDays(range, 7, 90);
+    const data = await this.lotsService.getTrends(id.toUpperCase(), rangeDays);
+
+    return {
+      success: true,
+      lot_id: id.toUpperCase(),
+      range_days: rangeDays,
+      count: data.length,
+      data,
     };
   }
 
