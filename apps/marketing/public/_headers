@@ -1,0 +1,23 @@
+# Cloudflare Pages headers
+# https://developers.cloudflare.com/pages/configuration/headers/
+
+# Apple App Site Association — no file extension, must be served as JSON
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+  Cache-Control: public, max-age=3600
+
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  Cache-Control: public, max-age=3600
+
+# Sensible default security headers for a static marketing site
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  # Tight CSP for a static marketing site. 'unsafe-inline' is needed for the JSON-LD
+  # <script type="application/ld+json"> blocks and Astro's small inline <style> tags.
+  # No third-party scripts, frames, or analytics — keep this list closed.
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests

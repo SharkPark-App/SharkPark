@@ -1,0 +1,2 @@
+# Force apex domain — www -> sharkpark.app
+https://www.sharkpark.app/* https://sharkpark.app/:splat 301!

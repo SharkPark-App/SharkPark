@@ -1,0 +1,57 @@
+name: Deploy marketing site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/marketing/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/deploy-marketing.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-marketing-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build marketing site
+        run: pnpm --filter @sharkpark/marketing build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Run from the marketing workspace so wrangler-action finds the
+          # locally-installed `wrangler` devDep (in apps/marketing/package.json)
+          # instead of trying to install it at the monorepo root, where pnpm
+          # rejects implicit root installs (-w required).
+          workingDirectory: apps/marketing
+          packageManager: pnpm
+          command: pages deploy dist --project-name=sharkpark-marketing --branch=main
