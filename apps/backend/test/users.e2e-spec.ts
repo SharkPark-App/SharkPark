@@ -15,7 +15,14 @@ class MockAuthGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
 
-    // Extract the userId (email) from the URL path so IDOR checks pass.
+    // /me/data needs a fixed, real email so the full export path can be exercised.
+    // The disposable-user block below creates this user in beforeAll.
+    if (/\/users\/me\/data/.test(req.url)) {
+      req.user = { email: ME_DATA_EMAIL, first_name: 'Test', last_name: 'User', user_type: 'STUDENT' };
+      return true;
+    }
+
+    // Extract the userId (email) from the URL path so assertOwner() sees a matching email.
     // Routes: /api/v1/users/:userId, /api/v1/users/:userId/favorites, etc.
     const match = req.url.match(/\/users\/([^/]+)/);
     const email = match ? decodeURIComponent(match[1]) : 'test@csulb.edu';
@@ -30,6 +37,9 @@ class MockAuthGuard implements CanActivate {
     return true; // always allow access
   }
 }
+
+// Dedicated email for the /me/data describe block — must match MockAuthGuard above.
+const ME_DATA_EMAIL = 'me-data-e2e@csulb.edu';
 
 describe('UsersController (e2e)', () => {
   let app: INestApplication;
@@ -254,6 +264,60 @@ describe('UsersController (e2e)', () => {
       return request(app.getHttpServer())
         .delete('/api/v1/users/me')
         .expect(404);
+    });
+  });
+
+  describe('/api/v1/users/me/data (GET)', () => {
+    beforeAll(async () => {
+      const school = await prisma.school.findFirstOrThrow();
+      await prisma.user.upsert({
+        where: { email: ME_DATA_EMAIL },
+        update: {},
+        create: {
+          email: ME_DATA_EMAIL,
+          first_name: 'Export',
+          last_name: 'Test',
+          user_type: 'STUDENT',
+          school: { connect: { id: school.id } },
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.user.deleteMany({ where: { email: ME_DATA_EMAIL } });
+    });
+
+    it('should return 200 with the full export envelope', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/users/me/data')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.success).toBe(true);
+          const { data } = res.body;
+          expect(data.exported_at).toBeDefined();
+          expect(data.profile.email).toBe(ME_DATA_EMAIL);
+          expect(data.profile.first_name).toBe('Export');
+          expect(data.profile.last_name).toBe('Test');
+          expect(data.profile).not.toHaveProperty('id');
+          expect(Array.isArray(data.favorites)).toBe(true);
+          expect(Array.isArray(data.push_tokens)).toBe(true);
+          expect(Array.isArray(data.reports)).toBe(true);
+          expect(Array.isArray(data.notification_logs)).toBe(true);
+        });
+    });
+
+    it('should write a USER_DATA_EXPORTED audit row with a hashed actor (no PII)', async () => {
+      // Trigger export to ensure at least one audit row exists.
+      await request(app.getHttpServer()).get('/api/v1/users/me/data').expect(200);
+
+      const audits = await prisma.auditEvent.findMany({
+        where: { event_type: 'USER_DATA_EXPORTED' },
+        orderBy: { created_at: 'desc' },
+        take: 5,
+      });
+      expect(audits.length).toBeGreaterThan(0);
+      expect(audits[0].actor_hash).toMatch(/^[a-f0-9]{64}$/);
+      expect(JSON.stringify(audits)).not.toContain(ME_DATA_EMAIL);
     });
   });
 });

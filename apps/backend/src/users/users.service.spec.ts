@@ -366,6 +366,77 @@ describe('UsersService', () => {
     });
   });
 
+  describe('exportUserData', () => {
+    const baseUser = {
+      id: 'user-uuid',
+      email: 'test@csulb.edu',
+      first_name: 'Test',
+      last_name: 'User',
+      user_type: 'STUDENT',
+      phone: null,
+      notification_preferences: { favorites_filling: false },
+      created_at: new Date('2025-01-01'),
+      last_login: new Date('2026-01-01'),
+      favorites: [
+        { lot: { lot_id: 'G1' }, added_at: new Date('2026-01-10') },
+      ],
+      push_tokens: [
+        { token: 'ExponentPushToken[abc]', platform: 'ios', created_at: new Date('2026-02-01') },
+      ],
+      reports: [
+        { lot: { lot_id: 'G1' }, type: 'BLOCKAGE', message: null, created_at: new Date('2026-03-01') },
+      ],
+      notification_logs: [
+        { type: 'favorites_filling', lot: { lot_id: 'G1' }, sent_at: new Date('2026-04-01') },
+        { type: 'surge', lot: null, sent_at: new Date('2026-04-02') },
+      ],
+    };
+
+    it('should return all user data and write a USER_DATA_EXPORTED audit row', async () => {
+      prisma.user.findUnique.mockResolvedValue(baseUser);
+      prisma.auditEvent.create.mockResolvedValue({});
+
+      const result = await service.exportUserData('test@csulb.edu');
+
+      expect(result.profile.email).toBe('test@csulb.edu');
+      expect(result.favorites).toEqual([{ lot_id: 'G1', added_at: baseUser.favorites[0].added_at }]);
+      expect(result.push_tokens[0].token).toBe('ExponentPushToken[abc]');
+      expect(result.push_tokens[0].registered_at).toEqual(baseUser.push_tokens[0].created_at);
+      expect(result.reports[0]).toEqual({
+        lot_id: 'G1',
+        type: 'BLOCKAGE',
+        message: null,
+        submitted_at: baseUser.reports[0].created_at,
+      });
+      expect(result.notification_logs[0].lot_id).toBe('G1');
+      expect(result.notification_logs[1].lot_id).toBeNull();
+      expect(result.exported_at).toBeInstanceOf(Date);
+      expect(prisma.auditEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          event_type: 'USER_DATA_EXPORTED',
+          actor_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      });
+    });
+
+    it('should not include raw email in the audit row', async () => {
+      prisma.user.findUnique.mockResolvedValue(baseUser);
+      prisma.auditEvent.create.mockResolvedValue({});
+
+      await service.exportUserData('test@csulb.edu');
+
+      const call = prisma.auditEvent.create.mock.calls[0][0];
+      expect(JSON.stringify(call)).not.toContain('test@csulb.edu');
+    });
+
+    it('should throw NotFoundException when user does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.exportUserData('ghost@csulb.edu')).rejects.toThrow(NotFoundException);
+      expect(prisma.auditEvent.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deleteUser', () => {
     it('should throw NotFoundException when the user does not exist', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
