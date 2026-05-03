@@ -20,11 +20,12 @@ export class ReliabilityService {
   private readonly logger = new Logger(ReliabilityService.name);
 
   private readonly defaultWeights: ReliabilityWeights = {
-    penetrationRate: 0.35,
-    dataFreshness: 0.25,
-    eventFrequency: 0.2,
-    sampleSize: 0.15,
-    historicalAccuracy: 0.05,
+    penetrationRate: 0.3,
+    dataFreshness: 0.21,
+    eventFrequency: 0.17,
+    sampleSize: 0.13,
+    historicalAccuracy: 0.04,
+    userReports: 0.15,
   };
 
   private readonly defaultThresholds: ReliabilityThresholds = {
@@ -34,6 +35,8 @@ export class ReliabilityService {
     freshnessWindowMinutes: 60,
     eventFrequencyTarget: 10,
     sampleSizeTarget: 20,
+    userReportsTarget: 5,
+    userReportsWindowMinutes: 60,
   };
 
   computeReliability(
@@ -59,7 +62,8 @@ export class ReliabilityService {
         factors.dataFreshness.weightedScore +
         factors.eventFrequency.weightedScore +
         factors.sampleSize.weightedScore +
-        factors.historicalAccuracy.weightedScore) * 100,
+        factors.historicalAccuracy.weightedScore +
+        factors.userReports.weightedScore) * 100,
     );
 
     const confidence = this.getConfidenceLevel(score, thresholds);
@@ -115,6 +119,29 @@ export class ReliabilityService {
         input.historicalAccuracy,
         weights.historicalAccuracy,
       ),
+      userReports: this.computeUserReportsFactor(
+        input.uniqueReportersInWindow ?? 0,
+        weights.userReports,
+        thresholds.userReportsTarget,
+      ),
+    };
+  }
+
+  // High = good (absence of reports). Reporter count is deduped per user at the query layer.
+  private computeUserReportsFactor(
+    reporterCount: number,
+    weight: number,
+    target: number,
+  ): FactorScore {
+    const safeTarget = target > 0 ? target : 1;
+    const penalty = Math.min(1, Math.max(0, reporterCount) / safeTarget);
+    const normalizedValue = 1 - penalty;
+    return {
+      name: 'User Reports',
+      rawValue: reporterCount,
+      normalizedValue,
+      weight,
+      weightedScore: normalizedValue * weight,
     };
   }
 
@@ -173,11 +200,19 @@ export class ReliabilityService {
       factors.dataFreshness,
       factors.eventFrequency,
       factors.sampleSize,
+      factors.userReports,
     ];
 
     const weakestFactor = factorArray.reduce((min, f) =>
       f.normalizedValue < min.normalizedValue ? f : min,
     );
+
+
+    if (weakestFactor === factors.userReports && confidence !== 'HIGH') {
+      return confidence === 'MEDIUM'
+        ? 'Moderate confidence. Recent user reports suggest the live count may not match conditions on the ground.'
+        : 'Low confidence due to recent user reports. Use estimates with caution.';
+    }
 
     switch (confidence) {
       case 'HIGH':

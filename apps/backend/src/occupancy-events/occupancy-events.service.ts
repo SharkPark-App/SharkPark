@@ -339,7 +339,7 @@ export class OccupancyEventsService {
 
       // Gather reliability input for all lots in parallel (avoids N+1 DB calls)
       const reliabilityInputs = await Promise.all(
-        lots.map((lot) => this.reliabilityComputationService.gatherReliabilityInput(lot.lot_id, lot)),
+        lots.map((lot) => this.reliabilityComputationService.gatherReliabilityInput(lot)),
       );
 
       // Build snapshot data array
