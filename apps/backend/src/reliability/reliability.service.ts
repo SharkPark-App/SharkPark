@@ -8,6 +8,7 @@ import {
   ReliabilityWeights,
   ReliabilityThresholds,
   ReliabilityScoreSummary,
+  SourceType,
 } from './interfaces';
 
 /**
@@ -41,6 +42,7 @@ export class ReliabilityService {
     input: ReliabilityInput,
     weights: ReliabilityWeights = this.defaultWeights,
     thresholds: ReliabilityThresholds = this.defaultThresholds,
+    sourceType: SourceType = 'ANONYMOUS',
   ): ReliabilityScore {
     // Clone + normalize weights to avoid mutating the default object
     const w = { ...weights };
@@ -54,13 +56,15 @@ export class ReliabilityService {
 
     const factors = this.computeFactors(input, w, thresholds);
 
-    const score = Math.round(
-      (factors.penetrationRate.weightedScore +
-        factors.dataFreshness.weightedScore +
-        factors.eventFrequency.weightedScore +
-        factors.sampleSize.weightedScore +
-        factors.historicalAccuracy.weightedScore) * 100,
-    );
+    const rawScore =
+      factors.penetrationRate.weightedScore +
+      factors.dataFreshness.weightedScore +
+      factors.eventFrequency.weightedScore +
+      factors.sampleSize.weightedScore +
+      factors.historicalAccuracy.weightedScore;
+
+    const sourceWeight = this.getSourceWeight(sourceType, input.penetrationRate, thresholds);
+    const score = Math.round(rawScore * sourceWeight * 100);
 
     const confidence = this.getConfidenceLevel(score, thresholds);
     const isColdStart = this.isColdStartMode(input, thresholds);
@@ -77,8 +81,18 @@ export class ReliabilityService {
     };
   }
 
-  computeReliabilitySummary(lotId: string, input: ReliabilityInput): ReliabilityScoreSummary {
-    const { score, confidence, isColdStart, computedAt } = this.computeReliability(lotId, input);
+  computeReliabilitySummary(
+    lotId: string,
+    input: ReliabilityInput,
+    sourceType: SourceType = 'ANONYMOUS',
+  ): ReliabilityScoreSummary {
+    const { score, confidence, isColdStart, computedAt } = this.computeReliability(
+      lotId,
+      input,
+      this.defaultWeights,
+      this.defaultThresholds,
+      sourceType,
+    );
     return { lotId, score, confidence, isColdStart, computedAt };
   }
 
@@ -116,6 +130,27 @@ export class ReliabilityService {
         weights.historicalAccuracy,
       ),
     };
+  }
+
+  /**
+   * Scales the final score by contributor source trust:
+   *   FLAGGED   → 0      (score zeroed; data is considered tainted)
+   *   ANONYMOUS → 0.3–0.6 (interpolated by penetration rate vs target)
+   *   AUTHED    → 1.0    (full weight; Azure AD identity verified)
+   */
+  private getSourceWeight(
+    sourceType: SourceType,
+    penetrationRate: number,
+    thresholds: ReliabilityThresholds,
+  ): number {
+    switch (sourceType) {
+      case 'FLAGGED':
+        return 0;
+      case 'AUTHED':
+        return 1.0;
+      case 'ANONYMOUS':
+        return 0.3 + 0.3 * Math.min(1, penetrationRate / thresholds.penetrationRateTarget);
+    }
   }
 
   /** Generic factor: normalized = min(1, value / target) */
@@ -197,7 +232,11 @@ export class ReliabilityService {
     return { ...this.defaultThresholds };
   }
 
-  computeReliabilityBatch(inputs: Array<{ lotId: string; input: ReliabilityInput }>): ReliabilityScore[] {
-    return inputs.map(({ lotId, input }) => this.computeReliability(lotId, input));
+  computeReliabilityBatch(
+    inputs: Array<{ lotId: string; input: ReliabilityInput; sourceType?: SourceType }>,
+  ): ReliabilityScore[] {
+    return inputs.map(({ lotId, input, sourceType }) =>
+      this.computeReliability(lotId, input, this.defaultWeights, this.defaultThresholds, sourceType),
+    );
   }
 }
