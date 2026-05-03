@@ -137,4 +137,26 @@ describe('WeatherFetchService', () => {
     expect(data.precipitation_probability).toBe(0);
     expect(data.is_raining).toBe(false);
   });
+
+  it('logs and exits when no school record is found', async () => {
+    prisma.school.findFirst.mockResolvedValue(null);
+    nws.getHourlyForecast.mockResolvedValue({
+      updateTime: '2026-05-03T18:00:00Z',
+      periods: [buildPeriod()],
+    });
+    await service.fetchWeather();
+    expect(prisma.weather.create).not.toHaveBeenCalled();
+  });
+
+  it('converts Celsius temperatures to Fahrenheit defensively', async () => {
+    nws.getHourlyForecast.mockResolvedValue({
+      updateTime: '2026-05-03T18:00:00Z',
+      periods: [
+        buildPeriod({ temperature: 20, temperatureUnit: 'C' }),
+      ],
+    });
+    await service.fetchWeather();
+    const data = prisma.weather.create.mock.calls[0][0].data;
+    expect(data.temperature_f).toBeCloseTo(68);
+  });
 });

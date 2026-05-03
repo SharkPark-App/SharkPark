@@ -1,6 +1,8 @@
+import { ConfigService } from '@nestjs/config';
 import {
   computeFeelsLikeF,
   deriveIsRaining,
+  NwsClient,
   parseWindSpeedMph,
   probabilityToRate,
   NwsHourlyPeriod,
@@ -88,5 +90,143 @@ describe('NWS client helpers', () => {
     it('returns dry-bulb when humidity is null in heat-index range', () => {
       expect(computeFeelsLikeF(95, null, 5)).toBe(95);
     });
+  });
+});
+
+describe('NwsClient', () => {
+  const ua = 'Test/1.0 (test@example.com)';
+  const config = {
+    get: jest.fn((key: string, fallback?: unknown) =>
+      key === 'weather.userAgent' ? ua : fallback,
+    ),
+  } as unknown as ConfigService;
+
+  const pointsResponse = {
+    properties: {
+      gridId: 'LOX',
+      gridX: 153,
+      gridY: 44,
+      forecastHourly:
+        'https://api.weather.gov/gridpoints/LOX/153,44/forecast/hourly',
+    },
+  };
+  const hourlyResponse = {
+    properties: {
+      updateTime: '2026-05-03T18:00:00Z',
+      periods: [
+        {
+          startTime: '2026-05-03T12:00:00-07:00',
+          endTime: '2026-05-03T13:00:00-07:00',
+          temperature: 72,
+          temperatureUnit: 'F',
+          probabilityOfPrecipitation: { unitCode: 'wmoUnit:percent', value: 20 },
+          shortForecast: 'Sunny',
+          windSpeed: '5 mph',
+          isDaytime: true,
+        },
+      ],
+    },
+  };
+
+  const mockFetch = (
+    body: unknown,
+    { ok = true, status = 200 }: { ok?: boolean; status?: number } = {},
+  ) =>
+    jest.fn().mockResolvedValue({
+      ok,
+      status,
+      json: async () => body,
+    });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('passes the configured User-Agent and Accept header on each request', async () => {
+    const fetchMock = mockFetch(pointsResponse);
+    (globalThis as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+
+    const client = new NwsClient(config);
+    await client.getPoint(33.7838, -118.1134);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.weather.gov/points/33.7838,-118.1134',
+      {
+        headers: {
+          'User-Agent': ua,
+          Accept: 'application/geo+json',
+        },
+      },
+    );
+  });
+
+  it('caches getPoint results across calls within the TTL window', async () => {
+    const fetchMock = mockFetch(pointsResponse);
+    (globalThis as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    const client = new NwsClient(config);
+
+    const a = await client.getPoint(33.7838, -118.1134);
+    const b = await client.getPoint(33.7838, -118.1134);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(a).toEqual(b);
+    expect(a.gridId).toBe('LOX');
+    expect(a.gridX).toBe(153);
+    expect(a.gridY).toBe(44);
+  });
+
+  it('resetCache forces a re-fetch of the point', async () => {
+    const fetchMock = mockFetch(pointsResponse);
+    (globalThis as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    const client = new NwsClient(config);
+
+    await client.getPoint(33.7838, -118.1134);
+    client.resetCache();
+    await client.getPoint(33.7838, -118.1134);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('getHourlyForecast chains the cached point + hourly fetch', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => pointsResponse })
+      .mockResolvedValueOnce({ ok: true, json: async () => hourlyResponse });
+    (globalThis as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+
+    const client = new NwsClient(config);
+    const result = await client.getHourlyForecast(33.7838, -118.1134);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      pointsResponse.properties.forecastHourly,
+      expect.any(Object),
+    );
+    expect(result.updateTime).toBe(hourlyResponse.properties.updateTime);
+    expect(result.periods).toHaveLength(1);
+  });
+
+  it('throws on non-2xx responses with the URL and status in the message', async () => {
+    (globalThis as unknown as { fetch: jest.Mock }).fetch = mockFetch(
+      {},
+      { ok: false, status: 503 },
+    );
+
+    const client = new NwsClient(config);
+    await expect(client.getPoint(33.7838, -118.1134)).rejects.toThrow(
+      /points\/33\.7838,-118\.1134.*HTTP 503/,
+    );
+  });
+
+  it('falls back to the default UA when no override is configured', () => {
+    const noOverride = {
+      get: jest.fn((_key: string, fallback?: unknown) => fallback),
+    } as unknown as ConfigService;
+
+    new NwsClient(noOverride);
+    expect(noOverride.get).toHaveBeenCalledWith(
+      'weather.userAgent',
+      'SharkPark/1.0 (ops@sharkpark.app)',
+    );
   });
 });
