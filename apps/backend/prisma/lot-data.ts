@@ -133,6 +133,12 @@ export const CSULB_BUILDINGS = [
   { name: 'Jack Rose Track',                                    alternate_names: [] },
   { name: 'George Allen Field',                                 alternate_names: [] },
   { name: 'Rhodes Tennis Center',                               alternate_names: [] },
+  // Athletics venues used by SportsEventsScraperService (deterministic sport → venue map).
+  // `Pyramid` is already in BUILDINGS above and serves men's/women's basketball + volleyball.
+  { name: 'LBSU Softball Complex',                              alternate_names: ['Softball Complex'] },
+  { name: 'LBSU Sand Courts',                                   alternate_names: ['Sand Courts', 'Beach Volleyball Courts'] },
+  { name: 'Ken Lindgren Aquatics Center',                       alternate_names: ['Aquatics Center', 'Lindgren Aquatics'] },
+  { name: 'Bohl Diamond at Blair Field',                        alternate_names: ['Blair Field', 'Bohl Diamond'] },
 ] as const satisfies readonly BuildingSeed[];
 
 export type BuildingName = typeof CSULB_BUILDINGS[number]['name'];

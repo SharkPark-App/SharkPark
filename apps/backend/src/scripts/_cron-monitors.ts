@@ -71,6 +71,11 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 10,
     maxRuntime: 15,
   },
+  'fetch-sports-events': {
+    schedule: '30 5 * * *',
+    checkinMargin: 10,
+    maxRuntime: 15,
+  },
   'notify-favorites-filling': {
     schedule: '*/15 * * * *',
     checkinMargin: 5,
