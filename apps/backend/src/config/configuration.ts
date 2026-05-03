@@ -26,6 +26,15 @@ export const weatherConfig = registerAs('weather', () => ({
   longitude: parseFloat(process.env.WEATHER_LON || '-118.1134'),
 }));
 
+// Firebase service-account fields.
+// If any of these are absent the NotificationsService logs a warning and
+// disables push sending; the app still starts normally.
+export const notificationsConfig = registerAs('notifications', () => ({
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || '',
+  firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+  firebasePrivateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+}));
+
 /**
  * Validates critical environment variables at startup.
  * In production, missing required vars cause an immediate crash with a clear message.
