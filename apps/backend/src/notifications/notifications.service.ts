@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
+import { NotificationType } from '@prisma/client';
 import { PrismaService } from '../database/database.module';
 
 export interface PushPayload {
@@ -8,18 +10,23 @@ export interface PushPayload {
   data?: Record<string, string>;
 }
 
+export type NotificationContext = { lotId: string } | { eventId: string };
+
 @Injectable()
 export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   onModuleInit() {
     if (admin.apps.length > 0) return;
 
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const projectId = this.config.get<string>('notifications.firebaseProjectId', '');
+    const clientEmail = this.config.get<string>('notifications.firebaseClientEmail', '');
+    const privateKey = this.config.get<string>('notifications.firebasePrivateKey', '');
 
     if (projectId && clientEmail && privateKey) {
       admin.initializeApp({
@@ -70,7 +77,21 @@ export class NotificationsService implements OnModuleInit {
       ...(payload.data ? { data: payload.data } : {}),
     });
 
-    const stale = result.responses.flatMap((r, i) => (r.success ? [] : [tokens[i]]));
+    const STALE_CODES = new Set([
+      'messaging/registration-token-not-registered',
+      'messaging/invalid-registration-token',
+      'messaging/invalid-argument', // when triggered by token shape
+    ]);
+    const stale: string[] = [];
+    for (let i = 0; i < result.responses.length; i++) {
+      const r = result.responses[i];
+      if (r.success) continue;
+      if (r.error && STALE_CODES.has(r.error.code)) {
+        stale.push(tokens[i]);
+      } else {
+        this.logger.warn(`FCM send failed for user ${userId}: ${r.error?.code ?? 'unknown'}`);
+      }
+    }
     if (stale.length > 0) {
       await this.prisma.pushToken.deleteMany({ where: { token: { in: stale } } });
     }
@@ -78,27 +99,57 @@ export class NotificationsService implements OnModuleInit {
     return result.successCount > 0;
   }
 
+  // Note: check-then-log is not atomic; a duplicate send is possible if two cron
+  // processes overlap, but runCronJob holds a per-job advisory lock so this is benign.
   async hasRecentLog(
     userId: string,
-    type: string,
+    type: NotificationType,
     windowMs: number,
-    contextId?: string,
+    context?: NotificationContext,
   ): Promise<boolean> {
     const since = new Date(Date.now() - windowMs);
+    const lotId = context && 'lotId' in context ? context.lotId : undefined;
+    const eventId = context && 'eventId' in context ? context.eventId : undefined;
     const count = await this.prisma.notificationLog.count({
       where: {
         user_id: userId,
         type,
-        ...(contextId ? { lot_id: contextId } : {}),
+        ...(lotId !== undefined ? { lot_id: lotId } : {}),
+        ...(eventId !== undefined ? { event_id: eventId } : {}),
         sent_at: { gte: since },
       },
     });
     return count > 0;
   }
 
-  async logNotification(userId: string, type: string, contextId?: string): Promise<void> {
+  async recentlyNotifiedUsers(
+    userIds: string[],
+    type: NotificationType,
+    windowMs: number,
+    context?: NotificationContext,
+  ): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+    const since = new Date(Date.now() - windowMs);
+    const lotId = context && 'lotId' in context ? context.lotId : undefined;
+    const eventId = context && 'eventId' in context ? context.eventId : undefined;
+    const rows = await this.prisma.notificationLog.findMany({
+      where: {
+        user_id: { in: userIds },
+        type,
+        ...(lotId !== undefined ? { lot_id: lotId } : {}),
+        ...(eventId !== undefined ? { event_id: eventId } : {}),
+        sent_at: { gte: since },
+      },
+      select: { user_id: true },
+    });
+    return new Set(rows.map((r) => r.user_id));
+  }
+
+  async logNotification(userId: string, type: NotificationType, context?: NotificationContext): Promise<void> {
+    const lotId = context && 'lotId' in context ? context.lotId : null;
+    const eventId = context && 'eventId' in context ? context.eventId : null;
     await this.prisma.notificationLog.create({
-      data: { user_id: userId, type, lot_id: contextId ?? null },
+      data: { user_id: userId, type, lot_id: lotId, event_id: eventId },
     });
   }
 }

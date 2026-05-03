@@ -1,3 +1,4 @@
+import { NotificationType } from '@prisma/client';
 import { runCronJob } from './_bootstrap';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -9,41 +10,45 @@ void runCronJob('notify-surge', async ({ app, prisma, logger }) => {
   const svc = app.get(NotificationsService);
   const since = new Date(Date.now() - SNAPSHOT_WINDOW_MS);
 
-  // Any lot above 90% constitutes a surge — take one to identify the school
-  const surgeSnapshot = await prisma.occupancySnapshot.findFirst({
+  const surgingSchools = await prisma.occupancySnapshot.findMany({
     where: { occupancy_rate: { gt: 0.9 }, timestamp: { gte: since } },
     select: { lot: { select: { school_id: true } } },
+    distinct: ['lot_id'],
   });
 
-  if (!surgeSnapshot) {
+  if (surgingSchools.length === 0) {
     logger.log('[cron:notify-surge] no lots above 90%');
     return;
   }
 
-  const schoolId = surgeSnapshot.lot.school_id;
-  logger.log(`[cron:notify-surge] surge detected at school ${schoolId}`);
-
-  const users = await prisma.user.findMany({
-    where: {
-      school_id: schoolId,
-      notification_preferences: { path: ['surge_alerts'], equals: true },
-    },
-    select: { id: true },
-  });
+  const schoolIds = [...new Set(surgingSchools.map((s) => s.lot.school_id))];
+  logger.log(`[cron:notify-surge] surge detected at schools: ${schoolIds.join(', ')}`);
 
   let sent = 0;
-  for (const { id: userId } of users) {
-    // Dedup without a contextId — one surge alert per user per window
-    if (await svc.hasRecentLog(userId, 'surge', DEDUP_WINDOW_MS)) continue;
-
-    const pushed = await svc.sendPush(userId, {
-      title: 'Campus parking surge',
-      body: 'Multiple lots are over 90% full. Plan extra time to find parking.',
-      data: { type: 'surge' },
+  for (const schoolId of schoolIds) {
+    const users = await prisma.user.findMany({
+      where: {
+        school_id: schoolId,
+        notification_preferences: { path: ['surge_alerts'], equals: true },
+      },
+      select: { id: true },
     });
-    if (pushed) {
-      await svc.logNotification(userId, 'surge');
-      sent++;
+
+    const userIds = users.map((u) => u.id);
+    const alreadyNotified = await svc.recentlyNotifiedUsers(userIds, NotificationType.SURGE, DEDUP_WINDOW_MS);
+
+    for (const { id: userId } of users) {
+      if (alreadyNotified.has(userId)) continue;
+
+      const pushed = await svc.sendPush(userId, {
+        title: 'Campus parking surge',
+        body: 'Multiple lots are over 90% full. Plan extra time to find parking.',
+        data: { type: 'surge' },
+      });
+      if (pushed) {
+        await svc.logNotification(userId, NotificationType.SURGE);
+        sent++;
+      }
     }
   }
 

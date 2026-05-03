@@ -1,3 +1,4 @@
+import { NotificationType } from '@prisma/client';
 import { runCronJob } from './_bootstrap';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -6,6 +7,10 @@ const LOOKAHEAD_MS = 2 * 60 * 60 * 1000;
 // Dedup: one notification per user per event — stored with event.id in lot_id
 const DEDUP_WINDOW_MS = 3 * 60 * 60 * 1000;
 
+function formatLocalTime(date: Date, tz: string): string {
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: tz });
+}
+
 void runCronJob('notify-events', async ({ app, prisma, logger }) => {
   const svc = app.get(NotificationsService);
   const now = new Date();
@@ -13,7 +18,13 @@ void runCronJob('notify-events', async ({ app, prisma, logger }) => {
 
   const events = await prisma.campusEvent.findMany({
     where: { start_time: { gt: now, lte: lookahead } },
-    select: { id: true, school_id: true, event_name: true, start_time: true },
+    select: {
+      id: true,
+      school_id: true,
+      event_name: true,
+      start_time: true,
+      school: { select: { timezone: true } },
+    },
   });
 
   if (events.length === 0) {
@@ -33,15 +44,12 @@ void runCronJob('notify-events', async ({ app, prisma, logger }) => {
       select: { id: true },
     });
 
-    const startTime = event.start_time.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'America/Los_Angeles',
-    });
+    const startTime = formatLocalTime(event.start_time, event.school.timezone);
+    const userIds = users.map((u) => u.id);
+    const alreadyNotified = await svc.recentlyNotifiedUsers(userIds, NotificationType.EVENTS, DEDUP_WINDOW_MS, { eventId: event.id });
 
     for (const { id: userId } of users) {
-      // event.id stored in lot_id column to dedup per user + event pair
-      if (await svc.hasRecentLog(userId, 'events', DEDUP_WINDOW_MS, event.id)) continue;
+      if (alreadyNotified.has(userId)) continue;
 
       const pushed = await svc.sendPush(userId, {
         title: `${event.event_name} starts soon`,
@@ -49,7 +57,7 @@ void runCronJob('notify-events', async ({ app, prisma, logger }) => {
         data: { type: 'events', eventId: event.id },
       });
       if (pushed) {
-        await svc.logNotification(userId, 'events', event.id);
+        await svc.logNotification(userId, NotificationType.EVENTS, { eventId: event.id });
         sent++;
       }
     }

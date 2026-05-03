@@ -1,3 +1,4 @@
+import { NotificationType } from '@prisma/client';
 import { runCronJob } from './_bootstrap';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -54,8 +55,11 @@ void runCronJob('notify-favorites-clearing', async ({ app, prisma, logger }) => 
       select: { user_id: true },
     });
 
+    const userIds = favorites.map((f) => f.user_id);
+    const alreadyNotified = await svc.recentlyNotifiedUsers(userIds, NotificationType.FAVORITES_CLEARING, DEDUP_WINDOW_MS, { lotId: lot_id });
+
     for (const { user_id } of favorites) {
-      if (await svc.hasRecentLog(user_id, 'favorites_clearing', DEDUP_WINDOW_MS, lot_id)) continue;
+      if (alreadyNotified.has(user_id)) continue;
 
       const pushed = await svc.sendPush(user_id, {
         title: `${display_name} is clearing up`,
@@ -63,7 +67,7 @@ void runCronJob('notify-favorites-clearing', async ({ app, prisma, logger }) => 
         data: { type: 'favorites_clearing', lotId: lot_id },
       });
       if (pushed) {
-        await svc.logNotification(user_id, 'favorites_clearing', lot_id);
+        await svc.logNotification(user_id, NotificationType.FAVORITES_CLEARING, { lotId: lot_id });
         sent++;
       }
     }
