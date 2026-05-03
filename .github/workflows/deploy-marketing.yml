@@ -1,4 +1,4 @@
-name: Deploy marketing site
+name: Deploy marketing site to Cloudflare Workers
 
 on:
   push:
@@ -44,17 +44,13 @@ jobs:
       - name: Build marketing site
         run: pnpm --filter @sharkpark/marketing build
 
-      - name: Deploy to Cloudflare Pages
-        # Invoke wrangler directly (rather than via cloudflare/wrangler-action)
-        # so we get:
-        #   1. The exact version pinned in apps/marketing/package.json +
-        #      pnpm-lock.yaml (currently 4.87.0). The action ships its own
-        #      bundled wrangler (v3.90 default) that drifts from local dev.
-        #   2. Real stderr — the action wraps wrangler in a subprocess and
-        #      surfaces only "exit code 1" with no underlying message.
-        #   3. One less third-party action in the supply chain.
+      - name: Deploy to Cloudflare Workers
+        # The marketing site is a Workers project with static assets
+        # (see apps/marketing/wrangler.jsonc — uses `assets.directory`,
+        # the modern Workers Static Assets pattern, NOT Cloudflare Pages).
+        # Config (name, compatibility_date, assets dir) lives in wrangler.jsonc.
         working-directory: apps/marketing
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler pages deploy dist --project-name=sharkpark-marketing --branch=main
+        run: pnpm exec wrangler deploy
