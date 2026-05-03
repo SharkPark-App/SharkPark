@@ -22,7 +22,7 @@ import { runCronJob } from './_bootstrap';
  */
 const STALENESS_HOURS = 26; // backup runs every 24h; 2h grace
 
-void runCronJob('verify-latest-backup', async ({ logger }) => {
+void runCronJob('verify-latest-backup', [], async ({ logger }) => {
   const accountId = process.env.R2_ACCOUNT_ID;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;

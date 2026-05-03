@@ -4,9 +4,9 @@ import '../instrument';
 
 import * as Sentry from '@sentry/nestjs';
 import { NestFactory } from '@nestjs/core';
-import type { INestApplicationContext } from '@nestjs/common';
+import type { INestApplicationContext, Type } from '@nestjs/common';
 import { Logger as PinoLogger } from 'nestjs-pino';
-import { AppModule } from '../app.module';
+import { CronAppModule } from './_cron-app.module';
 import { PrismaService } from '../database/database.module';
 import { withAdvisoryLock } from './_advisory-lock';
 import { CRON_MONITORS, CRON_TIMEZONE } from './_cron-monitors';
@@ -22,12 +22,19 @@ export interface CronContext {
  * one-shot cron scripts. Returns the running context plus convenience handles
  * to Prisma and the pino logger.
  *
+ * `features` is the list of feature modules this script needs (e.g.
+ * `[OccupancyEventsModule]`). Keep it as small as possible — every module
+ * imported here costs RSS, and 5 concurrent cron ticks share the cron VM.
+ *
  * Caller is responsible for awaiting `app.close()` when done.
  */
-export async function bootstrapCronContext(): Promise<CronContext> {
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    bufferLogs: true,
-  });
+export async function bootstrapCronContext(
+  features: Type<unknown>[] = [],
+): Promise<CronContext> {
+  const app = await NestFactory.createApplicationContext(
+    CronAppModule.withFeatures(features),
+    { bufferLogs: true },
+  );
   const logger = app.get(PinoLogger);
   app.useLogger(logger);
   app.enableShutdownHooks();
@@ -42,12 +49,13 @@ export async function bootstrapCronContext(): Promise<CronContext> {
  *
  * Use as the script entry point:
  *
- *   void runCronJob('snapshot', async ({ app }) => {
- *     await app.get(MyService).doThing();
+ *   void runCronJob('snapshot', [OccupancyEventsModule], async ({ app }) => {
+ *     await app.get(OccupancyEventsService).createSnapshots();
  *   });
  */
 export async function runCronJob(
   jobName: string,
+  features: Type<unknown>[],
   work: (ctx: CronContext) => Promise<void>,
 ): Promise<void> {
   let ctx: CronContext | undefined;
@@ -72,7 +80,7 @@ export async function runCronJob(
   }
 
   try {
-    ctx = await bootstrapCronContext();
+    ctx = await bootstrapCronContext(features);
     const log = ctx.logger;
     log.log(`[cron:${jobName}] starting`);
 

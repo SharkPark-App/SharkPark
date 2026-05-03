@@ -1,9 +1,10 @@
 import { runCronJob } from './_bootstrap';
+import { OccupancyEventsModule } from '../occupancy-events/occupancy-events.module';
 import { OccupancyEventsService } from '../occupancy-events/occupancy-events.service';
 
 const STALE_AGE_HOURS = 18;
 
-void runCronJob('cleanup-device-states', async ({ app, logger }) => {
+void runCronJob('cleanup-device-states', [OccupancyEventsModule], async ({ app, logger }) => {
   const svc = app.get(OccupancyEventsService);
   const result = await svc.cleanupStaleDeviceStates(STALE_AGE_HOURS);
   logger.log(

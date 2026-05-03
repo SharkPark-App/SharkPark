@@ -1,11 +1,12 @@
 import { NotificationType } from '@prisma/client';
 import { runCronJob } from './_bootstrap';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { NotificationsService } from '../notifications/notifications.service';
 
 const SNAPSHOT_WINDOW_MS = 20 * 60 * 1000;
 const DEDUP_WINDOW_MS = 4 * 60 * 60 * 1000;
 
-void runCronJob('notify-favorites-clearing', async ({ app, prisma, logger }) => {
+void runCronJob('notify-favorites-clearing', [NotificationsModule], async ({ app, prisma, logger }) => {
   const svc = app.get(NotificationsService);
   const now = Date.now();
   const recentCutoff = new Date(now - SNAPSHOT_WINDOW_MS);
