@@ -2,8 +2,14 @@
 
 export const COLORS = {
   // Primary colors
-  primary: '#EBA91B',
-  secondary: '#1e40af',
+  // `primary` is intentionally a warm amber (Tailwind amber-500) — distinct from
+  // the CSULB official gold (#FFB81C) so we don't read as university-branded.
+  // `black` below is also intentionally slate (#1f2937), not pure #000, to
+  // avoid the CSULB yellow-on-black trade-dress pairing.
+  primary: '#F59E0B',
+  // `secondary` is slate to complement the amber primary without introducing
+  // a third brand hue. Use sparingly for muted accents/dark surfaces.
+  secondary: '#374151',
 
   // Neutral colors
   white: '#ffffff',
