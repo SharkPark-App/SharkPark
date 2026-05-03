@@ -4,11 +4,11 @@ import { OccupancyEventsService } from '../occupancy-events/occupancy-events.ser
 /**
  * Raw-data retention cron.
  *
- * Deletes rows older than 30 days from `occupancy_events` (privacy
- * promise in README.md) and `weather` observations (only the latest row
- * is used by ML / WeatherService). `occupancy_snapshots` and aggregated
- * tables are kept permanently — see infrastructure/README.md
- * "Data Retention".
+ * Deletes rows older than 30 days from `occupancy_events` only — honors the
+ * privacy promise in README.md ("raw events purged after 30 days").
+ * `weather` observations, `occupancy_snapshots`, and all aggregated tables
+ * are retained permanently — see infrastructure/README.md "Data Retention".
+ * Weather rows are kept as candidate ML feature history.
  *
  * Override the window with the `RETENTION_DAYS` env var (defaults to 30).
  * Runs daily at 4 AM Pacific, after the 2 AM backup, so the deleted rows

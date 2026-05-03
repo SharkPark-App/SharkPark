@@ -148,8 +148,9 @@ export class NwsClient {
 
   /**
    * Clear the point cache. Test seam — production code should never need this.
+   * Underscore prefix marks this as internal/test-only per project convention.
    */
-  resetCache(): void {
+  _resetCache(): void {
     this.pointCache.clear();
   }
 

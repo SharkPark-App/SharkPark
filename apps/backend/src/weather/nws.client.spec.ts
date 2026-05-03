@@ -175,13 +175,13 @@ describe('NwsClient', () => {
     expect(a.gridY).toBe(44);
   });
 
-  it('resetCache forces a re-fetch of the point', async () => {
+  it('_resetCache forces a re-fetch of the point', async () => {
     const fetchMock = mockFetch(pointsResponse);
     (globalThis as unknown as { fetch: jest.Mock }).fetch = fetchMock;
     const client = new NwsClient(config);
 
     await client.getPoint(33.7838, -118.1134);
-    client.resetCache();
+    client._resetCache();
     await client.getPoint(33.7838, -118.1134);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
