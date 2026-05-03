@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { RegisterPushTokenDto } from './dto/register-push-token.dto';
@@ -38,17 +38,17 @@ describe('NotificationsController', () => {
       );
     });
 
-    it('throws ForbiddenException when the request carries no email', async () => {
+    it('throws UnauthorizedException when the request carries no email', async () => {
       const req = { user: {} } as any;
 
-      await expect(controller.registerPushToken(req, dto)).rejects.toThrow(ForbiddenException);
+      await expect(controller.registerPushToken(req, dto)).rejects.toThrow(UnauthorizedException);
       expect(mockNotificationsService.registerPushTokenByEmail).not.toHaveBeenCalled();
     });
 
-    it('throws ForbiddenException when there is no user object at all', async () => {
+    it('throws UnauthorizedException when there is no user object at all', async () => {
       const req = {} as any;
 
-      await expect(controller.registerPushToken(req, dto)).rejects.toThrow(ForbiddenException);
+      await expect(controller.registerPushToken(req, dto)).rejects.toThrow(UnauthorizedException);
     });
   });
 });

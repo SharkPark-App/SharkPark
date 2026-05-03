@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { NotificationType } from '@prisma/client';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../database/database.module';
@@ -19,6 +20,7 @@ jest.mock('firebase-admin', () => ({
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
+  let config: { get: jest.Mock };
   let prisma: {
     pushToken: {
       upsert: jest.Mock;
@@ -40,6 +42,8 @@ describe('NotificationsService', () => {
     mockApps.length = 0;
     mockSendEachForMulticast.mockReset();
 
+    config = { get: jest.fn().mockReturnValue('') };
+
     prisma = {
       pushToken: {
         upsert: jest.fn(),
@@ -60,6 +64,7 @@ describe('NotificationsService', () => {
       providers: [
         NotificationsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: ConfigService, useValue: config },
       ],
     }).compile();
 
@@ -71,21 +76,8 @@ describe('NotificationsService', () => {
   // ─── onModuleInit ──────────────────────────────────────────────────────
 
   describe('onModuleInit', () => {
-    const OLD_ENV = process.env;
-
-    beforeEach(() => {
-      process.env = { ...OLD_ENV };
-    });
-
-    afterEach(() => {
-      process.env = OLD_ENV;
-    });
-
     it('skips initializeApp when Firebase is already initialized', () => {
       mockApps.push({});
-      process.env.FIREBASE_PROJECT_ID = 'proj';
-      process.env.FIREBASE_CLIENT_EMAIL = 'sa@proj.iam.gserviceaccount.com';
-      process.env.FIREBASE_PRIVATE_KEY = 'key';
 
       service.onModuleInit();
 
@@ -93,19 +85,19 @@ describe('NotificationsService', () => {
     });
 
     it('calls initializeApp when all credentials are present', () => {
-      process.env.FIREBASE_PROJECT_ID = 'sharkpark-test';
-      process.env.FIREBASE_CLIENT_EMAIL = 'sa@sharkpark-test.iam.gserviceaccount.com';
-      process.env.FIREBASE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----';
+      config.get.mockImplementation((key: string) => ({
+        'notifications.firebaseProjectId': 'sharkpark-test',
+        'notifications.firebaseClientEmail': 'sa@sharkpark-test.iam.gserviceaccount.com',
+        'notifications.firebasePrivateKey': '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+      }[key] ?? ''));
 
       service.onModuleInit();
 
       expect(admin.initializeApp).toHaveBeenCalledTimes(1);
     });
 
-    it('does not throw when credentials are missing', () => {
-      delete process.env.FIREBASE_PROJECT_ID;
-      delete process.env.FIREBASE_CLIENT_EMAIL;
-      delete process.env.FIREBASE_PRIVATE_KEY;
+    it('does not throw and skips initializeApp when credentials are missing', () => {
+      // config.get returns '' for all keys by default
 
       expect(() => service.onModuleInit()).not.toThrow();
       expect(admin.initializeApp).not.toHaveBeenCalled();
@@ -201,7 +193,10 @@ describe('NotificationsService', () => {
       ]);
       mockSendEachForMulticast.mockResolvedValue({
         successCount: 1,
-        responses: [{ success: true }, { success: false }],
+        responses: [
+          { success: true },
+          { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+        ],
       });
 
       const result = await service.sendPush('user-cuid', payload);
@@ -220,7 +215,10 @@ describe('NotificationsService', () => {
       ]);
       mockSendEachForMulticast.mockResolvedValue({
         successCount: 0,
-        responses: [{ success: false }, { success: false }],
+        responses: [
+          { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+          { success: false, error: { code: 'messaging/invalid-registration-token' } },
+        ],
       });
 
       const result = await service.sendPush('user-cuid', payload);
