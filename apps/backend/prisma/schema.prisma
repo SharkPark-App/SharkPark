@@ -72,6 +72,7 @@ model Lot {
   predictions_short   PredictionShortTerm[]
   predictions_long    PredictionLongTerm[]
   reports             Report[]
+  notification_logs   NotificationLog[]
 
   @@unique([school_id, lot_id])
   @@index([lot_type], name: "idx_lots_type")
@@ -91,9 +92,11 @@ model User {
   last_login     DateTime?
   updated_at     DateTime @updatedAt
 
-  school         School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  favorites      UserFavorite[]
-  reports        Report[]
+  school             School             @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  favorites          UserFavorite[]
+  reports            Report[]
+  push_tokens        PushToken[]
+  notification_logs  NotificationLog[]
 
   @@index([school_id])
   @@map("users")
@@ -188,7 +191,8 @@ model CampusEvent {
   expected_attendance Int
   created_at          DateTime        @default(now())
 
-  school  School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  school             School          @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  notification_logs  NotificationLog[]
 
   @@index([school_id])
   @@map("campus_events")
@@ -263,6 +267,41 @@ model PredictionLongTerm {
 
   @@index([lot_id, target_date, target_hour], name: "idx_pred_long")
   @@map("predictions_long_term")
+}
+
+// ─── Push Notifications ───────────────────────────────────
+
+model PushToken {
+  id         String   @id @default(cuid())
+  user_id    String
+  token      String   @unique
+  platform   String   // "ios" | "android"
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("push_tokens")
+}
+
+// Dedup log — prevents sending the same alert class to the same user twice.
+// lot_id is set for lot-level triggers (FAVORITES_FILLING, FAVORITES_CLEARING).
+// event_id is set for event triggers (EVENTS). Both are nullable with SetNull
+// so deleting a lot or event doesn't cascade-delete historical log rows.
+model NotificationLog {
+  id       String           @id @default(cuid())
+  user_id  String
+  type     NotificationType
+  lot_id   String?
+  event_id String?
+  sent_at  DateTime         @default(now())
+
+  user  User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lot   Lot?         @relation(fields: [lot_id], references: [id], onDelete: SetNull)
+  event CampusEvent? @relation(fields: [event_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, type, sent_at], name: "idx_notification_log_dedup")
+  @@map("notification_logs")
 }
 
 // ─── Audit log ────────────────────────────────────────────
@@ -347,4 +386,11 @@ enum ReportType {
 enum AuditEventType {
   USER_DELETED
   USER_DATA_EXPORTED
+}
+
+enum NotificationType {
+  FAVORITES_FILLING  @map("favorites_filling")
+  FAVORITES_CLEARING @map("favorites_clearing")
+  SURGE              @map("surge")
+  EVENTS             @map("events")
 }
