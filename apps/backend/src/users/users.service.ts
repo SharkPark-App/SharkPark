@@ -264,25 +264,31 @@ export class UsersService {
     }
 
     const now = new Date();
-    const lots = await Promise.all(
-      user.favorites.map(async (fav) => {
-        const predictions = await this.prisma.predictionShortTerm.findMany({
-          where: { lot_id: fav.lot.id, target_time: { gte: now } },
-          orderBy: { target_time: 'asc' },
-          take: 20,
-        });
-        return {
-          lot_id: fav.lot.lot_id,
-          predictions: predictions.map((p) => ({
-            target_time: p.target_time.toISOString(),
-            predicted_occupancy: p.predicted_occupancy,
-            confidence_lower: p.confidence_lower,
-            confidence_upper: p.confidence_upper,
-            model_version: p.model_version,
-          })),
-        };
-      }),
-    );
+    const favsByLotId = new Map(user.favorites.map((fav) => [fav.lot.id, fav.lot.lot_id]));
+
+    const allPredictions = await this.prisma.predictionShortTerm.findMany({
+      where: { lot_id: { in: [...favsByLotId.keys()] }, target_time: { gte: now } },
+      orderBy: { target_time: 'asc' },
+    });
+
+    // Group predictions by lot, capped at 20 per lot to match per-lot endpoint pattern
+    const byLot = new Map<string, typeof allPredictions>();
+    for (const p of allPredictions) {
+      const bucket = byLot.get(p.lot_id) ?? [];
+      if (bucket.length < 20) bucket.push(p);
+      byLot.set(p.lot_id, bucket);
+    }
+
+    const lots = [...favsByLotId.entries()].map(([internalId, lotId]) => ({
+      lot_id: lotId,
+      predictions: (byLot.get(internalId) ?? []).map((p) => ({
+        target_time: p.target_time.toISOString(),
+        predicted_occupancy: p.predicted_occupancy,
+        confidence_lower: p.confidence_lower,
+        confidence_upper: p.confidence_upper,
+        model_version: p.model_version,
+      })),
+    }));
 
     return { user_id: email, generated_at: now.toISOString(), lots };
   }
