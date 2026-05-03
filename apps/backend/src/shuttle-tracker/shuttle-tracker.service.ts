@@ -9,12 +9,16 @@ const REDIS_KEYS = {
   ROUTES: 'transit:routes',
   STOPS: 'transit:stops',
   SHUTTLES: 'transit:shuttles',
+  ETA_PREFIX: 'transit:etas:', // prefix — append stopId to form the full key
 } as const;
 
 // Routes and stops change at most daily; 25 h gives the cron a full cycle + buffer
 const ROUTES_STOPS_TTL_S = 25 * 60 * 60;
 // Shuttle list (static metadata, not live positions) is also refreshed daily
 const SHUTTLES_TTL_S = 25 * 60 * 60;
+// ETAs are in whole-minute granularity; short cache deduplicates concurrent requests
+// without showing meaningfully stale data
+const ETA_TTL_S = 20;
 // How often the app process re-syncs from Redis to pick up cron writes
 const REDIS_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
@@ -74,14 +78,18 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async syncFromRedis(): Promise<void> {
-    const [routes, stops, shuttles] = await Promise.all([
-      this.redis.get<MapRoute[]>(REDIS_KEYS.ROUTES),
-      this.redis.get<MapStop[]>(REDIS_KEYS.STOPS),
-      this.redis.get<MapShuttle[]>(REDIS_KEYS.SHUTTLES),
-    ]);
-    if (routes) this.currentRoutes = routes;
-    if (stops) this.currentStops = stops;
-    if (shuttles) this.latestShuttles = shuttles;
+    try {
+      const [routes, stops, shuttles] = await Promise.all([
+        this.redis.get<MapRoute[]>(REDIS_KEYS.ROUTES),
+        this.redis.get<MapStop[]>(REDIS_KEYS.STOPS),
+        this.redis.get<MapShuttle[]>(REDIS_KEYS.SHUTTLES),
+      ]);
+      if (routes) this.currentRoutes = routes;
+      if (stops) this.currentStops = stops;
+      if (shuttles) this.latestShuttles = shuttles;
+    } catch (error) {
+      this.logger.error('Failed to sync transit data from Redis', error);
+    }
   }
 
   getCurrentShuttles() { return this.latestShuttles; }
@@ -253,6 +261,10 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
    * Retrieve shuttle ETAs
    */
   async getStopETAs(stopId: string): Promise<RouteArrival[]> {
+    const cacheKey = `${REDIS_KEYS.ETA_PREFIX}${stopId}`;
+    const cached = await this.redis.get<RouteArrival[]>(cacheKey);
+    if (cached) return cached;
+
     try {
       const etaResponse = await fetch(`https://passiogo.com/mapGetData.php?eta=1&stopIds=${stopId}`, {
         method: 'POST',
@@ -269,12 +281,23 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       };
 
       const etasDict = rawJson.ETAs || {};
-      const stopArrivals = etasDict[stopId];
+      const rawArrivals = etasDict[stopId];
 
-      if (!stopArrivals || !Array.isArray(stopArrivals)) return [];
+      if (!rawArrivals || !Array.isArray(rawArrivals)) return [];
+
+      const arrivalInstances = plainToInstance(PassioEtaDto, rawArrivals);
+      const validArrivals: PassioEtaDto[] = [];
+      for (const instance of arrivalInstances) {
+        try {
+          await validateOrReject(instance);
+          validArrivals.push(instance);
+        } catch {
+          this.logger.warn(`Dropping malformed ETA frame from PassioGO! (stop ${stopId})`);
+        }
+      }
+
       const arrivals: RouteArrival[] = [];
-
-      for (const arrival of stopArrivals) {
+      for (const arrival of validArrivals) {
         if (arrival.eta === 'no vehicles') continue;
 
         let etaVal: number | null = null;
@@ -301,8 +324,9 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
         });
       }
 
-      // Sort from closest to furthest ETA
-      return arrivals.sort((a, b) => (a.etaMinutes as number) - (b.etaMinutes as number));
+      const sorted = arrivals.sort((a, b) => (a.etaMinutes as number) - (b.etaMinutes as number));
+      await this.redis.set(cacheKey, sorted, ETA_TTL_S);
+      return sorted;
 
     } catch (error) {
       this.logger.error(`Failed to fetch ETAs for stop ${stopId}`, error);
