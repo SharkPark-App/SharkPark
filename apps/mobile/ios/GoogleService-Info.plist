@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.sharkpark.mobile</string>
+	<string>app.sharkpark.mobile</string>
 	<key>PROJECT_ID</key>
 	<string>sharkpark-dev</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:1034929964217:ios:3134920a5429a857ca8768</string>
+	<string>1:1034929964217:ios:fb458752f377eaedca8768</string>
 </dict>
 </plist>

@@ -15,7 +15,7 @@
 		6B58D14F33664403999355FB /* Inter-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5748CDB7AA6947018E4DBE10 /* Inter-SemiBold.ttf */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81A422202FA47A2D004C53DF /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 81A4221F2FA47A2D004C53DF /* FirebaseMessaging */; };
-		81A422232FA6EB9B004C53DF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 81A422222FA6EB9B004C53DF /* GoogleService-Info.plist */; };
+		81A422252FA70C78004C53DF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 81A422242FA70C78004C53DF /* GoogleService-Info.plist */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		BE967F942B1C4A3A87CCDA24 /* CarBluetoothModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 084D61FD6E89423095EF2227 /* CarBluetoothModuleBridge.m */; };
 		C8FA6CE1548E46FFAD330F8F /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2F2C92CB4B7C4D1695DFD989 /* Inter-Medium.ttf */; };
@@ -35,7 +35,7 @@
 		5748CDB7AA6947018E4DBE10 /* Inter-SemiBold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-SemiBold.ttf"; path = "../assets/fonts/Inter-SemiBold.ttf"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-mobile.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-mobile.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = mobile/AppDelegate.swift; sourceTree = "<group>"; };
-		81A422222FA6EB9B004C53DF /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		81A422242FA70C78004C53DF /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = mobile/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		870DFBDF32FA42C181C05B52 /* Inter-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Regular.ttf"; path = "../assets/fonts/Inter-Regular.ttf"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -65,7 +65,7 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
-				81A422222FA6EB9B004C53DF /* GoogleService-Info.plist */,
+				81A422242FA70C78004C53DF /* GoogleService-Info.plist */,
 			);
 			name = mobile;
 			sourceTree = "<group>";
@@ -193,7 +193,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
-				81A422232FA6EB9B004C53DF /* GoogleService-Info.plist in Resources */,
+				81A422252FA70C78004C53DF /* GoogleService-Info.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				E5062972636EBDB094C75882 /* PrivacyInfo.xcprivacy in Resources */,
 				2ABE7FF787274A0DBB079038 /* Inter-Bold.ttf in Resources */,
