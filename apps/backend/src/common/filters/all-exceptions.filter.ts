@@ -6,21 +6,23 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { SentryExceptionCaptured } from '@sentry/nestjs';
+import * as Sentry from '@sentry/nestjs';
 import { Request, Response } from 'express';
 
 /**
  * Global exception filter that standardizes error responses across the API.
  * Logs all errors and includes stack traces in development mode.
  *
- * `@SentryExceptionCaptured()` reports unhandled exceptions to Sentry while
- * still allowing this filter to control the HTTP response shape.
+ * Sentry capture is gated to status >= 500 (or non-HttpException). Client
+ * errors (4xx) are logged at warn level without a stack trace — they are
+ * almost always either user input mistakes or internet scanners hitting
+ * non-existent paths (`/elanpaymentsolutions`, `/wp-login.php`, etc.) and
+ * reporting them to Sentry pollutes the issue feed and burns quota.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
-  @SentryExceptionCaptured()
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -64,10 +66,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }),
     };
 
-    this.logger.error(
-      `${request.method} ${request.url} - ${status} - ${message}`,
-      exception instanceof Error ? exception.stack : String(exception),
-    );
+    if (status >= 500) {
+      this.logger.error(
+        `${request.method} ${request.url} - ${status} - ${message}`,
+        exception instanceof Error ? exception.stack : String(exception),
+      );
+      Sentry.captureException(exception);
+    } else {
+      // 4xx: log without stack (client error, not a server bug) and don't
+      // pollute Sentry with scanner noise / user input mistakes.
+      this.logger.warn(
+        `${request.method} ${request.url} - ${status} - ${message}`,
+      );
+    }
 
     response.status(status).json(errorResponse);
   }

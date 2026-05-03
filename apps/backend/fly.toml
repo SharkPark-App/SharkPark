@@ -81,8 +81,17 @@ primary_region = 'lax'
   # node-only crons. Bumped to 1024MB on 2026-04-30 ahead of the ML
   # prediction + retraining crons (predict-all-lots.ts, retrain-models.ts)
   # which spawn Python with xgboost + pandas; those reliably need 700MB+
-  # in our local profiling and OOM-killed (exit 137) at 512MB. If we
-  # instead move retraining to an ephemeral `fly machine run` Machine,
-  # this can drop back to 512MB — pick one before retraining ships.
-  memory = '1024mb'
+  # in our local profiling and OOM-killed (exit 137) at 512MB.
+  #
+  # Bumped to 2048MB on 2026-05-03 after a production OOM cascade: at the
+  # top of the hour 5 */15 jobs (snapshot + 4 notify-* triggers) all spawn
+  # simultaneously and each loads the full AppModule (~180MB RSS — pulls in
+  # PassioGo WebSocket + Firebase Admin + every other module even though
+  # the script only needs Prisma + a couple services). 5 × 180MB > 1GB →
+  # supercronic children get OOM-killed mid-run, leaving zombie pg-pool
+  # connections and triggering "Connection terminated due to connection
+  # timeout" on survivors. The real fix is per-script lightweight Nest
+  # modules (don't bootstrap AppModule from cron); tracked as follow-up.
+  # Until then, 2GB gives ~1GB headroom for 5 concurrent bootstraps.
+  memory = '2048mb'
   processes = ['cron']
