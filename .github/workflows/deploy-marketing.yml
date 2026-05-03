@@ -34,7 +34,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Wrangler 4.x requires Node >= 22. Matches all other workflows.
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
