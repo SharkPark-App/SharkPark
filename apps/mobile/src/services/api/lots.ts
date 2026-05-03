@@ -43,6 +43,8 @@ function redactLotIfRevoked<T extends ParkingLotResponse>(lot: T): T {
 
 // Backend response interfaces (matching the backend)
 export interface ParkingLot {
+  /** Prisma cuid — used as lotId when POSTing to /reports */
+  id: string;
   lot_id: string;
   lot_name: string;
   display_name: string;

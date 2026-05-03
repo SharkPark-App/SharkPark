@@ -1,7 +1,7 @@
 # fly.toml — sharkpark-api (https://fly.io/apps/sharkpark-api)
 #
 # Two process groups, one image:
-#   app  — Nest HTTP server, autostop enabled (min=0)
+#   app  — Nest HTTP server, autostop enabled (min=1, keeps one warm)
 #   cron — supercronic running apps/backend/cron/crontab on a tiny
 #          always-on VM. Fly's --schedule only supports hourly/daily/
 #          weekly/monthly, so supercronic gives us proper cron granularity.
@@ -40,11 +40,15 @@ primary_region = 'lax'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  # min=0 saves ~$5/mo but adds ~10s cold-start to the first request after
-  # idle (measured 2026-04-26: 10.7s TTFB; warm p95 ~0.28s). Breakdown:
-  # Fly boot + Node/Nest start + Prisma->Neon cold connect. Bump to 1 if
-  # mobile users complain about latency. See docs/runbooks/runbook.md.
-  min_machines_running = 0
+  # Keep one machine warm at all times. min=0 saves ~$1–2/mo but the ~10s
+  # cold start on the first request after idle (measured 2026-04-26:
+  # 10.7s TTFB; warm p95 ~0.28s — Fly boot + Node/Nest start + Prisma->Neon
+  # cold connect) was unacceptable for the mobile UX (no loading skeleton
+  # plausibly hides 10s) and was generating false-positive Better Stack
+  # alerts (PR03/PM05 502s when the uptime probe was the request that woke
+  # the machine). With min=1 the second machine still autostops after idle
+  # so we don't pay double during low traffic. See docs/runbooks/runbook.md.
+  min_machines_running = 1
   processes = ['app']
 
   [http_service.concurrency]
@@ -55,7 +59,14 @@ primary_region = 'lax'
   [[http_service.checks]]
     interval = '15s'
     timeout = '2s'
-    grace_period = '10s'
+    # grace_period applies on machine boot only (deploys, crash recovery,
+    # scale-up of the second machine — not steady-state requests, since
+    # min_machines_running = 1 keeps one warm). Boot is ~10-15s end-to-end
+    # (Fly boot + Node + Nest module graph + Prisma connect to Neon); a
+    # 10s grace previously tripped Fly Doctor's "App not listening on port
+    # 3000" alert because the live probe fired before bootstrap finished.
+    # 30s gives headroom and matches the ready check below.
+    grace_period = '30s'
     method = 'GET'
     path = '/api/v1/health/live'
     protocol = 'http'
@@ -63,6 +74,8 @@ primary_region = 'lax'
   [[http_service.checks]]
     interval = '30s'
     timeout = '5s'
+    # See note on the live check above — 30s covers cold boot during
+    # deploys / crash recovery, not steady-state.
     grace_period = '30s'
     method = 'GET'
     path = '/api/v1/health/ready'
@@ -81,8 +94,22 @@ primary_region = 'lax'
   # node-only crons. Bumped to 1024MB on 2026-04-30 ahead of the ML
   # prediction + retraining crons (predict-all-lots.ts, retrain-models.ts)
   # which spawn Python with xgboost + pandas; those reliably need 700MB+
-  # in our local profiling and OOM-killed (exit 137) at 512MB. If we
-  # instead move retraining to an ephemeral `fly machine run` Machine,
-  # this can drop back to 512MB — pick one before retraining ships.
+  # in our local profiling and OOM-killed (exit 137) at 512MB.
+  #
+  # 2026-05-03 OOM cascade: at the top of the hour 5 */15 jobs (snapshot +
+  # 4 notify-* triggers) all spawn simultaneously and each used to load the
+  # full AppModule (~180MB RSS — pulled in the PassioGo WebSocket + Firebase
+  # Admin + every other module, even though the script only needs Prisma +
+  # one feature service). 5 × 180MB > 1GB → supercronic children got
+  # OOM-killed, leaving zombie pg-pool connections and triggering
+  # "Connection terminated due to connection timeout" on survivors.
+  #
+  # Fixed in PR #176 by switching cron scripts to per-script Nest modules
+  # (`CronAppModule.withFeatures([...])` in src/scripts/_cron-app.module.ts)
+  # so each bootstrap pulls in only the 1–2 feature modules it actually
+  # invokes. Each cron now lands around ~60 MB RSS, so 5 concurrent ticks
+  # comfortably fit under 500 MB and 1024MB is back to the right size for
+  # the heaviest single job (predict-all-lots / retrain-models, which spawn
+  # Python with xgboost + pandas and need ~700 MB).
   memory = '1024mb'
   processes = ['cron']

@@ -14,6 +14,10 @@
     "cron:weather": "node dist/scripts/fetch-weather.js",
     "cron:transit": "node dist/scripts/fetch-transit.js",
     "cron:events": "node dist/scripts/fetch-events.js",
+    "cron:notify-favorites-filling": "node dist/scripts/notify-favorites-filling.js",
+    "cron:notify-favorites-clearing": "node dist/scripts/notify-favorites-clearing.js",
+    "cron:notify-surge": "node dist/scripts/notify-surge.js",
+    "cron:notify-events": "node dist/scripts/notify-events.js",
     "db:seed": "prisma db seed",
     "db:seed:prod": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed-prod.ts",
     "lint": "eslint .",
@@ -22,6 +26,7 @@
     "test:e2e": "jest --config ./jest-e2e.js --runInBand"
   },
   "dependencies": {
+    "firebase-admin": "^12.0.0",
     "@aws-sdk/client-s3": "^3.1039.0",
     "@aws-sdk/lib-storage": "^3.1039.0",
     "@nestjs/common": "^11.1.19",

@@ -84,6 +84,7 @@ const findPressableAncestor = (node: ReactTestRenderer.ReactTestInstance) => {
 
 /** Minimal ParkingLotResponse fixture */
 const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotResponse => ({
+  id: 'cltest000000000001',
   lot_id: 'G1',
   lot_name: 'Lot G1',
   display_name: 'Lot G1',

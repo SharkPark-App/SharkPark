@@ -26,11 +26,16 @@ export type {
 export { eventsApi } from './events';
 export type { CampusEvent } from '../../types/events';
 
+// Reports service
+export { reportsApi, ReportUnauthorizedError, ReportThrottledError } from './reports';
+export type { CreateReportPayload, CreateReportResponse, ReportType } from './reports';
+
 // Import for default export
 import API_CONFIG from './config';
 import { apiService } from './base';
 import { lotsApi } from './lots';
 import { eventsApi } from './events';
+import { reportsApi } from './reports';
 
 // Re-export everything as default object
 export default {
@@ -38,4 +43,5 @@ export default {
   base: apiService,
   lots: lotsApi,
   events: eventsApi,
+  reports: reportsApi,
 };

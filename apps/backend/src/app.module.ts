@@ -18,8 +18,9 @@ import { ShuttleTrackerModule } from './shuttle-tracker/shuttle-tracker.module';
 import { HealthModule } from './health/health.module';
 import { ReportsModule } from './reports/reports.module';
 import { RedisModule } from './redis/redis.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
-import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, validateConfig } from './config/configuration';
+import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, notificationsConfig, validateConfig } from './config/configuration';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -27,7 +28,7 @@ const isProduction = process.env.NODE_ENV === 'production';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, authConfig, dbConfig, privacyConfig, weatherConfig],
+      load: [appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, notificationsConfig],
       validate: validateConfig,
     }),
     // Sentry must be imported BEFORE other modules that should be instrumented.
@@ -83,6 +84,7 @@ const isProduction = process.env.NODE_ENV === 'production';
     HealthModule,
     ReportsModule,
     RedisModule,
+    NotificationsModule,
   ],
   controllers: [],
   providers: [

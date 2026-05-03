@@ -36,6 +36,11 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 10,
     maxRuntime: 15,
   },
+  'fetch-weather-forecast': {
+    schedule: '0 */6 * * *',
+    checkinMargin: 30,
+    maxRuntime: 30,
+  },
   'fetch-transit': {
     schedule: '0 0 * * *',
     checkinMargin: 30,
@@ -65,6 +70,26 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     schedule: '0 5 * * *',
     checkinMargin: 10,
     maxRuntime: 15,
+  },
+  'notify-favorites-filling': {
+    schedule: '*/15 * * * *',
+    checkinMargin: 5,
+    maxRuntime: 10,
+  },
+  'notify-favorites-clearing': {
+    schedule: '*/15 * * * *',
+    checkinMargin: 5,
+    maxRuntime: 10,
+  },
+  'notify-surge': {
+    schedule: '*/15 * * * *',
+    checkinMargin: 5,
+    maxRuntime: 10,
+  },
+  'notify-events': {
+    schedule: '*/15 * * * *',
+    checkinMargin: 5,
+    maxRuntime: 10,
   },
 };
 
