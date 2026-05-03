@@ -28,6 +28,7 @@ import { EventBanner } from '../components/EventBanner';
 import { upcomingEvents } from '../data/mockEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
+import { reportsApi, ReportUnauthorizedError, ReportThrottledError } from '../services/api/reports';
 import type { MapStackScreenProps } from '../types/navigation';
 
 // Format a wall-clock timestamp into a short "X ago" relative string for the
@@ -93,6 +94,32 @@ export function ShortTermForecastScreen() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isReliabilityModalOpen, setIsReliabilityModalOpen] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+
+  const handleReportSubmit = async (report: import('../components/Modals/ReportModal').IncidentReport) => {
+    if (isGuest || !isAuthenticated) {
+      setIsReportModalOpen(false);
+      navigation.navigate('Profile' as never);
+      return;
+    }
+    if (!lot?.id) throw new Error('Lot data unavailable. Please try again.');
+    try {
+      await reportsApi.create({
+        lotId: lot.id,
+        type: report.type,
+        message: report.message || undefined,
+      });
+    } catch (err) {
+      if (err instanceof ReportUnauthorizedError) {
+        setIsReportModalOpen(false);
+        navigation.navigate('Profile' as never);
+        return;
+      }
+      if (err instanceof ReportThrottledError) {
+        throw err; // ReportModal will surface the message
+      }
+      throw err;
+    }
+  };
 
   // For favorites
   const { addFavorite, removeFavorite, favoriteLots } = useFavorites();
@@ -374,10 +401,10 @@ export function ShortTermForecastScreen() {
 
       {/* Incident Report Modal */}
       <ReportModal
-        lotId={lot.lot_id}
+        lotDisplayName={lot.lot_id}
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
-        onSubmit={() => {}} // currently do nothing on submit
+        onSubmit={handleReportSubmit}
       />
 
       {/* Reliability Details Modal */}
