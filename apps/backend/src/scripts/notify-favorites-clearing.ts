@@ -3,15 +3,14 @@ import { runCronJob } from './_bootstrap';
 import { NotificationsService } from '../notifications/notifications.service';
 
 const SNAPSHOT_WINDOW_MS = 20 * 60 * 1000;
-// How far back to look for the prior high-occupancy reading
-const HISTORY_WINDOW_MS = 2 * 60 * 60 * 1000;
 const DEDUP_WINDOW_MS = 4 * 60 * 60 * 1000;
 
 void runCronJob('notify-favorites-clearing', async ({ app, prisma, logger }) => {
   const svc = app.get(NotificationsService);
   const now = Date.now();
   const recentCutoff = new Date(now - SNAPSHOT_WINDOW_MS);
-  const historyCutoff = new Date(now - HISTORY_WINDOW_MS);
+  // The immediately-prior snapshot window: the 20 minutes before recentCutoff
+  const priorWindowCutoff = new Date(recentCutoff.getTime() - SNAPSHOT_WINDOW_MS);
 
   // Lots currently below 30%
   const lowNow = await prisma.occupancySnapshot.findMany({
@@ -25,17 +24,15 @@ void runCronJob('notify-favorites-clearing', async ({ app, prisma, logger }) => 
     return;
   }
 
-  // Among those, keep only lots that were above 75% in the last 2 hours
+  // Keep only lots whose peak in the immediately-prior window was above 75%,
+  // so we catch lots that just cleared rather than ones that drifted down over hours.
   const clearingLots: { lot_id: string; display_name: string }[] = [];
   for (const { lot_id, lot } of lowNow) {
-    const wasHigh = await prisma.occupancySnapshot.count({
-      where: {
-        lot_id,
-        occupancy_rate: { gt: 0.75 },
-        timestamp: { gte: historyCutoff, lt: recentCutoff },
-      },
+    const { _max } = await prisma.occupancySnapshot.aggregate({
+      where: { lot_id, timestamp: { gte: priorWindowCutoff, lt: recentCutoff } },
+      _max: { occupancy_rate: true },
     });
-    if (wasHigh > 0) clearingLots.push({ lot_id, display_name: lot.display_name });
+    if ((_max.occupancy_rate ?? 0) > 0.75) clearingLots.push({ lot_id, display_name: lot.display_name });
   }
 
   if (clearingLots.length === 0) {

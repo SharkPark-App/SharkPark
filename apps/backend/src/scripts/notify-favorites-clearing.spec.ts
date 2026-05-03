@@ -21,7 +21,7 @@ function makeCtx() {
   const prisma = {
     occupancySnapshot: {
       findMany: jest.fn().mockResolvedValue([]),
-      count: jest.fn().mockResolvedValue(0),
+      aggregate: jest.fn().mockResolvedValue({ _max: { occupancy_rate: null } }),
     },
     userFavorite: { findMany: jest.fn().mockResolvedValue([]) },
   };
@@ -46,12 +46,12 @@ describe('notify-favorites-clearing', () => {
     expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('no lots below 30%'));
   });
 
-  it('skips a low lot that was never above 75% in the history window', async () => {
+  it('skips a low lot whose prior window peak was not above 75%', async () => {
     const { app, prisma, logger, svc } = makeCtx();
     prisma.occupancySnapshot.findMany.mockResolvedValue([
       { lot_id: 'lot-1', lot: { display_name: 'Lot A1' } },
     ]);
-    prisma.occupancySnapshot.count.mockResolvedValue(0);
+    // aggregate default already returns null — lot was never high in prior window
 
     await work({ app, prisma, logger });
 
@@ -66,7 +66,7 @@ describe('notify-favorites-clearing', () => {
     prisma.occupancySnapshot.findMany.mockResolvedValue([
       { lot_id: 'lot-1', lot: { display_name: 'Lot A1' } },
     ]);
-    prisma.occupancySnapshot.count.mockResolvedValue(1);
+    prisma.occupancySnapshot.aggregate.mockResolvedValue({ _max: { occupancy_rate: 0.85 } });
     prisma.userFavorite.findMany.mockResolvedValue([{ user_id: 'user-1' }]);
 
     await work({ app, prisma, logger });
@@ -84,9 +84,9 @@ describe('notify-favorites-clearing', () => {
       { lot_id: 'lot-clearing', lot: { display_name: 'Lot A1' } },
       { lot_id: 'lot-always-low', lot: { display_name: 'Lot B2' } },
     ]);
-    prisma.occupancySnapshot.count
-      .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(0);
+    prisma.occupancySnapshot.aggregate
+      .mockResolvedValueOnce({ _max: { occupancy_rate: 0.85 } })
+      .mockResolvedValueOnce({ _max: { occupancy_rate: 0.2 } });
     prisma.userFavorite.findMany.mockResolvedValue([{ user_id: 'user-1' }]);
 
     await work({ app, prisma, logger });
