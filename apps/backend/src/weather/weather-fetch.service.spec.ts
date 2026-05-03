@@ -2,162 +2,139 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { WeatherFetchService } from './weather-fetch.service';
 import { PrismaService } from '../database/database.module';
+import { NwsClient, NwsHourlyPeriod } from './nws.client';
 
-// Mock global fetch
-const mockFetch = jest.fn();
-globalThis.fetch = mockFetch;
+const buildPeriod = (
+  overrides: Partial<NwsHourlyPeriod> = {},
+): NwsHourlyPeriod => ({
+  startTime: '2026-05-03T12:00:00-07:00',
+  endTime: '2026-05-03T13:00:00-07:00',
+  temperature: 72,
+  temperatureUnit: 'F',
+  probabilityOfPrecipitation: { unitCode: 'wmoUnit:percent', value: 20 },
+  shortForecast: 'Mostly Sunny',
+  windSpeed: '5 to 10 mph',
+  relativeHumidity: { unitCode: 'wmoUnit:percent', value: 55 },
+  isDaytime: true,
+  ...overrides,
+});
 
 describe('WeatherFetchService', () => {
   let service: WeatherFetchService;
-  let prisma: {
-    school: { findFirst: jest.Mock };
-    weather: { create: jest.Mock };
-  };
-  let configGet: jest.Mock;
-
-  const mockWeatherResponse = {
-    weather: [{ main: 'Clear', description: 'clear sky' }],
-    main: { temp: 72, feels_like: 70, humidity: 45 },
-    wind: { speed: 5 },
-    pop: 0,
-  };
-
-  const mockSchool = { id: 'school-1' };
+  let prisma: { weather: { create: jest.Mock }; school: { findFirst: jest.Mock } };
+  let nws: { getHourlyForecast: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
-      school: { findFirst: jest.fn() },
-      weather: { create: jest.fn() },
+      weather: { create: jest.fn().mockResolvedValue({}) },
+      school: { findFirst: jest.fn().mockResolvedValue({ id: 'school-1' }) },
     };
-
-    configGet = jest.fn((key: string, defaultVal?: unknown) => {
-      const map: Record<string, unknown> = {
-        'weather.openWeatherApiKey': 'test-api-key',
-        'weather.latitude': 33.7838,
-        'weather.longitude': -118.1134,
-      };
-      return map[key] ?? defaultVal;
-    });
+    nws = { getHourlyForecast: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WeatherFetchService,
         { provide: PrismaService, useValue: prisma },
-        { provide: ConfigService, useValue: { get: configGet } },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string, fallback: unknown) => {
+              const map: Record<string, unknown> = {
+                'weather.latitude': 33.7838,
+                'weather.longitude': -118.1134,
+              };
+              return map[key] ?? fallback;
+            },
+          },
+        },
+        { provide: NwsClient, useValue: nws },
       ],
     }).compile();
 
-    service = module.get<WeatherFetchService>(WeatherFetchService);
-    jest.clearAllMocks();
+    service = module.get(WeatherFetchService);
   });
 
-  it('should skip fetch when API key is not set', async () => {
-    // Create a service with no API key
-    configGet.mockImplementation((key: string, defaultVal?: unknown) => {
-      if (key === 'weather.openWeatherApiKey') return '';
-      return defaultVal;
-    });
-
-    const module = await Test.createTestingModule({
-      providers: [
-        WeatherFetchService,
-        { provide: PrismaService, useValue: prisma },
-        { provide: ConfigService, useValue: { get: configGet } },
+  it('writes a weather row from the first hourly period', async () => {
+    nws.getHourlyForecast.mockResolvedValue({
+      updateTime: '2026-05-03T18:00:00Z',
+      periods: [
+        buildPeriod({
+          temperature: 75,
+          shortForecast: 'Light Rain Likely',
+          probabilityOfPrecipitation: {
+            unitCode: 'wmoUnit:percent',
+            value: 70,
+          },
+          windSpeed: '5 to 10 mph',
+          relativeHumidity: { unitCode: 'wmoUnit:percent', value: 60 },
+        }),
       ],
-    }).compile();
-
-    const svc = module.get<WeatherFetchService>(WeatherFetchService);
-    await svc.fetchWeather();
-
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('should handle non-OK response from OpenWeatherMap', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+    });
 
     await service.fetchWeather();
 
+    expect(prisma.weather.create).toHaveBeenCalledTimes(1);
+    const data = prisma.weather.create.mock.calls[0][0].data;
+    expect(data.school_id).toBe('school-1');
+    expect(data.temperature_f).toBe(75);
+    expect(data.precipitation_probability).toBeCloseTo(0.7);
+    expect(data.is_raining).toBe(true);
+    expect(data.wind_speed_mph).toBe(10);
+    expect(data.humidity_percent).toBe(60);
+    expect(data.conditions).toBe('light rain likely');
+  });
+
+  it('normalizes pop=50% to 0.5 and treats <50% rain text as not raining', async () => {
+    nws.getHourlyForecast.mockResolvedValue({
+      updateTime: '2026-05-03T18:00:00Z',
+      periods: [
+        buildPeriod({
+          shortForecast: 'Slight Chance Rain Showers',
+          probabilityOfPrecipitation: {
+            unitCode: 'wmoUnit:percent',
+            value: 30,
+          },
+        }),
+      ],
+    });
+
+    await service.fetchWeather();
+    const data = prisma.weather.create.mock.calls[0][0].data;
+    expect(data.precipitation_probability).toBeCloseTo(0.3);
+    expect(data.is_raining).toBe(false);
+  });
+
+  it('logs and exits when NWS returns no periods', async () => {
+    nws.getHourlyForecast.mockResolvedValue({
+      updateTime: '2026-05-03T18:00:00Z',
+      periods: [],
+    });
+
+    await service.fetchWeather();
     expect(prisma.weather.create).not.toHaveBeenCalled();
   });
 
-  it('should handle missing school record', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockWeatherResponse),
-    });
-    prisma.school.findFirst.mockResolvedValueOnce(null);
-
-    await service.fetchWeather();
-
+  it('swallows NWS errors instead of throwing (cron-safe)', async () => {
+    nws.getHourlyForecast.mockRejectedValue(new Error('502 Bad Gateway'));
+    await expect(service.fetchWeather()).resolves.toBeUndefined();
     expect(prisma.weather.create).not.toHaveBeenCalled();
   });
 
-  it('should create weather record on success', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockWeatherResponse),
+  it('treats null pop value as zero', async () => {
+    nws.getHourlyForecast.mockResolvedValue({
+      updateTime: '2026-05-03T18:00:00Z',
+      periods: [
+        buildPeriod({
+          probabilityOfPrecipitation: {
+            unitCode: 'wmoUnit:percent',
+            value: null,
+          },
+        }),
+      ],
     });
-    prisma.school.findFirst.mockResolvedValueOnce(mockSchool);
-    prisma.weather.create.mockResolvedValueOnce({});
-
     await service.fetchWeather();
-
-    expect(prisma.weather.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        school_id: 'school-1',
-        temperature_f: 72,
-        conditions: 'clear sky',
-        is_raining: false,
-      }),
-    });
-  });
-
-  it('should detect rain from weather condition', async () => {
-    const rainyResponse = {
-      ...mockWeatherResponse,
-      weather: [{ main: 'Rain', description: 'light rain' }],
-    };
-
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(rainyResponse),
-    });
-    prisma.school.findFirst.mockResolvedValueOnce(mockSchool);
-    prisma.weather.create.mockResolvedValueOnce({});
-
-    await service.fetchWeather();
-
-    expect(prisma.weather.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ is_raining: true }),
-    });
-  });
-
-  it('should detect rain from precipitation data', async () => {
-    const rainData = {
-      ...mockWeatherResponse,
-      rain: { '1h': 0.5 },
-    };
-
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(rainData),
-    });
-    prisma.school.findFirst.mockResolvedValueOnce(mockSchool);
-    prisma.weather.create.mockResolvedValueOnce({});
-
-    await service.fetchWeather();
-
-    expect(prisma.weather.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ is_raining: true }),
-    });
-  });
-
-  it('should handle fetch errors gracefully', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network error'));
-
-    // Should not throw
-    await service.fetchWeather();
-
-    expect(prisma.weather.create).not.toHaveBeenCalled();
+    const data = prisma.weather.create.mock.calls[0][0].data;
+    expect(data.precipitation_probability).toBe(0);
+    expect(data.is_raining).toBe(false);
   });
 });

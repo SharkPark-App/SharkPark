@@ -206,7 +206,7 @@ last moved. **Update the table after every rotation.**
 | `NEON_DATABASE_URL` (Fly + GitHub) | Every 180 days | _never since signup_ | TBD | Neon dashboard → Roles → reset password → update Fly secret + GitHub secret |
 | `R2 backup token` | Every 180 days, or on suspected leak | _never since signup_ | TBD | Cloudflare → R2 → Manage tokens → rotate `fly-backups` |
 | `SENTRY_AUTH_TOKEN` (GitHub) | Every 365 days | _not yet configured_ | TBD | https://sentry.io/settings/account/api/auth-tokens/ |
-| `OPENWEATHER_API_KEY` | On suspected leak only (free tier, low blast radius) | _never_ | N/A | OpenWeather dashboard |
+| `WEATHER_USER_AGENT` | Update on contact email change | _N/A — not a secret_ | N/A | `flyctl secrets set WEATHER_USER_AGENT="SharkPark/1.0 (ops@sharkpark.app)" -a sharkpark-api`. NWS api.weather.gov is keyless; the UA is just an identifier so they can reach out to heavy users. Default in code already points at `ops@sharkpark.app` (Cloudflare Email Routing forwards to inbox), so the secret only needs to be set if the contact mailbox changes. |
 
 **Rotation procedure (generic):**
 

@@ -1,53 +1,52 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/database.module';
+import {
+  NwsClient,
+  computeFeelsLikeF,
+  deriveIsRaining,
+  parseWindSpeedMph,
+  probabilityToRate,
+} from './nws.client';
 
-interface OpenWeatherResponse {
-  weather: { main: string; description: string }[];
-  main: { temp: number; feels_like: number; humidity: number };
-  wind: { speed: number };
-  rain?: { '1h'?: number };
-  pop?: number;
-}
-
+/**
+ * Persists the current weather observation by reading the *current hour*
+ * slice (`periods[0]`) of the NWS hourly forecast for the school's gridpoint.
+ *
+ * Why the forecast's current-hour period instead of `/stations/.../observations/latest`?
+ *  - The forecast endpoint returns `probabilityOfPrecipitation`. Station obs
+ *    don't carry pop, and the ML weather adjustment in
+ *    `services/ml/src/postprocess/weather_adjustment.py` uses that field.
+ *  - One endpoint = one failure domain, one cache key, one mock in tests,
+ *    one set of NWS rate-limit considerations.
+ *  - The `fetch-weather-forecast` cron uses the same endpoint, so the data
+ *    shapes are identical — fewer adapters to maintain.
+ *
+ * Cron: every 30 min (see `apps/backend/cron/crontab`).
+ */
 @Injectable()
 export class WeatherFetchService {
   private readonly logger = new Logger(WeatherFetchService.name);
-  private readonly apiKey: string;
   private readonly lat: number;
   private readonly lon: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly nws: NwsClient,
   ) {
-    this.apiKey = this.config.get<string>('weather.openWeatherApiKey', '');
     this.lat = this.config.get<number>('weather.latitude', 33.7838);
     this.lon = this.config.get<number>('weather.longitude', -118.1134);
   }
 
-  /**
-   * Fetch current weather from OpenWeatherMap and persist a row.
-   * Invoked by the `cron:weather` script (Fly cron Machine, every 30min);
-   * also exported as a regular service method so it can be triggered manually
-   * or from tests.
-   */
   async fetchWeather(): Promise<void> {
-    if (!this.apiKey) {
-      this.logger.warn('OPENWEATHER_API_KEY not set — skipping weather fetch');
-      return;
-    }
-
     try {
-      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${this.lat}&lon=${this.lon}&units=imperial&appid=${this.apiKey}`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        this.logger.error(`OpenWeatherMap returned ${response.status}`);
+      const { periods } = await this.nws.getHourlyForecast(this.lat, this.lon);
+      const current = periods[0];
+      if (!current) {
+        this.logger.error('NWS hourly forecast returned no periods');
         return;
       }
-
-      const data = (await response.json()) as OpenWeatherResponse;
 
       const school = await this.prisma.school.findFirst();
       if (!school) {
@@ -55,29 +54,37 @@ export class WeatherFetchService {
         return;
       }
 
-      const isRaining =
-        data.weather.some((w) => w.main === 'Rain' || w.main === 'Drizzle') ||
-        (data.rain?.['1h'] ?? 0) > 0;
+      // NWS returns Fahrenheit for US grids. Convert defensively if not.
+      const tempF =
+        current.temperatureUnit === 'F'
+          ? current.temperature
+          : (current.temperature * 9) / 5 + 32;
+
+      const windMph = parseWindSpeedMph(current.windSpeed);
+      const humidity = current.relativeHumidity?.value ?? 0;
+      const conditions = (current.shortForecast ?? 'unknown').toLowerCase();
 
       await this.prisma.weather.create({
         data: {
           school_id: school.id,
           timestamp: new Date(),
-          temperature_f: data.main.temp,
-          feels_like_f: data.main.feels_like,
-          humidity_percent: data.main.humidity,
-          wind_speed_mph: data.wind.speed,
-          conditions: data.weather[0]?.description ?? 'unknown',
-          precipitation_probability: data.pop ?? 0,
-          is_raining: isRaining,
+          temperature_f: tempF,
+          feels_like_f: computeFeelsLikeF(tempF, humidity, windMph),
+          humidity_percent: humidity,
+          wind_speed_mph: windMph,
+          conditions,
+          precipitation_probability: probabilityToRate(
+            current.probabilityOfPrecipitation,
+          ),
+          is_raining: deriveIsRaining(current),
         },
       });
 
       this.logger.log(
-        `Weather updated: ${data.main.temp}°F, ${data.weather[0]?.description}`,
+        `Weather updated: ${tempF}°F, ${conditions}`,
       );
     } catch (error) {
-      this.logger.error('Failed to fetch weather from OpenWeatherMap', error);
+      this.logger.error('Failed to fetch weather from NWS', error);
     }
   }
 }

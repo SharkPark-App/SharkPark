@@ -2,12 +2,13 @@ import { runCronJob } from './_bootstrap';
 import { OccupancyEventsService } from '../occupancy-events/occupancy-events.service';
 
 /**
- * Raw-event data retention cron.
+ * Raw-data retention cron.
  *
- * Deletes rows from `occupancy_events` older than 30 days, honoring the
- * user-facing privacy promise in README.md. `occupancy_snapshots` and
- * all aggregated tables are kept permanently (see infrastructure/README.md
- * "Data Retention") — this script never touches them.
+ * Deletes rows older than 30 days from `occupancy_events` (privacy
+ * promise in README.md) and `weather` observations (only the latest row
+ * is used by ML / WeatherService). `occupancy_snapshots` and aggregated
+ * tables are kept permanently — see infrastructure/README.md
+ * "Data Retention".
  *
  * Override the window with the `RETENTION_DAYS` env var (defaults to 30).
  * Runs daily at 4 AM Pacific, after the 2 AM backup, so the deleted rows
@@ -32,6 +33,6 @@ void runCronJob('prune-old-data', async ({ app, logger }) => {
   const svc = app.get(OccupancyEventsService);
   const result = await svc.pruneOldData(retentionDays);
   logger.log(
-    `[cron:prune-old-data] retention=${retentionDays}d events=${result.events_deleted} cutoff=${result.cutoff}`,
+    `[cron:prune-old-data] retention=${retentionDays}d events=${result.events_deleted} weather=${result.weather_deleted} cutoff=${result.cutoff}`,
   );
 });
