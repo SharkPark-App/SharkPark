@@ -6,10 +6,10 @@ export const SITE = {
   name: 'SharkPark',
   domain: 'sharkpark.app',
   url: 'https://sharkpark.app',
-  tagline: 'Live Campus Parking',
+  tagline: 'Find a spot before you leave',
   // Kept under ~160 chars so it isn't truncated in Google SERPs.
   description:
-    'Live parking lot occupancy and short-term forecasts for the CSULB area. Independent crowdsourced app — not affiliated with CSU Long Beach.',
+    'See which parking lots near CSULB’s campus are open right now, and which ones will be open in the next hour, day, or week. Independent crowdsourced app — not affiliated with CSU Long Beach.',
   // Real mailboxes routed via Cloudflare Email Routing.
   // support@  — general user support (FAQ overflow, bug reports, account help)
   // security@ — security disclosures + privacy/data requests (CCPA, deletion, access)

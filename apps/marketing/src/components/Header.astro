@@ -11,7 +11,7 @@ const pathname = Astro.url.pathname.replace(/\/$/, '') || '/';
     </a>
     <nav aria-label="Primary">
       <ul class="flex items-center gap-6 text-sm font-medium text-[var(--color-ink-soft)]">
-        {NAV_LINKS.filter((l) => l.href !== '/').map((l) => {
+        {NAV_LINKS.map((l) => {
           const isCurrent = pathname === l.href;
           return (
             <li>
