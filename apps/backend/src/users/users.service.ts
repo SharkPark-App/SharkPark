@@ -240,8 +240,56 @@ export class UsersService {
     }
   }
 
+  /** Returns short-term predictions for each of the user's favorited lots. */
+  async getForecast(email: string): Promise<{
+    user_id: string;
+    generated_at: string;
+    lots: Array<{
+      lot_id: string;
+      predictions: Array<{
+        target_time: string;
+        predicted_occupancy: number;
+        confidence_lower: number;
+        confidence_upper: number;
+        model_version: string;
+      }>;
+    }>;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { favorites: { include: { lot: true } } },
+    });
+    if (!user) {
+      throw new NotFoundException(`User ${email} not found`);
+    }
+
+    const now = new Date();
+    const lots = await Promise.all(
+      user.favorites.map(async (fav) => {
+        const predictions = await this.prisma.predictionShortTerm.findMany({
+          where: { lot_id: fav.lot.id, target_time: { gte: now } },
+          orderBy: { target_time: 'asc' },
+          take: 20,
+        });
+        return {
+          lot_id: fav.lot.lot_id,
+          predictions: predictions.map((p) => ({
+            target_time: p.target_time.toISOString(),
+            predicted_occupancy: p.predicted_occupancy,
+            confidence_lower: p.confidence_lower,
+            confidence_upper: p.confidence_upper,
+            model_version: p.model_version,
+          })),
+        };
+      }),
+    );
+
+    return { user_id: email, generated_at: now.toISOString(), lots };
+  }
+
   /**
-   * Hard-deletes a user and cascades to favorites (per schema FK rules).
+   * Hard-deletes a user and cascades to favorites, occupancy events, notification
+   * logs, and reports (per schema FK rules).
    * Writes a USER_DELETED audit row in the same transaction so a deletion
    * is auditable even after the row is gone. The audit row stores only
    * SHA-256(salt:email), no reversible PII.

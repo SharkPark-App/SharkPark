@@ -10,9 +10,11 @@ import {
   HttpCode,
   HttpStatus,
   ForbiddenException,
+  UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { ContributorGuard } from '../auth/contributor.guard';
 import { Request } from 'express';
 
 interface AuthenticatedRequest extends Request {
@@ -35,6 +37,23 @@ export class UsersController {
     if (req.user?.email !== userId) {
       throw new ForbiddenException('You can only access your own resources');
     }
+  }
+
+  /**
+   * Personalized short-term forecast for the caller's favorite lots.
+   * Requires both Azure AD authentication (global AzureAdGuard) and an
+   * active contributor ping (ContributorGuard).
+   */
+  @Get('me/forecast')
+  @UseGuards(ContributorGuard)
+  @HttpCode(HttpStatus.OK)
+  async getForecast(@Req() req: AuthenticatedRequest) {
+    const email = req.user?.email;
+    if (!email) {
+      throw new ForbiddenException('Authenticated user email missing');
+    }
+    const data = await this.usersService.getForecast(email);
+    return { success: true, data };
   }
 
   @Get(':userId')
