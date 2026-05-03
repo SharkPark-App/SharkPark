@@ -1,0 +1,132 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { SITE } from '../consts';
+---
+<DocsLayout
+  title="Privacy Policy"
+  description={`How ${SITE.name} collects, uses, and protects your information.`}
+  lastUpdated="May 2, 2026"
+>
+  <p>
+    SharkPark (&ldquo;<strong>SharkPark</strong>,&rdquo; &ldquo;<strong>we</strong>,&rdquo; &ldquo;<strong>us</strong>,&rdquo; or &ldquo;<strong>our</strong>&rdquo;) is an independent crowdsourced parking application focused on the area around California State University, Long Beach (&ldquo;CSULB&rdquo;). SharkPark is <strong>not affiliated with, endorsed by, or sponsored by</strong> California State University, Long Beach. This Privacy Policy explains what information we collect through the SharkPark mobile applications and the website at <a href={SITE.url}>{SITE.domain}</a> (collectively, the &ldquo;Service&rdquo;), how we use it, and the choices you have.
+  </p>
+
+  <h2>1. Summary</h2>
+  <ul>
+    <li>We do <strong>not</strong> store your raw GPS coordinates or location history on our servers.</li>
+    <li>We only know that <em>some</em> hashed device entered or exited a parking lot — not who, where they came from, or where they went next.</li>
+    <li>If you sign in, we use your school&rsquo;s Microsoft (Azure AD) single sign-on. We receive only the basic profile fields needed to authenticate you.</li>
+    <li>We don&rsquo;t sell your information, share it with advertisers, or use it for marketing.</li>
+    <li>You can delete your account and associated data at any time from inside the app, or by emailing <a href={`mailto:${SITE.privacyEmail}`}>{SITE.privacyEmail}</a>.</li>
+  </ul>
+
+  <h2>2. Information we collect</h2>
+
+  <h3>2.1 Anonymous geofence events</h3>
+  <p>
+    When the SharkPark mobile app detects that your device has entered or exited a parking lot, it sends an event to our backend containing:
+  </p>
+  <ul>
+    <li>The lot identifier (e.g., &ldquo;Lot G14&rdquo;).</li>
+    <li>Whether the event was an enter or exit.</li>
+    <li>A randomly generated device identifier that is one-way hashed (SHA-256) with a server-side salt before it is written to our database. The unhashed identifier never leaves your device&rsquo;s secure storage and is never sent to or stored by our servers in raw form.</li>
+    <li>A timestamp.</li>
+  </ul>
+  <p>
+    We do <strong>not</strong> receive or store your raw GPS coordinates, the path you took to reach the lot, your speed, or your location at any time you are not crossing a lot boundary.
+  </p>
+
+  <h3>2.2 Account information (optional)</h3>
+  <p>
+    SharkPark can be used as a guest with no account. If you choose to sign in, we use Microsoft Azure Active Directory single sign-on (SSO). We receive your name, email address, and a Microsoft-issued user identifier solely for the purposes of authenticating you and associating your favorites and preferences with your account. We do not receive your Microsoft password.
+  </p>
+
+  <h3>2.3 In-app reports</h3>
+  <p>
+    If you submit an incident report from inside the app (e.g., to flag a closure, accident, or other issue), we store the report content, the lot it relates to, and your account identifier (if signed in). Reports are reviewed for moderation and to improve the Service.
+  </p>
+
+  <h3>2.4 Diagnostic and crash data</h3>
+  <p>
+    We use third-party tooling (see Section 5) to collect aggregated crash reports and performance information. These reports may include device model, operating system version, app version, and a stack trace. They do not include your name, contact information, or location.
+  </p>
+
+  <h3>2.5 Push notification tokens</h3>
+  <p>
+    If you opt in to push notifications (e.g., favorite-lot alerts), your device&rsquo;s push token is stored so we can deliver those notifications. You can revoke this at any time by disabling notifications for SharkPark in your device settings.
+  </p>
+
+  <h2>3. How we use information</h2>
+  <ul>
+    <li>To compute and display live occupancy estimates for parking lots.</li>
+    <li>To compute reliability scores so users can judge how trustworthy a given estimate is.</li>
+    <li>To generate aggregated, non-identifying training data for short- and long-term occupancy forecasts.</li>
+    <li>To authenticate you and remember your preferences and favorite lots, if you sign in.</li>
+    <li>To deliver push notifications you have opted in to.</li>
+    <li>To diagnose crashes, performance issues, and abuse.</li>
+  </ul>
+
+  <h2>4. Legal basis</h2>
+  <p>
+    We process information based on (a) your consent, granted when you install the app and grant location permissions, (b) our legitimate interest in operating, securing, and improving the Service, and (c) our need to perform a contract with you when you create an account.
+  </p>
+
+  <h2>5. Service providers</h2>
+  <p>
+    We share limited information with the following service providers, under contract, solely to operate the Service:
+  </p>
+  <ul>
+    <li><strong>Microsoft (Azure Active Directory)</strong> — single sign-on authentication.</li>
+    <li><strong>Cloudflare, Inc.</strong> — DNS, content delivery, and object storage (R2) for application assets and machine-learning model artifacts.</li>
+    <li><strong>Neon, Inc.</strong> — managed PostgreSQL database hosting.</li>
+    <li><strong>Fly.io (Hashicorp Holdings, Inc.)</strong> — backend application hosting.</li>
+    <li><strong>Functional Software, Inc. (Sentry)</strong> — crash and performance diagnostics.</li>
+    <li><strong>Apple Inc.</strong> and <strong>Google LLC</strong> — push notification delivery (APNs and FCM).</li>
+  </ul>
+  <p>
+    We do not sell or rent personal information to anyone, and we do not share information with advertising networks or data brokers.
+  </p>
+
+  <h2>6. Retention</h2>
+  <ul>
+    <li><strong>Hashed event records:</strong> retained while needed to operate the Service. Per-event identifiers are not linkable back to you.</li>
+    <li><strong>Aggregated occupancy snapshots:</strong> retained indefinitely; they are statistical summaries that do not identify any individual.</li>
+    <li><strong>Account information and favorites:</strong> retained until you delete your account.</li>
+    <li><strong>Incident reports:</strong> retained per audit requirements; you may request deletion at any time.</li>
+    <li><strong>Crash reports:</strong> retained for up to 90 days by our diagnostics provider.</li>
+  </ul>
+
+  <h2>7. Your rights and choices</h2>
+  <ul>
+    <li><strong>Access &amp; export:</strong> Email <a href={`mailto:${SITE.privacyEmail}`}>{SITE.privacyEmail}</a> and we will provide a copy of the personal data associated with your account.</li>
+    <li><strong>Deletion:</strong> Delete your account from inside the app under <em>Settings → Account → Delete Account</em>, or follow the instructions at <a href="/delete-account">{SITE.domain}/delete-account</a>.</li>
+    <li><strong>Location permissions:</strong> You can revoke location permissions at any time in your device&rsquo;s system settings. The app will continue to function in a limited, view-only mode.</li>
+    <li><strong>Push notifications:</strong> You can disable push notifications in your device&rsquo;s system settings.</li>
+    <li><strong>California residents (CCPA/CPRA):</strong> You have the right to know what personal information we have collected, to request deletion, and to be free from discrimination for exercising these rights. We do not sell or share personal information for cross-context behavioral advertising.</li>
+  </ul>
+
+  <h2>8. Children&rsquo;s privacy</h2>
+  <p>
+    The Service is not directed to children under the age of 13, and we do not knowingly collect personal information from children under 13. If you believe a child has provided us with personal information, please contact us at <a href={`mailto:${SITE.privacyEmail}`}>{SITE.privacyEmail}</a> and we will promptly delete it.
+  </p>
+
+  <h2>9. International users</h2>
+  <p>
+    The Service is operated from, and intended for users in, the United States. If you access the Service from outside the United States, you consent to the transfer of information to the United States and the processing of that information in accordance with this Privacy Policy.
+  </p>
+
+  <h2>10. Security</h2>
+  <p>
+    We use industry-standard technical and organizational safeguards to protect information, including encryption in transit (TLS), hashed and salted device identifiers, restricted access to production systems, and continuous monitoring. No system is perfectly secure, and we cannot guarantee absolute security.
+  </p>
+
+  <h2>11. Changes to this Policy</h2>
+  <p>
+    We may update this Privacy Policy from time to time. If we make material changes, we will notify you in the app and update the &ldquo;Last updated&rdquo; date above. Continued use of the Service after the effective date constitutes acceptance of the revised Policy.
+  </p>
+
+  <h2>12. Contact</h2>
+  <p>
+    Questions, requests, or complaints? Email us at <a href={`mailto:${SITE.privacyEmail}`}>{SITE.privacyEmail}</a>.
+  </p>
+</DocsLayout>

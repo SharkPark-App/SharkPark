@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "4K793ZW77F.app.sharkpark.mobile",
+        "paths": [
+          "/map",
+          "/map/lot/*",
+          "/forecast/short/*",
+          "/forecast/long",
+          "/profile"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,86 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { SITE } from '../consts';
+---
+<DocsLayout
+  title="Terms of Service"
+  description={`The terms that govern your use of ${SITE.name}.`}
+  lastUpdated="May 2, 2026"
+>
+  <p>
+    These Terms of Service (&ldquo;<strong>Terms</strong>&rdquo;) form a binding agreement between you and SharkPark (&ldquo;<strong>we</strong>,&rdquo; &ldquo;<strong>us</strong>,&rdquo; or &ldquo;<strong>our</strong>&rdquo;) governing your use of the SharkPark mobile applications and the website at <a href={SITE.url}>{SITE.domain}</a> (the &ldquo;Service&rdquo;). By installing or using the Service, you agree to these Terms. If you do not agree, do not use the Service.
+  </p>
+
+  <h2>1. Independent service; no university affiliation</h2>
+  <p>
+    SharkPark is an independent application. <strong>SharkPark is not affiliated with, endorsed by, sponsored by, or operated on behalf of California State University, Long Beach (&ldquo;CSULB&rdquo;) or the California State University system.</strong> References to the CSULB area, lot names, or shuttle routes are for the descriptive purpose of providing community parking information. All trademarks, names, and marks belong to their respective owners.
+  </p>
+
+  <h2>2. Eligibility</h2>
+  <p>
+    You must be at least 13 years old to use the Service. If you are under the age of majority in your jurisdiction, you may use the Service only with the involvement of a parent or legal guardian.
+  </p>
+
+  <h2>3. Accounts</h2>
+  <p>
+    You may use the Service as a guest. If you choose to create an account, you must do so through Microsoft Azure Active Directory single sign-on. You are responsible for maintaining the confidentiality of your sign-in credentials and for all activity that occurs under your account.
+  </p>
+
+  <h2>4. Acceptable use</h2>
+  <p>
+    You agree that you will not, and will not attempt to:
+  </p>
+  <ul>
+    <li>Spoof, fabricate, or manipulate location data, geofence events, or incident reports.</li>
+    <li>Submit false, misleading, harassing, or unlawful content through any reporting feature.</li>
+    <li>Reverse-engineer, decompile, or attempt to extract source code from the Service, except as expressly permitted by law.</li>
+    <li>Interfere with, disrupt, overload, or degrade the Service or any related infrastructure.</li>
+    <li>Use the Service in violation of any applicable law, regulation, or third-party right, including any policies of CSULB or any property owner whose lot is depicted in the Service.</li>
+    <li>Use the Service to build a competing product or service.</li>
+  </ul>
+
+  <h2>5. User content</h2>
+  <p>
+    You retain ownership of any content you submit through the Service (such as incident reports). By submitting content, you grant us a worldwide, non-exclusive, royalty-free license to host, store, display, reproduce, and use that content solely to operate, improve, and provide the Service. You represent that you have the right to grant this license and that your content does not violate any third-party rights or applicable law.
+  </p>
+
+  <h2>6. Service is provided &ldquo;as is&rdquo;</h2>
+  <p>
+    Occupancy estimates, reliability scores, forecasts, shuttle positions, and any other information shown in the Service are <strong>estimates only</strong>, derived from crowdsourced and third-party data that may be incomplete, delayed, or inaccurate. <strong>You are solely responsible for verifying parking availability and any rules, fees, or permit requirements before parking.</strong> Do not rely on the Service as the sole basis for any decision, and do not use it in a way that distracts you from safe operation of a vehicle.
+  </p>
+
+  <h2>7. Disclaimers</h2>
+  <p>
+    THE SERVICE IS PROVIDED &ldquo;AS IS&rdquo; AND &ldquo;AS AVAILABLE,&rdquo; WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, ACCURATE, OR FREE OF HARMFUL COMPONENTS.
+  </p>
+
+  <h2>8. Limitation of liability</h2>
+  <p>
+    TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT WILL SHARKPARK, ITS CONTRIBUTORS, OR ITS LICENSORS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, ARISING OUT OF OR RELATED TO YOUR USE OF THE SERVICE. OUR AGGREGATE LIABILITY FOR ANY CLAIM ARISING OUT OF THESE TERMS OR THE SERVICE IS LIMITED TO ONE HUNDRED U.S. DOLLARS (US $100).
+  </p>
+
+  <h2>9. Indemnification</h2>
+  <p>
+    You agree to indemnify and hold SharkPark and its contributors harmless from any claim, demand, loss, or expense (including reasonable attorneys&rsquo; fees) arising out of your violation of these Terms, your misuse of the Service, or your violation of any law or third-party right.
+  </p>
+
+  <h2>10. Termination</h2>
+  <p>
+    We may suspend or terminate your access to the Service at any time, with or without notice, if we believe you have violated these Terms or if continued operation would expose us to legal or security risk. You may stop using the Service and delete your account at any time.
+  </p>
+
+  <h2>11. Changes to the Service or Terms</h2>
+  <p>
+    We may modify, suspend, or discontinue any part of the Service at any time. We may also revise these Terms; if we make material changes, we will notify you in the app and update the &ldquo;Last updated&rdquo; date above. Your continued use of the Service after the effective date constitutes acceptance of the revised Terms.
+  </p>
+
+  <h2>12. Governing law and disputes</h2>
+  <p>
+    These Terms are governed by the laws of the State of California, without regard to conflict-of-law principles. The exclusive venue for any dispute arising out of or relating to these Terms or the Service is the state and federal courts located in Los Angeles County, California, and you consent to personal jurisdiction in those courts.
+  </p>
+
+  <h2>13. Contact</h2>
+  <p>
+    Questions about these Terms? Email <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
+  </p>
+</DocsLayout>

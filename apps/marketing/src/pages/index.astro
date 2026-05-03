@@ -1,0 +1,259 @@
+---
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE } from '../consts';
+
+// Optional hero preview video. Drop an MP4 (and optionally a WebM) into
+// `public/` and the hero phone will autoplay it on loop, muted + inline.
+// If neither file exists at build time we fall back to the static placeholder.
+const publicDir = fileURLToPath(new URL('../../public/', import.meta.url));
+const hasHeroMp4 = existsSync(`${publicDir}hero-preview.mp4`);
+const hasHeroWebm = existsSync(`${publicDir}hero-preview.webm`);
+const hasHeroPoster = existsSync(`${publicDir}hero-preview.jpg`);
+const hasHeroVideo = hasHeroMp4 || hasHeroWebm;
+
+// Inline Lucide-style icons. Single-color stroke icons that inherit `currentColor`
+// so they pick up the brand amber automatically. Sized via class on the wrapper.
+const iconProps = 'width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+
+const features = [
+  {
+    title: 'Live lot occupancy',
+    body: 'See how full each parking lot is right now, refreshed every few minutes from anonymous geofence events.',
+    // map-pin
+    svg: `<svg ${iconProps}><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
+  },
+  {
+    title: 'Short and long-term forecasts',
+    body: 'Predicted occupancy for the next hour and the next seven days, so you can plan your trip with confidence.',
+    // trending-up
+    svg: `<svg ${iconProps}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>`,
+  },
+  {
+    title: 'Favorite lots & alerts',
+    body: 'Pin the lots you actually use. Get notified when a lot you care about is filling up — or freeing up.',
+    // bell
+    svg: `<svg ${iconProps}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>`,
+  },
+  {
+    title: 'Live shuttle tracking',
+    body: 'See campus shuttle positions and ETAs alongside your parking decisions.',
+    // bus
+    svg: `<svg ${iconProps}><path d="M8 6v6"/><path d="M16 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/></svg>`,
+  },
+  {
+    title: 'Privacy by default',
+    body: 'Your raw location is never sent to our servers. Device IDs are hashed before they touch our database.',
+    // shield-check
+    svg: `<svg ${iconProps}><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/></svg>`,
+  },
+  {
+    title: 'Built for the CSULB area',
+    body: 'Independent app focused on the lots and patterns commuters around CSULB actually use every day.',
+    // graduation-cap
+    svg: `<svg ${iconProps}><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>`,
+  },
+];
+
+const steps = [
+  {
+    n: '1',
+    title: 'Install the app',
+    body: 'Download SharkPark on iOS or Android. No setup beyond signing in or continuing as a guest.',
+  },
+  {
+    n: '2',
+    title: 'Drive like normal',
+    body: 'When you enter or exit a parking lot, your phone fires an anonymous, hashed event. No GPS trail is ever stored.',
+  },
+  {
+    n: '3',
+    title: 'Everyone gets better data',
+    body: 'Those events are aggregated into a live occupancy estimate, so the next person can skip the full lot.',
+  },
+  {
+    n: '4',
+    title: 'Check before you leave',
+    body: 'Open the app from home or class, see which lots are open right now, and pick the smartest one.',
+  },
+];
+---
+<BaseLayout>
+  <!-- Hero -->
+  <section class="relative overflow-hidden">
+    <div class="absolute inset-0 -z-10 bg-gradient-to-b from-[var(--color-brand-50)] via-white to-white" aria-hidden="true"></div>
+    <div class="mx-auto grid max-w-6xl gap-12 px-6 pt-20 pb-24 md:grid-cols-2 md:items-center md:pt-24 md:pb-32">
+      <div>
+        <span class="inline-flex items-center rounded-full bg-[var(--color-brand-100)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-brand-700)]">
+          For commuters around CSULB
+        </span>
+        <h1 class="mt-5 text-4xl font-bold leading-tight tracking-tight text-[var(--color-ink)] md:text-5xl">
+          {SITE.tagline}
+        </h1>
+        <p class="mt-5 max-w-xl text-lg text-[var(--color-ink-soft)]">
+          SharkPark turns every commuter's phone into an anonymous sensor — so you can see how full each parking lot is right now, plus what it'll look like in the next hour or the next week.
+        </p>
+        <div class="mt-8 flex flex-wrap items-center gap-3">
+          <a
+            href={SITE.appStoreUrl}
+            aria-label="Download SharkPark on the App Store"
+            class="inline-block transition hover:opacity-90"
+          >
+            <img
+              src="/badges/app-store.svg"
+              alt="Download on the App Store"
+              width="160"
+              height="54"
+              class="h-[54px] w-auto"
+            />
+          </a>
+          <a
+            href={SITE.playStoreUrl}
+            aria-label="Get SharkPark on Google Play"
+            class="inline-block transition hover:opacity-90"
+          >
+            <img
+              src="/badges/google-play.svg"
+              alt="Get it on Google Play"
+              width="180"
+              height="54"
+              class="h-[54px] w-auto"
+            />
+          </a>
+        </div>
+        <p class="mt-4 text-xs text-[var(--color-muted)]">
+          Independent app — not affiliated with or endorsed by California State University, Long Beach.
+        </p>
+      </div>
+
+      <!-- Phone mockup: autoplays /hero-preview.{mp4,webm} when present, otherwise placeholder. -->
+      <div class="flex justify-center md:justify-end">
+        <div class="relative">
+          <div class="h-[520px] w-[260px] overflow-hidden rounded-[44px] border-[10px] border-[var(--color-ink)] bg-[var(--color-surface-soft)] shadow-2xl">
+            <div class="h-[calc(100%-1rem)] m-2 overflow-hidden rounded-[34px] bg-gradient-to-br from-[var(--color-brand-100)] to-white">
+              {hasHeroVideo ? (
+                <video
+                  class="h-full w-full object-cover"
+                  autoplay
+                  muted
+                  loop
+                  playsinline
+                  preload="metadata"
+                  poster={hasHeroPoster ? '/hero-preview.jpg' : undefined}
+                  aria-label={`${SITE.name} app preview`}
+                >
+                  {hasHeroWebm && <source src="/hero-preview.webm" type="video/webm" />}
+                  {hasHeroMp4 && <source src="/hero-preview.mp4" type="video/mp4" />}
+                </video>
+              ) : (
+                <div class="grid h-full w-full place-items-center px-6 text-center">
+                  <div>
+                    <div class="text-5xl">🦈</div>
+                    <p class="mt-3 text-base font-semibold text-[var(--color-ink)]">SharkPark map</p>
+                    <p class="mt-1 text-xs text-[var(--color-muted)]">App preview coming soon</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="mx-auto max-w-6xl px-6 py-20" id="features">
+    <div class="mx-auto max-w-2xl text-center">
+      <h2 class="text-3xl font-bold tracking-tight md:text-4xl">Stop circling the lot.</h2>
+      <p class="mt-4 text-lg text-[var(--color-ink-soft)]">
+        Built around one simple idea: the people already on campus know how full it is. SharkPark just makes that information available to everyone — anonymously.
+      </p>
+    </div>
+    <div class="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {features.map((f) => (
+        <div class="rounded-2xl border border-[var(--color-border)] bg-white p-6 transition hover:border-[var(--color-brand-500)] hover:shadow-md">
+          <div
+            class="grid h-12 w-12 place-items-center rounded-xl bg-[var(--color-brand-100)] text-[var(--color-brand-700)]"
+            aria-hidden="true"
+            set:html={f.svg}
+          />
+          <h3 class="mt-4 text-lg font-semibold">{f.title}</h3>
+          <p class="mt-2 text-sm leading-relaxed text-[var(--color-ink-soft)]">{f.body}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="bg-[var(--color-surface-soft)]">
+    <div class="mx-auto max-w-6xl px-6 py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-3xl font-bold tracking-tight md:text-4xl">How it works</h2>
+        <p class="mt-4 text-lg text-[var(--color-ink-soft)]">
+          A community of commuters quietly helping each other find a spot.
+        </p>
+      </div>
+      <ol class="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {steps.map((s) => (
+          <li class="rounded-2xl border border-[var(--color-border)] bg-white p-6">
+            <span class="grid h-9 w-9 place-items-center rounded-lg bg-[var(--color-brand-500)] text-sm font-bold text-white">
+              {s.n}
+            </span>
+            <h3 class="mt-4 text-base font-semibold">{s.title}</h3>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--color-ink-soft)]">{s.body}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <!-- Privacy -->
+  <section class="mx-auto max-w-6xl px-6 py-20">
+    <div class="grid gap-10 rounded-3xl bg-[var(--color-ink)] p-10 text-white md:grid-cols-2 md:p-14">
+      <div>
+        <h2 class="text-3xl font-bold tracking-tight md:text-4xl">Privacy is the product.</h2>
+        <p class="mt-4 text-lg text-white/80">
+          We can't build a useful crowdsourced parking app if people don't trust it. So we don't collect what we don't need.
+        </p>
+        <a
+          href="/privacy"
+          class="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-[var(--color-ink)] transition hover:bg-[var(--color-brand-100)]"
+        >
+          Read our Privacy Policy →
+        </a>
+      </div>
+      <ul class="space-y-4 text-base text-white/85">
+        <li><strong class="text-white">No raw GPS storage.</strong> We only record that <em>some</em> device crossed a lot boundary — never the path to get there.</li>
+        <li><strong class="text-white">Hashed device IDs.</strong> Your device identifier is one-way hashed with a server-side salt before it ever hits our database.</li>
+        <li><strong class="text-white">No selling, no advertising.</strong> Your data isn't shared with marketers, brokers, or ad networks. Ever.</li>
+        <li><strong class="text-white">Delete anytime.</strong> Wipe your account and associated data from inside the app, or by emailing <a class="underline" href={`mailto:${SITE.privacyEmail}`}>{SITE.privacyEmail}</a>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="mx-auto max-w-4xl px-6 pb-24 text-center">
+    <h2 class="text-3xl font-bold tracking-tight md:text-4xl">Ready to skip the full lot?</h2>
+    <p class="mt-4 text-lg text-[var(--color-ink-soft)]">
+      Install {SITE.name} and check parking before you leave. No account required to look around.
+    </p>
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <a
+        href={SITE.appStoreUrl}
+        aria-label="Download SharkPark on the App Store"
+        class="inline-block transition hover:opacity-90"
+      >
+        <img src="/badges/app-store.svg" alt="Download on the App Store" width="160" height="54" class="h-[54px] w-auto" />
+      </a>
+      <a
+        href={SITE.playStoreUrl}
+        aria-label="Get SharkPark on Google Play"
+        class="inline-block transition hover:opacity-90"
+      >
+        <img src="/badges/google-play.svg" alt="Get it on Google Play" width="180" height="54" class="h-[54px] w-auto" />
+      </a>
+      <a href="/support" class="rounded-xl border border-transparent px-5 py-3 text-sm font-semibold text-[var(--color-brand-700)] hover:underline">Need help? →</a>
+    </div>
+  </section>
+</BaseLayout>
