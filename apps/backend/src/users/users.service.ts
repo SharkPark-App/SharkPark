@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../database/database.module';
 import type { UserType } from '@prisma/client';
-import type { UserResponse } from './interfaces/user.interface';
+import type { UserResponse, UserDataExport } from './interfaces/user.interface';
 import type { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 
 /**
@@ -238,6 +238,64 @@ export class UsersService {
       this.logger.error(`Failed to find or create profile for user ${email}`, error);
       throw error;
     }
+  }
+
+  /** Returns all data held for the authenticated user (GDPR/CCPA data export). */
+  async exportUserData(email: string): Promise<UserDataExport> {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        favorites: { include: { lot: { select: { lot_id: true } } } },
+        push_tokens: true,
+        reports: { include: { lot: { select: { lot_id: true } } } },
+        notification_logs: { include: { lot: { select: { lot_id: true } } } },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User ${email} not found`);
+    }
+
+    await this.prisma.auditEvent.create({
+      data: {
+        event_type: 'USER_DATA_EXPORTED',
+        actor_hash: this.hashEmail(email),
+      },
+    });
+
+    return {
+      exported_at: new Date(),
+      profile: {
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        user_type: user.user_type,
+        phone: user.phone,
+        notification_preferences: user.notification_preferences,
+        created_at: user.created_at,
+        last_login: user.last_login,
+      },
+      favorites: user.favorites.map((f) => ({
+        lot_id: f.lot.lot_id,
+        added_at: f.added_at,
+      })),
+      push_tokens: user.push_tokens.map((t) => ({
+        token: t.token,
+        platform: t.platform,
+        registered_at: t.created_at,
+      })),
+      reports: user.reports.map((r) => ({
+        lot_id: r.lot.lot_id,
+        type: r.type,
+        message: r.message ?? null,
+        submitted_at: r.created_at,
+      })),
+      notification_logs: user.notification_logs.map((n) => ({
+        type: n.type,
+        lot_id: n.lot?.lot_id ?? null,
+        sent_at: n.sent_at,
+      })),
+    };
   }
 
   /**

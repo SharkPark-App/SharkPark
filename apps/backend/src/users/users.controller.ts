@@ -37,6 +37,17 @@ export class UsersController {
     }
   }
 
+  @Get('me/data')
+  @HttpCode(HttpStatus.OK)
+  async getMyData(@Req() req: AuthenticatedRequest) {
+    const email = req.user?.email;
+    if (!email) {
+      throw new ForbiddenException('Authenticated user email missing');
+    }
+    const data = await this.usersService.exportUserData(email);
+    return { success: true, data };
+  }
+
   @Get(':userId')
   @HttpCode(HttpStatus.OK)
   async getUser(@Req() req: AuthenticatedRequest, @Param('userId') userId: string) {
