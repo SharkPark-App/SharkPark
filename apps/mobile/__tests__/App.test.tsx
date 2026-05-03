@@ -90,10 +90,14 @@ jest.mock('../src/context/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
   useAuth: () => ({
     isAuthenticated: false,
+    isGuest: false,
     isLoading: false,
     user: null,
     login: jest.fn(),
     logout: jest.fn(),
+    continueAsGuest: jest.fn(),
+    exitGuestMode: jest.fn(),
+    refreshSession: jest.fn(),
   }),
 }));
 
