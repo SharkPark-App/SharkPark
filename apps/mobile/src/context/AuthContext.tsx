@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginWithAzure, logoutFromAzure, loadAuth, saveAuth, AuthResult } from '../auth/AzureAuth';
 
 const GUEST_MODE_KEY = '@SharkPark:isGuest';
+const GUEST_FLAG = 'true';
 
 export const geofenceLotFilterKey = (email: string) => `@geofence_lot_filter/${email}`;
 
@@ -38,7 +39,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (savedUser) {
         setUser(savedUser);
         setIsAuthenticated(true);
-      } else if (guestFlag === 'true') {
+        // Opportunistically clear a stale guest flag that may have been left
+        // from a previous session before the user signed in.
+        if (guestFlag !== null) {
+          AsyncStorage.removeItem(GUEST_MODE_KEY).catch((e) => {
+            if (__DEV__) console.warn('[AuthContext] Failed to clear stale guest flag:', e);
+          });
+        }
+      } else if (guestFlag === GUEST_FLAG) {
         setIsGuest(true);
       }
       setIsLoading(false);
@@ -58,7 +66,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       await saveAuth(tokens);
       if (__DEV__) console.log('[AuthContext] Tokens saved, setting authenticated');
-      await AsyncStorage.removeItem(GUEST_MODE_KEY);
+      await AsyncStorage.removeItem(GUEST_MODE_KEY).catch((e) => {
+        if (__DEV__) console.warn('[AuthContext] Failed to clear guest flag on login:', e);
+      });
       setIsGuest(false);
       setUser(tokens);
       setIsAuthenticated(true);
@@ -95,6 +105,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Clear React state (local storage already cleared in logoutFromAzure)
     setUser(null);
     setIsAuthenticated(false);
+    // Defensively clear the guest flag in case it was set in a prior session
+    AsyncStorage.removeItem(GUEST_MODE_KEY).catch((e) => {
+      if (__DEV__) console.warn('[AuthContext] Failed to clear guest flag on logout:', e);
+    });
+    setIsGuest(false);
   };
 
   // Handle Session Refresh
@@ -112,12 +127,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const continueAsGuest = async () => {
-    await AsyncStorage.setItem(GUEST_MODE_KEY, 'true').catch(() => {});
+    await AsyncStorage.setItem(GUEST_MODE_KEY, GUEST_FLAG).catch((e) => {
+      if (__DEV__) console.warn('[AuthContext] Failed to persist guest flag:', e);
+    });
     setIsGuest(true);
   };
 
   const exitGuestMode = async () => {
-    await AsyncStorage.removeItem(GUEST_MODE_KEY).catch(() => {});
+    await AsyncStorage.removeItem(GUEST_MODE_KEY).catch((e) => {
+      if (__DEV__) console.warn('[AuthContext] Failed to clear guest flag:', e);
+    });
     setIsGuest(false);
   };
 
