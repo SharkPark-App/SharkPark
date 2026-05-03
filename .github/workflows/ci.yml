@@ -50,6 +50,56 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      # Block deploys with placeholder values still in the universal-link manifests.
+      # These files are served from the marketing site and feed Apple's CDN +
+      # Google's Domain Verification Service. Shipping a placeholder fingerprint
+      # silently breaks all deep links — fail loudly here instead.
+      - name: Validate .well-known deep-link manifests
+        run: |
+          set -euo pipefail
+          AASA="apps/marketing/public/.well-known/apple-app-site-association"
+          AL="apps/marketing/public/.well-known/assetlinks.json"
+
+          # 1. Both files must exist
+          test -f "$AASA" || { echo "::error::missing $AASA"; exit 1; }
+          test -f "$AL"   || { echo "::error::missing $AL"; exit 1; }
+
+          # 2. Both files must be valid JSON
+          python3 -m json.tool "$AASA" >/dev/null
+          python3 -m json.tool "$AL"   >/dev/null
+
+          # 3. No placeholder strings
+          if grep -qE 'REPLACE_WITH_|TEAMID|RELEASE_SHA256_FINGERPRINT_REPLACE' "$AASA" "$AL"; then
+            echo "::error::placeholder string found in .well-known manifests — fill in real values before merge"
+            grep -nE 'REPLACE_WITH_|TEAMID|RELEASE_SHA256_FINGERPRINT_REPLACE' "$AASA" "$AL" || true
+            exit 1
+          fi
+
+          # 4. Every Android SHA-256 fingerprint must match the expected format
+          python3 - <<'PY'
+          import json, re, sys
+          data = json.load(open("apps/marketing/public/.well-known/assetlinks.json"))
+          pattern = re.compile(r'^[0-9A-F]{2}(:[0-9A-F]{2}){31}$')
+          for stmt in data:
+              for fp in stmt["target"].get("sha256_cert_fingerprints", []):
+                  if not pattern.match(fp):
+                      print(f"::error::invalid SHA-256 fingerprint in assetlinks.json: {fp}")
+                      sys.exit(1)
+          print("All SHA-256 fingerprints valid.")
+          PY
+
+          # 5. AASA appID must be TEAMID.bundleId (10 alphanumeric, dot, reverse-DNS)
+          python3 - <<'PY'
+          import json, re, sys
+          data = json.load(open("apps/marketing/public/.well-known/apple-app-site-association"))
+          pattern = re.compile(r'^[A-Z0-9]{10}\.[a-zA-Z0-9.\-]+$')
+          for d in data["applinks"]["details"]:
+              if not pattern.match(d["appID"]):
+                  print(f"::error::invalid AASA appID: {d['appID']}")
+                  sys.exit(1)
+          print("AASA appID format valid.")
+          PY
+
       # Security gate: block on known high+ vulnerabilities. Production deps only —
       # devDependencies (jest, eslint, etc.) are not shipped, and Dependabot
       # opens PRs for them on its own weekly cadence.

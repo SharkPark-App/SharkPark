@@ -1,0 +1,100 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../consts';
+
+interface Props {
+  title?: string;
+  description?: string;
+  canonical?: string;
+}
+
+const { title, description = SITE.description, canonical } = Astro.props;
+const fullTitle = title ? `${title} — ${SITE.name}` : `${SITE.name} — ${SITE.tagline}`;
+const canonicalHref = canonical ?? new URL(Astro.url.pathname, SITE.url).toString();
+
+// JSON-LD structured data — helps search engines and improves rich-result eligibility.
+const ogImageUrl = new URL('/og-image.png', SITE.url).toString();
+const hasAppStoreUrl = SITE.appStoreUrl !== '#';
+const hasPlayStoreUrl = SITE.playStoreUrl !== '#';
+const sameAs = [
+  ...(hasAppStoreUrl ? [SITE.appStoreUrl] : []),
+  ...(hasPlayStoreUrl ? [SITE.playStoreUrl] : []),
+  ...SITE.socialLinks,
+];
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      name: SITE.name,
+      url: SITE.url,
+      email: SITE.contactEmail,
+      logo: new URL('/favicon.svg', SITE.url).toString(),
+      ...(sameAs.length > 0 ? { sameAs } : {}),
+    },
+    {
+      '@type': 'WebSite',
+      name: SITE.name,
+      url: SITE.url,
+      description: SITE.description,
+    },
+    {
+      '@type': 'MobileApplication',
+      name: SITE.name,
+      operatingSystem: 'iOS, Android',
+      applicationCategory: 'TravelApplication',
+      description: SITE.description,
+      image: ogImageUrl,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      ...(hasAppStoreUrl ? { installUrl: SITE.appStoreUrl, downloadUrl: SITE.appStoreUrl } : {}),
+    },
+  ],
+};
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="canonical" href={canonicalHref} />
+
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalHref} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={`${SITE.name} — ${SITE.tagline}`} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={`${SITE.name} — ${SITE.tagline}`} />
+
+    <meta name="theme-color" content="#f59e0b" />
+    <meta name="robots" content="index,follow" />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  </head>
+  <body class="flex min-h-screen flex-col">
+    <a href="#main" class="skip-link">Skip to main content</a>
+    <Header />
+    <main id="main" class="flex-1">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>
