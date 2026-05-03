@@ -10,8 +10,8 @@ describe('ReliabilityComputationService', () => {
     lot: { findFirst: jest.Mock; findMany: jest.Mock };
     occupancyEvent: { findMany: jest.Mock };
     predictionShortTerm: { findMany: jest.Mock };
-    occupancySnapshot: { findFirst: jest.Mock };
-    report: { findMany: jest.Mock };
+    occupancySnapshot: { findMany: jest.Mock };
+    report: { findMany: jest.Mock; groupBy: jest.Mock };
   };
   let reliabilityService: jest.Mocked<ReliabilityService>;
 
@@ -54,8 +54,11 @@ describe('ReliabilityComputationService', () => {
       lot: { findFirst: jest.fn(), findMany: jest.fn() },
       occupancyEvent: { findMany: jest.fn() },
       predictionShortTerm: { findMany: jest.fn().mockResolvedValue([]) },
-      occupancySnapshot: { findFirst: jest.fn().mockResolvedValue(null) },
-      report: { findMany: jest.fn().mockResolvedValue([]) },
+      occupancySnapshot: { findMany: jest.fn().mockResolvedValue([]) },
+      report: {
+        findMany: jest.fn().mockResolvedValue([]),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
     };
 
     const mockReliabilityService = {
@@ -97,13 +100,18 @@ describe('ReliabilityComputationService', () => {
       const result = await service.computeReliabilityForLot('G1');
 
       expect(result).toEqual(mockReliabilityScore);
-      expect(reliabilityService.computeReliability).toHaveBeenCalledWith('G1', expect.objectContaining({
-        penetrationRate: 0.65,
-        eventsInLastHour: expect.any(Number),
-        minutesSinceLastEvent: expect.any(Number),
-        uniqueDevicesInLastHour: expect.any(Number),
-        historicalAccuracy: null,
-      }));
+      expect(reliabilityService.computeReliability).toHaveBeenCalledWith(
+        'G1',
+        expect.objectContaining({
+          penetrationRate: 0.65,
+          eventsInLastHour: expect.any(Number),
+          minutesSinceLastEvent: expect.any(Number),
+          uniqueDevicesInLastHour: expect.any(Number),
+          historicalAccuracy: null,
+        }),
+        undefined,
+        expect.any(Object),
+      );
     });
 
     it('should throw NotFoundException for non-existent lot', async () => {
@@ -118,10 +126,15 @@ describe('ReliabilityComputationService', () => {
 
       await service.computeReliabilityForLot('G1');
 
-      expect(reliabilityService.computeReliability).toHaveBeenCalledWith('G1', expect.objectContaining({
-        eventsInLastHour: 0,
-        uniqueDevicesInLastHour: 0,
-      }));
+      expect(reliabilityService.computeReliability).toHaveBeenCalledWith(
+        'G1',
+        expect.objectContaining({
+          eventsInLastHour: 0,
+          uniqueDevicesInLastHour: 0,
+        }),
+        undefined,
+        expect.any(Object),
+      );
     });
 
     it('should pass distinct reporter count from the report query', async () => {
@@ -141,6 +154,8 @@ describe('ReliabilityComputationService', () => {
       expect(reliabilityService.computeReliability).toHaveBeenCalledWith(
         'G1',
         expect.objectContaining({ uniqueReportersInWindow: 3 }),
+        undefined,
+        expect.any(Object),
       );
     });
 
@@ -173,9 +188,14 @@ describe('ReliabilityComputationService', () => {
 
       await service.computeReliabilityForLot('G1');
 
-      expect(reliabilityService.computeReliability).toHaveBeenCalledWith('G1', expect.objectContaining({
-        uniqueDevicesInLastHour: 2,
-      }));
+      expect(reliabilityService.computeReliability).toHaveBeenCalledWith(
+        'G1',
+        expect.objectContaining({
+          uniqueDevicesInLastHour: 2,
+        }),
+        undefined,
+        expect.any(Object),
+      );
     });
   });
 
