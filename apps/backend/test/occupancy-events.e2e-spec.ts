@@ -4,6 +4,7 @@ import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AzureAdGuard } from '../src/auth/azure-ad.guard';
+import { HmacGuard } from '../src/auth/hmac.guard';
 import { PrismaService } from '../src/database/database.module';
 import { hashDeviceId } from '../src/occupancy-events/utils/privacy.util';
 import { bootstrapTestApp } from './utils/bootstrap';
@@ -27,6 +28,8 @@ describe('OccupancyEventsController (e2e)', () => {
     })
     .overrideGuard(AzureAdGuard)
     .useClass(MockAuthGuard)
+    .overrideGuard(HmacGuard)
+    .useValue({ canActivate: () => true })
     .compile();
 
     app = moduleFixture.createNestApplication();
