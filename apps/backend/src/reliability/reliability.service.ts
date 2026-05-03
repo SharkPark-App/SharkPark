@@ -13,7 +13,8 @@ import {
 
 /**
  * Computes confidence levels for occupancy data using multi-factor weighted scoring.
- * Score = Σ(factor_normalized × weight) × 100
+ * Score = Σ(factor_normalized × weight) × sourceWeight × 100
+ * sourceWeight: AUTHED=1.0, ANONYMOUS=0.3–0.6 (by penetration rate), FLAGGED=0
  * Thresholds: HIGH >= 70, MEDIUM >= 40, LOW < 40
  */
 @Injectable()

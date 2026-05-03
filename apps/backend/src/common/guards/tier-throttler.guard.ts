@@ -39,6 +39,17 @@ export class TierThrottlerGuard extends ThrottlerGuard {
     super(options, storageService, reflector);
   }
 
+  // @SkipThrottle() (no args) sets THROTTLER_SKIP:default = true as a convention
+  // for "skip all throttling" (compensates for removed `default` bucket)
+  override async shouldSkip(context: ExecutionContext): Promise<boolean> {
+    return (
+      this.reflector.getAllAndOverride<boolean>(THROTTLER_SKIP + 'default', [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
+  }
+
   override async canActivate(context: ExecutionContext): Promise<boolean> {
     if (await this.shouldSkip(context)) return true;
 
