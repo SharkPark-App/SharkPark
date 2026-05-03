@@ -55,7 +55,12 @@ primary_region = 'lax'
   [[http_service.checks]]
     interval = '15s'
     timeout = '2s'
-    grace_period = '10s'
+    # Cold start (min_machines_running = 0) takes ~10-15s end-to-end:
+    # Fly boot + Node + Nest module graph + Prisma connect to Neon. A 10s
+    # grace tripped Fly Doctor's "App not listening on port 3000" alert
+    # because the live probe fired before bootstrap finished. Match the
+    # ready check (30s) so cold starts don't false-alarm.
+    grace_period = '30s'
     method = 'GET'
     path = '/api/v1/health/live'
     protocol = 'http'
