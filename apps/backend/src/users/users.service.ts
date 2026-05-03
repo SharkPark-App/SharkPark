@@ -246,7 +246,7 @@ export class UsersService {
       where: { email },
       include: {
         favorites: { include: { lot: { select: { lot_id: true } } } },
-        push_tokens: true,
+        push_tokens: { select: { token: true, platform: true, created_at: true } },
         reports: { include: { lot: { select: { lot_id: true } } } },
         notification_logs: { include: { lot: { select: { lot_id: true } } } },
       },
@@ -287,7 +287,7 @@ export class UsersService {
       reports: user.reports.map((r) => ({
         lot_id: r.lot.lot_id,
         type: r.type,
-        message: r.message ?? null,
+        message: r.message,
         submitted_at: r.created_at,
       })),
       notification_logs: user.notification_logs.map((n) => ({
