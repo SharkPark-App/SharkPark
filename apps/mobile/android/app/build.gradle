@@ -8,9 +8,14 @@ apply plugin: "com.facebook.react"
  */
 react {
     /* Folders */
-    //   The root of your project, i.e. where "package.json" lives. Default is '../..'
-    root = file("../../../../")
-    //   The folder where the react-native NPM package is. Default is ../../node_modules/react-native
+    //   The root of your project, i.e. where "package.json" + index.js live.
+    //   This is the mobile app package (apps/mobile/), NOT the monorepo root.
+    //   The RN gradle plugin uses this to resolve the JS entry file (index.js)
+    //   when bundling Hermes — pointing it at the monorepo root caused
+    //   `BundleHermesCTask` to look for /SharkPark/index.js (does not exist).
+    root = file("../../")
+    //   node_modules is hoisted to the monorepo root by pnpm, so the RN
+    //   package and codegen still live four levels up.
     reactNativeDir = file("../../../../node_modules/react-native")
     //   The folder where the react-native Codegen package is. Default is ../../node_modules/@react-native/codegen
     codegenDir = file("../../../../node_modules/@react-native/codegen")
@@ -44,7 +49,15 @@ react {
 
     /* Hermes Commands */
     //   The hermes compiler command to run. By default it is 'hermesc'
-    // hermesCommand = "$rootDir/my-custom-hermesc/bin/hermesc"
+    //   In this monorepo, the `react-native` package does NOT ship the
+    //   hermesc binary under sdks/hermesc/%OS-BIN%/ — instead the binary
+    //   lives in the standalone `hermes-compiler` package hoisted to the
+    //   monorepo root. Point at it via an absolute path resolved from
+    //   `$rootDir` (= apps/mobile/android) so the gradle worker process
+    //   can invoke it regardless of its own cwd. The `%OS-BIN%`
+    //   placeholder is expanded by the RN gradle plugin
+    //   (osx-bin / linux64-bin / win64-bin).
+    hermesCommand = "$rootDir/../../../node_modules/hermes-compiler/hermesc/%OS-BIN%/hermesc"
     //
     //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
     // hermesFlags = ["-O", "-output-source-map"]
