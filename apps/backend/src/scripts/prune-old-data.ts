@@ -1,4 +1,5 @@
 import { runCronJob } from './_bootstrap';
+import { OccupancyEventsModule } from '../occupancy-events/occupancy-events.module';
 import { OccupancyEventsService } from '../occupancy-events/occupancy-events.service';
 
 /**
@@ -28,7 +29,7 @@ function parseRetentionDays(): number {
   return parsed;
 }
 
-void runCronJob('prune-old-data', async ({ app, logger }) => {
+void runCronJob('prune-old-data', [OccupancyEventsModule], async ({ app, logger }) => {
   const retentionDays = parseRetentionDays();
   const svc = app.get(OccupancyEventsService);
   const result = await svc.pruneOldData(retentionDays);

@@ -34,7 +34,7 @@ describe('notify-favorites-clearing', () => {
   let work: WorkFn;
 
   beforeAll(() => {
-    work = (runCronJob as jest.Mock).mock.calls[0][1];
+    work = (runCronJob as jest.Mock).mock.calls[0][2];
   });
 
   it('early-returns when no lots are below 30%', async () => {

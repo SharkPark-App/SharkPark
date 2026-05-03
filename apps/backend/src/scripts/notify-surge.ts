@@ -1,12 +1,13 @@
 import { NotificationType } from '@prisma/client';
 import { runCronJob } from './_bootstrap';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { NotificationsService } from '../notifications/notifications.service';
 
 const SNAPSHOT_WINDOW_MS = 20 * 60 * 1000;
 // Surge is a campus-wide condition — don't re-alert any user for 2 hours
 const DEDUP_WINDOW_MS = 2 * 60 * 60 * 1000;
 
-void runCronJob('notify-surge', async ({ app, prisma, logger }) => {
+void runCronJob('notify-surge', [NotificationsModule], async ({ app, prisma, logger }) => {
   const svc = app.get(NotificationsService);
   const since = new Date(Date.now() - SNAPSHOT_WINDOW_MS);
 

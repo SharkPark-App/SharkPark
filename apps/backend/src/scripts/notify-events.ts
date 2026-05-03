@@ -1,5 +1,6 @@
 import { NotificationType } from '@prisma/client';
 import { runCronJob } from './_bootstrap';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { NotificationsService } from '../notifications/notifications.service';
 
 // Notify when an event starts within the next 2 hours
@@ -11,7 +12,7 @@ function formatLocalTime(date: Date, tz: string): string {
   return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: tz });
 }
 
-void runCronJob('notify-events', async ({ app, prisma, logger }) => {
+void runCronJob('notify-events', [NotificationsModule], async ({ app, prisma, logger }) => {
   const svc = app.get(NotificationsService);
   const now = new Date();
   const lookahead = new Date(now.getTime() + LOOKAHEAD_MS);

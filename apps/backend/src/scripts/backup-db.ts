@@ -20,7 +20,7 @@ import { runCronJob } from './_bootstrap';
  *   R2_SECRET_ACCESS_KEY        R2 token secret
  *   R2_BACKUPS_BUCKET           Bucket name (e.g. sharkpark-backups)
  */
-void runCronJob('backup-db', async ({ logger }) => {
+void runCronJob('backup-db', [], async ({ logger }) => {
   const dbUrl = process.env.DIRECT_URL;
   const accountId = process.env.R2_ACCOUNT_ID;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
