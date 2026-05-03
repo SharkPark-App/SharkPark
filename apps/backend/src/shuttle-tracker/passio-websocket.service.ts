@@ -16,6 +16,13 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   private readonly BASE_DELAY_MS = 5000;         // 5 sec
   private readonly MAX_DELAY_MS = 5 * 60 * 1000; // 5 min
 
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Batch outgoing broadcasts: accumulate updates within a window, emit once
+  private pendingUpdates = new Map<string, Record<string, unknown>>();
+  private batchTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly BATCH_WINDOW_MS = 200;
+
   private readonly PASSIO_WS_URL = 'wss://passio3.com/';
   // CSULB specification
   private readonly HANDSHAKE_PAYLOAD = JSON.stringify({
@@ -51,6 +58,13 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
         this.logger.log('Subscription handshake established.');
         this.ws.send(this.HANDSHAKE_PAYLOAD);
       }
+
+      // Keep-alive: detect silent drops that don't produce close/error events
+      this.pingInterval = setInterval(() => {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.ping();
+        }
+      }, 30_000);
     });
 
     this.ws.on('message', (data: WebSocket.Data) => {
@@ -69,12 +83,18 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
 
     this.ws.on('close', () => {
       this.logger.warn('PassioGo WebSocket closed. Reconnect attempt queued...');
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
+        this.pingInterval = null;
+      }
       this.scheduleReconnect();
     });
 
     this.ws.on('error', (error) => {
       this.logger.error(`PassioGo WebSocket error: ${error.message}`);
-      this.ws?.close();
+      // terminate() forces immediate teardown; ws fires 'close' automatically after 'error'
+      // so the reconnect loop is still triggered. close() would wait for a clean handshake.
+      this.ws?.terminate();
     });
   }
 
@@ -91,25 +111,32 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      // Transform for frontend
       const locationUpdate = {
-        id: liveData.busId.toString(), // Standardize ID as a string
+        id: liveData.busId.toString(),
         latitude: liveData.latitude,
         longitude: liveData.longitude,
-        heading: liveData.course,      // Map course -> heading
+        heading: liveData.course,
         paxLoad: liveData.paxLoad,
       };
 
-      // Broadcast data (batching happens later)
-      this.shuttleGateway.broadcastShuttles([locationUpdate]);
-
+      // Accumulate by bus ID — last frame wins if two arrive within the window
+      this.pendingUpdates.set(locationUpdate.id, locationUpdate);
+      if (!this.batchTimer) {
+        this.batchTimer = setTimeout(() => this.flushBatch(), this.BATCH_WINDOW_MS);
+      }
     } catch (error) {
       this.logger.error('Failed to process live location payload', error);
     }
   }
 
+  private flushBatch() {
+    this.shuttleGateway.broadcastShuttles([...this.pendingUpdates.values()]);
+    this.pendingUpdates.clear();
+    this.batchTimer = null;
+  }
+
   private hasActiveShuttles(data: Record<string, unknown>): boolean {
-    return data !== null && typeof data === 'object' && Object.keys(data).length > 0;
+    return data !== null && typeof data === 'object' && 'busId' in data;
   }
 
   private scheduleReconnect() {
@@ -133,7 +160,18 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    
+
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+      this.batchTimer = null;
+    }
+    this.pendingUpdates.clear();
+
     if (this.ws) {
       this.ws.removeAllListeners();
       
