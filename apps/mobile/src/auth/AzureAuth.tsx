@@ -15,8 +15,8 @@ const AZURE_CONFIG = {
 
 // Platform-specific redirect URIs (trailing slash required for proper callback handling)
 const REDIRECT_URL = Platform.select({
-  ios: 'msauth.com.sharkpark.mobile://auth/',
-  android: 'msauth://com.sharkpark.mobile/pCBsiXaNNNC6c0uvCpHWkdYi2Mk%3D',
+  ios: 'msauth.app.sharkpark.mobile://auth/',
+  android: 'msauth://app.sharkpark.mobile/pCBsiXaNNNC6c0uvCpHWkdYi2Mk%3D',
 }) as string;
 
 // Token refresh buffer (5 minutes before expiration)

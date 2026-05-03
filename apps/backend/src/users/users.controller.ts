@@ -22,6 +22,9 @@ interface AuthenticatedRequest extends Request {
 /**
  * Handles user profile and favorites management.
  * User identification is by email (userId = email@csulb.edu).
+ *
+ * Push-token registration (POST me/push-token) lives in NotificationsController
+ * to keep firebase-admin scoped to NotificationsModule.
  */
 @Controller('users')
 export class UsersController {

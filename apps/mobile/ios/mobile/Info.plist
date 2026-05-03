@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.transistorsoft.fetch</string>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -27,12 +31,12 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth.com.sharkpark.mobile</string>
+				<string>msauth.app.sharkpark.mobile</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.sharkpark.mobile</string>
+			<string>app.sharkpark.mobile</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>sharkpark</string>
@@ -41,6 +45,18 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!--
+	  Export-compliance declaration. SharkPark only uses HTTPS/TLS via Apple's
+	  Network framework + standard URLSession, which qualifies for the
+	  exemption under EAR 740.17(b)(1) (mass-market software using only
+	  encryption already provided by the operating system). Setting this to
+	  false avoids the recurring TestFlight export-compliance prompt on every
+	  build. If we ever add custom crypto, proprietary algorithms, or shipped
+	  CryptoKit operations beyond TLS, flip this to true and file an annual
+	  self-classification report with the BIS.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>comgooglemaps</string>
@@ -64,7 +80,7 @@
 		<string>dgis</string>
 		<string>lftgpas</string>
 		<string>sygic</string>
-    <string>tomtomgo</string>
+		<string>tomtomgo</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
@@ -75,35 +91,37 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>SharkPark checks when your phone connects to or disconnects from your car's Bluetooth audio. Combined with motion and location, this helps confirm you've actually parked (rather than just driving past) so lot occupancy counts stay accurate.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Granting "Always" lets SharkPark anonymously log when you enter and leave a campus lot, even when the app is closed. Those anonymous events are what power live occupancy counts and busy-hour forecasts for everyone — without contributors, there is no live data. Your exact location and movement history never leave your phone.</string>
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>ParkingDetection</key>
+		<string>Precise location lets SharkPark tell which specific lot you've entered when several are close together — without it, occupancy data gets attributed to the wrong lot.</string>
+	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SharkPark is an independent student-built app (not affiliated with CSULB). It uses your location only while the app is open to show parking lots near you and how full they are right now. You can browse the campus map without granting this.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Motion detection helps SharkPark distinguish driving from walking, so it only logs an arrival when you've actually parked. This keeps occupancy counts accurate for everyone using the app.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<key>TSLocationManagerLicense</key>
+	<string>$(BG_GEOLOCATION_LICENSE)</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Ionicons.ttf</string>
+		<string>Inter-Bold.ttf</string>
+		<string>Inter-Medium.ttf</string>
+		<string>Inter-Regular.ttf</string>
+		<string>Inter-SemiBold.ttf</string>
 	</array>
-	<key>TSLocationManagerLicense</key>
-	<string>$(BG_GEOLOCATION_LICENSE)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.transistorsoft.fetch</string>
-	</array>
-	<key>NSMotionUsageDescription</key>
-	<string>Motion detection helps SharkPark distinguish driving from walking, so it only logs an arrival when you've actually parked. This keeps occupancy counts accurate for everyone using the app.</string>
-	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
-	<dict>
-		<key>ParkingDetection</key>
-		<string>Precise location lets SharkPark tell which specific lot you've entered when several are close together — without it, occupancy data gets attributed to the wrong lot.</string>
-	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -118,15 +136,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Ionicons.ttf</string>
-		<string>Inter-Bold.ttf</string>
-		<string>Inter-Medium.ttf</string>
-		<string>Inter-Regular.ttf</string>
-		<string>Inter-SemiBold.ttf</string>
-	</array>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>SharkPark checks when your phone connects to or disconnects from your car's Bluetooth audio. Combined with motion and location, this helps confirm you've actually parked (rather than just driving past) so lot occupancy counts stay accurate.</string>
 </dict>
 </plist>

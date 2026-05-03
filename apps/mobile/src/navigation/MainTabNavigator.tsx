@@ -21,13 +21,13 @@ const GuestSignInScreen: React.FC = () => {
   const handleLogin = async () => {
     // Optimistically leave guest mode so AppContent can route to the
     // authenticated tree as soon as login() resolves.
-    exitGuestMode();
+    void exitGuestMode();
     try {
       await login();
     } catch {
       // login() throws on cancel/failure — restore guest mode so the
       // user is not bounced back to the LoginScreen wall.
-      continueAsGuest();
+      void continueAsGuest();
     }
   };
 

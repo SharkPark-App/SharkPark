@@ -16,6 +16,7 @@ describe('Real Geofencing Integration (Simple)', () => {
   // Sample minimal parking lot data
   const mockRealLots: ParkingLotResponse[] = [
     {
+      id: 'cltest000000000001',
       lot_id: 'G1',
       lot_name: 'G1 Student Parking',
       display_name: 'G1 Parking Lot',
@@ -63,6 +64,7 @@ describe('Real Geofencing Integration (Simple)', () => {
       timestamp: '2024-01-01T00:00:00Z',
     },
     {
+      id: 'cltest000000000002',
       lot_id: 'G2',
       lot_name: 'G2 Student Parking',
       display_name: 'G2 Parking Lot',

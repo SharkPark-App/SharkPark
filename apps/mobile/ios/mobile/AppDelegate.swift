@@ -3,6 +3,7 @@ import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
 import TSBackgroundFetch
+import FirebaseCore
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlowManager {
@@ -27,6 +28,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate, RNAppAuthAuthorizationFlo
 
     // Initialize background fetch for Transistor Background Geolocation SDK
     TSBackgroundFetch.sharedInstance().didFinishLaunching()
+
+    FirebaseApp.configure()
 
     window = UIWindow(frame: UIScreen.main.bounds)
 
