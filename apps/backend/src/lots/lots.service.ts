@@ -293,11 +293,14 @@ export class LotsService {
       throw new NotFoundException(`Parking lot ${lotId} not found`);
     }
 
-    // Determine which lot types are eligible candidates. Employees can park in
-    // any lot at any time; students can park in employee lots after 17:30 on
-    // weekdays and any time on weekends. Outside that window students stay in
-    // STUDENT lots only. (Static permit_types do not encode this rule —
-    // see csulb-eligibility.ts.)
+    // Determine which lot types are eligible candidates.
+    //   - STUDENT source: students can park in employee lots after 17:30 on
+    //     weekdays and any time on weekends; outside that window they stay
+    //     in STUDENT lots only (see csulb-eligibility.ts).
+    //   - EMPLOYEE source: recommend other EMPLOYEE lots only. Employees
+    //     are technically permitted in any lot, but suggesting a STUDENT lot
+    //     to a faculty/staff member heading to their employee zone isn't a
+    //     useful alternative — they'd be giving up their reserved access.
     const eligibleTypes: LotType[] = sourceLot.lot_type === 'STUDENT'
       ? Array.from(
           studentEligibleLotTypes(
@@ -305,7 +308,7 @@ export class LotsService {
             await this.penetrationService.getSchoolTimezone(sourceLot.school_id),
           ),
         )
-      : ['STUDENT', 'EMPLOYEE'];
+      : ['EMPLOYEE'];
 
     // Fetch all candidate lots within the eligible types.
     const candidates = await this.prisma.lot.findMany({
