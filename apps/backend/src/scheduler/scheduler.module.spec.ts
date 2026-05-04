@@ -1,6 +1,8 @@
 import 'reflect-metadata';
+import { Test } from '@nestjs/testing';
 import { SCHEDULE_CRON_OPTIONS } from '@nestjs/schedule/dist/schedule.constants';
 
+import { SchedulerModule } from './scheduler.module';
 import { CRON_MONITORS, CRON_TIMEZONE } from './cron-monitors';
 
 import { SnapshotJob } from './jobs/snapshot.job';
@@ -109,5 +111,29 @@ describe('Scheduler job <-> CRON_MONITORS lockstep', () => {
     );
     expect({ missing, orphaned }).toEqual({ missing: [], orphaned: [] });
     expect(new Set(decoratedNames).size).toBe(decoratedNames.length);
+  });
+});
+
+/**
+ * DI smoke test — compiles SchedulerModule via Nest's TestingModule to ensure
+ * every job class can resolve its constructor dependencies. Catches missing
+ * `exports:` on imported feature modules (e.g. WeatherModule must export
+ * WeatherFetchService for FetchWeatherJob to inject it). The previous
+ * lockstep tests above only check decorator metadata; they do NOT exercise
+ * Nest's injector, so a missing export would slip through to runtime and
+ * crash the cron VM at boot (as happened on Fly with WeatherFetchService).
+ */
+describe('SchedulerModule DI graph', () => {
+  it('compiles with all job dependencies resolvable', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [SchedulerModule],
+    }).compile();
+
+    // Verify every job provider can actually be resolved from the container.
+    for (const jobClass of ALL_JOBS) {
+      expect(moduleRef.get(jobClass)).toBeInstanceOf(jobClass);
+    }
+
+    await moduleRef.close();
   });
 });
