@@ -20,6 +20,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, CSULB_BUILDINGS, parkingLots } from './lot-data';
 import { LOT_GEOFENCES } from './lot-geofences.generated';
+import { LOT_ADVISORIES } from './lot-advisories.generated';
 import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
 import { getSemester, getWeekOfSemester } from '../src/lots/academic-calendar';
 
@@ -241,6 +242,31 @@ async function main() {
     }
   }
   console.log(`[seed] Seeded ${lotBuildingCount} lot-building associations\n`);
+
+  // 6. Seed Lot Advisories (concept3d construction/closure overlay)
+  console.log('[seed] Seeding lot advisories...');
+  let advisoryCount = 0;
+  for (const adv of LOT_ADVISORIES) {
+    const lotDbId = lotMap.get(adv.lot_id);
+    if (!lotDbId) continue;
+    await prisma.lotAdvisory.create({
+      data: {
+        school_id: school.id,
+        lot_id: lotDbId,
+        title: adv.title,
+        description: adv.description,
+        severity: adv.severity,
+        source: 'CONCEPT3D',
+        source_cat_id: adv.source_cat_id,
+        source_marker_id: adv.source_marker_id,
+        match_reason: adv.match_reason,
+        polygon: adv.polygon as unknown as object,
+        is_active: true,
+      },
+    });
+    advisoryCount++;
+  }
+  console.log(`[seed] Seeded ${advisoryCount} lot advisories\n`);
 
   // 7. Seed Users & Favorites
   console.log('[seed] Seeding users...');

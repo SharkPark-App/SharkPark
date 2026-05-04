@@ -33,7 +33,9 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, CSULB_BUILDINGS, parkingLots } from './lot-data';
 import { LOT_GEOFENCES } from './lot-geofences.generated';
+import { LOT_ADVISORIES } from './lot-advisories.generated';
 import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
+import type { Prisma } from '@prisma/client';
 
 const rawConnectionString = process.env.DATABASE_URL;
 if (!rawConnectionString) {
@@ -287,6 +289,67 @@ async function seedProd() {
     }
   }
   console.log(`[seed-prod] ${lotBuildingCount} lot-building associations upserted`);
+
+  // ── 5. Upsert Lot Advisories (concept3d construction/closure overlay) ──
+  console.log('\n[seed-prod] Upserting lot advisories...');
+
+  // Mark all existing CONCEPT3D advisories inactive; the upsert loop below
+  // re-activates the ones still present in the generated set, leaving any
+  // stale rows is_active=false (preserves history without deletes).
+  const deactivated = await prisma.lotAdvisory.updateMany({
+    where: { school_id: school.id, source: 'CONCEPT3D', is_active: true },
+    data: { is_active: false },
+  });
+  console.log(`[seed-prod]   deactivated ${deactivated.count} prior CONCEPT3D advisory row(s)`);
+
+  let advisoryCount = 0;
+  for (const seed of LOT_ADVISORIES) {
+    const lotRow = await prisma.lot.findUnique({
+      where: { school_id_lot_id: { school_id: school.id, lot_id: seed.lot_id } },
+      select: { id: true },
+    });
+    if (!lotRow) {
+      console.warn(`[seed-prod]   ! advisory references unknown lot_id=${seed.lot_id}, skipping`);
+      continue;
+    }
+
+    const polygon = seed.polygon as unknown as Prisma.InputJsonValue;
+
+    await prisma.lotAdvisory.upsert({
+      where: {
+        uq_lot_advisory_source_lot: {
+          school_id: school.id,
+          source: 'CONCEPT3D',
+          source_marker_id: seed.source_marker_id,
+          lot_id: lotRow.id,
+        },
+      },
+      create: {
+        school_id: school.id,
+        lot_id: lotRow.id,
+        title: seed.title,
+        description: seed.description,
+        severity: seed.severity,
+        source: 'CONCEPT3D',
+        source_cat_id: seed.source_cat_id,
+        source_marker_id: seed.source_marker_id,
+        match_reason: seed.match_reason,
+        polygon,
+        is_active: true,
+      },
+      update: {
+        title: seed.title,
+        description: seed.description,
+        severity: seed.severity,
+        source_cat_id: seed.source_cat_id,
+        match_reason: seed.match_reason,
+        polygon,
+        is_active: true,
+      },
+    });
+    advisoryCount += 1;
+  }
+  console.log(`[seed-prod] ${advisoryCount} lot advisory rows upserted (active)`);
 }
 
 seedProd()

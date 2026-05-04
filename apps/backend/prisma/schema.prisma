@@ -25,6 +25,7 @@ model School {
   campus_events     CampusEvent[]
   weather           Weather[]
   weather_forecasts WeatherForecast[]
+  lot_advisories    LotAdvisory[]
 
   @@map("schools")
 }
@@ -76,6 +77,7 @@ model Lot {
   predictions_long    PredictionLongTerm[]
   reports             Report[]
   lot_buildings       LotBuilding[]
+  lot_advisories      LotAdvisory[]
   notification_logs   NotificationLog[]
 
   @@unique([school_id, lot_id])
@@ -412,6 +414,43 @@ model ContributorPing {
   @@map("contributor_pings")
 }
 
+// ─── Lot advisories ───────────────────────────────────────
+// Operational notices that affect a specific lot — construction zones,
+// road closures, partial closures, etc. Sourced from the campus map
+// (concept3d) by the extract-lot-advisories.ts script. Each external
+// marker may produce multiple rows when one polygon overlaps several
+// lots. Rows are upserted on (school_id, source, source_marker_id,
+// lot_id) so re-running the extractor is idempotent. Stale markers
+// removed from the source must be marked is_active=false (handled by
+// the seeder when an existing row is no longer in the generated set).
+model LotAdvisory {
+  id                String           @id @default(cuid())
+  school_id         String
+  lot_id            String           // FK → Lot.id
+  title             String
+  description       String?
+  severity          AdvisorySeverity
+  source            AdvisorySource
+  source_cat_id     Int              // concept3d catId
+  source_marker_id  Int              // concept3d location.id
+  /** Reason this advisory was attached to this lot. */
+  match_reason      String           // "name_mention" | "polygon_overlap"
+  /** Advisory's own footprint polygon (Array<{lat,lng}>). */
+  polygon           Json
+  starts_at         DateTime?
+  ends_at           DateTime?
+  is_active         Boolean          @default(true)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+
+  school            School           @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  lot               Lot              @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+
+  @@unique([school_id, source, source_marker_id, lot_id], name: "uq_lot_advisory_source_lot")
+  @@index([lot_id, is_active], name: "idx_lot_advisory_lot_active")
+  @@map("lot_advisories")
+}
+
 // ─── Enums ────────────────────────────────────────────────
 
 enum LotType {
@@ -439,6 +478,16 @@ enum ReportType {
   BLOCKAGE
   CRASH
   OTHER
+}
+
+enum AdvisorySeverity {
+  INFO      // general notice (e.g. "coming in 2026")
+  ADVISORY  // construction in/near lot, expect impact
+  CLOSURE   // lot or access road closed
+}
+
+enum AdvisorySource {
+  CONCEPT3D
 }
 
 enum AuditEventType {
