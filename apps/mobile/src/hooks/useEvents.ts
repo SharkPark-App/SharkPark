@@ -27,6 +27,7 @@ export function useEvents(lotId: string): UseEventsReturn {
           id: e.id,
           name: e.event_name,
           date: new Date(e.start_time),
+          endDate: e.end_time ? new Date(e.end_time) : undefined,
           location: e.location,
           description: e.description,
           url: e.event_url,

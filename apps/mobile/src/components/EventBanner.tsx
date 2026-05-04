@@ -6,6 +6,7 @@ import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { Event } from '../types/ui';
 import type { ViewabilityConfig, ViewToken } from 'react-native';
+import { formatTimeRange } from '../utils/formatTime';
 
 interface EventBannerProps {
   events: Event[];
@@ -57,7 +58,7 @@ export function EventBanner({ events }: EventBannerProps) {
             accessibilityRole="link"
             accessibilityLabel={[
               event.name,
-              event.date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+              formatTimeRange(event.date, event.endDate),
               event.location,
               event.description,
             ].filter(Boolean).join(', ')}
@@ -73,17 +74,33 @@ export function EventBanner({ events }: EventBannerProps) {
               />
             </View>
             <View style={styles.content}>
-              <Text style={styles.name}>{event.name}</Text>
-              <Text style={styles.details}>
-                {event.date.toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                })}{' '}
-                • {event.location}
+              <Text style={styles.name} numberOfLines={2}>
+                {event.name}
               </Text>
+              <View style={styles.metaRow} accessible={false} importantForAccessibility="no-hide-descendants">
+                <Icon
+                  name="time-outline"
+                  size={TYPOGRAPHY.fontSize.sm}
+                  color={colors.warningTextSecondary}
+                  style={styles.metaIcon}
+                />
+                <Text style={styles.metaText}>
+                  {formatTimeRange(event.date, event.endDate)}
+                </Text>
+              </View>
+              <View style={styles.metaRow} accessible={false} importantForAccessibility="no-hide-descendants">
+                <Icon
+                  name="location-outline"
+                  size={TYPOGRAPHY.fontSize.sm}
+                  color={colors.warningTextSecondary}
+                  style={styles.metaIcon}
+                />
+                <Text style={styles.metaText} numberOfLines={2} ellipsizeMode="tail">
+                  {event.location}
+                </Text>
+              </View>
               {event.description && (
-                <Text style={styles.description} numberOfLines={2}>
+                <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
                   {event.description}
                 </Text>
               )}
@@ -121,33 +138,44 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: colors.warningBorder,
     borderRadius: SPACING.md,
-    padding: SPACING.lg,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
+    alignItems: 'flex-start',
+    gap: SPACING.md,
     ...SHADOWS.cardSubtle,
   },
   icon: {
     marginTop: 2,
-    marginRight: 5,
   },
   content: {
     flex: 1,
-    paddingRight: SPACING.md,
+    paddingRight: SPACING.sm,
   },
   name: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.md,
     color: colors.warningText,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    marginBottom: SPACING.xs,
   },
-  details: {
-    fontSize: TYPOGRAPHY.fontSize.xxs2,
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  metaIcon: {
+    marginRight: SPACING.xs,
+  },
+  metaText: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     color: colors.warningTextSecondary,
   },
   description: {
-    fontSize: TYPOGRAPHY.fontSize.xxs2,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     color: colors.warningTextSecondary,
-    marginTop: 2,
+    marginTop: SPACING.xs,
+    fontStyle: 'italic',
   },
   chevron: {
     alignSelf: 'center',

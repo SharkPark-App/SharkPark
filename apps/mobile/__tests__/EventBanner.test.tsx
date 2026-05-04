@@ -107,6 +107,30 @@ describe('EventBanner', () => {
     );
     expect(chevrons.length).toBe(0);
   });
+
+  it('renders a start \u2013 end time range when endDate is provided', () => {
+    const tree = render([
+      makeEvent({
+        date: new Date(2026, 2, 29, 14, 0, 0),
+        endDate: new Date(2026, 2, 29, 16, 30, 0),
+      }),
+    ]);
+    const texts = collectTexts(tree.root);
+    // en-US default in Jest; device locale takes over at runtime.
+    expect(hasText(texts, '2:00 PM \u2013 4:30 PM')).toBe(true);
+  });
+
+  it('renders only the start time when endDate is omitted', () => {
+    const tree = render([
+      makeEvent({
+        date: new Date(2026, 2, 29, 14, 0, 0),
+        endDate: undefined,
+      }),
+    ]);
+    const texts = collectTexts(tree.root);
+    expect(hasText(texts, '2:00 PM')).toBe(true);
+    expect(hasText(texts, '\u2013')).toBe(false);
+  });
 });
 
 describe('EventBanner -- accessibility', () => {
