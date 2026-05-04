@@ -66,6 +66,11 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 30,
     maxRuntime: 30,
   },
+  'prune-old-events': {
+    schedule: '30 4 * * 1',
+    checkinMargin: 30,
+    maxRuntime: 30,
+  },
   'fetch-events': {
     schedule: '0 5 * * *',
     checkinMargin: 10,

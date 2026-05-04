@@ -39,6 +39,13 @@
 # verify-latest-backup; the next day's run catches up.
 0 4 * * 0,2-6 node /app/apps/backend/dist/scripts/prune-old-data.js
 
+# Delete campus_events whose end_time is older than EVENT_RETENTION_DAYS
+# (default 90). Past events are filtered out of the API response already, so
+# this is housekeeping for table + backup size. Mondays at 4:30 AM Pacific —
+# 30 min after verify-latest-backup so deleted rows are present in the most
+# recent verified dump.
+30 4 * * 1    node /app/apps/backend/dist/scripts/prune-old-events.js
+
 # Scrape campus events from CampusLabs and upsert into campus_events. Daily at 5 AM Pacific.
 0 5 * * *     node /app/apps/backend/dist/scripts/fetch-events.js
 

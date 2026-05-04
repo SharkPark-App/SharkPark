@@ -6,13 +6,13 @@ describe('EventsService', () => {
   let service: EventsService;
   let prisma: {
     lot: { findFirst: jest.Mock };
-    campusEvent: { findMany: jest.Mock };
+    campusEvent: { findMany: jest.Mock; deleteMany: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
       lot: { findFirst: jest.fn() },
-      campusEvent: { findMany: jest.fn() },
+      campusEvent: { findMany: jest.fn(), deleteMany: jest.fn() },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -82,6 +82,42 @@ describe('EventsService', () => {
       expect(prisma.lot.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { lot_id: 'G1' } }),
       );
+    });
+  });
+
+  describe('pruneOldEvents', () => {
+    it('deletes events whose end_time is older than the retention window', async () => {
+      prisma.campusEvent.deleteMany.mockResolvedValue({ count: 7 });
+      const now = new Date('2026-05-04T00:00:00Z');
+
+      const result = await service.pruneOldEvents(90, now);
+
+      const expectedCutoff = new Date('2026-02-03T00:00:00Z');
+      expect(prisma.campusEvent.deleteMany).toHaveBeenCalledWith({
+        where: { end_time: { lt: expectedCutoff } },
+      });
+      expect(result).toEqual({ events_deleted: 7, cutoff: expectedCutoff });
+    });
+
+    it('defaults `now` to the current time when not provided', async () => {
+      prisma.campusEvent.deleteMany.mockResolvedValue({ count: 0 });
+      const before = Date.now();
+
+      const result = await service.pruneOldEvents(30);
+
+      const after = Date.now();
+      const cutoffMs = result.cutoff.getTime();
+      const windowMs = 30 * 24 * 60 * 60 * 1000;
+      expect(cutoffMs).toBeGreaterThanOrEqual(before - windowMs);
+      expect(cutoffMs).toBeLessThanOrEqual(after - windowMs);
+    });
+
+    it('rejects non-numeric or sub-1 retention values', async () => {
+      await expect(service.pruneOldEvents(0)).rejects.toThrow(/retentionDays/);
+      await expect(service.pruneOldEvents(-5)).rejects.toThrow(/retentionDays/);
+      await expect(service.pruneOldEvents(NaN)).rejects.toThrow(/retentionDays/);
+      await expect(service.pruneOldEvents(Infinity)).rejects.toThrow(/retentionDays/);
+      expect(prisma.campusEvent.deleteMany).not.toHaveBeenCalled();
     });
   });
 });
