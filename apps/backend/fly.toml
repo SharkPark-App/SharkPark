@@ -2,9 +2,14 @@
 #
 # Two process groups, one image:
 #   app  — Nest HTTP server, autostop enabled (min=1, keeps one warm)
-#   cron — supercronic running apps/backend/cron/crontab on a tiny
-#          always-on VM. Fly's --schedule only supports hourly/daily/
-#          weekly/monthly, so supercronic gives us proper cron granularity.
+#   cron — long-running NestJS scheduler process (`scheduler-main.ts`).
+#          Holds ONE Nest application context whose @nestjs/schedule
+#          ScheduleModule registers every @Cron(...) job class as an
+#          in-process timer. Replaces the old supercronic + per-script
+#          Nest bootstrap pattern, which OOM-cascaded the cron VM at
+#          the top of every 15-minute slot (5 children × ~180MB Nest
+#          boot > 1GB). Steady-state RSS ~250MB regardless of how many
+#          ticks fire concurrently, so cron VM is sized down to 512MB.
 #
 # Deploy from repo root: fly deploy --config apps/backend/fly.toml
 # Reference: https://fly.io/docs/reference/configuration/
@@ -33,7 +38,7 @@ primary_region = 'lax'
 
 [processes]
   app = 'node dist/main.js'
-  cron = 'supercronic -passthrough-logs /app/apps/backend/cron/crontab'
+  cron = 'node dist/scheduler-main.js'
 
 [http_service]
   internal_port = 3000
@@ -88,28 +93,17 @@ primary_region = 'lax'
 
 [[vm]]
   size = 'shared-cpu-1x'
-  # 256MB OOM-kills snapshot.js / fetch-weather.js — they bootstrap the
-  # full Nest application context (Prisma client + all modules) which
-  # needs ~150-200MB heap + headroom. 512MB was the safe minimum for the
-  # node-only crons. Bumped to 1024MB on 2026-04-30 ahead of the ML
-  # prediction + retraining crons (predict-all-lots.ts, retrain-models.ts)
-  # which spawn Python with xgboost + pandas; those reliably need 700MB+
-  # in our local profiling and OOM-killed (exit 137) at 512MB.
+  # Single long-running NestJS scheduler process. Application context is
+  # built ONCE at boot (~250MB RSS — Prisma + all feature modules), and
+  # every @Cron(...) tick reuses it. There is no per-tick bootstrap, so
+  # concurrent ticks at the top of the hour cost essentially nothing and
+  # cannot OOM-cascade the way the old supercronic + per-script Nest
+  # pattern did (5 × ~180MB > 1GB → exit 137 on survivors).
   #
-  # 2026-05-03 OOM cascade: at the top of the hour 5 */15 jobs (snapshot +
-  # 4 notify-* triggers) all spawn simultaneously and each used to load the
-  # full AppModule (~180MB RSS — pulled in the PassioGo WebSocket + Firebase
-  # Admin + every other module, even though the script only needs Prisma +
-  # one feature service). 5 × 180MB > 1GB → supercronic children got
-  # OOM-killed, leaving zombie pg-pool connections and triggering
-  # "Connection terminated due to connection timeout" on survivors.
-  #
-  # Fixed in PR #176 by switching cron scripts to per-script Nest modules
-  # (`CronAppModule.withFeatures([...])` in src/scripts/_cron-app.module.ts)
-  # so each bootstrap pulls in only the 1–2 feature modules it actually
-  # invokes. Each cron now lands around ~60 MB RSS, so 5 concurrent ticks
-  # comfortably fit under 500 MB and 1024MB is back to the right size for
-  # the heaviest single job (predict-all-lots / retrain-models, which spawn
-  # Python with xgboost + pandas and need ~700 MB).
-  memory = '1024mb'
+  # Heavy ML jobs (predict-all-lots, retrain-models) spawn Python in a
+  # CHILD process — their xgboost/pandas memory lives outside this VM's
+  # accounting once Fly schedules them on their own machine, but a single
+  # in-process child push can transiently spike to ~700MB. If/when those
+  # land back on this process group, bump back to 1024mb.
+  memory = '512mb'
   processes = ['cron']

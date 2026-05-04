@@ -22,7 +22,8 @@ a future engineer can pick this up cold).
 - [Incident Playbooks](#incident-playbooks)
   - [Backend down (5xx storm)](#backend-down-5xx-storm)
   - [Database unreachable](#database-unreachable)
-  - [Disk fills / cron OOM](#disk-fills--cron-oom)
+  - [Cron OOM / restart loop](#cron-oom--restart-loop)
+  - [Production DB missing reference data](#production-db-missing-reference-data)
   - [Backup pipeline broken](#backup-pipeline-broken)
 - [Restore from Backup](#restore-from-backup)
 - [Monthly Drills](#monthly-drills)
@@ -59,7 +60,7 @@ flyctl ssh console -a sharkpark-api -C "node -e 'console.log(process.env.SENTRY_
                             ▼
               Fly.io  (sharkpark-api, region=lax)
               ├─ app process     (HTTP, autostop min=0)
-              └─ cron process    (supercronic, always-on 1x@512MB)
+              └─ cron process    (NestJS scheduler, always-on 1x@512MB)
                             │
                             ▼
               Neon Postgres (us-west-2)
@@ -72,9 +73,12 @@ flyctl ssh console -a sharkpark-api -C "node -e 'console.log(process.env.SENTRY_
               └─ sharkpark-ml-exports    (parquet snapshots, future)
 ```
 
-Process group memory: app=512MB, cron=512MB. The cron group needs 512 because
-`snapshot.js` and `fetch-weather.js` bootstrap the full Nest context (Prisma +
-all modules ≈ 150–200 MB heap + headroom).
+Process group memory: app=512MB, cron=512MB. The cron process is a single
+long-lived Nest application context (`node dist/scheduler-main.js`) that owns
+all 18 scheduled jobs via `@nestjs/schedule` decorators — see
+[apps/backend/src/scheduler/](../../apps/backend/src/scheduler/). Steady RSS
+≈ 230–260 MB; 512 MB gives headroom for `pg_dump` spikes during the nightly
+backup job.
 
 ---
 
@@ -118,9 +122,13 @@ Push to `main` → GitHub Actions runs `.github/workflows/deploy.yml`:
 
 1. Install backend deps + generate Prisma client
 2. Run `prisma migrate deploy` against pooled endpoint
-3. Tag Sentry release + upload sourcemaps (skipped if `SENTRY_AUTH_TOKEN`
-   secret missing)
-4. `flyctl deploy --remote-only` (rolling)
+3. Run `db:seed:prod` (idempotent upsert of school + lots + buildings +
+   geofences + advisories). Live state — `current_occupancy`, snapshots,
+   users, events — is **never** touched.
+4. Tag Sentry release + upload sourcemaps (fails the deploy if
+   `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` are missing — release
+   tagging is required, not optional)
+5. `flyctl deploy --remote-only` (rolling)
 
 Manual trigger: GitHub → Actions → "Deploy to Fly" → Run workflow.
 
@@ -179,7 +187,12 @@ log drain (P14, not yet configured).
 flyctl ssh console -a sharkpark-api
 # Inside the container:
 cd /app/apps/backend
-node dist/scripts/<your-script>.js
+# All cron jobs live in src/scheduler/jobs/*.job.ts and run inside the
+# always-on cron process — they cannot be invoked individually from the
+# command line. To force-run one ad-hoc, restart the cron machine and let
+# the schedule fire, or write a one-off node -e snippet that imports the
+# job class from dist/scheduler/jobs/<name>.job.js and calls handleCron().
+node -e "..."
 ```
 
 For Prisma queries:
@@ -270,27 +283,58 @@ psql "$NEON_DATABASE_URL" -c 'SELECT 1'
 If Neon is genuinely down (rare), there's nothing to do except wait or
 restore to a fresh project. RPO ≤ 24h applies.
 
-### Disk fills / cron OOM
+### Cron OOM / restart loop
 
-**Symptoms:** cron process keeps restarting; `snapshot.js` or
-`fetch-weather.js` exits 137 (SIGKILL).
+**Symptoms:** cron Machine keeps restarting; `flyctl status` shows
+repeated `oom-killed` exits.
 
 ```bash
 flyctl status -a sharkpark-api | grep cron
 flyctl logs -a sharkpark-api -i <cron-machine-id>
 ```
 
-Each script bootstraps the full Nest context (~150–200 MB). If memory is
-already 512 MB, check whether a new module pulled into bootstrap is the
-culprit (Sentry breadcrumbs / heap snapshot via `flyctl ssh console`).
+The cron process is a single Nest context (`node dist/scheduler-main.js`)
+with steady RSS ≈ 230–260 MB. The most likely OOM cause is the nightly
+`backup-db` job — `pg_dump` streams the whole DB and can spike memory if
+the DB has grown large. Inspect heap with `flyctl ssh console` →
+`node --inspect`, or temporarily bump cron memory to 1024 MB while you
+diagnose:
 
-Bandaid: bump cron memory to 1024 MB. Real fix: lazy-load modules so
-scripts only instantiate what they need.
+```bash
+flyctl scale memory 1024 --process cron -a sharkpark-api
+```
+
+If the OOM is *not* during a backup window, suspect a memory leak in a
+newly-added job and bisect by disabling jobs in
+[apps/backend/src/scheduler/scheduler.module.ts](../../apps/backend/src/scheduler/scheduler.module.ts).
+
+### Production DB missing reference data
+
+**Symptoms:** API returns empty `lots` array; mobile app shows no parking
+options; `SELECT count(*) FROM "Lot"` returns 0.
+
+**Cause:** every deploy runs `db:seed:prod` after migrations
+(see [.github/workflows/deploy.yml](../../.github/workflows/deploy.yml)).
+If this step was skipped, failed silently before being added to the
+workflow, or the DB was branched/restored from an empty source, you'll
+have the schema with no rows.
+
+**Fix:** re-run the seed manually. It is idempotent (upsert-only, never
+deletes, never touches `current_occupancy`):
+
+```bash
+cd apps/backend
+# .env.production.local must contain DATABASE_URL=<pooled prod URL>
+pnpm db:seed:prod
+```
+
+Or trigger a fresh deploy via GitHub → Actions → "Deploy to Fly" → Run
+workflow — the seed step will populate everything in ~10s.
 
 ### Backup pipeline broken
 
-**Symptoms:** weekly `verify-latest-backup.js` cron throws → Sentry alert;
-backup count in R2 stops growing.
+**Symptoms:** weekly `verify-latest-backup` job throws → Sentry alert
+(monitor slug `verify-latest-backup`); backup count in R2 stops growing.
 
 ```bash
 # 1. Check the latest backup exists and parses
@@ -300,9 +344,9 @@ aws --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
 # 2. Check the cron actually ran
 flyctl logs -a sharkpark-api -i <cron-machine-id> | grep backup-db
 
-# 3. If pg_dump itself is failing, run manually:
+# 3. If pg_dump itself is failing, exec it manually inside the container:
 flyctl ssh console -a sharkpark-api -C \
-  "cd /app/apps/backend && node dist/scripts/backup-db.js"
+  "pg_dump --no-owner --no-privileges --format=custom \"$DATABASE_URL\" | wc -c"
 ```
 
 Do **not** wait until you need a restore to discover the backup pipeline
