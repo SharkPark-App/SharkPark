@@ -21,7 +21,7 @@ import { useReliability } from '../hooks/useReliability';
 import useFavorites from '../hooks/useFavorites';
 import { useAuth } from '../context/AuthContext';
 
-import {getOccupancyColor} from '../utils/parkingUtils';
+import {getOccupancyColorGradient, getReadableTextColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
 import { LotAmenities } from '../components/LotAmenities';
 import { EventBanner } from '../components/EventBanner';
@@ -288,9 +288,15 @@ export function ShortTermForecastScreen() {
               />
             </View>
           ) : lot.occupancy_rate != null ? (
-            <View style={[styles.statusBadge, {backgroundColor: getOccupancyColor(Math.round(lot.occupancy_rate * 100))}]}>
-              <Text style={styles.statusBadgeText}>{Math.round(lot.occupancy_rate * 100)}%</Text>
-            </View>
+            (() => {
+              const pct = Math.round(lot.occupancy_rate * 100);
+              const bg = getOccupancyColorGradient(pct);
+              return (
+                <View style={[styles.statusBadge, {backgroundColor: bg}]}>
+                  <Text style={[styles.statusBadgeText, {color: getReadableTextColor(bg)}]}>{pct}%</Text>
+                </View>
+              );
+            })()
           ) : (
             // Contributor-but-no-data (truly missing — e.g. lot has no
             // recent occupancy reports). The revoke→grant gap that used

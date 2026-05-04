@@ -10,7 +10,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
-import { getOccupancyColor } from '../utils/parkingUtils';
+import { getOccupancyColorGradient, getReadableTextColor } from '../utils/parkingUtils';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
@@ -52,7 +52,11 @@ const InteractiveLot: React.FC<{
     : Math.round(
         (lot.occupancy_rate ?? liveOccupancy / Math.max(lot.capacity, 1)) * 100,
       );
-  const occupancyColor = isRedacted ? colors.neutralPin : getOccupancyColor(pct!);
+  const occupancyColor = isRedacted ? colors.neutralPin : getOccupancyColorGradient(pct!);
+  // White text washes out on the green/yellow end of the gradient; flip
+  // to dark text against light pin colors so the lot label stays legible
+  // at every band. Redacted pins keep white over the neutral fill.
+  const labelColor = isRedacted ? colors.white : getReadableTextColor(occupancyColor);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
 
   return (
@@ -84,7 +88,7 @@ const InteractiveLot: React.FC<{
         }
       >
         <Text
-          style={[styles.lotText, { color: colors.white }]}
+          style={[styles.lotText, { color: labelColor }]}
           adjustsFontSizeToFit={true}
           numberOfLines={isSingleWord ? 1 : 3}
           accessible={false}
@@ -250,12 +254,15 @@ const MapScreen: React.FC = () => {
             // pin color in real time on iOS. Cheap at ~30 markers.
             const liveOcc =
               lot.occupancy_rate ?? lot.estimated_occupancy ?? lot.current_occupancy;
+            // Bucket the gradient key to nearest 5% so we don't churn the
+            // iOS bitmap on every single-percent occupancy nudge from the
+            // 30s poll — the human eye won't catch a sub-5% hue shift.
             const visualKey =
               !isContributor || liveOcc === null
                 ? 'redacted'
                 : Math.round(
-                    (lot.occupancy_rate ?? liveOcc / Math.max(lot.capacity, 1)) * 100,
-                  );
+                    (lot.occupancy_rate ?? liveOcc / Math.max(lot.capacity, 1)) * 20,
+                  ) * 5;
             return (
               <InteractiveLot
                 key={`${lot.lot_id}:${visualKey}`}
