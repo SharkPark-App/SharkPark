@@ -57,7 +57,7 @@ export function EventBanner({ events }: EventBannerProps) {
             accessibilityRole="link"
             accessibilityLabel={[
               event.name,
-              event.date.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' }),
+              event.date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
               event.location,
               event.description,
             ].filter(Boolean).join(', ')}
@@ -75,9 +75,10 @@ export function EventBanner({ events }: EventBannerProps) {
             <View style={styles.content}>
               <Text style={styles.name}>{event.name}</Text>
               <Text style={styles.details}>
-                {event.date.toLocaleTimeString('default', {
+                {event.date.toLocaleTimeString('en-US', {
                   hour: 'numeric',
                   minute: '2-digit',
+                  hour12: true,
                 })}{' '}
                 • {event.location}
               </Text>

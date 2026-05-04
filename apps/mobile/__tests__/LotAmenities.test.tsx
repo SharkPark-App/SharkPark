@@ -46,7 +46,10 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   capacity: 500,
   current_occupancy: 250,
   location_description: 'East Campus near ECS Building',
-  buildings: ['ECS', 'Library'],
+  buildings: [
+    { name: 'ECS', category: 'ACADEMIC' },
+    { name: 'Library', category: 'ACADEMIC' },
+  ],
   center_lat: 33.78,
   center_lng: -118.11,
   geofence_polygon: [],
@@ -69,9 +72,8 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   is_covered: false,
   is_paved: true,
   levels: undefined,
-  penetration_rate: 0.15,
-  avg_turnover_minutes: 120,
-  confidence: 'HIGH',
+  has_solar_canopy: false,
+  metadata_confidence: 'HIGH',
   timestamp: new Date().toISOString(),
   available: 250,
   occupancy_rate: 0.5,
@@ -141,17 +143,30 @@ describe('LotAmenities', () => {
     expect(texts).not.toContain('Levels');
   });
 
-  it('renders building proximity when non-empty', () => {
-    const tree = renderLot({ buildings: ['Library', 'ECS'] });
+  it('renders nearby buildings grouped by category when non-empty', () => {
+    const tree = renderLot({
+      buildings: [
+        { name: 'Library', category: 'ACADEMIC' },
+        { name: 'ECS', category: 'ACADEMIC' },
+        { name: 'Hillside Halls', category: 'HOUSING' },
+      ],
+    });
     const texts = collectTexts(tree.root);
-    expect(texts).toContain('Near');
-    expect(texts).toContain('Library,\nECS');
+    expect(texts).toContain('Nearby buildings');
+    expect(texts).toContain('Academic');
+    expect(texts).toContain('Housing & Residence');
+    expect(texts).toContain('Library');
+    expect(texts).toContain('ECS');
+    expect(texts).toContain('Hillside Halls');
+    // Empty categories must not render section headings.
+    expect(texts).not.toContain('Retail Stores');
+    expect(texts).not.toContain('Athletic & Performance Venues');
   });
 
-  it('does not render Near when buildings is empty', () => {
+  it('does not render nearby buildings block when empty', () => {
     const tree = renderLot({ buildings: [] });
     const texts = collectTexts(tree.root);
-    expect(texts).not.toContain('Near');
+    expect(texts).not.toContain('Nearby buildings');
   });
 
   it('renders permit types', () => {
@@ -178,10 +193,16 @@ describe('LotAmenities', () => {
     expect(texts).toContain('Not Available');
   });
 
-  it('renders weekday hours from object format', () => {
+  it('renders weekday hours from object format in 12-hour AM/PM', () => {
     const tree = renderLot({ hours_weekday: { open: '06:00', close: '22:00' } });
     const texts = collectTexts(tree.root);
-    expect(texts).toContain('06:00 – 22:00');
+    expect(texts).toContain('6 AM – 10 PM');
+  });
+
+  it('preserves non-zero minutes when formatting hours', () => {
+    const tree = renderLot({ hours_saturday: { open: '07:30', close: '17:45' } });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('7:30 AM – 5:45 PM');
   });
 
   it('renders CLOSED string hours directly', () => {
@@ -289,10 +310,10 @@ describe('LotAmenities', () => {
     expect(texts).toContain('Paved');     // is_paved = true
   });
 
-  it('renders Covered chip when is_covered is true', () => {
+  it('renders Covered Structure chip when is_covered is true', () => {
     const tree = renderLot({ is_covered: true });
     const texts = collectTexts(tree.root);
-    expect(texts).toContain('Covered');
+    expect(texts).toContain('Covered Structure');
   });
 
   it('renders Unpaved chip when is_paved is false', () => {

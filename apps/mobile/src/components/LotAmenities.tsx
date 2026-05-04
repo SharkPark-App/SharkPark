@@ -1,10 +1,14 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Pressable, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Text } from './CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
-import type { ParkingLotResponse } from '../services/api/lots';
+import type { ParkingLotResponse, BuildingCategory } from '../services/api/lots';
 
 interface LotAmenitiesProps {
   lot: ParkingLotResponse;
@@ -25,11 +29,49 @@ const ADVISORY_PALETTE: Record<
   INFO:     { bg: '#dbeafe', fg: '#1d4ed8', icon: 'information-circle-outline' },
 };
 
-/** Format an hours field into a readable string */
+/**
+ * Convert a "HH:MM" 24-hour string to "h:MM AM/PM". Returns the original
+ * value when it does not match the expected pattern (e.g. "CLOSED").
+ */
+function to12Hour(time: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!m) return time;
+  const h24 = Number(m[1]);
+  const minutes = m[2];
+  if (!Number.isFinite(h24) || h24 < 0 || h24 > 24) return time;
+  const period = h24 >= 12 && h24 < 24 ? 'PM' : 'AM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  // Drop ":00" for compact display ("9 AM" instead of "9:00 AM").
+  return minutes === '00' ? `${h12} ${period}` : `${h12}:${minutes} ${period}`;
+}
+
+/** Format an hours field into a readable AM/PM string */
 function formatHours(hours: { open: string; close: string } | string): string {
   if (typeof hours === 'string') return hours; // e.g. "CLOSED"
-  return `${hours.open} – ${hours.close}`;
+  return `${to12Hour(hours.open)} – ${to12Hour(hours.close)}`;
 }
+
+/**
+ * Display order + label for grouped nearby buildings. Categories are rendered
+ * in this order; empty groups are skipped (per design — no "Housing: none"
+ * section when a lot has no nearby residence halls).
+ */
+const BUILDING_CATEGORY_GROUPS: ReadonlyArray<{
+  key: BuildingCategory;
+  label: string;
+  icon: string;
+}> = [
+  { key: 'ACADEMIC',       label: 'Academic',                     icon: 'school-outline' },
+  { key: 'ADMINISTRATIVE', label: 'Administrative',               icon: 'briefcase-outline' },
+  { key: 'HOUSING',        label: 'Housing & Residence',          icon: 'home-outline' },
+  { key: 'RETAIL',         label: 'Retail Stores',                icon: 'storefront-outline' },
+  { key: 'ATHLETIC',       label: 'Athletic & Performance Venues', icon: 'football-outline' },
+  { key: 'OUTDOOR',        label: 'Outdoor Spaces',               icon: 'leaf-outline' },
+  { key: 'OTHER',          label: 'Other',                        icon: 'ellipsis-horizontal-outline' },
+];
+
+/** Collapse the building list by default once it exceeds this many entries. */
+const BUILDING_COLLAPSE_THRESHOLD = 8;
 
 /** Single icon + label row used throughout the component */
 function AmenityRow({
@@ -99,6 +141,118 @@ function AmenityChip({
 }
 
 /* ─── main component ─── */
+
+/**
+ * Renders the "Nearby buildings" block grouped by category. Categories with
+ * no entries are omitted entirely. Within each category, building names are
+ * sorted alphabetically for stable display.
+ */
+function NearbyBuildings({
+  buildings,
+}: {
+  buildings: ParkingLotResponse['buildings'];
+}) {
+  const { colors } = useTheme();
+
+  // Bucket by category once.
+  const grouped = React.useMemo(() => {
+    const map = new Map<BuildingCategory, string[]>();
+    for (const b of buildings) {
+      const list = map.get(b.category) ?? [];
+      list.push(b.name);
+      map.set(b.category, list);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.localeCompare(b));
+    return map;
+  }, [buildings]);
+
+  const total = buildings.length;
+  const [expanded, setExpanded] = React.useState(
+    total > 0 && total <= BUILDING_COLLAPSE_THRESHOLD,
+  );
+
+  if (total === 0) return null;
+
+  const toggle = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded(v => !v);
+  };
+
+  return (
+    <View style={buildingStyles.wrapper}>
+      <Pressable
+        onPress={toggle}
+        style={buildingStyles.header}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={`Nearby buildings, ${total} total. ${expanded ? 'Tap to collapse.' : 'Tap to expand.'}`}
+      >
+        <Icon
+          name="business-outline"
+          size={18}
+          color={colors.gray}
+          style={buildingStyles.headerIcon}
+        />
+        <Text style={[buildingStyles.headerLabel, { color: colors.textPrimary }]}>
+          Nearby buildings
+        </Text>
+        <View style={[buildingStyles.countBadge, { backgroundColor: colors.lightGray }]}>
+          <Text style={[buildingStyles.countBadgeText, { color: colors.textPrimary }]}>
+            {total}
+          </Text>
+        </View>
+        <Icon
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color={colors.gray}
+        />
+      </Pressable>
+
+      {expanded && (
+        <View style={buildingStyles.groups}>
+          {BUILDING_CATEGORY_GROUPS.map(({ key, label, icon }) => {
+            const names = grouped.get(key);
+            if (!names || names.length === 0) return null;
+            return (
+              <View key={key} style={buildingStyles.group}>
+                <View style={buildingStyles.groupHeader}>
+                  <Icon name={icon} size={14} color={colors.gray} />
+                  <Text style={[buildingStyles.groupLabel, { color: colors.gray }]}>
+                    {label}
+                  </Text>
+                  <Text style={[buildingStyles.groupCount, { color: colors.gray }]}>
+                    {names.length}
+                  </Text>
+                </View>
+                <View style={buildingStyles.pillRow}>
+                  {names.map(name => (
+                    <View
+                      key={name}
+                      style={[
+                        buildingStyles.pill,
+                        {
+                          backgroundColor: colors.lightGray,
+                          borderColor: colors.borderGray,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[buildingStyles.pillText, { color: colors.textPrimary }]}
+                        numberOfLines={1}
+                      >
+                        {name}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
 
 export function LotAmenities({ lot }: LotAmenitiesProps) {
   const { colors } = useTheme();
@@ -173,11 +327,7 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
           value={lot.location_description}
         />
         {lot.buildings.length > 0 && (
-          <AmenityRow
-            icon="business-outline"
-            label="Near"
-            value={lot.buildings.join(',\n')}
-          />
+          <NearbyBuildings buildings={lot.buildings} />
         )}
       </View>
 
@@ -286,13 +436,18 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
             available={lot.has_cameras}
           />
           <AmenityChip
+            icon="sunny-outline"
+            label="Solar Canopy"
+            available={lot.has_solar_canopy}
+          />
+          <AmenityChip
             icon="call-outline"
             label="Emergency Phone"
             available={lot.has_emergency_phone}
           />
           <AmenityChip
             icon="shield-checkmark-outline"
-            label={lot.is_covered ? 'Covered' : 'Open Air'}
+            label={lot.is_covered ? 'Covered Structure' : 'Open Air'}
             available={lot.is_covered}
           />
           <AmenityChip
@@ -397,5 +552,76 @@ const advisoryStyles = StyleSheet.create({
   description: {
     fontSize: TYPOGRAPHY.fontSize.sm,
     lineHeight: 18,
+  },
+});
+
+const buildingStyles = StyleSheet.create({
+  wrapper: {
+    paddingVertical: SPACING.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerIcon: {
+    width: 24,
+    textAlign: 'center',
+  },
+  headerLabel: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    marginLeft: SPACING.md,
+  },
+  countBadge: {
+    marginLeft: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: SPACING.md,
+    minWidth: 22,
+    alignItems: 'center',
+  },
+  countBadgeText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  groups: {
+    marginTop: SPACING.md,
+    marginLeft: 24 + SPACING.md, // align under the icon+label text
+    gap: SPACING.md,
+  },
+  group: {
+    gap: SPACING.sm,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  groupLabel: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    flex: 1,
+  },
+  groupCount: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  pill: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    maxWidth: '100%',
+  },
+  pillText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
 });

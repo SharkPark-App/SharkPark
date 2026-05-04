@@ -9,6 +9,19 @@ import { cacheService } from './cache';
 import { getContributorStateSync } from './contributor';
 
 /**
+ * Mirror of backend `BuildingCategory` enum (apps/backend/prisma/schema.prisma).
+ * Drives grouped building display in lot info.
+ */
+export type BuildingCategory =
+  | 'ACADEMIC'
+  | 'ADMINISTRATIVE'
+  | 'HOUSING'
+  | 'RETAIL'
+  | 'ATHLETIC'
+  | 'OUTDOOR'
+  | 'OTHER';
+
+/**
  * Single source of truth for contributor-gated response shaping.
  *
  * The OS-reported permission state is authoritative: if the device is
@@ -77,7 +90,8 @@ export interface ParkingLot {
    */
   current_occupancy: number | null;
   location_description: string;
-  buildings: string[];
+  /** Buildings this lot serves, with category for grouped display in lot info. */
+  buildings: Array<{ name: string; category: BuildingCategory }>;
   center_lat: number;
   center_lng: number;
   geofence_polygon: Array<{ lat: number; lng: number }>;
@@ -102,10 +116,10 @@ export interface ParkingLot {
   has_emergency_phone: boolean;
   is_covered: boolean;
   is_paved: boolean;
+  /** True for surface lots with solar-panel canopies overhead (G6/G7/G8/E8 at CSULB). */
+  has_solar_canopy: boolean;
   levels?: number;
-  penetration_rate: number;
-  avg_turnover_minutes: number;
-  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  metadata_confidence: 'LOW' | 'MEDIUM' | 'HIGH';
   /** Active operational notices (closures, construction). Empty when none. */
   advisories: LotAdvisory[];
   timestamp: string;
@@ -318,7 +332,7 @@ class LotsApiService {
    * neither the backend nor a cached result is available.
    */
   async getForecast(
-    lot: Pick<ParkingLotResponse, 'lot_id' | 'confidence'>,
+    lot: Pick<ParkingLotResponse, 'lot_id' | 'metadata_confidence'>,
     options: { forceRefresh?: boolean } = {},
   ): Promise<Array<{
     time: string;
@@ -364,8 +378,8 @@ class LotsApiService {
                 occupancy: Math.min(100, Math.max(0, occupancyPercent)),
                 lowerBound: Math.min(100, Math.max(0, lower)),
                 upperBound: Math.min(100, Math.max(0, upper)),
-                accuracy: lot.confidence === 'HIGH' ? 95 :
-                         lot.confidence === 'MEDIUM' ? 85 : 70,
+                accuracy: lot.metadata_confidence === 'HIGH' ? 95 :
+                         lot.metadata_confidence === 'MEDIUM' ? 85 : 70,
               };
             });
           }
@@ -387,7 +401,7 @@ class LotsApiService {
   /**
    * Generate forecast data for short-term predictions (local fallback)
    */
-  generateForecast(lot: Pick<ParkingLotResponse, 'confidence'>): Array<{
+  generateForecast(lot: Pick<ParkingLotResponse, 'metadata_confidence'>): Array<{
     time: string;
     occupancy: number;
     lowerBound: number;
@@ -407,7 +421,7 @@ class LotsApiService {
     for (let hour = 7; hour <= 21; hour++) {
       const occupancyPercent = campusCurve[hour] ?? 50;
       const confidenceMargin =
-        lot.confidence === 'HIGH' ? 3 : lot.confidence === 'MEDIUM' ? 5 : 8;
+        lot.metadata_confidence === 'HIGH' ? 3 : lot.metadata_confidence === 'MEDIUM' ? 5 : 8;
 
       const targetTime = new Date(now);
       targetTime.setHours(hour, 0, 0, 0);
@@ -418,9 +432,9 @@ class LotsApiService {
         lowerBound: Math.max(0, occupancyPercent - confidenceMargin),
         upperBound: Math.min(100, occupancyPercent + confidenceMargin),
         accuracy:
-          lot.confidence === 'HIGH'
+          lot.metadata_confidence === 'HIGH'
             ? 95
-            : lot.confidence === 'MEDIUM'
+            : lot.metadata_confidence === 'MEDIUM'
               ? 85 : 70,
       });
     }
