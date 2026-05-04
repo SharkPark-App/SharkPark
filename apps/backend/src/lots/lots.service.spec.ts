@@ -16,6 +16,7 @@ describe('LotsService', () => {
   let penetrationService: {
     estimateForAllLots: jest.Mock;
     estimateForLot: jest.Mock;
+    getSchoolTimezone: jest.Mock;
   };
   let weatherService: {
     getCurrent: jest.Mock;
@@ -48,6 +49,7 @@ describe('LotsService', () => {
         return map;
       }),
       estimateForLot: jest.fn().mockImplementation(async (lot: any) => makeEstimate(lot)),
+      getSchoolTimezone: jest.fn().mockResolvedValue('America/Los_Angeles'),
     };
 
     weatherService = {
@@ -83,10 +85,10 @@ describe('LotsService', () => {
       daily_permit_allowed: true,
       ev_charging_stations: 2,
       school_id: 'school-1',
-      penetration_rate: 0.65,
       latitude: 33.78,
       longitude: -118.11,
       geofence_coordinates: [],
+      lot_buildings: [], lot_advisories: [],
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -149,14 +151,16 @@ describe('LotsService', () => {
         id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
         current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
         daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-        penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-        geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+        latitude: 33.78, longitude: -118.11,
+        geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
       };
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       const result = await service.findOne('G1');
       expect(result).toBeDefined();
       expect(result.lot_id).toBe('G1');
-      expect(prisma.lot.findFirst).toHaveBeenCalledWith({ where: { lot_id: 'G1' } });
+      expect(prisma.lot.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { lot_id: 'G1' } }),
+      );
     });
 
     it('should throw NotFoundException when lot not found', async () => {
@@ -177,15 +181,15 @@ describe('LotsService', () => {
           id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
           current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+          latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
         {
           id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
           current_occupancy: 30, lot_type: 'EMPLOYEE', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+          latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
       ];
       prisma.lot.findMany.mockResolvedValue(lots);
@@ -219,15 +223,15 @@ describe('LotsService', () => {
           id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
           current_occupancy: 90, lot_type: 'STUDENT', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+          latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
         {
           id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
           current_occupancy: 10, lot_type: 'EMPLOYEE', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-          geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+          latitude: 33.78, longitude: -118.11,
+          geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
       ];
       prisma.lot.findMany.mockResolvedValue(lots);
@@ -294,7 +298,8 @@ describe('LotsService', () => {
       capacity: 200,
       current_occupancy: 190, // 95% — full
       location_description: 'East Campus',
-      building_proximity: ['ECS'],
+      lot_buildings: [{ building: { name: 'ECS' } }],
+      lot_advisories: [],
       center_lat: 33.7838,
       center_lng: -118.1089,
       geofence_polygon: [],
@@ -308,15 +313,17 @@ describe('LotsService', () => {
       ev_charging_stations: 0,
       motorcycle_spaces: 4,
       accessible_spaces: 8,
+      short_term_parking_spaces: 0,
+      low_emission_spaces: 0,
+      pay_stations: 0,
       has_lighting: true,
       has_cameras: true,
       has_emergency_phone: true,
       is_covered: false,
       is_paved: true,
+      has_solar_canopy: false,
       levels: null,
-      penetration_rate: 0.15,
-      avg_turnover_minutes: 240,
-      confidence: 'HIGH',
+      metadata_confidence: 'HIGH',
       school_id: 'school-1',
       created_at: new Date(),
       updated_at: new Date(),
@@ -419,12 +426,14 @@ describe('LotsService', () => {
 
       await service.getRecommendations('G1');
 
-      expect(prisma.lot.findMany).toHaveBeenCalledWith({
-        where: {
-          lot_type: 'STUDENT',
-          id: { not: 'uuid-source' },
-        },
-      });
+      expect(prisma.lot.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            lot_type: { in: expect.arrayContaining(['STUDENT']) },
+            id: { not: 'uuid-source' },
+          }),
+        }),
+      );
     });
 
     it('should exclude full lots (≥75% occupancy)', async () => {
@@ -565,6 +574,43 @@ describe('LotsService', () => {
       const results = await service.getRecommendations('G1');
 
       expect(results).toEqual([]);
+    });
+
+    it('caps distance contribution at MAX_DISTANCE_METERS (1000m)', async () => {
+      // Two candidates with identical availability and permits, both well
+      // beyond the 1000 m normalization ceiling. They should score equally
+      // because the distance axis contributes 0 for both — guards the
+      // chosen MAX_DISTANCE_METERS = 1000 against accidental regressions
+      // back to the old 2000 m value (which would let the closer one win).
+      // Source is at (33.7838, -118.1089). 0.01° lat ≈ 1110 m.
+      const justBeyondCeiling = makeLot({
+        id: 'uuid-1100m',
+        lot_id: 'GZ1',
+        current_occupancy: 100,
+        capacity: 200,
+        center_lat: 33.7738, // ~1110 m south
+        center_lng: -118.1089,
+      });
+      const wayBeyondCeiling = makeLot({
+        id: 'uuid-5000m',
+        lot_id: 'GZ2',
+        current_occupancy: 100,
+        capacity: 200,
+        center_lat: 33.7388, // ~5000 m south
+        center_lng: -118.1089,
+      });
+
+      prisma.lot.findFirst.mockResolvedValue(sourceLot);
+      prisma.lot.findMany.mockResolvedValue([justBeyondCeiling, wayBeyondCeiling]);
+
+      const results = await service.getRecommendations('G1');
+
+      const close = results.find((r) => r.lot_id === 'GZ1');
+      const far = results.find((r) => r.lot_id === 'GZ2');
+      expect(close).toBeDefined();
+      expect(far).toBeDefined();
+      // Both should have identical scores (distance saturates to 0 for both).
+      expect(close!.recommendation_score).toBe(far!.recommendation_score);
     });
   });
 

@@ -45,16 +45,9 @@ let eventSecret: string | undefined = DEVICE_EVENT_SECRET;
 export async function getDeviceId(): Promise<string> {
   if (cachedDeviceId) return cachedDeviceId;
 
+  let existing: string | null = null;
   try {
-    const existing = await AsyncStorage.getItem(DEVICE_ID_STORAGE_KEY);
-    if (existing) {
-      cachedDeviceId = existing;
-      return existing;
-    }
-    const fresh = generateUuidV4();
-    await AsyncStorage.setItem(DEVICE_ID_STORAGE_KEY, fresh);
-    cachedDeviceId = fresh;
-    return fresh;
+    existing = await AsyncStorage.getItem(DEVICE_ID_STORAGE_KEY);
   } catch {
     if (__DEV__) {
       console.warn('[deviceCredentials] AsyncStorage unavailable; using session-only device id');
@@ -62,6 +55,20 @@ export async function getDeviceId(): Promise<string> {
     if (!sessionFallbackDeviceId) sessionFallbackDeviceId = generateUuidV4();
     return sessionFallbackDeviceId;
   }
+
+  if (existing) {
+    cachedDeviceId = existing;
+    return existing;
+  }
+
+  const fresh = generateUuidV4();
+  try {
+    await AsyncStorage.setItem(DEVICE_ID_STORAGE_KEY, fresh);
+  } catch {
+    // Persistence failed but we still have a usable id for this session.
+  }
+  cachedDeviceId = fresh;
+  return fresh;
 }
 
 /**
@@ -101,8 +108,19 @@ export function signPayload(payload: string, secret: string): string {
 
 /** Generate a RFC 4122 v4 UUID using crypto.getRandomValues (RN polyfilled). */
 function generateUuidV4(): string {
+  // Hermes does not provide globalThis.crypto by default. We rely on the
+  // `react-native-get-random-values` polyfill imported at the top of
+  // apps/mobile/index.js. If it's missing we fail loudly rather than
+  // returning a non-cryptographic UUID.
+  const c = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (!c?.getRandomValues) {
+    throw new Error(
+      '[deviceCredentials] crypto.getRandomValues unavailable — ensure ' +
+        "`import 'react-native-get-random-values';` is the first import in index.js",
+    );
+  }
   const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
+  c.getRandomValues(bytes);
   bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
   bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
   const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');

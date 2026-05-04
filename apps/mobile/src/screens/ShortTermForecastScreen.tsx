@@ -25,7 +25,7 @@ import {getOccupancyColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
 import { LotAmenities } from '../components/LotAmenities';
 import { EventBanner } from '../components/EventBanner';
-import { upcomingEvents } from '../data/mockEvents';
+import { useEvents } from '../hooks/useEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
 import { reportsApi, ReportUnauthorizedError, ReportThrottledError } from '../services/api/reports';
@@ -70,6 +70,7 @@ export function ShortTermForecastScreen() {
   // Use the API hook instead of mock data
   const { lot, forecast, loading, refreshing, lastUpdatedAt, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
+  const { events: lotEvents } = useEvents(lotId);
 
   // Live OS contributor state. Drives the lock UI directly so the badge /
   // forecast card flip the instant the user toggles permission — we don't
@@ -200,10 +201,7 @@ export function ShortTermForecastScreen() {
   }
 
   const today = new Date().toDateString();
-  const todayEvents = upcomingEvents.filter(e =>
-    e.date.toDateString() === today &&
-    (e.affectedLots.includes('all') || e.affectedLots.includes(lotId))
-  );
+  const todayEvents = lotEvents.filter(e => e.date.toDateString() === today);
 
   // Try to (un-)favorite a lot dependent on current isFavorite status.
   //

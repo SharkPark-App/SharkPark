@@ -19,6 +19,10 @@ jest.mock('../src/context/ThemeContext', () => ({
   }),
 }));
 
+jest.mock('react-native/Libraries/Linking/Linking', () => ({
+  openURL: jest.fn(),
+}));
+
 // ────────────────────── Fixtures ──────────────────────
 
 const makeEvent = (overrides: Partial<Event> = {}): Event => ({
@@ -26,8 +30,8 @@ const makeEvent = (overrides: Partial<Event> = {}): Event => ({
   name: 'Beach Volleyball Tournament',
   date: new Date(2026, 2, 29, 14, 0, 0),
   location: 'Walter Pyramid',
-  affectedLots: ['G13', 'G14'],
-  impact: 'medium',
+  description: null,
+  url: 'https://csulb.campuslabs.com/engage/event/abc123',
   ...overrides,
 });
 
@@ -67,9 +71,8 @@ describe('EventBanner', () => {
     expect(hasText(texts, 'Expect heavy traffic near the courts.')).toBe(true);
   });
 
-  it('omits the description when not provided', () => {
-    const event = makeEvent({ description: undefined });
-    const tree = render([event]);
+  it('omits the description when null', () => {
+    const tree = render([makeEvent({ description: null })]);
     const texts = collectTexts(tree.root);
     expect(hasText(texts, 'Expect heavy traffic')).toBe(false);
     expect(tree.toJSON()).toBeTruthy();
@@ -88,13 +91,27 @@ describe('EventBanner', () => {
     expect(hasText(texts, 'Location A')).toBe(true);
     expect(hasText(texts, 'Location B')).toBe(true);
   });
+
+  it('shows a chevron when the event has a url', () => {
+    const tree = render([makeEvent({ url: 'https://example.com' })]);
+    const chevrons = tree.root.findAll(
+      n => n.props.name === 'chevron-forward',
+    );
+    expect(chevrons.length).toBeGreaterThan(0);
+  });
+
+  it('hides the chevron when url is null', () => {
+    const tree = render([makeEvent({ url: null })]);
+    const chevrons = tree.root.findAll(
+      n => n.props.name === 'chevron-forward',
+    );
+    expect(chevrons.length).toBe(0);
+  });
 });
 
 describe('EventBanner -- accessibility', () => {
   const isAccessibleCard = (node: ReactTestRenderer.ReactTestInstance) =>
-    (node.type as string) === 'View' &&
-    node.props.accessible === true &&
-    typeof node.props.accessibilityLabel === 'string';
+    node.props.testID === 'event-card';
 
   it('event card is an accessible element with a label', () => {
     const tree = render([makeEvent()]);
@@ -115,30 +132,39 @@ describe('EventBanner -- accessibility', () => {
     expect(card.props.accessibilityLabel).toContain('Expect heavy traffic.');
   });
 
-  it('accessibilityLabel omits description when absent', () => {
-    const tree = render([makeEvent({ description: undefined })]);
+  it('accessibilityLabel omits description when null', () => {
+    const tree = render([makeEvent({ description: null })]);
     const card = tree.root.find(isAccessibleCard);
-    expect(card.props.accessibilityLabel).not.toContain('undefined');
+    expect(card.props.accessibilityLabel).not.toContain('null');
     expect(card.props.accessibilityLabel).not.toMatch(/,\s*$/);
   });
 
   it('icon is hidden from the accessibility tree', () => {
     const tree = render([makeEvent()]);
-    const hiddenIcon = tree.root.find(
+    const hiddenNodes = tree.root.findAll(
       node => node.props.accessible === false && node.props.importantForAccessibility === 'no-hide-descendants',
     );
-    expect(hiddenIcon).toBeTruthy();
+    expect(hiddenNodes.length).toBeGreaterThan(0);
   });
 
-  it('multiple events each have their own accessible card', () => {
+  it('card has accessibilityRole of link when url is present', () => {
+    const tree = render([makeEvent({ url: 'https://example.com' })]);
+    const card = tree.root.find(isAccessibleCard);
+    expect(card.props.accessibilityRole).toBe('link');
+  });
+
+  it('multiple events each have their own accessible label', () => {
     const tree = render([
       makeEvent({ id: '1', name: 'Event A' }),
       makeEvent({ id: '2', name: 'Event B' }),
     ]);
-    const cards = tree.root.findAll(isAccessibleCard);
+    const withA = tree.root.findAll(n => n.props.accessibilityLabel?.includes('Event A'));
+    const withB = tree.root.findAll(n => n.props.accessibilityLabel?.includes('Event B'));
 
-    expect(cards.length).toBe(2);
-    expect(cards[0].props.accessibilityLabel).toContain('Event A');
-    expect(cards[1].props.accessibilityLabel).toContain('Event B');
+    expect(withA.length).toBeGreaterThan(0);
+    expect(withB.length).toBeGreaterThan(0);
+    // Labels must not bleed across cards
+    expect(withA[0].props.accessibilityLabel).not.toContain('Event B');
+    expect(withB[0].props.accessibilityLabel).not.toContain('Event A');
   });
 });
