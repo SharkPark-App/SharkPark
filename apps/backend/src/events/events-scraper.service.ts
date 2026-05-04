@@ -21,14 +21,17 @@ const DESCRIPTION_MAX_CHARS = 115;
 function stripHtml(html: string): string {
   return html
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&amp;/gi, '&')
+    // Decode all non-ampersand entities BEFORE `&amp;` so that an input like
+    // `&amp;lt;` is preserved as the literal text `&lt;` instead of being
+    // double-unescaped into `<` (CodeQL js/double-escaping).
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&#\d+;/gi, '')
-    .replace(/&[a-z]+;/gi, '')
+    .replace(/&(?!amp;)[a-z]+;/gi, '')
+    .replace(/&amp;/gi, '&')
     .replace(/\s+/g, ' ')
     .trim();
 }
