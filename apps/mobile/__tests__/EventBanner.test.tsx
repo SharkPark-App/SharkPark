@@ -14,7 +14,6 @@ jest.mock('../src/context/ThemeContext', () => ({
       warningBorder: '#ffffff',
       warningText: '#ffffff',
       warningTextSecondary: '#ffffff',
-      error: '#dc2626',
     },
     isDark: false,
   }),
@@ -133,20 +132,11 @@ describe('EventBanner', () => {
     expect(hasText(texts, '\u2013')).toBe(false);
   });
 
-  describe('live sports status', () => {
-    it('renders a LIVE pill and scoreline when status is LIVE', () => {
-      const tree = render([
-        makeEvent({
-          status: 'LIVE',
-          homeScore: 16,
-          awayScore: 4,
-        }),
-      ]);
-      const texts = collectTexts(tree.root);
-      expect(hasText(texts, 'LIVE')).toBe(true);
-      expect(hasText(texts, '16\u20134')).toBe(true);
-    });
-
+  // The Sidearm calendar API exposes no in-progress signal, so we never
+  // render a LIVE pill — the SportsEventStatus.LIVE enum value exists in
+  // the schema but is intentionally never written by the scraper. These
+  // tests cover the FINAL flip and the SCHEDULED / non-sports no-op cases.
+  describe('final sports score', () => {
     it('renders a FINAL pill with the result indicator when status is FINAL', () => {
       const tree = render([
         makeEvent({
@@ -170,26 +160,13 @@ describe('EventBanner', () => {
         }),
       ]);
       const texts = collectTexts(tree.root);
-      expect(hasText(texts, 'LIVE')).toBe(false);
       expect(hasText(texts, 'FINAL')).toBe(false);
     });
 
     it('does not render the sports row when status is null (non-sports event)', () => {
       const tree = render([makeEvent({ status: null })]);
       const texts = collectTexts(tree.root);
-      expect(hasText(texts, 'LIVE')).toBe(false);
       expect(hasText(texts, 'FINAL')).toBe(false);
-    });
-
-    it('renders LIVE with em-dash placeholders when scores are not yet published', () => {
-      const tree = render([
-        makeEvent({ status: 'LIVE', homeScore: null, awayScore: null }),
-      ]);
-      const texts = collectTexts(tree.root);
-      expect(hasText(texts, 'LIVE')).toBe(true);
-      // No score row when both scores null — the inner Text is gated by
-      // `homeScore != null || awayScore != null`.
-      expect(hasText(texts, '\u2013\u2013')).toBe(false);
     });
   });
 });

@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SportsEventStatus, SportsResultStatus } from '@prisma/client';
 import { SportsEventsScraperService } from './sports-events-scraper.service';
@@ -30,7 +32,8 @@ interface RawEventInput {
   time?: string;
   locationIndicator?: 'H' | 'A' | 'N';
   noplayText?: string;
-  gameState?: number;
+  /** "A" upcoming or "O" over. Verified against real Sidearm 2026 data. */
+  status?: 'A' | 'O';
   gameStateDisplay?: string;
   conference?: boolean;
   sportShortname: string;
@@ -40,35 +43,45 @@ interface RawEventInput {
   previewUrl?: string | null;
   recapUrl?: string | null;
   resultStatus?: 'W' | 'L' | 'T' | 'N' | null;
+  /** Always Long Beach State (regardless of locationIndicator). */
   teamScore?: string | null;
+  /** Always the visitor (regardless of locationIndicator). */
   opponentScore?: string | null;
 }
 
-const makeRaw = (e: RawEventInput) => ({
-  id: e.id,
-  date: e.date,
-  time: e.time ?? '7 p.m.',
-  locationIndicator: e.locationIndicator ?? 'H',
-  noplayText: e.noplayText ?? '',
-  gameState: e.gameState ?? 0,
-  gameStateDisplay: e.gameStateDisplay ?? 'SCHEDULED',
-  conference: e.conference ?? false,
-  sport: { id: 1, title: e.sportTitle ?? "Women's Basketball", shortname: e.sportShortname },
-  opponent: e.opponent === null ? null : { id: 1, title: e.opponent ?? 'Opponent U' },
-  media: {
-    tv: e.tv ?? null,
-    preview: e.previewUrl ? { url: e.previewUrl } : null,
-  },
-  result:
-    e.recapUrl || e.resultStatus !== undefined || e.teamScore !== undefined || e.opponentScore !== undefined
+const makeRaw = (e: RawEventInput) => {
+  const status = e.status ?? 'A';
+  const hasResult =
+    status === 'O' ||
+    e.resultStatus !== undefined ||
+    e.teamScore !== undefined ||
+    e.opponentScore !== undefined ||
+    e.recapUrl !== undefined;
+  return {
+    id: e.id,
+    date: e.date,
+    time: e.time ?? '7 p.m.',
+    locationIndicator: e.locationIndicator ?? 'H',
+    noplayText: e.noplayText ?? '',
+    status,
+    gameStateDisplay: e.gameStateDisplay,
+    conference: e.conference ?? false,
+    sport: { id: 1, title: e.sportTitle ?? "Women's Basketball", shortname: e.sportShortname },
+    opponent: e.opponent === null ? null : { id: 1, title: e.opponent ?? 'Opponent U' },
+    media: {
+      tv: e.tv ?? null,
+      preview: e.previewUrl ? { url: e.previewUrl } : null,
+    },
+    result: hasResult
       ? {
           recap: e.recapUrl ? { url: e.recapUrl } : null,
-          status: e.resultStatus ?? 'N',
+          status: e.resultStatus ?? (status === 'O' ? 'W' : 'N'),
           teamScore: e.teamScore ?? '',
           opponentScore: e.opponentScore ?? '',
         }
       : null,
-});
+  };
+};
 
 const mockMonthResponse = (events: ReturnType<typeof makeRaw>[]) => [
   { date: '2026-01-01', events },
@@ -101,7 +114,6 @@ describe('SportsEventsScraperService', () => {
     }).compile();
 
     service = module.get(SportsEventsScraperService);
-    // First month returns events, all subsequent months return empty.
     fetchMock = jest.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve({ ok: true, status: 200, statusText: 'OK', json: () => Promise.resolve([]) } as Response),
     );
@@ -154,8 +166,6 @@ describe('SportsEventsScraperService', () => {
     });
     expect(args.create.description).toContain('Conference game');
     expect(args.create.description).toContain('ESPN+');
-    // 7 PM Pacific on 2026-01-15 (PST, UTC-8) → 2026-01-16T03:00:00Z.
-    // Asserts parsing is anchored to the school timezone, not the host's.
     expect(args.create.start_time).toEqual(new Date('2026-01-16T03:00:00Z'));
     expect(args.create.end_time).toEqual(new Date('2026-01-16T06:00:00Z'));
   });
@@ -164,8 +174,8 @@ describe('SportsEventsScraperService', () => {
     setMonthlyEvents([
       makeRaw({ id: 1, date: '2026-01-15T19:00:00', sportShortname: 'wbball', locationIndicator: 'A' }),
       makeRaw({ id: 2, date: '2026-01-15T19:00:00', sportShortname: 'wbball', locationIndicator: 'N' }),
-      makeRaw({ id: 5, date: '2026-01-15T19:00:00', sportShortname: 'wbball', time: '' }), // TBA
-      makeRaw({ id: 6, date: '2026-01-15T19:00:00', sportShortname: 'mgolf' }), // off-campus / unmapped
+      makeRaw({ id: 5, date: '2026-01-15T19:00:00', sportShortname: 'wbball', time: '' }),
+      makeRaw({ id: 6, date: '2026-01-15T19:00:00', sportShortname: 'mgolf' }),
     ]);
 
     await service.scrapeAll();
@@ -175,24 +185,9 @@ describe('SportsEventsScraperService', () => {
 
   it('upserts CANCELLED and POSTPONED home games with the matching status (so the UI can surface them)', async () => {
     setMonthlyEvents([
-      makeRaw({
-        id: 91,
-        date: '2026-01-15T19:00:00',
-        sportShortname: 'wbball',
-        gameStateDisplay: 'CANCELLED',
-      }),
-      makeRaw({
-        id: 92,
-        date: '2026-01-16T19:00:00',
-        sportShortname: 'wbball',
-        gameStateDisplay: 'POSTPONED',
-      }),
-      makeRaw({
-        id: 93,
-        date: '2026-01-17T19:00:00',
-        sportShortname: 'wbball',
-        noplayText: 'Cancelled — weather',
-      }),
+      makeRaw({ id: 91, date: '2026-01-15T19:00:00', sportShortname: 'wbball', gameStateDisplay: 'CANCELLED' }),
+      makeRaw({ id: 92, date: '2026-01-16T19:00:00', sportShortname: 'wbball', gameStateDisplay: 'POSTPONED' }),
+      makeRaw({ id: 93, date: '2026-01-17T19:00:00', sportShortname: 'wbball', noplayText: 'Cancelled — weather' }),
     ]);
 
     await service.scrapeAll();
@@ -212,10 +207,7 @@ describe('SportsEventsScraperService', () => {
   });
 
   it('skips events whose mapped building isn\'t seeded for the school', async () => {
-    prisma.building.findMany.mockResolvedValueOnce([
-      // Pyramid present, Softball Complex missing
-      buildingRow('b_pyramid', 'Pyramid'),
-    ]);
+    prisma.building.findMany.mockResolvedValueOnce([buildingRow('b_pyramid', 'Pyramid')]);
     setMonthlyEvents([
       makeRaw({ id: 10, date: '2026-01-15T19:00:00', sportShortname: 'softball', sportTitle: 'Softball' }),
       makeRaw({ id: 11, date: '2026-01-15T19:00:00', sportShortname: 'wbball' }),
@@ -224,20 +216,12 @@ describe('SportsEventsScraperService', () => {
     await service.scrapeAll();
 
     expect(prisma.campusEvent.upsert).toHaveBeenCalledTimes(1);
-    expect(prisma.campusEvent.upsert.mock.calls[0][0].where).toEqual({
-      external_id: 'lbsu-sports-11',
-    });
+    expect(prisma.campusEvent.upsert.mock.calls[0][0].where).toEqual({ external_id: 'lbsu-sports-11' });
   });
 
   it('omits opponent suffix when opponent is null', async () => {
     setMonthlyEvents([
-      makeRaw({
-        id: 20,
-        date: '2026-01-15T19:00:00',
-        sportShortname: 'track',
-        sportTitle: "Track & Field",
-        opponent: null,
-      }),
+      makeRaw({ id: 20, date: '2026-01-15T19:00:00', sportShortname: 'track', sportTitle: 'Track & Field', opponent: null }),
     ]);
 
     await service.scrapeAll();
@@ -247,19 +231,12 @@ describe('SportsEventsScraperService', () => {
 
   it('uses absolute event_url when API returns a fully-qualified preview URL', async () => {
     setMonthlyEvents([
-      makeRaw({
-        id: 30,
-        date: '2026-01-15T19:00:00',
-        sportShortname: 'wbball',
-        previewUrl: 'https://example.com/preview',
-      }),
+      makeRaw({ id: 30, date: '2026-01-15T19:00:00', sportShortname: 'wbball', previewUrl: 'https://example.com/preview' }),
     ]);
 
     await service.scrapeAll();
 
-    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_url).toBe(
-      'https://example.com/preview',
-    );
+    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_url).toBe('https://example.com/preview');
   });
 
   it('falls back to the recap URL when no preview URL is published', async () => {
@@ -268,31 +245,23 @@ describe('SportsEventsScraperService', () => {
         id: 40,
         date: '2026-01-15T19:00:00',
         sportShortname: 'wbball',
+        status: 'O',
+        teamScore: '70',
+        opponentScore: '60',
+        resultStatus: 'W',
         recapUrl: '/news/recap/40',
       }),
     ]);
 
     await service.scrapeAll();
 
-    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_url).toBe(
-      'https://longbeachstate.com/news/recap/40',
-    );
+    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_url).toBe('https://longbeachstate.com/news/recap/40');
   });
 
   it('falls back to the sport schedule page when no per-game URL exists', async () => {
     setMonthlyEvents([
-      makeRaw({
-        id: 50,
-        date: '2026-01-15T19:00:00',
-        sportShortname: 'baseball',
-        sportTitle: 'Baseball',
-      }),
-      makeRaw({
-        id: 51,
-        date: '2026-01-16T19:00:00',
-        sportShortname: 'wsoc',
-        sportTitle: "Women's Soccer",
-      }),
+      makeRaw({ id: 50, date: '2026-01-15T19:00:00', sportShortname: 'baseball', sportTitle: 'Baseball' }),
+      makeRaw({ id: 51, date: '2026-01-16T19:00:00', sportShortname: 'wsoc', sportTitle: "Women's Soccer" }),
     ]);
 
     await service.scrapeAll();
@@ -304,12 +273,8 @@ describe('SportsEventsScraperService', () => {
         arg.create.event_url,
       ]),
     );
-    expect(urlById.get('lbsu-sports-50')).toBe(
-      'https://longbeachstate.com/sports/baseball/schedule',
-    );
-    expect(urlById.get('lbsu-sports-51')).toBe(
-      'https://longbeachstate.com/sports/wsoc/schedule',
-    );
+    expect(urlById.get('lbsu-sports-50')).toBe('https://longbeachstate.com/sports/baseball/schedule');
+    expect(urlById.get('lbsu-sports-51')).toBe('https://longbeachstate.com/sports/wsoc/schedule');
   });
 
   it('throws when the Sidearm endpoint returns a non-OK response', async () => {
@@ -334,13 +299,7 @@ describe('SportsEventsScraperService', () => {
 
   it('parses naive ISO timestamps as the school\'s wall clock during PDT', async () => {
     setMonthlyEvents([
-      makeRaw({
-        id: 60,
-        // 6 PM Pacific on 2026-05-01 (PDT, UTC-7) → 01:00 UTC on 2026-05-02.
-        date: '2026-05-01T18:00:00',
-        sportShortname: 'softball',
-        sportTitle: 'Softball',
-      }),
+      makeRaw({ id: 60, date: '2026-05-01T18:00:00', sportShortname: 'softball', sportTitle: 'Softball' }),
     ]);
 
     await service.scrapeAll();
@@ -348,21 +307,6 @@ describe('SportsEventsScraperService', () => {
     const args = prisma.campusEvent.upsert.mock.calls[0][0];
     expect(args.create.start_time).toEqual(new Date('2026-05-02T01:00:00Z'));
     expect(args.create.end_time).toEqual(new Date('2026-05-02T04:00:00Z'));
-  });
-
-  it('dedupes Sidearm duplicates on (building, start, sport) and keeps the lowest id', async () => {
-    setMonthlyEvents([
-      // Real Sidearm pattern: same baseball game returned under two ids.
-      makeRaw({ id: 10109, date: '2026-05-01T18:05:00', sportShortname: 'baseball', sportTitle: 'Baseball', opponent: 'UC San Diego' }),
-      makeRaw({ id: 10021, date: '2026-05-01T18:05:00', sportShortname: 'baseball', sportTitle: 'Baseball', opponent: 'UC San Diego' }),
-    ]);
-
-    await service.scrapeAll();
-
-    expect(prisma.campusEvent.upsert).toHaveBeenCalledTimes(1);
-    expect(prisma.campusEvent.upsert.mock.calls[0][0].where).toEqual({
-      external_id: 'lbsu-sports-10021',
-    });
   });
 
   it('strips a leading "Long Beach State vs." prefix from opponent titles', async () => {
@@ -378,145 +322,234 @@ describe('SportsEventsScraperService', () => {
 
     await service.scrapeAll();
 
-    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_name).toBe(
-      "Men's Volleyball vs Loyola Chicago",
-    );
+    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_name).toBe("Men's Volleyball vs Loyola Chicago");
   });
 
   it('skips events with malformed naive ISO timestamps', async () => {
-    setMonthlyEvents([
-      makeRaw({ id: 80, date: 'not-a-date', sportShortname: 'wbball' }),
-    ]);
+    setMonthlyEvents([makeRaw({ id: 80, date: 'not-a-date', sportShortname: 'wbball' })]);
 
     await service.scrapeAll();
 
     expect(prisma.campusEvent.upsert).not.toHaveBeenCalled();
   });
 
-  it('defaults pre-game (gameState=0) events to status=SCHEDULED with null scores', async () => {
-    setMonthlyEvents([
-      makeRaw({ id: 100, date: '2026-01-15T19:00:00', sportShortname: 'wbball' }),
-    ]);
+  describe('status mapping', () => {
+    it('defaults upcoming events (status="A") to SCHEDULED with null scores', async () => {
+      setMonthlyEvents([makeRaw({ id: 100, date: '2026-01-15T19:00:00', sportShortname: 'wbball', status: 'A' })]);
 
-    await service.scrapeAll();
+      await service.scrapeAll();
 
-    const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
-    expect(create.status).toBe(SportsEventStatus.SCHEDULED);
-    expect(create.home_score).toBeNull();
-    expect(create.away_score).toBeNull();
-    expect(create.result_status).toBeNull();
-    expect(create.status_updated_at).toBeInstanceOf(Date);
-  });
-
-  it('maps an in-progress game (gameState=3, intermediate code) to LIVE with parsed scores', async () => {
-    setMonthlyEvents([
-      makeRaw({
-        id: 101,
-        date: '2026-01-15T19:00:00',
-        sportShortname: 'wbball',
-        gameState: 3,
-        teamScore: '42',
-        opponentScore: '38',
-      }),
-    ]);
-
-    await service.scrapeAll();
-
-    const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
-    expect(create.status).toBe(SportsEventStatus.LIVE);
-    expect(create.home_score).toBe(42);
-    expect(create.away_score).toBe(38);
-    expect(create.result_status).toBeNull();
-  });
-
-  it('maps GAMECOMPLETE to FINAL and parses the W/L/T result', async () => {
-    setMonthlyEvents([
-      makeRaw({
-        id: 102,
-        date: '2026-01-15T19:00:00',
-        sportShortname: 'wbball',
-        gameState: 8,
-        gameStateDisplay: 'GAMECOMPLETE',
-        resultStatus: 'L',
-        teamScore: '60',
-        opponentScore: '75',
-      }),
-    ]);
-
-    await service.scrapeAll();
-
-    const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
-    expect(create.status).toBe(SportsEventStatus.FINAL);
-    expect(create.home_score).toBe(60);
-    expect(create.away_score).toBe(75);
-    expect(create.result_status).toBe(SportsResultStatus.L);
-  });
-
-  it('discards stale pre-game scores when status is SCHEDULED', async () => {
-    setMonthlyEvents([
-      makeRaw({
-        id: 103,
-        date: '2026-01-15T19:00:00',
-        sportShortname: 'wbball',
-        gameState: 0,
-        // Sidearm has been seen returning "0"/"0" for not-yet-started events.
-        teamScore: '0',
-        opponentScore: '0',
-      }),
-    ]);
-
-    await service.scrapeAll();
-
-    const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
-    expect(create.status).toBe(SportsEventStatus.SCHEDULED);
-    expect(create.home_score).toBeNull();
-    expect(create.away_score).toBeNull();
-  });
-
-  describe('scrapeLive', () => {
-    it('skips the API call entirely when no events are in the live window', async () => {
-      prisma.campusEvent.findMany.mockResolvedValueOnce([]);
-
-      await service.scrapeLive();
-
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(prisma.campusEvent.update).not.toHaveBeenCalled();
+      const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
+      expect(create.status).toBe(SportsEventStatus.SCHEDULED);
+      expect(create.home_score).toBeNull();
+      expect(create.away_score).toBeNull();
+      expect(create.result_status).toBeNull();
+      expect(create.status_updated_at).toBeInstanceOf(Date);
     });
 
-    it('updates only status/score columns for candidate events found in the DB probe', async () => {
-      prisma.campusEvent.findMany.mockResolvedValueOnce([
-        { external_id: 'lbsu-sports-200', school_id: SCHOOL_ID },
+    it('maps over games (status="O") with a result to FINAL and parses W/L/T', async () => {
+      setMonthlyEvents([
+        makeRaw({
+          id: 102,
+          date: '2026-01-15T19:00:00',
+          sportShortname: 'wbball',
+          status: 'O',
+          resultStatus: 'L',
+          teamScore: '60',
+          opponentScore: '75',
+        }),
       ]);
+
+      await service.scrapeAll();
+
+      const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
+      expect(create.status).toBe(SportsEventStatus.FINAL);
+      expect(create.home_score).toBe(60);
+      expect(create.away_score).toBe(75);
+      expect(create.result_status).toBe(SportsResultStatus.L);
+    });
+
+    it('never writes the LIVE enum value (no in-progress signal exists in Sidearm calendar API)', async () => {
+      setMonthlyEvents([
+        makeRaw({
+          id: 103,
+          date: '2026-01-15T19:00:00',
+          sportShortname: 'wbball',
+          status: 'A',
+          teamScore: '0',
+          opponentScore: '0',
+        }),
+      ]);
+
+      await service.scrapeAll();
+
+      const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
+      expect(create.status).toBe(SportsEventStatus.SCHEDULED);
+      expect(create.home_score).toBeNull();
+      expect(create.away_score).toBeNull();
+    });
+  });
+
+  describe('dedupe', () => {
+    it('prefers the FINAL entry when Sidearm returns the same game under two ids', async () => {
+      setMonthlyEvents([
+        makeRaw({
+          id: 10021,
+          date: '2026-05-01T18:05:00',
+          sportShortname: 'baseball',
+          sportTitle: 'Baseball',
+          opponent: 'UC San Diego',
+          status: 'A',
+        }),
+        makeRaw({
+          id: 10109,
+          date: '2026-05-01T18:05:00',
+          sportShortname: 'baseball',
+          sportTitle: 'Baseball',
+          opponent: 'UC San Diego',
+          status: 'O',
+          resultStatus: 'W',
+          teamScore: '7',
+          opponentScore: '4',
+        }),
+      ]);
+
+      await service.scrapeAll();
+
+      expect(prisma.campusEvent.upsert).toHaveBeenCalledTimes(1);
+      const args = prisma.campusEvent.upsert.mock.calls[0][0];
+      expect(args.where).toEqual({ external_id: 'lbsu-sports-10109' });
+      expect(args.create.status).toBe(SportsEventStatus.FINAL);
+      expect(args.create.home_score).toBe(7);
+      expect(args.create.away_score).toBe(4);
+    });
+
+    it('falls back to the lowest id when both duplicate entries are unplayed (stable external_id)', async () => {
+      setMonthlyEvents([
+        makeRaw({ id: 10109, date: '2026-05-15T18:05:00', sportShortname: 'baseball', sportTitle: 'Baseball', opponent: 'UC San Diego', status: 'A' }),
+        makeRaw({ id: 10021, date: '2026-05-15T18:05:00', sportShortname: 'baseball', sportTitle: 'Baseball', opponent: 'UC San Diego', status: 'A' }),
+      ]);
+
+      await service.scrapeAll();
+
+      expect(prisma.campusEvent.upsert).toHaveBeenCalledTimes(1);
+      expect(prisma.campusEvent.upsert.mock.calls[0][0].where).toEqual({ external_id: 'lbsu-sports-10021' });
+    });
+  });
+
+  describe('mapScores location handling', () => {
+    it('keeps team→home / opponent→away mapping for home games (locationIndicator="H")', async () => {
       setMonthlyEvents([
         makeRaw({
           id: 200,
           date: '2026-01-15T19:00:00',
           sportShortname: 'wbball',
-          gameState: 4,
-          teamScore: '55',
-          opponentScore: '50',
-        }),
-        // A second event in the same Sidearm response that is NOT in the candidate
-        // set should be ignored — we don't want scrapeLive touching far-future games.
-        makeRaw({
-          id: 201,
-          date: '2026-02-15T19:00:00',
-          sportShortname: 'wbball',
+          locationIndicator: 'H',
+          status: 'O',
+          resultStatus: 'W',
+          teamScore: '88',
+          opponentScore: '75',
         }),
       ]);
 
-      await service.scrapeLive();
+      await service.scrapeAll();
+
+      const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
+      expect(create.home_score).toBe(88);
+      expect(create.away_score).toBe(75);
+      expect(create.result_status).toBe(SportsResultStatus.W);
+    });
+  });
+
+  describe('refreshFinalScores', () => {
+    it('skips the API call entirely when no SCHEDULED games are in the lookback window', async () => {
+      prisma.campusEvent.findMany.mockResolvedValueOnce([]);
+
+      await service.refreshFinalScores();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(prisma.campusEvent.update).not.toHaveBeenCalled();
+    });
+
+    it('only flips matching candidates that Sidearm has marked FINAL', async () => {
+      prisma.campusEvent.findMany.mockResolvedValueOnce([
+        { external_id: 'lbsu-sports-300', school_id: SCHOOL_ID },
+        { external_id: 'lbsu-sports-301', school_id: SCHOOL_ID },
+      ]);
+      setMonthlyEvents([
+        makeRaw({
+          id: 300,
+          date: '2026-05-01T18:00:00',
+          sportShortname: 'wbball',
+          status: 'O',
+          resultStatus: 'W',
+          teamScore: '80',
+          opponentScore: '70',
+        }),
+        makeRaw({ id: 301, date: '2026-05-01T20:00:00', sportShortname: 'wbball', status: 'A' }),
+        makeRaw({
+          id: 999,
+          date: '2026-05-02T19:00:00',
+          sportShortname: 'wbball',
+          status: 'O',
+          resultStatus: 'W',
+          teamScore: '50',
+          opponentScore: '40',
+        }),
+      ]);
+
+      await service.refreshFinalScores();
 
       expect(prisma.campusEvent.update).toHaveBeenCalledTimes(1);
       const args = prisma.campusEvent.update.mock.calls[0][0];
-      expect(args.where).toEqual({ external_id: 'lbsu-sports-200' });
-      expect(args.data.status).toBe(SportsEventStatus.LIVE);
-      expect(args.data.home_score).toBe(55);
-      expect(args.data.away_score).toBe(50);
+      expect(args.where).toEqual({ external_id: 'lbsu-sports-300' });
+      expect(args.data.status).toBe(SportsEventStatus.FINAL);
+      expect(args.data.home_score).toBe(80);
+      expect(args.data.away_score).toBe(70);
+      expect(args.data.result_status).toBe(SportsResultStatus.W);
       expect(args.data.status_updated_at).toBeInstanceOf(Date);
-      // event_name / start_time are owned by the daily full scrape — never touched here.
       expect(args.data).not.toHaveProperty('event_name');
       expect(args.data).not.toHaveProperty('start_time');
+    });
+  });
+
+  describe('against real Sidearm fixture (May 2026)', () => {
+    const fixturePath = path.join(__dirname, '..', '..', 'test', 'fixtures', 'sidearm-2026-05.json');
+    const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+
+    beforeEach(() => {
+      let firstCall = true;
+      fetchMock.mockImplementation(() => {
+        const body = firstCall ? fixture : [];
+        firstCall = false;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: () => Promise.resolve(body),
+        } as Response);
+      });
+    });
+
+    it('writes only home games, dedupes Sidearm doubles to the FINAL entry, and never writes LIVE', async () => {
+      await service.scrapeAll();
+
+      const calls = prisma.campusEvent.upsert.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+
+      const externalIds = new Set<string>(
+        calls.map(([arg]: [{ where: { external_id: string } }]) => arg.where.external_id),
+      );
+      // Dedupe must pick the FINAL entry (10109) over the SCHEDULED stub (10021).
+      expect(externalIds.has('lbsu-sports-10021')).toBe(false);
+      expect(externalIds.has('lbsu-sports-10109')).toBe(true);
+
+      const statuses = calls.map(
+        ([arg]: [{ create: { status: SportsEventStatus } }]) => arg.create.status,
+      );
+      expect(statuses).toContain(SportsEventStatus.FINAL);
+      // The schema's LIVE value is reserved but never written by the scraper.
+      expect(statuses).not.toContain(SportsEventStatus.LIVE);
     });
   });
 });

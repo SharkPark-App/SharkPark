@@ -19,21 +19,24 @@ const VIEWABILITY_CONFIG: ViewabilityConfig = {
 };
 
 /**
- * Build a single accessibility label for the LIVE/FINAL row so VoiceOver
- * announces "Live, score 16 to 4" rather than reading the pill and the
- * digits as separate, ambiguous tokens.
+ * Build a single accessibility label for the FINAL row so VoiceOver
+ * announces "Final, score 16 to 4, win" rather than reading the pill and
+ * the digits as separate, ambiguous tokens.
+ *
+ * We only render this row for FINAL events — the schema's `LIVE` enum
+ * value is intentionally never written because the Sidearm calendar API
+ * has no in-progress signal.
  */
 function sportsAccessibilityLabel(event: Event): string {
-  const status = event.status === 'LIVE' ? 'Live' : 'Final';
   const home = event.homeScore;
   const away = event.awayScore;
-  if (home == null && away == null) return status;
+  if (home == null && away == null) return 'Final';
   const score = `score ${home ?? 'unknown'} to ${away ?? 'unknown'}`;
-  if (event.status === 'FINAL' && event.resultStatus) {
+  if (event.resultStatus) {
     const result = event.resultStatus === 'W' ? 'win' : event.resultStatus === 'L' ? 'loss' : 'tie';
-    return `${status}, ${score}, ${result}`;
+    return `Final, ${score}, ${result}`;
   }
-  return `${status}, ${score}`;
+  return `Final, ${score}`;
 }
 
 export function EventBanner({ events }: EventBannerProps) {
@@ -95,25 +98,18 @@ export function EventBanner({ events }: EventBannerProps) {
               <Text style={styles.name} numberOfLines={2}>
                 {event.name}
               </Text>
-              {(event.status === 'LIVE' || event.status === 'FINAL') && (
+              {event.status === 'FINAL' && (
                 <View style={styles.sportsRow} accessible={true} accessibilityLabel={sportsAccessibilityLabel(event)}>
                   <View
-                    style={[
-                      styles.statusPill,
-                      event.status === 'LIVE' ? styles.statusPillLive : styles.statusPillFinal,
-                    ]}
+                    style={[styles.statusPill, styles.statusPillFinal]}
                     importantForAccessibility="no-hide-descendants"
                   >
-                    <Text style={styles.statusPillText}>
-                      {event.status === 'LIVE' ? 'LIVE' : 'FINAL'}
-                    </Text>
+                    <Text style={styles.statusPillText}>FINAL</Text>
                   </View>
                   {(event.homeScore != null || event.awayScore != null) && (
                     <Text style={styles.scoreText} importantForAccessibility="no-hide-descendants">
                       {`${event.homeScore ?? '–'}–${event.awayScore ?? '–'}`}
-                      {event.status === 'FINAL' && event.resultStatus
-                        ? ` (${event.resultStatus})`
-                        : ''}
+                      {event.resultStatus ? ` (${event.resultStatus})` : ''}
                     </Text>
                   )}
                 </View>
@@ -228,9 +224,6 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
     borderRadius: SPACING.xs,
-  },
-  statusPillLive: {
-    backgroundColor: colors.error,
   },
   statusPillFinal: {
     backgroundColor: colors.warningBorder,

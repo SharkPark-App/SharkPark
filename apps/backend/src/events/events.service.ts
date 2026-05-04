@@ -19,8 +19,10 @@ export interface LotEventsSummary {
    *
    * `status` / `home_score` / `away_score` / `result_status` are populated
    * only for sports events ingested by the Sidearm scraper — they are `null`
-   * for CampusLabs (academic / club) events. The mobile UI shows a LIVE
-   * badge + scoreline when `status === 'LIVE'` or `'FINAL'`.
+   * for CampusLabs (academic / club) events. The mobile UI shows a FINAL
+   * pill + scoreline when `status === 'FINAL'`. The `LIVE` enum value
+   * exists in the schema but is never written: the Sidearm calendar API
+   * has no in-progress signal.
    */
   next_event: {
     id: string;

@@ -238,4 +238,54 @@ describe('polygonToPolygonMeters', () => {
   it('returns +Infinity when degenerate polygons have no fallback centroids', () => {
     expect(polygonToPolygonMeters([], [])).toBe(Number.POSITIVE_INFINITY);
   });
+
+  it('returns +Infinity when only side A is valid but B has no fallback centroid', () => {
+    const lotA = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.001 },
+      { lat: 0.001, lng: 0.001 },
+      { lat: 0.001, lng: 0 },
+    ];
+    expect(polygonToPolygonMeters(lotA, [])).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('returns +Infinity when only side B is valid but A has no fallback centroid', () => {
+    const lotB = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.001 },
+      { lat: 0.001, lng: 0.001 },
+      { lat: 0.001, lng: 0 },
+    ];
+    expect(polygonToPolygonMeters([], lotB)).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe('pointToPolygonMeters degenerate inputs', () => {
+  it('returns +Infinity for an empty polygon', () => {
+    expect(pointToPolygonMeters({ lat: 0, lng: 0 }, [])).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('falls back to haversine against the only vertex when polygon has < 3 vertices', () => {
+    const point = { lat: 0, lng: 0 };
+    const vertex = { lat: 0, lng: 0.001 };
+    const d = pointToPolygonMeters(point, [vertex]);
+    expect(d).toBeCloseTo(haversineMeters(point, vertex), 6);
+  });
+
+  it('handles a polygon with two consecutive identical vertices (zero-length segment)', () => {
+    // Triggers the lenSq===0 branch in the internal pointToSegmentMeters helper:
+    // when two adjacent polygon vertices are identical, that "edge" collapses
+    // to a point and we must fall back to point-to-point distance instead of
+    // dividing by zero.
+    const point = { lat: 0, lng: 0 };
+    const polygon = [
+      { lat: 0.001, lng: 0.001 },
+      { lat: 0.001, lng: 0.001 }, // duplicate of previous
+      { lat: 0.001, lng: 0.002 },
+      { lat: 0.002, lng: 0.001 },
+    ];
+    const d = pointToPolygonMeters(point, polygon);
+    expect(Number.isFinite(d)).toBe(true);
+    expect(d).toBeGreaterThan(0);
+  });
 });

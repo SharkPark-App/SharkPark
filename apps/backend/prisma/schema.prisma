@@ -543,16 +543,19 @@ enum NotificationType {
   EVENTS             @map("events")
 }
 
-/// Lifecycle of a sports CampusEvent. Mapped from Sidearm's `gameState`
-/// integer at scrape time:
-///   0 → SCHEDULED      (pre-game, not yet started)
-///   1 → LIVE           (in progress; score columns populated)
-///   2-7 → LIVE         (Sidearm uses several intermediate "in progress"
-///                       codes for halftime, between innings, etc.; we
-///                       collapse them all to LIVE)
-///   8 → FINAL          (game completed; result_status populated W/L/T)
-///   POSTPONED → POSTPONED (from `gameStateDisplay`, not gameState)
-///   CANCELLED → CANCELLED (from `gameStateDisplay` or `noplayText`)
+/// Lifecycle of a sports CampusEvent. Mapped from Sidearm's top-level
+/// `status` flag and `result` payload at scrape time:
+///   "A" + no result            → SCHEDULED
+///   "O" + result.teamScore set → FINAL (result_status populated W/L/T)
+///   gameStateDisplay POSTPONED → POSTPONED
+///   gameStateDisplay CANCELLED → CANCELLED
+///   noplayText populated       → CANCELLED
+///
+/// LIVE is reserved but intentionally NEVER written: the Sidearm calendar
+/// API has no in-progress signal (`gameCenterEnabled` is always false and
+/// no third top-level status value exists, verified across April + May
+/// 2026 LBSU games). Per-sport live stats live on third-party sites and
+/// are out of scope for the calendar scraper.
 enum SportsEventStatus {
   SCHEDULED
   LIVE

@@ -3,10 +3,12 @@
  * club events surfaced by the CampusLabs scraper.
  *
  * - SCHEDULED: pre-game, start_time in the future (or just past with no signal)
- * - LIVE: in progress \u2014 home_score / away_score are populated and updated by
- *   the every-2-minute live cron
+ * - LIVE: reserved enum value but **never written** by the scraper. The
+ *   Sidearm calendar API has no in-progress signal, so we never flicker
+ *   through LIVE; events go SCHEDULED → FINAL when the every-30-min refresh
+ *   cron picks up a populated `result` payload.
  * - FINAL: completed, scores frozen, result_status (W/L/T) set
- * - POSTPONED: rescheduled \u2014 start_time may still update later
+ * - POSTPONED: rescheduled — start_time may still update later
  * - CANCELLED: not happening
  */
 export type SportsEventStatus =

@@ -54,7 +54,11 @@ interface RawSidearmResult {
   recap?: { url?: string | null } | null;
   /** "W" / "L" / "T" once the game is FINAL, "N" pre-game. */
   status?: 'W' | 'L' | 'T' | 'N' | null;
-  /** Stringified ints; "" pre-game. teamScore = LBSU, opponentScore = visitor. */
+  /**
+   * Stringified ints; populated only after the game is over. teamScore is
+   * always Long Beach State, opponentScore is always the visitor —
+   * regardless of whether the game was at home or away.
+   */
   teamScore?: string | null;
   opponentScore?: string | null;
 }
@@ -70,15 +74,20 @@ interface RawSidearmEvent {
   /** "" normally, populated when cancelled / postponed. */
   noplayText: string;
   /**
-   * Integer state code. Observed values:
-   *   0  = pre-game (SCHEDULED)
-   *   1-7 = in-progress (LIVE — covers halftime, between innings, etc.)
-   *   8  = GAMECOMPLETE (FINAL)
-   * We collapse 1-7 to LIVE in {@link mapStatus}.
+   * Top-level lifecycle flag. Verified against real April + May 2026 data:
+   *   "A" = Active/upcoming. `result` is always null.
+   *   "O" = Over (game complete). `result` is always populated.
+   * The calendar API does NOT expose a third "in progress" value, so we
+   * intentionally do not model a LIVE state for sports events.
    */
-  gameState: number;
-  /** "SCHEDULED" / "GAMECOMPLETE" / "CANCELLED" / "POSTPONED". */
-  gameStateDisplay: string;
+  status: 'A' | 'O';
+  /**
+   * Display string for `status`. Observed values: "SCHEDULED",
+   * "GAMECOMPLETE", "CANCELLED", "POSTPONED". We use this for CANCELLED /
+   * POSTPONED detection only — the W/L vs SCHEDULED/FINAL split is driven
+   * by `status` + `result` which are more reliable across sports.
+   */
+  gameStateDisplay?: string;
   /** True for conference games — surfaced in description. */
   conference: boolean;
   sport: RawSidearmSport;
@@ -113,18 +122,12 @@ const DESCRIPTION_MAX_CHARS = 115;
 const DEFAULT_GAME_DURATION_HOURS = 3;
 
 /**
- * How far before kickoff `scrapeLive` will start polling for live updates.
- * 15 min is enough to catch the SCHEDULED → LIVE transition that Sidearm
- * usually publishes once warmups end.
+ * How far back `refreshFinalScores` looks for SCHEDULED games whose results
+ * may have been published since the last daily scrape. 36h is generous
+ * enough to cover late-night games whose box scores aren't posted until the
+ * following morning.
  */
-const LIVE_LOOKAHEAD_BEFORE_MINUTES = 15;
-
-/**
- * How long after `end_time` (which is start + DEFAULT_GAME_DURATION_HOURS)
- * we keep polling. Sports routinely run long (extra innings, OT), so we
- * give a generous tail before letting the row drop out of the live window.
- */
-const LIVE_LOOKBACK_AFTER_MINUTES = 60;
+const REFRESH_LOOKBACK_HOURS = 36;
 
 interface ScrapedEvent {
   external_id: string;
@@ -207,49 +210,59 @@ function parseNaiveIsoInZone(naiveIso: string, timeZone: string): Date | null {
 /**
  * Map a raw Sidearm event to its canonical {@link SportsEventStatus}.
  *
- * Precedence (most specific first):
- *   1. `noplayText` populated  → CANCELLED (school-marked, e.g. "Cancelled — weather")
- *   2. `gameStateDisplay`      → POSTPONED / CANCELLED (string discriminator)
- *   3. `gameStateDisplay`      → GAMECOMPLETE → FINAL
- *   4. `gameState` integer     → 0 = SCHEDULED, anything else (1-7) = LIVE
+ * Verified against real Long Beach State calendar payloads (April + May
+ * 2026) covering 42 games across 7 sports. Precedence (most specific first):
+ *   1. `noplayText` populated     → CANCELLED (school-marked, e.g. "Cancelled — weather")
+ *   2. `gameStateDisplay` POSTPONED / CANCELLED → matching enum
+ *   3. `status === "O"` AND `result.teamScore` set → FINAL
+ *   4. otherwise (`status === "A"` or unrecognized) → SCHEDULED
  *
- * Sidearm uses several intermediate `gameState` codes for halftime, between
- * innings, etc. — we deliberately collapse all non-zero pre-FINAL states to
- * LIVE because the UI only needs a single "in progress" indicator.
+ * IMPORTANT: there is no LIVE state. The Sidearm calendar API never
+ * exposes an "in progress" indicator (verified across all 42 games:
+ * `gameCenterEnabled` is always false, no third top-level status value).
+ * Per-sport live stats live on third-party sites (e.g. thefosh.net for
+ * water polo) and are out of scope — the {@link SportsEventStatus.LIVE}
+ * enum value exists in the schema but is intentionally never written.
  */
 function mapStatus(e: RawSidearmEvent): SportsEventStatus {
   if (e.noplayText) return SportsEventStatus.CANCELLED;
   if (e.gameStateDisplay === 'POSTPONED') return SportsEventStatus.POSTPONED;
   if (e.gameStateDisplay === 'CANCELLED') return SportsEventStatus.CANCELLED;
-  if (e.gameStateDisplay === 'GAMECOMPLETE') return SportsEventStatus.FINAL;
-  if (e.gameState === 0) return SportsEventStatus.SCHEDULED;
-  return SportsEventStatus.LIVE;
+  if (e.status === 'O' && e.result?.teamScore != null && e.result.teamScore !== '') {
+    return SportsEventStatus.FINAL;
+  }
+  return SportsEventStatus.SCHEDULED;
 }
 
 /**
- * Parse `result.teamScore` / `result.opponentScore` (strings, blank when no
- * score yet) into ints, plus the W/L/T result status when the game is FINAL.
+ * Parse `result.teamScore` / `result.opponentScore` into ints, mapping them
+ * onto home_score / away_score using `locationIndicator`.
  *
- * Only populates scores for LIVE / FINAL — pre-game scores are always blank
- * but Sidearm has been seen returning stale strings ("0"/"0") for not-yet-
- * started events; gating on status keeps the DB clean.
+ * `teamScore` is ALWAYS Long Beach State and `opponentScore` is ALWAYS the
+ * visitor in Sidearm's data model — regardless of where the game was played.
+ * Since we only ingest home games (`locationIndicator === 'H'`), home_score
+ * = teamScore and away_score = opponentScore. We still branch on the
+ * indicator defensively in case a future change starts ingesting away games.
+ *
+ * Only populated for FINAL — SCHEDULED games never have scores in the API,
+ * and we don't model LIVE.
  */
 function mapScores(
   e: RawSidearmEvent,
   status: SportsEventStatus,
 ): { home_score: number | null; away_score: number | null; result_status: SportsResultStatus | null } {
-  if (status !== SportsEventStatus.LIVE && status !== SportsEventStatus.FINAL) {
+  if (status !== SportsEventStatus.FINAL) {
     return { home_score: null, away_score: null, result_status: null };
   }
-  const home = parseScore(e.result?.teamScore);
-  const away = parseScore(e.result?.opponentScore);
+  const team = parseScore(e.result?.teamScore);
+  const opp = parseScore(e.result?.opponentScore);
+  const home = e.locationIndicator === 'A' ? opp : team;
+  const away = e.locationIndicator === 'A' ? team : opp;
   let resultStatus: SportsResultStatus | null = null;
-  if (status === SportsEventStatus.FINAL) {
-    const raw = e.result?.status;
-    if (raw === 'W') resultStatus = SportsResultStatus.W;
-    else if (raw === 'L') resultStatus = SportsResultStatus.L;
-    else if (raw === 'T') resultStatus = SportsResultStatus.T;
-  }
+  const raw = e.result?.status;
+  if (raw === 'W') resultStatus = SportsResultStatus.W;
+  else if (raw === 'L') resultStatus = SportsResultStatus.L;
+  else if (raw === 'T') resultStatus = SportsResultStatus.T;
   return { home_score: home, away_score: away, result_status: resultStatus };
 }
 
@@ -293,40 +306,42 @@ export class SportsEventsScraperService {
   }
 
   /**
-   * Live-window refresh: only updates status/score for sports events that
-   * are currently in (or about to enter) their live window.
+   * Refresh status / scores for recently-played games whose results may have
+   * been published since the last daily scrape.
    *
-   * Cheap by design — first runs a DB probe; if no candidate rows are found,
-   * the cron exits without making any external API calls. This lets us run
-   * it every couple of minutes during the day without abusing Sidearm or
-   * burning Fly cron VM budget.
+   * Cheap by design — first runs a DB probe; if no SCHEDULED games exist
+   * within the lookback window the cron exits without making any external
+   * API calls. This lets us run it every 30 min without abusing Sidearm or
+   * burning Fly cron VM budget on quiet days.
    *
    * Candidate window:
-   *   start_time <= now + {@link LIVE_LOOKAHEAD_BEFORE_MINUTES}
-   *   end_time   >= now - {@link LIVE_LOOKBACK_AFTER_MINUTES}
-   *   status     IN (SCHEDULED, LIVE)
+   *   start_time <= now
+   *   start_time >= now - {@link REFRESH_LOOKBACK_HOURS}
+   *   status     === SCHEDULED
    *
-   * For each affected school, only the current month is fetched (live games
-   * are by definition today). We then update *only* status/score columns —
-   * never event_name/start_time/etc, which the daily full scrape owns.
+   * For each affected school we re-fetch only the current month and update
+   * the status/score columns when Sidearm flips them from "A" → "O". The
+   * daily full scrape (`scrapeAll`) still owns event_name/start_time/etc.
+   *
+   * Note: this does NOT model a LIVE state. The Sidearm calendar API has no
+   * in-progress signal — we only flip SCHEDULED → FINAL when the box score
+   * is published.
    */
-  async scrapeLive(): Promise<void> {
+  async refreshFinalScores(): Promise<void> {
     const now = new Date();
-    const candidateStartCutoff = new Date(now.getTime() + LIVE_LOOKAHEAD_BEFORE_MINUTES * 60 * 1000);
-    const candidateEndCutoff = new Date(now.getTime() - LIVE_LOOKBACK_AFTER_MINUTES * 60 * 1000);
+    const lookbackCutoff = new Date(now.getTime() - REFRESH_LOOKBACK_HOURS * 60 * 60 * 1000);
 
     const candidates = await this.prisma.campusEvent.findMany({
       where: {
         external_id: { startsWith: EXTERNAL_ID_PREFIX },
-        status: { in: [SportsEventStatus.SCHEDULED, SportsEventStatus.LIVE] },
-        start_time: { lte: candidateStartCutoff },
-        end_time: { gte: candidateEndCutoff },
+        status: SportsEventStatus.SCHEDULED,
+        start_time: { lte: now, gte: lookbackCutoff },
       },
       select: { external_id: true, school_id: true },
     });
 
     if (candidates.length === 0) {
-      this.logger.debug('scrapeLive: no candidate events in live window — skipping API call');
+      this.logger.debug('refreshFinalScores: no SCHEDULED events in lookback window — skipping API call');
       return;
     }
 
@@ -361,10 +376,12 @@ export class SportsEventsScraperService {
       const raw = await this.fetchCurrentMonth(config.sidearmSubdomain);
       const scraped = this.transform(raw, buildingIdByName, config.sidearmSubdomain, school.timezone);
 
-      // Only touch rows we already know are in the live window — avoids
-      // accidentally re-asserting status on a far-future game whose Sidearm
-      // gameState briefly flickered.
-      const updates = scraped.filter(s => externalIds.has(s.external_id));
+      // Only touch rows we already know are in the candidate window, and
+      // only when Sidearm has actually flipped them to FINAL — avoids
+      // re-asserting status on an unrelated row.
+      const updates = scraped.filter(
+        s => externalIds.has(s.external_id) && s.status === SportsEventStatus.FINAL,
+      );
       await Promise.all(
         updates.map(event =>
           this.prisma.campusEvent.update({
@@ -382,7 +399,7 @@ export class SportsEventsScraperService {
       updated += updates.length;
     }
 
-    this.logger.log(`scrapeLive: refreshed ${updated} of ${candidates.length} candidate event(s)`);
+    this.logger.log(`refreshFinalScores: updated ${updated} of ${candidates.length} candidate event(s) to FINAL`);
   }
 
   private async scrapeSchool(
@@ -475,9 +492,11 @@ export class SportsEventsScraperService {
 
     // Sidearm sometimes lists the same baseball series twice under different
     // ids (e.g. once on the team calendar and once on a conference calendar).
-    // We saw 2026-05-01 baseball returned as both id=10021 and id=10109 with
-    // identical date/time/opponent. Dedupe on (building, start, sport) and
-    // keep the lowest id so the external_id stays stable across scrapes.
+    // We saw 2026-05-01 baseball returned as both id=10021 (status "A", no
+    // result) and id=10109 (status "O", with result) for an already-played
+    // game. Dedupe on (building, start, sport) and prefer the entry with a
+    // result — falling back to the lowest id only when both entries are
+    // unplayed, so the external_id stays stable across scrapes.
     const dedup = new Map<string, ScrapedEvent & { _rawId: number }>();
 
     for (const e of raw) {
@@ -535,7 +554,14 @@ export class SportsEventsScraperService {
 
       const dedupKey = `${buildingId}|${start.getTime()}|${e.sport.shortname}`;
       const existing = dedup.get(dedupKey);
-      if (existing && existing._rawId <= e.id) continue;
+      if (existing) {
+        const existingHasResult = existing.status === SportsEventStatus.FINAL;
+        const incomingHasResult = status === SportsEventStatus.FINAL;
+        // Prefer the FINAL entry over the SCHEDULED stub. When both have
+        // (or neither has) results, fall back to the lower id for stability.
+        if (existingHasResult && !incomingHasResult) continue;
+        if (existingHasResult === incomingHasResult && existing._rawId <= e.id) continue;
+      }
 
       dedup.set(dedupKey, {
         _rawId: e.id,
