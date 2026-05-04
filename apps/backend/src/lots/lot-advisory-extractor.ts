@@ -5,7 +5,7 @@
  * No IO, no Prisma — accepts a list of concept3d locations + a list of lot
  * polygons and returns AdvisorySeed[] suitable for either the dev-time
  * generator (prisma/scripts/extract-lot-advisories.ts) or the weekly
- * refresh cron (src/scripts/refresh-lot-advisories.ts).
+ * refresh cron (src/scheduler/jobs/refresh-lot-advisories.job.ts).
  *
  * Sources (concept3d catIds → severity):
  *   - 45989  Road Closures                                  → CLOSURE

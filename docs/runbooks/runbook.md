@@ -59,7 +59,7 @@ flyctl ssh console -a sharkpark-api -C "node -e 'console.log(process.env.SENTRY_
                             ▼
               Fly.io  (sharkpark-api, region=lax)
               ├─ app process     (HTTP, autostop min=0)
-              └─ cron process    (supercronic, always-on 1x@512MB)
+              └─ cron process    (NestJS scheduler, always-on 1x@512MB)
                             │
                             ▼
               Neon Postgres (us-west-2)

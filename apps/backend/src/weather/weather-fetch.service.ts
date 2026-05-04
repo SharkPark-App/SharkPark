@@ -22,7 +22,7 @@ import {
  *  - The `fetch-weather-forecast` cron uses the same endpoint, so the data
  *    shapes are identical — fewer adapters to maintain.
  *
- * Cron: every 30 min (see `apps/backend/cron/crontab`).
+ * Cron: every 30 min (see `apps/backend/src/scheduler/cron-monitors.ts`).
  */
 @Injectable()
 export class WeatherFetchService {

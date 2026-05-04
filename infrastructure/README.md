@@ -502,7 +502,7 @@ WHERE l.school_id = 'csulb';
 | Table | Retention | Strategy |
 |-------|-----------|----------|
 | `lots`, `users`, `schools` | Permanent | Core data |
-| `occupancy_events` | 30 days | Daily cron `DELETE WHERE timestamp < NOW() - INTERVAL '30 days'` (`apps/backend/src/scripts/prune-old-data.ts`, override with `RETENTION_DAYS` env). Honors README privacy promise; snapshots already carry the aggregated history needed for ML. |
+| `occupancy_events` | 30 days | Daily cron `DELETE WHERE timestamp < NOW() - INTERVAL '30 days'` (`apps/backend/src/scheduler/jobs/prune-old-data.job.ts`, override with `RETENTION_DAYS` env). Honors README privacy promise; snapshots already carry the aggregated history needed for ML. |
 | `occupancy_snapshots` | Permanent | Primary ML training source (archival to S3 optional at Tier 2) |
 | `weather` | Permanent | Retained as candidate ML feature history. Live inference reads only the latest row (LIMIT 1) gated by `WEATHER_MAX_AGE_HOURS`, but historical observations are kept for future weather-aware model training. |
 | `weather_forecasts` | Self-pruning | `fetch-weather-forecast` cron deletes rows where `target_time < now()` before each upsert pass. |
