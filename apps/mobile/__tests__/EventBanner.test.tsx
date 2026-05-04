@@ -131,6 +131,44 @@ describe('EventBanner', () => {
     expect(hasText(texts, '2:00 PM')).toBe(true);
     expect(hasText(texts, '\u2013')).toBe(false);
   });
+
+  // The Sidearm calendar API exposes no in-progress signal, so we never
+  // render a LIVE pill — the SportsEventStatus.LIVE enum value exists in
+  // the schema but is intentionally never written by the scraper. These
+  // tests cover the FINAL flip and the SCHEDULED / non-sports no-op cases.
+  describe('final sports score', () => {
+    it('renders a FINAL pill with the result indicator when status is FINAL', () => {
+      const tree = render([
+        makeEvent({
+          status: 'FINAL',
+          homeScore: 88,
+          awayScore: 75,
+          resultStatus: 'W',
+        }),
+      ]);
+      const texts = collectTexts(tree.root);
+      expect(hasText(texts, 'FINAL')).toBe(true);
+      expect(hasText(texts, '88\u201375 (W)')).toBe(true);
+    });
+
+    it('does not render the sports row for SCHEDULED events', () => {
+      const tree = render([
+        makeEvent({
+          status: 'SCHEDULED',
+          homeScore: null,
+          awayScore: null,
+        }),
+      ]);
+      const texts = collectTexts(tree.root);
+      expect(hasText(texts, 'FINAL')).toBe(false);
+    });
+
+    it('does not render the sports row when status is null (non-sports event)', () => {
+      const tree = render([makeEvent({ status: null })]);
+      const texts = collectTexts(tree.root);
+      expect(hasText(texts, 'FINAL')).toBe(false);
+    });
+  });
 });
 
 describe('EventBanner -- accessibility', () => {

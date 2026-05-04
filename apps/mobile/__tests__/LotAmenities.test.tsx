@@ -248,10 +248,11 @@ describe('LotAmenities', () => {
     expect(texts).toContain('6 spaces');
   });
 
-  it('does not render motorcycle row when 0', () => {
+  it('renders motorcycle row as None when 0', () => {
     const tree = renderLot({ motorcycle_spaces: 0 });
     const texts = collectTexts(tree.root);
-    expect(texts).not.toContain('Motorcycle');
+    expect(texts).toContain('Motorcycle');
+    expect(texts).toContain('None');
   });
 
   it('renders short-term spaces when > 0', () => {
@@ -261,10 +262,11 @@ describe('LotAmenities', () => {
     expect(texts).toContain('19 spaces');
   });
 
-  it('does not render short-term row when 0', () => {
+  it('renders short-term row as None when 0', () => {
     const tree = renderLot({ short_term_parking_spaces: 0 });
     const texts = collectTexts(tree.root);
-    expect(texts).not.toContain('Short-term');
+    expect(texts).toContain('Short-term');
+    expect(texts).toContain('None');
   });
 
   it('renders low-emission spaces when > 0', () => {
@@ -274,10 +276,11 @@ describe('LotAmenities', () => {
     expect(texts).toContain('32 spaces');
   });
 
-  it('does not render low-emission row when 0', () => {
+  it('renders low-emission row as None when 0', () => {
     const tree = renderLot({ low_emission_spaces: 0 });
     const texts = collectTexts(tree.root);
-    expect(texts).not.toContain('Low-emission');
+    expect(texts).toContain('Low-emission');
+    expect(texts).toContain('None');
   });
 
   it('renders pay stations when > 0', () => {
@@ -287,10 +290,11 @@ describe('LotAmenities', () => {
     expect(texts).toContain('3 on-site');
   });
 
-  it('does not render pay-stations row when 0', () => {
+  it('renders pay-stations row as None when 0', () => {
     const tree = renderLot({ pay_stations: 0 });
     const texts = collectTexts(tree.root);
-    expect(texts).not.toContain('Pay stations');
+    expect(texts).toContain('Pay stations');
+    expect(texts).toContain('None');
   });
 
   it('renders all safety chips', () => {

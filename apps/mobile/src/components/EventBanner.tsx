@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, TouchableOpacity, Linking, useWindowDimensions, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, TouchableOpacity, Linking, useWindowDimensions, View } from 'react-native';
 import { Text } from './CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
@@ -17,6 +17,27 @@ const HORIZONTAL_PADDING = SPACING.lg;
 const VIEWABILITY_CONFIG: ViewabilityConfig = {
   itemVisiblePercentThreshold: 50,
 };
+
+/**
+ * Build a single accessibility label for the FINAL row so VoiceOver
+ * announces "Final, score 16 to 4, win" rather than reading the pill and
+ * the digits as separate, ambiguous tokens.
+ *
+ * We only render this row for FINAL events — the schema's `LIVE` enum
+ * value is intentionally never written because the Sidearm calendar API
+ * has no in-progress signal.
+ */
+function sportsAccessibilityLabel(event: Event): string {
+  const home = event.homeScore;
+  const away = event.awayScore;
+  if (home == null && away == null) return 'Final';
+  const score = `score ${home ?? 'unknown'} to ${away ?? 'unknown'}`;
+  if (event.resultStatus) {
+    const result = event.resultStatus === 'W' ? 'win' : event.resultStatus === 'L' ? 'loss' : 'tie';
+    return `Final, ${score}, ${result}`;
+  }
+  return `Final, ${score}`;
+}
 
 export function EventBanner({ events }: EventBannerProps) {
   const { colors } = useTheme();
@@ -41,8 +62,41 @@ export function EventBanner({ events }: EventBannerProps) {
 
   if (events.length === 0) return null;
 
+  const headerLabel =
+    events.length === 1
+      ? 'Nearby event'
+      : `Nearby events (${events.length})`;
+
   return (
     <View style={styles.outer}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() =>
+            Alert.alert(
+              'Nearby events',
+              'These events are happening near this parking lot and may impact availability.',
+            )
+          }
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="About nearby events"
+          accessibilityHint="Explains why these events are shown"
+          style={styles.headerIcon}
+        >
+          <Icon
+            name="information-circle-outline"
+            size={TYPOGRAPHY.fontSize.lg}
+            color={colors.warningText}
+          />
+        </TouchableOpacity>
+        <Text
+          style={styles.headerTitle}
+          accessibilityRole="header"
+          accessibilityLabel={headerLabel}
+        >
+          {headerLabel}
+        </Text>
+      </View>
       <FlatList
         data={events}
         keyExtractor={item => item.id}
@@ -77,6 +131,22 @@ export function EventBanner({ events }: EventBannerProps) {
               <Text style={styles.name} numberOfLines={2}>
                 {event.name}
               </Text>
+              {event.status === 'FINAL' && (
+                <View style={styles.sportsRow} accessible={true} accessibilityLabel={sportsAccessibilityLabel(event)}>
+                  <View
+                    style={[styles.statusPill, styles.statusPillFinal]}
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    <Text style={styles.statusPillText}>FINAL</Text>
+                  </View>
+                  {(event.homeScore != null || event.awayScore != null) && (
+                    <Text style={styles.scoreText} importantForAccessibility="no-hide-descendants">
+                      {`${event.homeScore ?? '–'}–${event.awayScore ?? '–'}`}
+                      {event.resultStatus ? ` (${event.resultStatus})` : ''}
+                    </Text>
+                  )}
+                </View>
+              )}
               <View style={styles.metaRow} accessible={false} importantForAccessibility="no-hide-descendants">
                 <Icon
                   name="time-outline"
@@ -133,6 +203,23 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.sm,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  headerIcon: {
+    padding: 2,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: colors.warningText,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
   card: {
     backgroundColor: colors.warningLight,
     borderLeftWidth: 4,
@@ -176,6 +263,31 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.warningTextSecondary,
     marginTop: SPACING.xs,
     fontStyle: 'italic',
+  },
+  sportsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+    gap: SPACING.sm,
+  },
+  statusPill: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: SPACING.xs,
+  },
+  statusPillFinal: {
+    backgroundColor: colors.warningBorder,
+  },
+  statusPillText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: '#ffffff',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    letterSpacing: 0.5,
+  },
+  scoreText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: colors.warningText,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
   chevron: {
     alignSelf: 'center',

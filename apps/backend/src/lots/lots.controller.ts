@@ -111,32 +111,6 @@ export class LotsController {
     };
   }
 
-  /**
-   * Bulk per-lot upcoming-event counts for the next `within_hours` (default
-   * 2). Drives the event badge on the mobile map screen — one round trip
-   * for all 28 lots instead of N per-lot fetches.
-   *
-   * Public + shared-cacheable: response does not vary by tier, so the edge
-   * can serve hot reads. Scrapers refresh every ~30 min so a 1–2 minute
-   * cache is comfortably stale-tolerant.
-   */
-  @Get('events-summary')
-  @HttpCode(HttpStatus.OK)
-  @Header('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300')
-  async getEventsSummary(
-    @Query('within_hours', new ParseIntPipe({ optional: true })) withinHours?: number,
-  ) {
-    const hours = parseWithinHours(withinHours);
-    const summary = await this.eventsService.getEventsSummary(hours);
-
-    return {
-      success: true,
-      within_hours: hours,
-      count: summary.length,
-      data: summary,
-    };
-  }
-
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   // See note on `getAllLots` for why this is `private` rather than `public`.

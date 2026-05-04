@@ -34,6 +34,11 @@ interface UseLotDataReturn {
    * `loading` false so the screen does NOT unmount its rendered content —
    * see `refreshing` for an indicator that's safe to show inline. */
   loading: boolean;
+  /** True only on the very first forecast fetch (when `forecast` is still
+   * empty and we haven't successfully landed a response yet). Use this to
+   * gate a placeholder spinner inside the chart card. Subsequent 15-min
+   * polls keep this false so the chart doesn't flash on every refresh. */
+  forecastLoading: boolean;
   /** True while a background refetch is in flight (poll tick, focus return,
    * AppState 'active', contributor state change). Use this for a small inline
    * indicator ("Updating...") instead of the full-screen spinner. */
@@ -62,6 +67,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
     accuracy: number;
   }>>([]);
   const [loading, setLoading] = useState(true);
+  const [forecastLoading, setForecastLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -181,16 +187,21 @@ export function useLotData(lotId: string): UseLotDataReturn {
       const forecastData = await lotsApi.getForecast(lotData);
       if (!isLatest()) return;
       setForecast(forecastData);
+      setForecastLoading(false);
     } catch (err) {
       if (!isLatest()) return;
       if (err instanceof BackgroundLocationRequiredError) {
         setForecast([]);
+        // Permission-denied is a terminal first-load state — stop the spinner
+        // so the LockedForecastCard renders immediately instead of hanging.
+        setForecastLoading(false);
         return;
       }
       // Forecast errors are non-fatal — leave the previous bins in place
       // and let the next poll retry. Don't surface to the screen-level
       // error banner; that's reserved for lot-fetch failures.
       console.error('Error fetching forecast:', err);
+      setForecastLoading(false);
     }
   }, [lotId]);
 
@@ -212,6 +223,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
     setForecast([]);
     setHistory([]);
     setLastUpdatedAt(null);
+    setForecastLoading(true);
   }, [lotId]);
 
   const refreshHistory = useCallback(async (date?: string) => {
@@ -304,6 +316,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
     history,
     forecast,
     loading,
+    forecastLoading,
     refreshing,
     lastUpdatedAt,
     error,

@@ -10,7 +10,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
-import { getOccupancyColor } from '../utils/parkingUtils';
+import { getOccupancyColorGradient, getReadableTextColor } from '../utils/parkingUtils';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
@@ -23,7 +23,6 @@ import type { MapStackParamList } from '../types/navigation';
 import useFavorites from '../hooks/useFavorites';
 import { useTransitData } from '../hooks/useTransitData';
 import { useStopETAs } from '../hooks/useStopETAs';
-import { useEventsSummary } from '../hooks/useEventsSummary';
 import { ShuttleMarker } from '../components/Map/ShuttleMarker';
 import { StopModal } from '../components/Modals/StopModal';
 import { ShuttleModal } from '../components/Modals/ShuttleModal';
@@ -37,8 +36,7 @@ const InteractiveLot: React.FC<{
   onPress: (lot: ParkingLotResponse) => void;
   colors: ThemeColors;
   isContributor: boolean;
-  eventCount?: number;
-}> = ({ lot, onPress, colors, isContributor, eventCount = 0 }) => {
+}> = ({ lot, onPress, colors, isContributor }) => {
   // Pin lock state is driven by live OS contributor permission, not by
   // whether the most recent fetch returned null fields. The redactor in
   // lots.ts will eventually null out non-contributor data, but until that
@@ -54,7 +52,11 @@ const InteractiveLot: React.FC<{
     : Math.round(
         (lot.occupancy_rate ?? liveOccupancy / Math.max(lot.capacity, 1)) * 100,
       );
-  const occupancyColor = isRedacted ? colors.neutralPin : getOccupancyColor(pct!);
+  const occupancyColor = isRedacted ? colors.neutralPin : getOccupancyColorGradient(pct!);
+  // White text washes out on the green/yellow end of the gradient; flip
+  // to dark text against light pin colors so the lot label stays legible
+  // at every band. Redacted pins keep white over the neutral fill.
+  const labelColor = isRedacted ? colors.white : getReadableTextColor(occupancyColor);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
 
   return (
@@ -81,35 +83,18 @@ const InteractiveLot: React.FC<{
         accessibilityRole="button"
         accessibilityLabel={
           isRedacted
-            ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.${eventCount > 0 ? ` ${eventCount} ${eventCount === 1 ? 'event' : 'events'} nearby in the next 2 hours.` : ''}`
-            : `${lot.lot_name} parking lot, ${pct} percent full.${eventCount > 0 ? ` ${eventCount} ${eventCount === 1 ? 'event' : 'events'} nearby in the next 2 hours.` : ''}`
+            ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
+            : `${lot.lot_name} parking lot, ${pct} percent full.`
         }
       >
         <Text
-          style={[styles.lotText, { color: colors.white }]}
+          style={[styles.lotText, { color: labelColor }]}
           adjustsFontSizeToFit={true}
           numberOfLines={isSingleWord ? 1 : 3}
           accessible={false}
         >
           {lot.lot_name}
         </Text>
-        {eventCount > 0 && (
-          <View
-            style={[
-              styles.eventBadge,
-              { backgroundColor: COLORS.secondary, borderColor: colors.white },
-            ]}
-            accessible={false}
-          >
-            <Text
-              style={[styles.eventBadgeText, { color: colors.white }]}
-              numberOfLines={1}
-              accessible={false}
-            >
-              {eventCount > 9 ? '9+' : String(eventCount)}
-            </Text>
-          </View>
-        )}
       </View>
     </Marker>
   );
@@ -128,18 +113,25 @@ const FilterButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
   </TouchableOpacity>
 );
 
-// Navigate button component
-const NavigateButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
-  <TouchableOpacity
-    style={[styles.fab, { backgroundColor: COLORS.secondary, shadowColor: COLORS.shadowDark }]}
-    onPress={onPress}
-    activeOpacity={0.8}
-    accessibilityRole="button"
-    accessibilityLabel="View favorites and recommendations"
-  >
-    <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} accessible={false} />
-  </TouchableOpacity>
-);
+// Favorites button component (opens favorites + recommendations sheet).
+// In dark mode the default slate (COLORS.secondary = #374151) blends into
+// the dark surface, so lift to slate-300 with a slate-900 glyph to keep the
+// CTA legible. Star glyph signals favorites at a glance.
+const FavoritesButton: React.FC<{ onPress: () => void; isDark: boolean }> = ({ onPress, isDark }) => {
+  const bg = isDark ? '#94a3b8' : COLORS.secondary;
+  const fg = isDark ? '#0f172a' : COLORS.white;
+  return (
+    <TouchableOpacity
+      style={[styles.fab, { backgroundColor: bg, shadowColor: COLORS.shadowDark }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel="View favorites and recommendations"
+    >
+      <Icon name="star" size={TYPOGRAPHY.fontSize.xxl} color={fg} accessible={false} />
+    </TouchableOpacity>
+  );
+};
 
 const MapScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
@@ -148,9 +140,6 @@ const MapScreen: React.FC = () => {
   const { favoriteLots, refreshFavorites } = useFavorites();
   const { lots, bgLocationRequired, clearBgLocationRequired } = useLotsList();
   const { routes, stops, shuttles } = useTransitData();
-  // Bulk per-lot upcoming-event counts (next 2h) for the map badges. One
-  // round trip serves all ~28 markers; refreshes on a timer + foreground.
-  const { byLotId: eventCountByLot } = useEventsSummary(2);
 
   // Live OS contributor state. Drives pin color/lock decisions so a
   // permission toggle flips the map immediately rather than waiting for
@@ -272,21 +261,22 @@ const MapScreen: React.FC = () => {
             // pin color in real time on iOS. Cheap at ~30 markers.
             const liveOcc =
               lot.occupancy_rate ?? lot.estimated_occupancy ?? lot.current_occupancy;
+            // Bucket the gradient key to nearest 5% so we don't churn the
+            // iOS bitmap on every single-percent occupancy nudge from the
+            // 30s poll — the human eye won't catch a sub-5% hue shift.
             const visualKey =
               !isContributor || liveOcc === null
                 ? 'redacted'
                 : Math.round(
-                    (lot.occupancy_rate ?? liveOcc / Math.max(lot.capacity, 1)) * 100,
-                  );
-            const eventCount = eventCountByLot[lot.lot_id] ?? 0;
+                    (lot.occupancy_rate ?? liveOcc / Math.max(lot.capacity, 1)) * 20,
+                  ) * 5;
             return (
               <InteractiveLot
-                key={`${lot.lot_id}:${visualKey}:e${eventCount}`}
+                key={`${lot.lot_id}:${visualKey}`}
                 lot={lot}
                 onPress={handleLotPress}
                 colors={colors}
                 isContributor={isContributor}
-                eventCount={eventCount}
               />
             );
           })}
@@ -346,7 +336,7 @@ const MapScreen: React.FC = () => {
 
       {/* Navigate button FAB - bottom right */}
       <View style={styles.navigateButtonContainer}>
-        <NavigateButton onPress={openRecommendationModal} />
+        <FavoritesButton onPress={openRecommendationModal} isDark={isDark} />
       </View>
 
       {/* Filter Modal */}
@@ -418,24 +408,6 @@ const styles = StyleSheet.create({
   lotText: {
     fontSize: TYPOGRAPHY.fontSize.xxs,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    textAlign: 'center',
-  },
-  eventBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    paddingHorizontal: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-  },
-  eventBadgeText: {
-    fontSize: 10,
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    lineHeight: 12,
     textAlign: 'center',
   },
   stopCircle: {

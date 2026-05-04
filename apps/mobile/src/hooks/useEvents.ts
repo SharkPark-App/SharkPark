@@ -46,6 +46,10 @@ export function useEvents(lotId: string): UseEventsReturn {
           location: e.location,
           description: e.description,
           url: e.event_url,
+          status: e.status ?? null,
+          homeScore: e.home_score ?? null,
+          awayScore: e.away_score ?? null,
+          resultStatus: e.result_status ?? null,
         })),
       );
       hasLoadedOnceRef.current = true;

@@ -99,7 +99,8 @@ describe('EventsService', () => {
 
       const call = prisma.campusEvent.findMany.mock.calls[0][0];
       const start = call.where.start_time.lte as Date;
-      const end = call.where.end_time.gte as Date;
+      const end = (call.where.OR as Array<{ end_time?: { gte?: Date } | null }>)
+        .find(c => c.end_time && 'gte' in c.end_time)!.end_time!.gte as Date;
       const hours = (start.getTime() - end.getTime()) / (60 * 60 * 1000);
       expect(hours).toBeCloseTo(DEFAULT_EVENTS_WINDOW_HOURS, 0);
     });
@@ -114,7 +115,8 @@ describe('EventsService', () => {
 
       const call = prisma.campusEvent.findMany.mock.calls[0][0];
       const start = call.where.start_time.lte as Date;
-      const end = call.where.end_time.gte as Date;
+      const end = (call.where.OR as Array<{ end_time?: { gte?: Date } | null }>)
+        .find(c => c.end_time && 'gte' in c.end_time)!.end_time!.gte as Date;
       const hours = (start.getTime() - end.getTime()) / (60 * 60 * 1000);
       expect(hours).toBeCloseTo(4, 0);
     });
@@ -133,74 +135,6 @@ describe('EventsService', () => {
     });
   });
 
-  describe('getEventsSummary', () => {
-    it('returns one row per lot, dedupes events linked via multiple buildings', async () => {
-      const ev = {
-        id: 'ev-1',
-        event_name: 'Game',
-        location: 'Pyramid',
-        start_time: new Date('2026-05-04T20:00:00Z'),
-        end_time: new Date('2026-05-04T22:00:00Z'),
-      };
-      prisma.lot.findMany.mockResolvedValue([
-        {
-          lot_id: 'G7',
-          lot_buildings: [
-            { building: { campus_events: [ev] } },
-            { building: { campus_events: [ev] } }, // same event via second building
-          ],
-        },
-        {
-          lot_id: 'G10',
-          lot_buildings: [],
-        },
-      ]);
-
-      const result = await service.getEventsSummary(2);
-
-      expect(result).toEqual([
-        { lot_id: 'G7', count: 1, next_event: ev },
-        { lot_id: 'G10', count: 0, next_event: null },
-      ]);
-    });
-
-    it('sorts events across buildings by start_time when picking next_event', async () => {
-      const later = {
-        id: 'ev-late', event_name: 'Late', location: 'X',
-        start_time: new Date('2026-05-04T22:00:00Z'),
-        end_time: new Date('2026-05-04T23:00:00Z'),
-      };
-      const sooner = {
-        id: 'ev-soon', event_name: 'Soon', location: 'Y',
-        start_time: new Date('2026-05-04T19:00:00Z'),
-        end_time: new Date('2026-05-04T20:00:00Z'),
-      };
-      prisma.lot.findMany.mockResolvedValue([
-        {
-          lot_id: 'G7',
-          lot_buildings: [
-            { building: { campus_events: [later] } },
-            { building: { campus_events: [sooner] } },
-          ],
-        },
-      ]);
-
-      const result = await service.getEventsSummary(24);
-      expect(result[0].count).toBe(2);
-      expect(result[0].next_event).toEqual(sooner);
-    });
-
-    it('rejects out-of-range within_hours', async () => {
-      await expect(service.getEventsSummary(0)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      await expect(
-        service.getEventsSummary(MAX_EVENTS_WINDOW_HOURS + 1),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.lot.findMany).not.toHaveBeenCalled();
-    });
-  });
-
   describe('pruneOldEvents', () => {
     it('deletes events whose end_time is older than the retention window', async () => {
       prisma.campusEvent.deleteMany.mockResolvedValue({ count: 7 });
@@ -210,7 +144,12 @@ describe('EventsService', () => {
 
       const expectedCutoff = new Date('2026-02-03T00:00:00Z');
       expect(prisma.campusEvent.deleteMany).toHaveBeenCalledWith({
-        where: { end_time: { lt: expectedCutoff } },
+        where: {
+          OR: [
+            { end_time: { lt: expectedCutoff } },
+            { AND: [{ end_time: null }, { start_time: { lt: expectedCutoff } }] },
+          ],
+        },
       });
       expect(result).toEqual({ events_deleted: 7, cutoff: expectedCutoff });
     });
