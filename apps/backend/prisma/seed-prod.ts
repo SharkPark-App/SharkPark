@@ -31,7 +31,8 @@ if (fs.existsSync(prodEnvPath)) {
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
-import { CSULB_SCHOOL, CSULB_BUILDINGS, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
+import { CSULB_SCHOOL, CSULB_BUILDINGS, parkingLots } from './lot-data';
+import { LOT_GEOFENCES } from './lot-geofences.generated';
 import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
 
 const rawConnectionString = process.env.DATABASE_URL;
@@ -130,6 +131,13 @@ async function seedProd() {
   const counts: UpsertCounts = { created: 0, updated: 0, unchanged: 0 };
 
   for (const lot of parkingLots) {
+    const geofence = LOT_GEOFENCES[lot.lot_id];
+    if (!geofence) {
+      throw new Error(
+        `[seed-prod] No concept3d geofence for lot_id=${lot.lot_id}. ` +
+          `Re-run prisma/scripts/extract-lot-polygons.ts after updating lookup rules.`,
+      );
+    }
     const desired = {
       lot_name: lot.lot_name,
       display_name: lot.display_name,
@@ -139,10 +147,8 @@ async function seedProd() {
       location_description: lot.location_description,
       center_lat: lot.center_lat,
       center_lng: lot.center_lng,
-      geofence_polygon:
-        GEOFENCE_POLYGONS[lot.lot_id] ??
-        generateGeofence(lot.center_lat, lot.center_lng, lot.geofence_radius),
-      geofence_radius: lot.geofence_radius,
+      geofence_polygon: geofence.polygon,
+      geofence_radius: geofence.radius_m,
       permit_types: lot.permit_types,
       daily_permit_allowed: lot.daily_permit_allowed,
       daily_rate: lot.daily_rate ?? null,

@@ -18,7 +18,8 @@ import 'dotenv/config';
 import { PrismaClient, UserType, EventType, ConfidenceLevel } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
-import { CSULB_SCHOOL, CSULB_BUILDINGS, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
+import { CSULB_SCHOOL, CSULB_BUILDINGS, parkingLots } from './lot-data';
+import { LOT_GEOFENCES } from './lot-geofences.generated';
 import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
 import { getSemester, getWeekOfSemester } from '../src/lots/academic-calendar';
 
@@ -156,6 +157,13 @@ async function main() {
   const lotMap = new Map<string, string>(); // lot_id -> prisma id
 
   for (const lot of parkingLots) {
+    const geofence = LOT_GEOFENCES[lot.lot_id];
+    if (!geofence) {
+      throw new Error(
+        `[seed] No concept3d geofence for lot_id=${lot.lot_id}. ` +
+          `Re-run prisma/scripts/extract-lot-polygons.ts after updating lookup rules.`,
+      );
+    }
     const created = await prisma.lot.create({
       data: {
         school_id: school.id,
@@ -169,8 +177,8 @@ async function main() {
         location_description: lot.location_description,
         center_lat: lot.center_lat,
         center_lng: lot.center_lng,
-        geofence_polygon: GEOFENCE_POLYGONS[lot.lot_id] ?? generateGeofence(lot.center_lat, lot.center_lng, lot.geofence_radius),
-        geofence_radius: lot.geofence_radius,
+        geofence_polygon: geofence.polygon,
+        geofence_radius: geofence.radius_m,
         permit_types: lot.permit_types,
         daily_permit_allowed: lot.daily_permit_allowed,
         daily_rate: lot.daily_rate,
