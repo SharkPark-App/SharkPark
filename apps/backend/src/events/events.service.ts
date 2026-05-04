@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
-import type { CampusEvent } from '@prisma/client';
+import type { CampusEvent, SportsEventStatus, SportsResultStatus } from '@prisma/client';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -14,13 +14,24 @@ export const MAX_EVENTS_WINDOW_HOURS = 24 * 7;
 export interface LotEventsSummary {
   lot_id: string;
   count: number;
-  /** Soonest upcoming event in the window, or `null` if `count === 0`. */
+  /**
+   * Soonest upcoming event in the window, or `null` if `count === 0`.
+   *
+   * `status` / `home_score` / `away_score` / `result_status` are populated
+   * only for sports events ingested by the Sidearm scraper — they are `null`
+   * for CampusLabs (academic / club) events. The mobile UI shows a LIVE
+   * badge + scoreline when `status === 'LIVE'` or `'FINAL'`.
+   */
   next_event: {
     id: string;
     event_name: string;
     location: string;
     start_time: Date;
     end_time: Date;
+    status: SportsEventStatus | null;
+    home_score: number | null;
+    away_score: number | null;
+    result_status: SportsResultStatus | null;
   } | null;
 }
 
@@ -126,6 +137,10 @@ export class EventsService {
                     location: true,
                     start_time: true,
                     end_time: true,
+                    status: true,
+                    home_score: true,
+                    away_score: true,
+                    result_status: true,
                   },
                   orderBy: { start_time: 'asc' },
                 },

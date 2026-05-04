@@ -81,6 +81,14 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 10,
     maxRuntime: 15,
   },
+  'fetch-sports-events-live': {
+    // Every 2 min — short-circuits without an external fetch when no candidate
+    // events are in the live window, so the runtime budget is generous enough
+    // to cover the rare game-day fetch but tight enough to catch a wedge.
+    schedule: '*/2 * * * *',
+    checkinMargin: 2,
+    maxRuntime: 3,
+  },
   'notify-favorites-filling': {
     schedule: '*/15 * * * *',
     checkinMargin: 5,

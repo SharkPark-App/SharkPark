@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { SportsEventStatus, SportsResultStatus } from '@prisma/client';
 import { SportsEventsScraperService } from './sports-events-scraper.service';
 import { PrismaService } from '../database/database.module';
 
 interface MockPrisma {
-  school: { findFirst: jest.Mock };
+  school: { findFirst: jest.Mock; findUnique: jest.Mock };
   building: { findMany: jest.Mock };
-  campusEvent: { upsert: jest.Mock };
+  campusEvent: { upsert: jest.Mock; findMany: jest.Mock; update: jest.Mock };
 }
 
 const SCHOOL_ID = 'school_csulb';
@@ -29,6 +30,7 @@ interface RawEventInput {
   time?: string;
   locationIndicator?: 'H' | 'A' | 'N';
   noplayText?: string;
+  gameState?: number;
   gameStateDisplay?: string;
   conference?: boolean;
   sportShortname: string;
@@ -37,6 +39,9 @@ interface RawEventInput {
   tv?: string | null;
   previewUrl?: string | null;
   recapUrl?: string | null;
+  resultStatus?: 'W' | 'L' | 'T' | 'N' | null;
+  teamScore?: string | null;
+  opponentScore?: string | null;
 }
 
 const makeRaw = (e: RawEventInput) => ({
@@ -45,6 +50,7 @@ const makeRaw = (e: RawEventInput) => ({
   time: e.time ?? '7 p.m.',
   locationIndicator: e.locationIndicator ?? 'H',
   noplayText: e.noplayText ?? '',
+  gameState: e.gameState ?? 0,
   gameStateDisplay: e.gameStateDisplay ?? 'SCHEDULED',
   conference: e.conference ?? false,
   sport: { id: 1, title: e.sportTitle ?? "Women's Basketball", shortname: e.sportShortname },
@@ -53,7 +59,15 @@ const makeRaw = (e: RawEventInput) => ({
     tv: e.tv ?? null,
     preview: e.previewUrl ? { url: e.previewUrl } : null,
   },
-  result: e.recapUrl ? { recap: { url: e.recapUrl } } : null,
+  result:
+    e.recapUrl || e.resultStatus !== undefined || e.teamScore !== undefined || e.opponentScore !== undefined
+      ? {
+          recap: e.recapUrl ? { url: e.recapUrl } : null,
+          status: e.resultStatus ?? 'N',
+          teamScore: e.teamScore ?? '',
+          opponentScore: e.opponentScore ?? '',
+        }
+      : null,
 });
 
 const mockMonthResponse = (events: ReturnType<typeof makeRaw>[]) => [
@@ -67,9 +81,16 @@ describe('SportsEventsScraperService', () => {
 
   beforeEach(async () => {
     prisma = {
-      school: { findFirst: jest.fn().mockResolvedValue({ id: SCHOOL_ID, short_name: 'CSULB', timezone: 'America/Los_Angeles' }) },
+      school: {
+        findFirst: jest.fn().mockResolvedValue({ id: SCHOOL_ID, short_name: 'CSULB', timezone: 'America/Los_Angeles' }),
+        findUnique: jest.fn().mockResolvedValue({ short_name: 'CSULB', timezone: 'America/Los_Angeles' }),
+      },
       building: { findMany: jest.fn().mockResolvedValue(SEEDED_BUILDINGS) },
-      campusEvent: { upsert: jest.fn().mockResolvedValue({}) },
+      campusEvent: {
+        upsert: jest.fn().mockResolvedValue({}),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -139,12 +160,10 @@ describe('SportsEventsScraperService', () => {
     expect(args.create.end_time).toEqual(new Date('2026-01-16T06:00:00Z'));
   });
 
-  it('skips away, neutral, cancelled, postponed, TBA, and unmapped sport events', async () => {
+  it('skips away, neutral, TBA, and unmapped sport events', async () => {
     setMonthlyEvents([
       makeRaw({ id: 1, date: '2026-01-15T19:00:00', sportShortname: 'wbball', locationIndicator: 'A' }),
       makeRaw({ id: 2, date: '2026-01-15T19:00:00', sportShortname: 'wbball', locationIndicator: 'N' }),
-      makeRaw({ id: 3, date: '2026-01-15T19:00:00', sportShortname: 'wbball', gameStateDisplay: 'CANCELLED' }),
-      makeRaw({ id: 4, date: '2026-01-15T19:00:00', sportShortname: 'wbball', noplayText: 'Postponed' }),
       makeRaw({ id: 5, date: '2026-01-15T19:00:00', sportShortname: 'wbball', time: '' }), // TBA
       makeRaw({ id: 6, date: '2026-01-15T19:00:00', sportShortname: 'mgolf' }), // off-campus / unmapped
     ]);
@@ -152,6 +171,44 @@ describe('SportsEventsScraperService', () => {
     await service.scrapeAll();
 
     expect(prisma.campusEvent.upsert).not.toHaveBeenCalled();
+  });
+
+  it('upserts CANCELLED and POSTPONED home games with the matching status (so the UI can surface them)', async () => {
+    setMonthlyEvents([
+      makeRaw({
+        id: 91,
+        date: '2026-01-15T19:00:00',
+        sportShortname: 'wbball',
+        gameStateDisplay: 'CANCELLED',
+      }),
+      makeRaw({
+        id: 92,
+        date: '2026-01-16T19:00:00',
+        sportShortname: 'wbball',
+        gameStateDisplay: 'POSTPONED',
+      }),
+      makeRaw({
+        id: 93,
+        date: '2026-01-17T19:00:00',
+        sportShortname: 'wbball',
+        noplayText: 'Cancelled — weather',
+      }),
+    ]);
+
+    await service.scrapeAll();
+
+    expect(prisma.campusEvent.upsert).toHaveBeenCalledTimes(3);
+    const statusByExternalId = new Map<string, SportsEventStatus>(
+      prisma.campusEvent.upsert.mock.calls.map(
+        ([arg]: [{ where: { external_id: string }; create: { status: SportsEventStatus } }]) => [
+          arg.where.external_id,
+          arg.create.status,
+        ],
+      ),
+    );
+    expect(statusByExternalId.get('lbsu-sports-91')).toBe(SportsEventStatus.CANCELLED);
+    expect(statusByExternalId.get('lbsu-sports-92')).toBe(SportsEventStatus.POSTPONED);
+    expect(statusByExternalId.get('lbsu-sports-93')).toBe(SportsEventStatus.CANCELLED);
   });
 
   it('skips events whose mapped building isn\'t seeded for the school', async () => {
@@ -334,5 +391,132 @@ describe('SportsEventsScraperService', () => {
     await service.scrapeAll();
 
     expect(prisma.campusEvent.upsert).not.toHaveBeenCalled();
+  });
+
+  it('defaults pre-game (gameState=0) events to status=SCHEDULED with null scores', async () => {
+    setMonthlyEvents([
+      makeRaw({ id: 100, date: '2026-01-15T19:00:00', sportShortname: 'wbball' }),
+    ]);
+
+    await service.scrapeAll();
+
+    const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
+    expect(create.status).toBe(SportsEventStatus.SCHEDULED);
+    expect(create.home_score).toBeNull();
+    expect(create.away_score).toBeNull();
+    expect(create.result_status).toBeNull();
+    expect(create.status_updated_at).toBeInstanceOf(Date);
+  });
+
+  it('maps an in-progress game (gameState=3, intermediate code) to LIVE with parsed scores', async () => {
+    setMonthlyEvents([
+      makeRaw({
+        id: 101,
+        date: '2026-01-15T19:00:00',
+        sportShortname: 'wbball',
+        gameState: 3,
+        teamScore: '42',
+        opponentScore: '38',
+      }),
+    ]);
+
+    await service.scrapeAll();
+
+    const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
+    expect(create.status).toBe(SportsEventStatus.LIVE);
+    expect(create.home_score).toBe(42);
+    expect(create.away_score).toBe(38);
+    expect(create.result_status).toBeNull();
+  });
+
+  it('maps GAMECOMPLETE to FINAL and parses the W/L/T result', async () => {
+    setMonthlyEvents([
+      makeRaw({
+        id: 102,
+        date: '2026-01-15T19:00:00',
+        sportShortname: 'wbball',
+        gameState: 8,
+        gameStateDisplay: 'GAMECOMPLETE',
+        resultStatus: 'L',
+        teamScore: '60',
+        opponentScore: '75',
+      }),
+    ]);
+
+    await service.scrapeAll();
+
+    const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
+    expect(create.status).toBe(SportsEventStatus.FINAL);
+    expect(create.home_score).toBe(60);
+    expect(create.away_score).toBe(75);
+    expect(create.result_status).toBe(SportsResultStatus.L);
+  });
+
+  it('discards stale pre-game scores when status is SCHEDULED', async () => {
+    setMonthlyEvents([
+      makeRaw({
+        id: 103,
+        date: '2026-01-15T19:00:00',
+        sportShortname: 'wbball',
+        gameState: 0,
+        // Sidearm has been seen returning "0"/"0" for not-yet-started events.
+        teamScore: '0',
+        opponentScore: '0',
+      }),
+    ]);
+
+    await service.scrapeAll();
+
+    const create = prisma.campusEvent.upsert.mock.calls[0][0].create;
+    expect(create.status).toBe(SportsEventStatus.SCHEDULED);
+    expect(create.home_score).toBeNull();
+    expect(create.away_score).toBeNull();
+  });
+
+  describe('scrapeLive', () => {
+    it('skips the API call entirely when no events are in the live window', async () => {
+      prisma.campusEvent.findMany.mockResolvedValueOnce([]);
+
+      await service.scrapeLive();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(prisma.campusEvent.update).not.toHaveBeenCalled();
+    });
+
+    it('updates only status/score columns for candidate events found in the DB probe', async () => {
+      prisma.campusEvent.findMany.mockResolvedValueOnce([
+        { external_id: 'lbsu-sports-200', school_id: SCHOOL_ID },
+      ]);
+      setMonthlyEvents([
+        makeRaw({
+          id: 200,
+          date: '2026-01-15T19:00:00',
+          sportShortname: 'wbball',
+          gameState: 4,
+          teamScore: '55',
+          opponentScore: '50',
+        }),
+        // A second event in the same Sidearm response that is NOT in the candidate
+        // set should be ignored — we don't want scrapeLive touching far-future games.
+        makeRaw({
+          id: 201,
+          date: '2026-02-15T19:00:00',
+          sportShortname: 'wbball',
+        }),
+      ]);
+
+      await service.scrapeLive();
+
+      expect(prisma.campusEvent.update).toHaveBeenCalledTimes(1);
+      const args = prisma.campusEvent.update.mock.calls[0][0];
+      expect(args.where).toEqual({ external_id: 'lbsu-sports-200' });
+      expect(args.data.status).toBe(SportsEventStatus.LIVE);
+      expect(args.data.home_score).toBe(55);
+      expect(args.data.away_score).toBe(50);
+      expect(args.data.status_updated_at).toBeInstanceOf(Date);
+      // event_name / start_time are owned by the daily full scrape — never touched here.
+      expect(args.data).not.toHaveProperty('event_name');
+      expect(args.data).not.toHaveProperty('start_time');
+    });
   });
 });

@@ -18,6 +18,24 @@ const VIEWABILITY_CONFIG: ViewabilityConfig = {
   itemVisiblePercentThreshold: 50,
 };
 
+/**
+ * Build a single accessibility label for the LIVE/FINAL row so VoiceOver
+ * announces "Live, score 16 to 4" rather than reading the pill and the
+ * digits as separate, ambiguous tokens.
+ */
+function sportsAccessibilityLabel(event: Event): string {
+  const status = event.status === 'LIVE' ? 'Live' : 'Final';
+  const home = event.homeScore;
+  const away = event.awayScore;
+  if (home == null && away == null) return status;
+  const score = `score ${home ?? 'unknown'} to ${away ?? 'unknown'}`;
+  if (event.status === 'FINAL' && event.resultStatus) {
+    const result = event.resultStatus === 'W' ? 'win' : event.resultStatus === 'L' ? 'loss' : 'tie';
+    return `${status}, ${score}, ${result}`;
+  }
+  return `${status}, ${score}`;
+}
+
 export function EventBanner({ events }: EventBannerProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => getStyles(colors), [colors]);
@@ -77,6 +95,29 @@ export function EventBanner({ events }: EventBannerProps) {
               <Text style={styles.name} numberOfLines={2}>
                 {event.name}
               </Text>
+              {(event.status === 'LIVE' || event.status === 'FINAL') && (
+                <View style={styles.sportsRow} accessible={true} accessibilityLabel={sportsAccessibilityLabel(event)}>
+                  <View
+                    style={[
+                      styles.statusPill,
+                      event.status === 'LIVE' ? styles.statusPillLive : styles.statusPillFinal,
+                    ]}
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    <Text style={styles.statusPillText}>
+                      {event.status === 'LIVE' ? 'LIVE' : 'FINAL'}
+                    </Text>
+                  </View>
+                  {(event.homeScore != null || event.awayScore != null) && (
+                    <Text style={styles.scoreText} importantForAccessibility="no-hide-descendants">
+                      {`${event.homeScore ?? '–'}–${event.awayScore ?? '–'}`}
+                      {event.status === 'FINAL' && event.resultStatus
+                        ? ` (${event.resultStatus})`
+                        : ''}
+                    </Text>
+                  )}
+                </View>
+              )}
               <View style={styles.metaRow} accessible={false} importantForAccessibility="no-hide-descendants">
                 <Icon
                   name="time-outline"
@@ -176,6 +217,34 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.warningTextSecondary,
     marginTop: SPACING.xs,
     fontStyle: 'italic',
+  },
+  sportsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+    gap: SPACING.sm,
+  },
+  statusPill: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: SPACING.xs,
+  },
+  statusPillLive: {
+    backgroundColor: colors.error,
+  },
+  statusPillFinal: {
+    backgroundColor: colors.warningBorder,
+  },
+  statusPillText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: '#ffffff',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    letterSpacing: 0.5,
+  },
+  scoreText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: colors.warningText,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
   chevron: {
     alignSelf: 'center',

@@ -54,6 +54,13 @@
 # don't bootstrap simultaneously on the cron VM.
 30 5 * * *    node /app/apps/backend/dist/scripts/fetch-sports-events.js
 
+# Live sports score / status refresh — every 2 min. The script does a cheap DB
+# probe first (status IN (SCHEDULED, LIVE) within the live window) and exits
+# without an external fetch when nothing is active, so this is a no-op outside
+# game windows. During games it surfaces LIVE→FINAL transitions and score
+# updates within ~2 min of Sidearm publishing them.
+*/2 * * * *   node /app/apps/backend/dist/scripts/fetch-sports-events-live.js
+
 # Push notification triggers — each runs every 15 min, matching the snapshot cadence.
 # Requires FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY Fly secrets.
 # Advisory lock prevents overlap; missing Firebase creds leads to a warning log.
