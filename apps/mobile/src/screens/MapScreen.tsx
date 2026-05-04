@@ -113,18 +113,25 @@ const FilterButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
   </TouchableOpacity>
 );
 
-// Navigate button component
-const NavigateButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
-  <TouchableOpacity
-    style={[styles.fab, { backgroundColor: COLORS.secondary, shadowColor: COLORS.shadowDark }]}
-    onPress={onPress}
-    activeOpacity={0.8}
-    accessibilityRole="button"
-    accessibilityLabel="View favorites and recommendations"
-  >
-    <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} accessible={false} />
-  </TouchableOpacity>
-);
+// Favorites button component (opens favorites + recommendations sheet).
+// In dark mode the default slate (COLORS.secondary = #374151) blends into
+// the dark surface, so lift to slate-300 with a slate-900 glyph to keep the
+// CTA legible. Star glyph signals favorites at a glance.
+const FavoritesButton: React.FC<{ onPress: () => void; isDark: boolean }> = ({ onPress, isDark }) => {
+  const bg = isDark ? '#94a3b8' : COLORS.secondary;
+  const fg = isDark ? '#0f172a' : COLORS.white;
+  return (
+    <TouchableOpacity
+      style={[styles.fab, { backgroundColor: bg, shadowColor: COLORS.shadowDark }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel="View favorites and recommendations"
+    >
+      <Icon name="star" size={TYPOGRAPHY.fontSize.xxl} color={fg} accessible={false} />
+    </TouchableOpacity>
+  );
+};
 
 const MapScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
@@ -329,7 +336,7 @@ const MapScreen: React.FC = () => {
 
       {/* Navigate button FAB - bottom right */}
       <View style={styles.navigateButtonContainer}>
-        <NavigateButton onPress={openRecommendationModal} />
+        <FavoritesButton onPress={openRecommendationModal} isDark={isDark} />
       </View>
 
       {/* Filter Modal */}

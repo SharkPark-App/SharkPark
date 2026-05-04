@@ -12,7 +12,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
-import { Header, ReliabilityMeter, LockedOccupancyBadge, LockedForecastCard, UnlockCTAButton } from '../components';
+import { Header, ReliabilityRow, LockedOccupancyBadge, LockedForecastCard, UnlockCTAButton } from '../components';
 import { useTheme } from '../context/ThemeContext';
 import { useLotData } from '../hooks/useLotData';
 import { useContributorState } from '../services/api/contributor';
@@ -65,7 +65,12 @@ export function ShortTermForecastScreen() {
   const navigation = useNavigation<MapStackScreenProps<'Short Term Forecast'>['navigation']>();
   const route = useRoute<MapStackScreenProps<'Short Term Forecast'>['route']>();
   const { lotId } = route.params || { lotId: 'G1' };
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  // Navigate FAB uses dark slate by default. On dark mode that slate disappears
+  // into the surface, so swap to a lighter slate-blue with a darker glyph for
+  // contrast against both the button and the underlying dark card stack.
+  const navigateFabBg = isDark ? '#94a3b8' : COLORS.secondary;
+  const navigateFabFg = isDark ? '#0f172a' : COLORS.white;
 
   // Use the API hook instead of mock data
   const { lot, forecast, loading, forecastLoading, refreshing: _refreshing, lastUpdatedAt, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
@@ -254,12 +259,30 @@ export function ShortTermForecastScreen() {
         }
       />
 
-      <ScrollView style={styles.scrollView}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+      >
         {/* Event Notifications */}
         <EventBanner events={todayEvents} />
 
         {/* Title Card w/ Lot Name and Occupancy */}
         <View style={[styles.lotHeaderCard, { backgroundColor: colors.white }]}>
+          {/* Subtle data-quality footnote on the occupancy reading.
+              Anchored to the top-right corner of the card as a small
+              dot + muted label + chevron — reads as a footnote on the
+              percentage below it ("this number is <quality>") rather
+              than a separate section. Contributor-only (mirrors the
+              live occupancy gating). */}
+          {isContributor && !reliabilityLoading && reliability && (
+            <View style={styles.reliabilityCorner}>
+              <ReliabilityRow
+                confidence={reliability.confidence}
+                isColdStart={reliability.isColdStart}
+                onPress={() => setIsReliabilityModalOpen(true)}
+              />
+            </View>
+          )}
           <Text style={[styles.lotName, { color: colors.textPrimary }]}>{lot.lot_name}</Text>
           {/* Lock decision is driven by live OS permission state, not by
               whether the most recent fetch happened to return null. This
@@ -292,8 +315,13 @@ export function ShortTermForecastScreen() {
               const pct = Math.round(lot.occupancy_rate * 100);
               const bg = getOccupancyColorGradient(pct);
               return (
-                <View style={[styles.statusBadge, {backgroundColor: bg}]}>
-                  <Text style={[styles.statusBadgeText, {color: getReadableTextColor(bg)}]}>{pct}%</Text>
+                <View style={styles.occupancyGroup}>
+                  <Text style={[styles.occupancyLabel, { color: colors.gray }]}>
+                    Live Occupancy
+                  </Text>
+                  <View style={[styles.statusBadge, {backgroundColor: bg}]}>
+                    <Text style={[styles.statusBadgeText, {color: getReadableTextColor(bg)}]}>{pct}%</Text>
+                  </View>
                 </View>
               );
             })()
@@ -304,27 +332,6 @@ export function ShortTermForecastScreen() {
             // in-memory state on revoke (see useLotData). Reserve the
             // badge slot height so the card doesn't shift.
             <View style={[styles.statusBadge, styles.statusBadgeEmpty]} />
-          )}
-
-          {/* Reliability Meter — contributor-only signal, mirrors the
-              live occupancy + forecast gating. Non-contributors (whose
-              `lot.occupancy_rate` is redacted to null) don't see it.
-
-              We always render the wrapper at a fixed height when this is a
-              contributor view, so the lot header card doesn't grow/shift when
-              the reliability fetch resolves a moment after the lot fetch.
-              The meter itself only appears once data is available. */}
-          {isContributor && (
-            <View style={styles.reliabilitySlot}>
-              {!reliabilityLoading && reliability && (
-                <ReliabilityMeter
-                  confidence={reliability.confidence}
-                  isColdStart={reliability.isColdStart}
-                  size="medium"
-                  onPress={() => setIsReliabilityModalOpen(true)}
-                />
-              )}
-            </View>
           )}
 
           {/* Inline freshness indicator. Hidden while data is fresh (the
@@ -403,14 +410,14 @@ export function ShortTermForecastScreen() {
 
       {/* Navigate Button (bottom right, symmetric to report button) */}
       <TouchableOpacity
-        style={styles.fabNavigate}
+        style={[styles.fabNavigate, { backgroundColor: navigateFabBg }]}
         onPress={() => setIsMapModalOpen(true)}
         activeOpacity={0.8}
         accessibilityRole="button"
         accessibilityLabel="Navigate to lot"
         importantForAccessibility="yes"
       >
-        <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={COLORS.white} accessible={false} />
+        <Icon name="navigate" size={TYPOGRAPHY.fontSize.xxl} color={navigateFabFg} accessible={false} />
       </TouchableOpacity>
 
       {/* Incident Report Modal */}
@@ -446,6 +453,12 @@ const styles = StyleSheet.create({
 
   scrollView: {
     flex: 1,
+  },
+
+  // Leave headroom at the bottom so the floating Report / Navigate FABs
+  // don't overlap the last card while the user is reading it.
+  scrollContent: {
+    paddingBottom: 40,
   },
 
   // Center content styles for loading/error states
@@ -497,6 +510,37 @@ const styles = StyleSheet.create({
     ...SHADOWS.card,
     alignItems: 'center',
     gap: SPACING.sm,
+    // Anchor for the absolutely-positioned reliability footnote in the
+    // top-right corner so it doesn't disturb the centered layout.
+    position: 'relative',
+  },
+
+  // Subtle data-quality footnote anchored to the card's top-right.
+  // Pulled out of flow so toggling it on/off (cold-start, loading) has
+  // zero impact on the centered occupancy hierarchy below it.
+  reliabilityCorner: {
+    position: 'absolute',
+    top: SPACING.md,
+    right: SPACING.md,
+    zIndex: 1,
+  },
+
+  // Wraps the "Live Occupancy" caption + colored percentage badge so
+  // they sit together as a single unit (caption hugs the badge instead
+  // of inheriting the parent's `gap`).
+  occupancyGroup: {
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.md,
+  },
+
+  // Small caption above the occupancy badge so a first-time user
+  // immediately understands what the percentage represents.
+  occupancyLabel: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
 
   lotName: {
@@ -512,7 +556,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     borderRadius: SPACING.sm,
-    marginBottom: SPACING.md,
   },
 
   // Empty/no-data variant — invisible chip that reserves layout height
@@ -564,16 +607,10 @@ const styles = StyleSheet.create({
   // (No reserved-height slot — the freshness label above is absolutely
   // positioned over the bottom-right of the lot header card so toggling it
   // on/off has zero impact on layout.)
-  // Reserved-height slot for the ReliabilityMeter so the lot header card
-  // stays the same size whether reliability data has resolved yet or not.
-  // Height matches the medium-size meter (text ~14px + 5px padding *2 + 1px
-  // border *2) so when the meter mounts it slots in without shifting siblings.
-  reliabilitySlot: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: 28,
-  },
+  // (Reliability meter previously lived here as an inline reserved-height
+  // slot; it's now an absolute pill in the top-right corner of the lot
+  // header card so the centered occupancy column keeps its visual
+  // hierarchy and the slot height no longer reserves dead space.)
 
   statusBadgeText: {
     fontSize: TYPOGRAPHY.fontSize.xl,

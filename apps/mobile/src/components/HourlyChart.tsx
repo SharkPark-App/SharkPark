@@ -123,7 +123,7 @@ export function HourlyChart({data, name}: HourlyChartProps) {
           shadowColor: colors.shadowDark
         }
       ]}>
-      <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>{name ?? 'Parking Occupancy Outlook'}</Text>
+      <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>{name ?? 'Hourly Forecast'}</Text>
 
       {/* Status Tooltip*/}
       {selectedData && (
@@ -226,18 +226,16 @@ export function HourlyChart({data, name}: HourlyChartProps) {
 const styles = StyleSheet.create({
   chartContainer: {
     borderRadius: SPACING.lg,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.lg,
+    padding: SPACING.xl,
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.lg,
     marginBottom: SPACING.xxxl,
     ...SHADOWS.card,
   },
   chartTitle: {
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.md,
-    fontSize: TYPOGRAPHY.fontSize.md,
+    fontSize: TYPOGRAPHY.fontSize.xl,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    marginBottom: SPACING.lg,
   },
   barOverlayRow: {
     position: 'absolute',

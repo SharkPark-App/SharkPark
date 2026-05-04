@@ -315,7 +315,7 @@ describe('MapScreen', () => {
       expect(filterIcons.length).toBeGreaterThan(0);
     });
 
-    it('renders the navigate button and opens RecommendationModal', async () => {
+    it('renders the favorites button and opens RecommendationModal', async () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
       await ReactTestRenderer.act(async () => {
         tree = ReactTestRenderer.create(<MapScreen />);
@@ -324,7 +324,7 @@ describe('MapScreen', () => {
       let json = JSON.stringify(tree!.toJSON());
       expect(json).not.toContain('RecommendationModal Open');
 
-      const navIcons = tree!.root.findAllByProps({ name: 'navigate' });
+      const navIcons = tree!.root.findAllByProps({ name: 'star' });
       let touchable = navIcons[0].parent;
       while (touchable && !touchable.props.onPress) {
         touchable = touchable.parent;
