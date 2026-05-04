@@ -111,7 +111,7 @@ export const CSULB_BUILDINGS = [
   { name: 'Peterson Hall 1',                                    alternate_names: ['PH', 'Peterson Hall'] }, // Official Acronym is PH1; some events confirmed to not use such
   { name: 'Parkside North',                                     alternate_names: ['PN'] },
   { name: 'Psychology',                                         alternate_names: ['PSY'] },
-  { name: 'Pyramid',                                            alternate_names: ['PYR'] },
+  { name: 'Pyramid',                                            alternate_names: ['PYR', 'LBS Financial Credit Union Pyramid', 'Walter Pyramid'] },
   { name: 'Reprographics',                                      alternate_names: ['REPR'] },
   { name: 'Social Science/Public Affairs',                      alternate_names: ['SSPA'] },
   { name: 'Student Health Services',                            alternate_names: ['SHS', 'Student Health Center'] },
@@ -142,6 +142,12 @@ export const CSULB_BUILDINGS = [
   // Intentionally NOT referenced from any CSULB_LOTS[].buildings entry: no on-campus lot is
   // within walking distance, so baseball events are stored but won't surface on any lot card.
   { name: 'Bohl Diamond at Blair Field',                        alternate_names: ['Blair Field', 'Bohl Diamond'] },
+  // Barnes Tennis Center is in San Diego (~110 mi away). Listed on longbeachstate.com/facilities
+  // because women's tennis occasionally plays "home" matches there, but the LBSU calendar API
+  // doesn't expose per-match venue, so SportsEventsScraperService maps `wten` to Rhodes Tennis
+  // Center as the on-campus default. Seeded here for completeness; intentionally unlinked from
+  // any lot for the same reason as Blair Field.
+  { name: 'Barnes Tennis Center',                               alternate_names: [] },
 ] as const satisfies readonly BuildingSeed[];
 
 export type BuildingName = typeof CSULB_BUILDINGS[number]['name'];
