@@ -118,9 +118,6 @@ const EXTERNAL_ID_PREFIX = 'lbsu-sports-';
 /** CampusEvent.description column has no DB-level cap, but mobile UI truncates aggressively; mirror Zach's CampusLabs scraper. */
 const DESCRIPTION_MAX_CHARS = 115;
 
-/** Default game length when only a start time is published — keeps event_url banner visible through gametime. */
-const DEFAULT_GAME_DURATION_HOURS = 3;
-
 /**
  * How far back `refreshFinalScores` looks for SCHEDULED games whose results
  * may have been published since the last daily scrape. 36h is generous
@@ -141,7 +138,14 @@ interface ScrapedEvent {
    */
   event_url: string;
   start_time: Date;
-  end_time: Date;
+  /**
+   * Always null at scrape time. Sidearm publishes only `start_time`, so we
+   * refuse to fabricate a duration — `refreshFinalScores` backfills this
+   * with the wall-clock moment the box score was published when the game
+   * flips SCHEDULED → FINAL. Until then mobile clients treat a null
+   * `end_time` as "event still in progress / undetermined".
+   */
+  end_time: Date | null;
   building_id: string;
   // ── Live state derived from gameState/gameStateDisplay/result ───────
   status: SportsEventStatus;
@@ -382,6 +386,12 @@ export class SportsEventsScraperService {
       const updates = scraped.filter(
         s => externalIds.has(s.external_id) && s.status === SportsEventStatus.FINAL,
       );
+      // Stamp end_time at the moment we observe the FINAL transition. This
+      // is approximate (the actual game ended sometime between the previous
+      // refresh tick and now — at most REFRESH_LOOKBACK_HOURS / cron cadence
+      // earlier) but it's an honest upper bound rather than the +3h synthetic
+      // guess we used to write at create time.
+      const finalizedAt = new Date();
       await Promise.all(
         updates.map(event =>
           this.prisma.campusEvent.update({
@@ -391,7 +401,8 @@ export class SportsEventsScraperService {
               home_score: event.home_score,
               away_score: event.away_score,
               result_status: event.result_status,
-              status_updated_at: new Date(),
+              end_time: finalizedAt,
+              status_updated_at: finalizedAt,
             },
           }),
         ),
@@ -438,7 +449,9 @@ export class SportsEventsScraperService {
             description: event.description,
             event_url: event.event_url,
             start_time: event.start_time,
-            end_time: event.end_time,
+            // end_time intentionally NOT in update: refreshFinalScores stamps
+            // it when the game flips to FINAL, and the daily scrape must not
+            // clobber that real timestamp back to null.
             building_id: event.building_id,
             status: event.status,
             home_score: event.home_score,
@@ -516,7 +529,6 @@ export class SportsEventsScraperService {
       // school's IANA timezone so production matches what's on the website.
       const start = parseNaiveIsoInZone(e.date, timezone);
       if (!start || isNaN(start.getTime())) continue;
-      const end = new Date(start.getTime() + DEFAULT_GAME_DURATION_HOURS * 60 * 60 * 1000);
 
       // Some opponent titles already include the LBSU prefix
       // (e.g. men's volleyball returns "Long Beach State vs. Loyola Chicago").
@@ -526,7 +538,7 @@ export class SportsEventsScraperService {
         ? rawOpponent.replace(/^Long Beach State\s+vs\.?\s+/i, '').trim() || undefined
         : undefined;
       const event_name = opponent
-        ? `${e.sport.title} vs ${opponent}`
+        ? `${e.sport.title}: LBSU vs ${opponent}`
         : e.sport.title;
 
       const descriptionParts: string[] = [];
@@ -571,7 +583,7 @@ export class SportsEventsScraperService {
         description,
         event_url,
         start_time: start,
-        end_time: end,
+        end_time: null,
         building_id: buildingId,
         status,
         home_score,

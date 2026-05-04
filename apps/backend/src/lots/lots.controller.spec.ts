@@ -25,14 +25,12 @@ describe('LotsController', () => {
 
   const mockEventsService = {
     getEventsForLot: jest.fn(),
-    getEventsSummary: jest.fn(),
   };
 
   beforeEach(async () => {
     mockContributorService.isContributor.mockClear();
     mockContributorService.isContributor.mockResolvedValue(true);
     mockEventsService.getEventsForLot.mockReset();
-    mockEventsService.getEventsSummary.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LotsController],
@@ -276,40 +274,6 @@ describe('LotsController', () => {
         /within_hours/,
       );
       expect(mockEventsService.getEventsForLot).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('getEventsSummary', () => {
-    it('defaults within_hours to 2 and returns the bulk payload', async () => {
-      const summary = [
-        { lot_id: 'G7', count: 1, next_event: null },
-        { lot_id: 'PYR', count: 0, next_event: null },
-      ];
-      mockEventsService.getEventsSummary.mockResolvedValue(summary);
-
-      const result = await controller.getEventsSummary();
-
-      expect(mockEventsService.getEventsSummary).toHaveBeenCalledWith(2);
-      expect(result).toEqual({
-        success: true,
-        within_hours: 2,
-        count: 2,
-        data: summary,
-      });
-    });
-
-    it('passes a caller-supplied within_hours through to the service', async () => {
-      mockEventsService.getEventsSummary.mockResolvedValue([]);
-
-      await controller.getEventsSummary(48);
-
-      expect(mockEventsService.getEventsSummary).toHaveBeenCalledWith(48);
-    });
-
-    it('rejects out-of-range within_hours values', async () => {
-      await expect(controller.getEventsSummary(0)).rejects.toThrow(/within_hours/);
-      await expect(controller.getEventsSummary(200)).rejects.toThrow(/within_hours/);
-      expect(mockEventsService.getEventsSummary).not.toHaveBeenCalled();
     });
   });
 });

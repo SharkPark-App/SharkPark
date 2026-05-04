@@ -239,7 +239,12 @@ model CampusEvent {
   event_url   String?
   building_id String?
   start_time  DateTime
-  end_time    DateTime
+  // Optional: sports games scraped from Sidearm only have a published start
+  // time. The scraper leaves this null at create; refreshFinalScores backfills
+  // it with the wall-clock moment the box score was published when status
+  // flips SCHEDULED → FINAL. CampusLabs (academic / club) events always set a
+  // real end_time from the source feed.
+  end_time    DateTime?
   created_at  DateTime @default(now())
 
   // ── Live sports state ────────────────────────────────────

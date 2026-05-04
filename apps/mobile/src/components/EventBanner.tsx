@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, TouchableOpacity, Linking, useWindowDimensions, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, TouchableOpacity, Linking, useWindowDimensions, View } from 'react-native';
 import { Text } from './CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
@@ -62,8 +62,41 @@ export function EventBanner({ events }: EventBannerProps) {
 
   if (events.length === 0) return null;
 
+  const headerLabel =
+    events.length === 1
+      ? 'Nearby event'
+      : `Nearby events (${events.length})`;
+
   return (
     <View style={styles.outer}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() =>
+            Alert.alert(
+              'Nearby events',
+              'These events are happening near this parking lot and may impact availability.',
+            )
+          }
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="About nearby events"
+          accessibilityHint="Explains why these events are shown"
+          style={styles.headerIcon}
+        >
+          <Icon
+            name="information-circle-outline"
+            size={TYPOGRAPHY.fontSize.lg}
+            color={colors.warningText}
+          />
+        </TouchableOpacity>
+        <Text
+          style={styles.headerTitle}
+          accessibilityRole="header"
+          accessibilityLabel={headerLabel}
+        >
+          {headerLabel}
+        </Text>
+      </View>
       <FlatList
         data={events}
         keyExtractor={item => item.id}
@@ -169,6 +202,23 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: HORIZONTAL_PADDING,
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.sm,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  headerIcon: {
+    padding: 2,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: colors.warningText,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   card: {
     backgroundColor: colors.warningLight,

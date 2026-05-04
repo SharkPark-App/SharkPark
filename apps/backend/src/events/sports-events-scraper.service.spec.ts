@@ -159,7 +159,7 @@ describe('SportsEventsScraperService', () => {
     expect(args.create).toMatchObject({
       school_id: SCHOOL_ID,
       external_id: 'lbsu-sports-99001',
-      event_name: "Women's Basketball vs UC Davis",
+      event_name: "Women's Basketball: LBSU vs UC Davis",
       location: 'Pyramid',
       building_id: 'b_pyramid',
       event_url: 'https://longbeachstate.com/news/preview/123',
@@ -167,7 +167,10 @@ describe('SportsEventsScraperService', () => {
     expect(args.create.description).toContain('Conference game');
     expect(args.create.description).toContain('ESPN+');
     expect(args.create.start_time).toEqual(new Date('2026-01-16T03:00:00Z'));
-    expect(args.create.end_time).toEqual(new Date('2026-01-16T06:00:00Z'));
+    expect(args.create.end_time).toBeNull();
+    // Daily scrape upsert MUST NOT touch end_time on update — refreshFinalScores
+    // owns that column once the box score lands.
+    expect(args.update).not.toHaveProperty('end_time');
   });
 
   it('skips away, neutral, TBA, and unmapped sport events', async () => {
@@ -306,7 +309,7 @@ describe('SportsEventsScraperService', () => {
 
     const args = prisma.campusEvent.upsert.mock.calls[0][0];
     expect(args.create.start_time).toEqual(new Date('2026-05-02T01:00:00Z'));
-    expect(args.create.end_time).toEqual(new Date('2026-05-02T04:00:00Z'));
+    expect(args.create.end_time).toBeNull();
   });
 
   it('strips a leading "Long Beach State vs." prefix from opponent titles', async () => {
@@ -322,7 +325,7 @@ describe('SportsEventsScraperService', () => {
 
     await service.scrapeAll();
 
-    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_name).toBe("Men's Volleyball vs Loyola Chicago");
+    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_name).toBe("Men's Volleyball: LBSU vs Loyola Chicago");
   });
 
   it('skips events with malformed naive ISO timestamps', async () => {
@@ -508,6 +511,11 @@ describe('SportsEventsScraperService', () => {
       expect(args.data.away_score).toBe(70);
       expect(args.data.result_status).toBe(SportsResultStatus.W);
       expect(args.data.status_updated_at).toBeInstanceOf(Date);
+      // end_time is stamped at the moment we observe the FINAL transition
+      // (an honest upper bound) and must be the same instant as
+      // status_updated_at so downstream consumers can rely on it.
+      expect(args.data.end_time).toBeInstanceOf(Date);
+      expect(args.data.end_time).toEqual(args.data.status_updated_at);
       expect(args.data).not.toHaveProperty('event_name');
       expect(args.data).not.toHaveProperty('start_time');
     });

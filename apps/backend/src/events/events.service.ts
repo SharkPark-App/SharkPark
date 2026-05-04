@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
-import type { CampusEvent, SportsEventStatus, SportsResultStatus } from '@prisma/client';
+import type { CampusEvent } from '@prisma/client';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -9,33 +9,6 @@ const DAY_MS = 24 * HOUR_MS;
 export const DEFAULT_EVENTS_WINDOW_HOURS = 24 * 7;
 /** Hard cap on any caller-supplied lookahead window. Matches the longest forecast horizon. */
 export const MAX_EVENTS_WINDOW_HOURS = 24 * 7;
-
-/** Per-lot row in the bulk summary response. */
-export interface LotEventsSummary {
-  lot_id: string;
-  count: number;
-  /**
-   * Soonest upcoming event in the window, or `null` if `count === 0`.
-   *
-   * `status` / `home_score` / `away_score` / `result_status` are populated
-   * only for sports events ingested by the Sidearm scraper — they are `null`
-   * for CampusLabs (academic / club) events. The mobile UI shows a FINAL
-   * pill + scoreline when `status === 'FINAL'`. The `LIVE` enum value
-   * exists in the schema but is never written: the Sidearm calendar API
-   * has no in-progress signal.
-   */
-  next_event: {
-    id: string;
-    event_name: string;
-    location: string;
-    start_time: Date;
-    end_time: Date;
-    status: SportsEventStatus | null;
-    home_score: number | null;
-    away_score: number | null;
-    result_status: SportsResultStatus | null;
-  } | null;
-}
 
 @Injectable()
 export class EventsService {
@@ -91,88 +64,18 @@ export class EventsService {
       where: {
         building_id: { in: buildingIds },
         start_time: { lte: windowEnd },
-        end_time: { gte: now },
+        // Sports events scraped from Sidearm have null end_time until the
+        // FINAL-score refresh stamps a real one (see
+        // sports-events-scraper.service.ts). Treat null as "still ongoing /
+        // undetermined" so an in-progress game stays surfaced; the refresh
+        // cron will set end_time within ~30min of the box score posting,
+        // bounding how long a finished game lingers in the feed.
+        OR: [
+          { end_time: null },
+          { end_time: { gte: now } },
+        ],
       },
       orderBy: { start_time: 'asc' },
-    });
-  }
-
-  /**
-   * Bulk per-lot upcoming-event counts. One DB round trip (vs N round trips
-   * for per-lot fetches) — designed for the mobile map screen, which renders
-   * a badge on every visible pin.
-   *
-   * Returns one row per lot, including lots with `count: 0`, so the caller
-   * can render badges without a second "which lots exist?" lookup.
-   *
-   * Single-school assumption matches `LotsService.findAll`; if/when the
-   * deployment grows to multiple schools, add a `schoolShortName` filter
-   * here in lockstep.
-   */
-  async getEventsSummary(
-    withinHours?: number,
-  ): Promise<LotEventsSummary[]> {
-    const hours = this.resolveWindowHours(withinHours);
-    const now = new Date();
-    const windowEnd = new Date(now.getTime() + hours * HOUR_MS);
-
-    // Pull every lot plus its linked buildings' upcoming events in a single
-    // query. We fetch lightweight event fields (not a SQL COUNT) because we
-    // also need the soonest event for the badge tooltip; the payload is
-    // bounded (~28 lots × a handful of events) so this is cheaper than two
-    // round trips.
-    const lots = await this.prisma.lot.findMany({
-      select: {
-        lot_id: true,
-        lot_buildings: {
-          select: {
-            building: {
-              select: {
-                campus_events: {
-                  where: {
-                    start_time: { lte: windowEnd },
-                    end_time: { gte: now },
-                  },
-                  select: {
-                    id: true,
-                    event_name: true,
-                    location: true,
-                    start_time: true,
-                    end_time: true,
-                    status: true,
-                    home_score: true,
-                    away_score: true,
-                    result_status: true,
-                  },
-                  orderBy: { start_time: 'asc' },
-                },
-              },
-            },
-          },
-        },
-      },
-      orderBy: { lot_id: 'asc' },
-    });
-
-    return lots.map((lot) => {
-      // Dedupe across buildings — the same event can be linked to multiple
-      // buildings of the same lot (rare, but possible after the polygon-edge
-      // upgrade puts e.g. Pyramid into 6 lots' join sets simultaneously).
-      const seen = new Map<string, LotEventsSummary['next_event']>();
-      for (const lb of lot.lot_buildings) {
-        for (const ev of lb.building.campus_events) {
-          if (!seen.has(ev.id)) seen.set(ev.id, ev);
-        }
-      }
-      const events = Array.from(seen.values()).filter(
-        (e): e is NonNullable<typeof e> => e !== null,
-      );
-      events.sort((a, b) => a.start_time.getTime() - b.start_time.getTime());
-      return {
-        lot_id: lot.lot_id,
-        count: events.length,
-        next_event: events[0] ?? null,
-      };
     });
   }
 
@@ -194,8 +97,16 @@ export class EventsService {
       );
     }
     const cutoff = new Date(now.getTime() - retentionDays * DAY_MS);
+    // Prune by end_time when present; otherwise fall back to start_time so
+    // never-finalized sports rows (e.g. cancelled-then-orphaned games where
+    // the box score never published) still get cleaned up.
     const result = await this.prisma.campusEvent.deleteMany({
-      where: { end_time: { lt: cutoff } },
+      where: {
+        OR: [
+          { end_time: { lt: cutoff } },
+          { AND: [{ end_time: null }, { start_time: { lt: cutoff } }] },
+        ],
+      },
     });
     return { events_deleted: result.count, cutoff };
   }

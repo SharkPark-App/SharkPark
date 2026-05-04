@@ -68,7 +68,13 @@ export function ShortTermForecastScreen() {
   const { colors } = useTheme();
 
   // Use the API hook instead of mock data
-  const { lot, forecast, loading, refreshing, lastUpdatedAt, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
+  const { lot, forecast, loading, forecastLoading, refreshing: _refreshing, lastUpdatedAt, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
+  // `refreshing` is intentionally unused at the screen level: we no longer
+  // surface a per-poll "Updating…" indicator because flashing a spinner on
+  // every successful 60s tick made a working system look broken. The stale
+  // chip below covers the only case where the user actually needs to know
+  // refreshes have stalled (>2min since last successful commit).
+  void _refreshing;
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
   const { events: lotEvents } = useEvents(lotId);
 
@@ -317,34 +323,26 @@ export function ShortTermForecastScreen() {
 
           {/* Inline freshness indicator. Hidden while data is fresh (the
               60s poll keeps it current and a label would just be noise);
-              shown when refreshing or when the data has gone stale (>2min,
-              e.g. after returning from background or if polling stalled).
-              Tapping forces an immediate refresh.
+              shown only when the data has gone stale (>2min, e.g. after
+              returning from background or if polling stalled). Tapping
+              forces an immediate refresh.
+
+              We deliberately don't show a spinner on every successful poll —
+              flashing on a 60s cadence made a working system feel broken.
+              The full-screen spinner above still covers the very first load.
 
               Absolutely positioned in the bottom-right of the card so
               toggling it on/off doesn't grow the card or leave a gap of
               reserved empty space when hidden. */}
-          {(refreshing || isStale) && (
+          {isStale && (
             <TouchableOpacity
               onPress={refreshLot}
-              disabled={refreshing}
               accessibilityRole="button"
-              accessibilityLabel={
-                refreshing
-                  ? 'Refreshing lot data'
-                  : `Last updated ${formatUpdatedAgo(lastUpdatedAt)}. Tap to refresh.`
-              }
+              accessibilityLabel={`Last updated ${formatUpdatedAgo(lastUpdatedAt)}. Tap to refresh.`}
               style={styles.updatedRow}
             >
-              {refreshing && (
-                <ActivityIndicator
-                  size="small"
-                  color={colors.darkGray}
-                  style={styles.updatedSpinner}
-                />
-              )}
               <Text style={[styles.updatedText, { color: colors.darkGray }]}>
-                {refreshing ? 'Updating…' : `Updated ${formatUpdatedAgo(lastUpdatedAt)}`}
+                {`Updated ${formatUpdatedAgo(lastUpdatedAt)}`}
               </Text>
             </TouchableOpacity>
           )}
@@ -360,6 +358,18 @@ export function ShortTermForecastScreen() {
           <LockedForecastCard
             onUnlockPress={() => navigation.navigate('LocationPermission', {})}
           />
+        ) : forecastLoading && forecast.length === 0 ? (
+          // First-load placeholder for the forecast chart. Mirrors the
+          // occupancy-side first-load UX (full-screen spinner) so the user
+          // sees an in-progress signal instead of an empty card. Subsequent
+          // 15-min polls keep `forecastLoading` false, so this never flashes
+          // on background refresh.
+          <View style={[styles.forecastLoadingCard, { backgroundColor: colors.white }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textPrimary }]}>
+              Loading forecast…
+            </Text>
+          </View>
         ) : (
           <HourlyChart data={forecast}/>
         )}
@@ -530,10 +540,20 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
   },
-  // Scale the spinner down — RN's smallest preset ("small") is still
-  // noticeably larger than the xs label next to it.
-  updatedSpinner: {
-    transform: [{ scale: 0.7 }],
+  // (No reserved-height slot — the freshness label above is absolutely
+  // positioned over the bottom-right of the lot header card so toggling it
+  // on/off has zero impact on layout.)
+  // First-load placeholder for the forecast chart card. Height matches
+  // HourlyChart's rendered height (chart 200 + label paddings) so swapping
+  // in the real chart doesn't shift the page.
+  forecastLoadingCard: {
+    height: 280,
+    marginHorizontal: 12,
+    marginTop: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
   },
   // (No reserved-height slot — the freshness label above is absolutely
   // positioned over the bottom-right of the lot header card so toggling it

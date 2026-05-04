@@ -30,7 +30,9 @@ export interface CampusEvent {
   description: string | null;
   event_url: string | null;
   start_time: string; // ISO 8601
-  end_time: string;   // ISO 8601
+  /** ISO 8601 — null for sports games until the box score lands and the
+   * backend’s refreshFinalScores cron stamps a real finish timestamp. */
+  end_time: string | null;
   created_at: string; // ISO 8601
   status?: SportsEventStatus | null;
   home_score?: number | null;
@@ -44,16 +46,9 @@ export interface NearbyEvent {
   event_name: string;
   location: string;
   start_time: string; // ISO 8601
-  end_time: string;   // ISO 8601
+  end_time: string | null;
   status?: SportsEventStatus | null;
   home_score?: number | null;
   away_score?: number | null;
   result_status?: SportsResultStatus | null;
-}
-
-/** One row per lot for the bulk events-summary endpoint. */
-export interface LotEventsSummary {
-  lot_id: string;
-  count: number;
-  next_event: NearbyEvent | null;
 }
