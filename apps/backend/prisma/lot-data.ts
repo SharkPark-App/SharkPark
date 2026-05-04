@@ -191,6 +191,8 @@ export interface LotSeed {
   has_emergency_phone: boolean;
   is_covered: boolean;
   is_paved: boolean;
+  /** True for multi-level parking structures (PVN/PVS/PYR). */
+  is_structure?: boolean;
   levels?: number;
   penetration_rate: number;
   avg_turnover_minutes: number;
@@ -544,7 +546,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 3, accessible_spaces: 32,
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
-    is_covered: true, is_paved: true, levels: 5, penetration_rate: 0.10,
+    is_covered: true, is_paved: true, is_structure: true, levels: 5, penetration_rate: 0.10,
     avg_turnover_minutes: 720, confidence: ConfidenceLevel.MEDIUM,
   },
   {
@@ -558,7 +560,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 2, motorcycle_spaces: 2, accessible_spaces: 10,
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
-    is_covered: true, is_paved: true, levels: 5, penetration_rate: 0.09,
+    is_covered: true, is_paved: true, is_structure: true, levels: 5, penetration_rate: 0.09,
     avg_turnover_minutes: 720, confidence: ConfidenceLevel.MEDIUM,
   },
   {
@@ -572,7 +574,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '10:00', close: '22:00' },
     ev_charging_stations: 2, motorcycle_spaces: 6, accessible_spaces: 7,
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
-    is_covered: true, is_paved: true, levels: 5, penetration_rate: 0.16,
+    is_covered: true, is_paved: true, is_structure: true, levels: 5, penetration_rate: 0.16,
     avg_turnover_minutes: 180, confidence: ConfidenceLevel.HIGH,
   },
 ];

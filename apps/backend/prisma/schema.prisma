@@ -58,6 +58,8 @@ model Lot {
   has_emergency_phone Boolean  @default(false)
   is_covered          Boolean  @default(false)
   is_paved            Boolean  @default(true)
+  /** True for multi-level parking structures (PVN/PVS/PYR at CSULB). */
+  is_structure        Boolean  @default(false)
   levels              Int?
   penetration_rate    Float    @default(0)
   avg_turnover_minutes Float   @default(0)

@@ -193,6 +193,7 @@ async function main() {
         has_emergency_phone: lot.has_emergency_phone,
         is_covered: lot.is_covered,
         is_paved: lot.is_paved,
+        is_structure: lot.is_structure ?? false,
         levels: lot.levels,
         penetration_rate: lot.penetration_rate,
         avg_turnover_minutes: lot.avg_turnover_minutes,
