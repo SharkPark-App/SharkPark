@@ -9,7 +9,7 @@ import { Text } from '../components/CustomText';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polygon, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { getOccupancyColor } from '../utils/parkingUtils';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
@@ -27,8 +27,29 @@ import { ShuttleMarker } from '../components/Map/ShuttleMarker';
 import { StopModal } from '../components/Modals/StopModal';
 import { ShuttleModal } from '../components/Modals/ShuttleModal';
 import type { MapStop } from '../types/transit';
+import { LOT_POLYGONS, type LatLng } from '../data/lotPolygons'
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+function centroid(ring: LatLng[]): { latitude: number; longitude: number } {
+  const pts =
+    ring.length > 1 &&
+    ring[0].lat === ring[ring.length - 1].lat &&
+    ring[0].lng === ring[ring.length - 1].lng
+      ? ring.slice(0, -1)
+      : ring;
+  const sum = pts.reduce(
+    (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
+    { lat: 0, lng: 0 },
+  );
+  return { latitude: sum.lat / pts.length, longitude: sum.lng / pts.length };
+}
+
+function hexWithAlpha(hex: string, alpha: number): string {
+  const clean = hex.startsWith('#') ? hex : `#${hex}`;
+  const a = Math.round(alpha * 255).toString(16).padStart(2, '0');
+  return `${clean}${a}`;
+}
 
 // Interactive lot component
 const InteractiveLot: React.FC<{
@@ -54,17 +75,59 @@ const InteractiveLot: React.FC<{
       );
   const occupancyColor = isRedacted ? colors.neutralPin : getOccupancyColor(pct!);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
+  const a11yLabel = isRedacted
+    ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
+    : `${lot.lot_name} parking lot, ${pct} percent full`;
 
+  const polygon = LOT_POLYGONS[lot.lot_id];
+
+  if (polygon) {
+    const coords = polygon.map((p) => ({ latitude: p.lat, longitude: p.lng }));
+    const center = centroid(polygon);
+    return (
+      <React.Fragment>
+        <Polygon
+          coordinates={coords}
+          strokeColor={occupancyColor}
+          strokeWidth={2}
+          fillColor={hexWithAlpha(occupancyColor, 0.35)}
+          tappable
+          onPress={() => onPress(lot)}
+        />
+        <Marker
+          coordinate={center}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={true}
+          onPress={() => onPress(lot)}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel={a11yLabel}
+        >
+          <View
+            style={[
+              styles.lotLabel,
+              { backgroundColor: occupancyColor, borderColor: colors.white },
+            ]}
+          >
+            <Text
+              style={[styles.lotText, { color: colors.white }]}
+              adjustsFontSizeToFit={true}
+              numberOfLines={isSingleWord ? 1 : 2}
+              accessible={false}
+            >
+              {lot.lot_name}
+            </Text>
+          </View>
+        </Marker>
+      </React.Fragment>
+    );
+  }
+
+  // Fallback: circle marker for lots not yet in LOT_POLYGONS
   return (
     <Marker
       coordinate={{ latitude: lot.center_lat, longitude: lot.center_lng }}
       onPress={() => onPress(lot)}
-      // Must stay true so iOS re-snapshots the marker bitmap when the
-      // pin's color flips (live\u2194redacted on contributor grant/revoke,
-      // or band change on poll). With ~30 lots the perf cost is
-      // negligible; tracksViewChanges={false} silently caches the very
-      // first render and never updates, which is the bug the user hit
-      // where pins stayed neutral after granting Always.
       tracksViewChanges={true}
     >
       <View
@@ -77,11 +140,7 @@ const InteractiveLot: React.FC<{
           }
         ]}
         accessibilityRole="button"
-        accessibilityLabel={
-          isRedacted
-            ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
-            : `${lot.lot_name} parking lot, ${pct} percent full`
-        }
+        accessibilityLabel={a11yLabel}
       >
         <Text
           style={[styles.lotText, { color: colors.white }]}
@@ -267,19 +326,19 @@ const MapScreen: React.FC = () => {
             );
           })}
           
-          {/* Draw route paths */}
-          {isFocused && routes?.map((route) => (
+          {/* Draw route paths — static, no isFocused guard to avoid unmount on nav transitions */}
+          {routes?.map((route) => (
             <Polyline
               key={route.id}
               coordinates={route.coordinates}
               strokeColor={route.color}
               strokeWidth={4}
-              zIndex={1} 
+              zIndex={1}
             />
           ))}
 
-          {/* Draw stops */}
-          {isFocused && stops?.map((stop) => (
+          {/* Draw stops — static, no isFocused guard to avoid unmount on nav transitions */}
+          {stops?.map((stop) => (
             <Marker
               key={stop.id}
               coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
@@ -298,7 +357,7 @@ const MapScreen: React.FC = () => {
                   {
                     backgroundColor: stop.color,
                     // dynamically apply a gray border for dark mode, white for light mode
-                    borderColor: colors.white, 
+                    borderColor: colors.white,
                   }
                 ]}
               />
@@ -375,6 +434,15 @@ const styles = StyleSheet.create({
   map: {
     width: screenWidth,
     height: screenHeight,
+  },
+  lotLabel: {
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxWidth: 52,
   },
   lotCircle: {
     width: 40,
