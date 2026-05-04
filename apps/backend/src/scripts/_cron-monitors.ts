@@ -96,6 +96,11 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 5,
     maxRuntime: 10,
   },
+  'refresh-lot-advisories': {
+    schedule: '0 6 * * 0',
+    checkinMargin: 30,
+    maxRuntime: 30,
+  },
 };
 
 export const CRON_TIMEZONE = TIMEZONE;

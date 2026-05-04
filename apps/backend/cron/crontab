@@ -62,3 +62,9 @@
 
 # CampusEvent starting within the next 2 hours.
 */15 * * * *  node /app/apps/backend/dist/scripts/notify-events.js
+
+# Refresh lot advisories from concept3d (closure / construction overlay).
+# Sundays at 6 AM Pacific — staggered after the 5 AM events scrapes so the
+# external API hits don't bunch up. Geofences/buildings stay committed to
+# the repo (rare changes need code review); this only refreshes advisories.
+0 6 * * 0     node /app/apps/backend/dist/scripts/refresh-lot-advisories.js
