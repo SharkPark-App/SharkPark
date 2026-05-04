@@ -200,7 +200,13 @@ async function main() {
 
   for (const b of CSULB_BUILDINGS) {
     const created = await prisma.building.create({
-      data: { school_id: school.id, name: b.name, alternate_names: b.alternate_names },
+      data: {
+        school_id: school.id,
+        name: b.name,
+        alternate_names: b.alternate_names,
+        center_lat: b.lat,
+        center_lng: b.lng,
+      },
     });
     buildingMap.set(b.name, { id: created.id, alternate_names: b.alternate_names });
   }

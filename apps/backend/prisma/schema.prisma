@@ -187,6 +187,9 @@ model Building {
   school_id       String
   name            String
   alternate_names String[]
+  /// Approximate centerpoint (degrees, WGS84). Used to compute proximity to lots / events.
+  center_lat      Float
+  center_lng      Float
   created_at      DateTime @default(now())
 
   school        School        @relation(fields: [school_id], references: [id], onDelete: Cascade)

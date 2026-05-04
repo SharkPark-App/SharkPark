@@ -220,8 +220,18 @@ async function seedProd() {
   for (const b of CSULB_BUILDINGS) {
     const building = await prisma.building.upsert({
       where: { school_id_name: { school_id: school.id, name: b.name } },
-      create: { school_id: school.id, name: b.name, alternate_names: b.alternate_names },
-      update: { alternate_names: b.alternate_names },
+      create: {
+        school_id: school.id,
+        name: b.name,
+        alternate_names: b.alternate_names,
+        center_lat: b.lat,
+        center_lng: b.lng,
+      },
+      update: {
+        alternate_names: b.alternate_names,
+        center_lat: b.lat,
+        center_lng: b.lng,
+      },
     });
     buildingMap.set(b.name, { id: building.id, alternate_names: b.alternate_names });
   }
