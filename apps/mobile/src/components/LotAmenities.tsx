@@ -9,6 +9,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import type { ParkingLotResponse, BuildingCategory } from '../services/api/lots';
+import { formatTime } from '../utils/formatTime';
 
 interface LotAmenitiesProps {
   lot: ParkingLotResponse;
@@ -30,25 +31,12 @@ const ADVISORY_PALETTE: Record<
 };
 
 /**
- * Convert a "HH:MM" 24-hour string to "h:MM AM/PM". Returns the original
- * value when it does not match the expected pattern (e.g. "CLOSED").
+ * Format an hours field. Time-of-day strings are rendered through
+ * `formatTime`, which honours the device's 12/24-hour preference.
  */
-function to12Hour(time: string): string {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(time);
-  if (!m) return time;
-  const h24 = Number(m[1]);
-  const minutes = m[2];
-  if (!Number.isFinite(h24) || h24 < 0 || h24 > 24) return time;
-  const period = h24 >= 12 && h24 < 24 ? 'PM' : 'AM';
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  // Drop ":00" for compact display ("9 AM" instead of "9:00 AM").
-  return minutes === '00' ? `${h12} ${period}` : `${h12}:${minutes} ${period}`;
-}
-
-/** Format an hours field into a readable AM/PM string */
 function formatHours(hours: { open: string; close: string } | string): string {
   if (typeof hours === 'string') return hours; // e.g. "CLOSED"
-  return `${to12Hour(hours.open)} – ${to12Hour(hours.close)}`;
+  return `${formatTime(hours.open)} – ${formatTime(hours.close)}`;
 }
 
 /**
@@ -446,9 +434,9 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
             available={lot.has_emergency_phone}
           />
           <AmenityChip
-            icon="shield-checkmark-outline"
+            icon={lot.is_covered ? 'shield-checkmark-outline' : 'sunny-outline'}
             label={lot.is_covered ? 'Covered Structure' : 'Open Air'}
-            available={lot.is_covered}
+            available
           />
           <AmenityChip
             icon="trail-sign-outline"

@@ -193,10 +193,10 @@ describe('LotAmenities', () => {
     expect(texts).toContain('Not Available');
   });
 
-  it('renders weekday hours from object format in 12-hour AM/PM', () => {
+  it('renders weekday hours from object format using the device locale', () => {
     const tree = renderLot({ hours_weekday: { open: '06:00', close: '22:00' } });
     const texts = collectTexts(tree.root);
-    expect(texts).toContain('6 AM – 10 PM');
+    expect(texts).toContain('6:00 AM – 10:00 PM');
   });
 
   it('preserves non-zero minutes when formatting hours', () => {
