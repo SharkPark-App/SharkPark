@@ -82,6 +82,11 @@ export const CRON_MONITORS = {
     maxRuntime: 15,
   },
   'refresh-sports-finals': {
+    // Every 30 min — short-circuits without an external fetch when no
+    // SCHEDULED games sit inside the recent lookback window. Only flips
+    // SCHEDULED → FINAL once Sidearm publishes the box score; there is no
+    // LIVE state for sports events because the calendar API has no
+    // in-progress signal.
     schedule: '*/30 * * * *',
     checkinMargin: 10,
     maxRuntime: 5,
