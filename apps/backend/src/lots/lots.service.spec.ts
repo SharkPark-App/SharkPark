@@ -575,6 +575,43 @@ describe('LotsService', () => {
 
       expect(results).toEqual([]);
     });
+
+    it('caps distance contribution at MAX_DISTANCE_METERS (1000m)', async () => {
+      // Two candidates with identical availability and permits, both well
+      // beyond the 1000 m normalization ceiling. They should score equally
+      // because the distance axis contributes 0 for both — guards the
+      // chosen MAX_DISTANCE_METERS = 1000 against accidental regressions
+      // back to the old 2000 m value (which would let the closer one win).
+      // Source is at (33.7838, -118.1089). 0.01° lat ≈ 1110 m.
+      const justBeyondCeiling = makeLot({
+        id: 'uuid-1100m',
+        lot_id: 'GZ1',
+        current_occupancy: 100,
+        capacity: 200,
+        center_lat: 33.7738, // ~1110 m south
+        center_lng: -118.1089,
+      });
+      const wayBeyondCeiling = makeLot({
+        id: 'uuid-5000m',
+        lot_id: 'GZ2',
+        current_occupancy: 100,
+        capacity: 200,
+        center_lat: 33.7388, // ~5000 m south
+        center_lng: -118.1089,
+      });
+
+      prisma.lot.findFirst.mockResolvedValue(sourceLot);
+      prisma.lot.findMany.mockResolvedValue([justBeyondCeiling, wayBeyondCeiling]);
+
+      const results = await service.getRecommendations('G1');
+
+      const close = results.find((r) => r.lot_id === 'GZ1');
+      const far = results.find((r) => r.lot_id === 'GZ2');
+      expect(close).toBeDefined();
+      expect(far).toBeDefined();
+      // Both should have identical scores (distance saturates to 0 for both).
+      expect(close!.recommendation_score).toBe(far!.recommendation_score);
+    });
   });
 
   describe('getShortTermPredictions', () => {

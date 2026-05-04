@@ -121,6 +121,120 @@ export function pointToPolygonMeters(
   return min;
 }
 
+/** Do segments p1p2 and p3p4 properly intersect? (Excludes collinear cases —
+ *  not relevant for distinct lot polygons.) */
+function segmentsIntersectXY(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number },
+  p4: { x: number; y: number },
+): boolean {
+  const cross = (
+    o: { x: number; y: number },
+    p: { x: number; y: number },
+    q: { x: number; y: number },
+  ) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+  const d1 = cross(p3, p4, p1);
+  const d2 = cross(p3, p4, p2);
+  const d3 = cross(p1, p2, p3);
+  const d4 = cross(p1, p2, p4);
+  return (
+    ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+    ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+  );
+}
+
+/** Minimum distance between two segments in projected XY meters. */
+function segmentToSegmentMeters(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number },
+  p4: { x: number; y: number },
+): number {
+  if (segmentsIntersectXY(p1, p2, p3, p4)) return 0;
+  return Math.min(
+    pointToSegmentMeters(p1, p3, p4),
+    pointToSegmentMeters(p2, p3, p4),
+    pointToSegmentMeters(p3, p1, p2),
+    pointToSegmentMeters(p4, p1, p2),
+  );
+}
+
+/**
+ * Minimum distance (meters) between two polygons. Returns 0 when they
+ * overlap (any vertex of one lies inside the other, or any pair of edges
+ * crosses).
+ *
+ * For lots and buildings this is the honest "shortest walk" metric —
+ * dramatically more accurate than centroid haversine for large or
+ * irregularly shaped lots, where centerpoints can sit hundreds of meters
+ * from the nearest practical entrance.
+ *
+ * Degenerate inputs (fewer than 3 vertices) fall back via the optional
+ * centroid fallbacks: degenerate polygon collapses to its centroid and
+ * is treated as a point against the other shape, or both centroids if
+ * both polygons are degenerate. Returns +Infinity only when no fallback
+ * is available — callers should treat that as "skip this pair".
+ */
+export function polygonToPolygonMeters(
+  a: ReadonlyArray<{ lat: number; lng: number }>,
+  b: ReadonlyArray<{ lat: number; lng: number }>,
+  fallbackCentroidA?: { lat: number; lng: number },
+  fallbackCentroidB?: { lat: number; lng: number },
+): number {
+  const validA = a.length >= 3;
+  const validB = b.length >= 3;
+
+  if (!validA && !validB) {
+    if (fallbackCentroidA && fallbackCentroidB) {
+      return haversineMeters(fallbackCentroidA, fallbackCentroidB);
+    }
+    return Number.POSITIVE_INFINITY;
+  }
+  if (!validA) {
+    if (!fallbackCentroidA) return Number.POSITIVE_INFINITY;
+    return pointToPolygonMeters(fallbackCentroidA, b);
+  }
+  if (!validB) {
+    if (!fallbackCentroidB) return Number.POSITIVE_INFINITY;
+    return pointToPolygonMeters(fallbackCentroidB, a);
+  }
+
+  // Project both polygons into a single local frame (centered on a[0]) so
+  // all distance math is plain 2-D Euclidean meters.
+  const ref = a[0]!;
+  const aXY = a.map((v) => toLocalXY(ref, v));
+  const bXY = b.map((v) => toLocalXY(ref, v));
+
+  // Containment: if any vertex of one polygon lies inside the other, the
+  // polygons overlap — distance is 0.
+  for (const v of bXY) {
+    if (pointInPolygonXY(v, aXY)) return 0;
+  }
+  for (const v of aXY) {
+    if (pointInPolygonXY(v, bXY)) return 0;
+  }
+
+  // Otherwise, min distance over all edge-pair combinations. O(n*m) but at
+  // campus scale (≤~100 verts per lot, ~40 lots) this is well under a
+  // millisecond per call.
+  let min = Number.POSITIVE_INFINITY;
+  for (let i = 0, ni = aXY.length; i < ni; i++) {
+    const a1 = aXY[i]!;
+    const a2 = aXY[(i + 1) % ni]!;
+    for (let j = 0, nj = bXY.length; j < nj; j++) {
+      const b1 = bXY[j]!;
+      const b2 = bXY[(j + 1) % nj]!;
+      const d = segmentToSegmentMeters(a1, a2, b1, b2);
+      if (d < min) {
+        min = d;
+        if (min === 0) return 0;
+      }
+    }
+  }
+  return min;
+}
+
 /**
  * Optional per-lot tweaks to the auto-derived list.
  *

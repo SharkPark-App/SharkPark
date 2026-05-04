@@ -11,6 +11,8 @@
 import {
   deriveLotBuildings,
   haversineMeters,
+  pointToPolygonMeters,
+  polygonToPolygonMeters,
   DEFAULT_LOT_BUILDING_RADIUS_M,
   type BuildingPoint,
 } from './derive-lot-buildings';
@@ -112,5 +114,97 @@ describe('deriveLotBuildings', () => {
 
   it('exports a sane default radius', () => {
     expect(DEFAULT_LOT_BUILDING_RADIUS_M).toBe(250);
+  });
+});
+
+describe('polygonToPolygonMeters', () => {
+  // ~111,195 m per degree of latitude. At CSULB's latitude (~33.78°),
+  // longitude resolves to ~92,400 m/deg (cos(33.78°) ≈ 0.831).
+  // Use a 50 m × 50 m square for "lot A" centered at the origin.
+  const lotA: ReadonlyArray<{ lat: number; lng: number }> = [
+    { lat: 33.78380, lng: -118.11410 },
+    { lat: 33.78380, lng: -118.11355 }, // ~50 m east
+    { lat: 33.78425, lng: -118.11355 }, // ~50 m north-east
+    { lat: 33.78425, lng: -118.11410 }, // ~50 m north
+  ];
+
+  it('returns 0 for overlapping polygons', () => {
+    // lotB shifted ~25 m east — overlaps lotA on its right half.
+    const lotB: ReadonlyArray<{ lat: number; lng: number }> = lotA.map(
+      (v) => ({ lat: v.lat, lng: v.lng + 0.00025 }),
+    );
+    expect(polygonToPolygonMeters(lotA, lotB)).toBe(0);
+  });
+
+  it('returns 0 when one polygon fully contains the other', () => {
+    const tiny: ReadonlyArray<{ lat: number; lng: number }> = [
+      { lat: 33.78395, lng: -118.11395 },
+      { lat: 33.78395, lng: -118.11385 },
+      { lat: 33.78410, lng: -118.11385 },
+      { lat: 33.78410, lng: -118.11395 },
+    ];
+    expect(polygonToPolygonMeters(lotA, tiny)).toBe(0);
+    expect(polygonToPolygonMeters(tiny, lotA)).toBe(0);
+  });
+
+  it('returns the gap distance for separated polygons', () => {
+    // lotC is ~100 m east of lotA's east edge.
+    const eastShift = 100 / 92_400; // ~0.001083° lng
+    const lotC: ReadonlyArray<{ lat: number; lng: number }> = lotA.map(
+      (v) => ({ lat: v.lat, lng: v.lng + 0.00055 + eastShift }),
+    );
+    const d = polygonToPolygonMeters(lotA, lotC);
+    expect(d).toBeGreaterThan(95);
+    expect(d).toBeLessThan(105);
+  });
+
+  it('is much smaller than centroid haversine for adjacent large lots', () => {
+    // Two long, thin parking lots side-by-side. Centers are far apart,
+    // but their nearest edges nearly touch — the case the recommender
+    // used to misjudge.
+    const longA: ReadonlyArray<{ lat: number; lng: number }> = [
+      { lat: 33.78300, lng: -118.11410 },
+      { lat: 33.78300, lng: -118.11355 },
+      { lat: 33.78500, lng: -118.11355 }, // ~220 m tall
+      { lat: 33.78500, lng: -118.11410 },
+    ];
+    const longB: ReadonlyArray<{ lat: number; lng: number }> = [
+      { lat: 33.78300, lng: -118.11340 }, // ~15 m gap east of longA
+      { lat: 33.78300, lng: -118.11285 },
+      { lat: 33.78500, lng: -118.11285 },
+      { lat: 33.78500, lng: -118.11340 },
+    ];
+    const centroidA = { lat: 33.78400, lng: -118.113825 };
+    const centroidB = { lat: 33.78400, lng: -118.113125 };
+
+    const edgeDist = polygonToPolygonMeters(longA, longB, centroidA, centroidB);
+    const centroidDist = haversineMeters(centroidA, centroidB);
+
+    expect(edgeDist).toBeLessThan(20); // ~15 m gap
+    expect(centroidDist).toBeGreaterThan(60); // centers are ~65 m apart
+  });
+
+  it('falls back to point-to-polygon when one polygon is degenerate', () => {
+    const pointB = { lat: 33.78380, lng: -118.11300 }; // ~100 m east of lotA
+    const d = polygonToPolygonMeters(
+      lotA,
+      [],
+      undefined,
+      pointB,
+    );
+    // Should equal pointToPolygonMeters(pointB, lotA)
+    const expected = pointToPolygonMeters(pointB, lotA);
+    expect(d).toBeCloseTo(expected, 6);
+  });
+
+  it('falls back to centroid haversine when both polygons are degenerate', () => {
+    const a = { lat: 0, lng: 0 };
+    const b = { lat: 1, lng: 0 };
+    const d = polygonToPolygonMeters([], [], a, b);
+    expect(d).toBeCloseTo(haversineMeters(a, b), 6);
+  });
+
+  it('returns +Infinity when degenerate polygons have no fallback centroids', () => {
+    expect(polygonToPolygonMeters([], [])).toBe(Number.POSITIVE_INFINITY);
   });
 });

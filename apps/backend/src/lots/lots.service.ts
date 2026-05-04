@@ -6,6 +6,10 @@ import { PenetrationEstimationService, PenetrationEstimate } from './penetration
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
 import { studentEligibleLotTypes } from './csulb-eligibility';
+import { polygonToPolygonMeters } from './derive-lot-buildings';
+
+/** Shape of `Lot.geofence_polygon` rows in the DB (stored as Prisma Json). */
+type LatLng = { lat: number; lng: number };
 
 const LOT_WITH_BUILDINGS_INCLUDE = {
   lot_buildings: { include: { building: { select: { name: true, category: true } } } },
@@ -264,8 +268,15 @@ export class LotsService {
     permitCompat: 0.10,
   };
 
-  /** Maximum distance (meters) used to normalize distance scores. Lots beyond this get 0. */
-  private static readonly MAX_DISTANCE_METERS = 2000;
+  /**
+   * Maximum distance (meters) used to normalize distance scores. Lots beyond
+   * this get 0. Sized to CSULB's ~1.3 × 1.5 km footprint: with polygon-edge
+   * distance, anything past ~1 km between lots is effectively "drive, don't
+   * walk" — not a meaningful walking alternative. A tighter ceiling here
+   * makes the distance signal actually move scores (a 400 m gap is worth
+   * ~14 points, not ~7) instead of being washed out by the campus diameter.
+   */
+  private static readonly MAX_DISTANCE_METERS = 1000;
 
   /** Occupancy rate threshold at which a lot is considered too full to recommend */
   private static readonly FULL_THRESHOLD = OCCUPANCY_THRESHOLDS.RECOMMENDATION_CUTOFF;
@@ -326,9 +337,16 @@ export class LotsService {
           : 0;
 
         // --- Distance score (0–1): closer = higher ---
-        const distance = this.haversineDistance(
-          sourceLot.center_lat, sourceLot.center_lng,
-          candidate.center_lat, candidate.center_lng,
+        // Polygon-edge-to-polygon-edge using the lots' geofence outlines.
+        // Centroid haversine over-states real walking distance for large or
+        // irregular lots (PVN/PVS, the G6/G7 surface lots, the parking
+        // structures). Edge-to-edge is the honest "shortest walk between
+        // them" metric, with centroid fallback when a polygon is missing.
+        const distance = polygonToPolygonMeters(
+          (sourceLot.geofence_polygon ?? []) as LatLng[],
+          (candidate.geofence_polygon ?? []) as LatLng[],
+          { lat: sourceLot.center_lat, lng: sourceLot.center_lng },
+          { lat: candidate.center_lat, lng: candidate.center_lng },
         );
         const distanceScore = Math.max(0, 1 - distance / LotsService.MAX_DISTANCE_METERS);
 
@@ -362,22 +380,6 @@ export class LotsService {
       .slice(0, limit);
 
     return scored;
-  }
-
-  /**
-   * Haversine formula — returns distance between two lat/lng points in meters.
-   */
-  private haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    const EARTH_RADIUS = 6_371_000; // meters
-    const toRad = (deg: number) => (deg * Math.PI) / 180;
-
-    const dLat = toRad(lat2 - lat1);
-    const dLng = toRad(lng2 - lng1);
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return EARTH_RADIUS * c;
   }
 
   /**
