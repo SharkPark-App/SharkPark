@@ -1,10 +1,38 @@
 import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
-import type { Lot, LotType } from '@prisma/client';
+import type { LotType, Prisma } from '@prisma/client';
 import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse, LotRecommendation } from './interfaces/parking-lot.interface';
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
+import { studentEligibleLotTypes } from './csulb-eligibility';
+import { polygonToPolygonMeters } from './derive-lot-buildings';
+
+/** Shape of `Lot.geofence_polygon` rows in the DB (stored as Prisma Json). */
+type LatLng = { lat: number; lng: number };
+
+const LOT_WITH_BUILDINGS_INCLUDE = {
+  lot_buildings: { include: { building: { select: { name: true, category: true } } } },
+  // Only active advisories make it onto the response — historical/closed ones
+  // remain in the table for audit but aren't user-facing.
+  lot_advisories: {
+    where: { is_active: true },
+    orderBy: [{ severity: 'desc' as const }, { updated_at: 'desc' as const }],
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      severity: true,
+      source: true,
+      match_reason: true,
+      starts_at: true,
+      ends_at: true,
+      updated_at: true,
+    },
+  },
+} satisfies Prisma.LotInclude;
+
+type LotWithBuildings = Prisma.LotGetPayload<{ include: typeof LOT_WITH_BUILDINGS_INCLUDE }>;
 
 /**
  * Service for parking lot data access and business logic.
@@ -43,6 +71,7 @@ export class LotsService {
           ...(query.daily_permit !== undefined && { daily_permit_allowed: query.daily_permit }),
           ...(query.ev_charging && { ev_charging_stations: { gt: 0 } }),
         },
+        include: LOT_WITH_BUILDINGS_INCLUDE,
       });
 
       // Skip the (relatively expensive) penetration estimate entirely when
@@ -77,6 +106,7 @@ export class LotsService {
     try {
       const lot = await this.prisma.lot.findFirst({
         where: { lot_id: lotId },
+        include: LOT_WITH_BUILDINGS_INCLUDE,
       });
 
       if (!lot) {
@@ -160,7 +190,7 @@ export class LotsService {
       });
 
       // Fetch all lots for penetration estimation (already batched in one call)
-      const lots = await this.prisma.lot.findMany();
+      const lots = await this.prisma.lot.findMany({ include: LOT_WITH_BUILDINGS_INCLUDE });
       const estimates = await this.penetrationService.estimateForAllLots(lots);
 
       let studentEstimated = 0;
@@ -238,8 +268,15 @@ export class LotsService {
     permitCompat: 0.10,
   };
 
-  /** Maximum distance (meters) used to normalize distance scores. Lots beyond this get 0. */
-  private static readonly MAX_DISTANCE_METERS = 2000;
+  /**
+   * Maximum distance (meters) used to normalize distance scores. Lots beyond
+   * this get 0. Sized to CSULB's ~1.3 × 1.5 km footprint: with polygon-edge
+   * distance, anything past ~1 km between lots is effectively "drive, don't
+   * walk" — not a meaningful walking alternative. A tighter ceiling here
+   * makes the distance signal actually move scores (a 400 m gap is worth
+   * ~14 points, not ~7) instead of being washed out by the campus diameter.
+   */
+  private static readonly MAX_DISTANCE_METERS = 1000;
 
   /** Occupancy rate threshold at which a lot is considered too full to recommend */
   private static readonly FULL_THRESHOLD = OCCUPANCY_THRESHOLDS.RECOMMENDATION_CUTOFF;
@@ -256,12 +293,30 @@ export class LotsService {
       throw new NotFoundException(`Parking lot ${lotId} not found`);
     }
 
-    // Fetch all lots of the same type (students shouldn't see employee lots and vice versa)
+    // Determine which lot types are eligible candidates.
+    //   - STUDENT source: students can park in employee lots after 17:30 on
+    //     weekdays and any time on weekends; outside that window they stay
+    //     in STUDENT lots only (see csulb-eligibility.ts).
+    //   - EMPLOYEE source: recommend other EMPLOYEE lots only. Employees
+    //     are technically permitted in any lot, but suggesting a STUDENT lot
+    //     to a faculty/staff member heading to their employee zone isn't a
+    //     useful alternative — they'd be giving up their reserved access.
+    const eligibleTypes: LotType[] = sourceLot.lot_type === 'STUDENT'
+      ? Array.from(
+          studentEligibleLotTypes(
+            new Date(),
+            await this.penetrationService.getSchoolTimezone(sourceLot.school_id),
+          ),
+        )
+      : ['EMPLOYEE'];
+
+    // Fetch all candidate lots within the eligible types.
     const candidates = await this.prisma.lot.findMany({
       where: {
-        lot_type: sourceLot.lot_type,
+        lot_type: { in: eligibleTypes },
         id: { not: sourceLot.id },
       },
+      include: LOT_WITH_BUILDINGS_INCLUDE,
     });
 
     // Batch-estimate penetration for candidates
@@ -285,9 +340,16 @@ export class LotsService {
           : 0;
 
         // --- Distance score (0–1): closer = higher ---
-        const distance = this.haversineDistance(
-          sourceLot.center_lat, sourceLot.center_lng,
-          candidate.center_lat, candidate.center_lng,
+        // Polygon-edge-to-polygon-edge using the lots' geofence outlines.
+        // Centroid haversine over-states real walking distance for large or
+        // irregular lots (PVN/PVS, the G6/G7 surface lots, the parking
+        // structures). Edge-to-edge is the honest "shortest walk between
+        // them" metric, with centroid fallback when a polygon is missing.
+        const distance = polygonToPolygonMeters(
+          (sourceLot.geofence_polygon ?? []) as LatLng[],
+          (candidate.geofence_polygon ?? []) as LatLng[],
+          { lat: sourceLot.center_lat, lng: sourceLot.center_lng },
+          { lat: candidate.center_lat, lng: candidate.center_lng },
         );
         const distanceScore = Math.max(0, 1 - distance / LotsService.MAX_DISTANCE_METERS);
 
@@ -324,22 +386,6 @@ export class LotsService {
   }
 
   /**
-   * Haversine formula — returns distance between two lat/lng points in meters.
-   */
-  private haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    const EARTH_RADIUS = 6_371_000; // meters
-    const toRad = (deg: number) => (deg * Math.PI) / 180;
-
-    const dLat = toRad(lat2 - lat1);
-    const dLng = toRad(lng2 - lng1);
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return EARTH_RADIUS * c;
-  }
-
-  /**
    * Produces a short, user-friendly reason string for why a lot is recommended.
    */
   private buildRecommendationReason(
@@ -373,15 +419,34 @@ export class LotsService {
    * availability, occupancy_rate, and fill_status calculations.
    */
   private transformToResponse(
-    lot: Lot,
+    lot: LotWithBuildings,
     estimate?: PenetrationEstimate,
     options: { redactLive?: boolean } = {},
   ): ParkingLotResponse {
     const { redactLive = false } = options;
 
-    // Strip Prisma `current_occupancy` from the spread — we set it explicitly
-    // below (or null it for redacted callers) so the type stays accurate.
-    const { current_occupancy, daily_rate, ...meta } = lot;
+    // Strip Prisma `current_occupancy`, `daily_rate`, and the join relations from
+    // the spread — we set them explicitly below so the type stays accurate.
+    const { current_occupancy, daily_rate, lot_buildings, lot_advisories, ...meta } = lot;
+    const buildings = lot_buildings.map(lb => ({
+      name: lb.building.name,
+      category: lb.building.category,
+    }));
+    // Coerce DateTime fields to ISO strings for transport. Advisories are
+    // static metadata (not contributor-gated) — every caller, including App
+    // Store reviewers, sees them so the UI can warn about closures even when
+    // live occupancy is locked.
+    const advisories = lot_advisories.map(a => ({
+      id: a.id,
+      title: a.title,
+      description: a.description,
+      severity: a.severity,
+      source: a.source,
+      match_reason: a.match_reason,
+      starts_at: a.starts_at ? a.starts_at.toISOString() : null,
+      ends_at: a.ends_at ? a.ends_at.toISOString() : null,
+      updated_at: a.updated_at.toISOString(),
+    }));
 
     if (redactLive) {
       return {
@@ -395,6 +460,8 @@ export class LotsService {
         estimated_available: null,
         raw_occupancy: null,
         effective_penetration_rate: null,
+        buildings,
+        advisories,
       };
     }
 
@@ -430,6 +497,8 @@ export class LotsService {
       effective_penetration_rate: estimate
         ? Math.round(estimate.effectiveRate * 10000) / 10000
         : 1,
+      buildings,
+      advisories,
     };
   }
 

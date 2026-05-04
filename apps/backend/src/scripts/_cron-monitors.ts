@@ -66,6 +66,21 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 30,
     maxRuntime: 30,
   },
+  'prune-old-events': {
+    schedule: '30 4 * * 1',
+    checkinMargin: 30,
+    maxRuntime: 30,
+  },
+  'fetch-events': {
+    schedule: '0 5 * * *',
+    checkinMargin: 10,
+    maxRuntime: 15,
+  },
+  'fetch-sports-events': {
+    schedule: '30 5 * * *',
+    checkinMargin: 10,
+    maxRuntime: 15,
+  },
   'notify-favorites-filling': {
     schedule: '*/15 * * * *',
     checkinMargin: 5,
@@ -85,6 +100,16 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     schedule: '*/15 * * * *',
     checkinMargin: 5,
     maxRuntime: 10,
+  },
+  'refresh-lot-advisories': {
+    schedule: '0 6 * * 0',
+    checkinMargin: 30,
+    maxRuntime: 30,
+  },
+  'refresh-lot-metadata': {
+    schedule: '0 7 1 * *',
+    checkinMargin: 60,
+    maxRuntime: 30,
   },
 };
 

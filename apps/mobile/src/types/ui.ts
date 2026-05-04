@@ -3,9 +3,8 @@ export interface Event {
   name: string;
   date: Date;
   location: string;
-  affectedLots: string[];
-  description?: string;
-  impact: 'high' | 'medium' | 'low';
+  description: string | null;
+  url: string | null;
 }
 
 export interface LongTermForecastScreenProps {

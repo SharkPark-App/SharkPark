@@ -102,7 +102,7 @@ export class PenetrationEstimationService {
 
   /**
    * Estimates occupancy for a single lot.
-   * @param lot  The Prisma Lot row (must include current_occupancy, capacity, penetration_rate)
+   * @param lot  The Prisma Lot row (must include current_occupancy, capacity)
    * @param now  Optional override for current time (useful for testing)
    */
   async estimateForLot(lot: Lot, now: Date = new Date()): Promise<PenetrationEstimate> {
@@ -143,8 +143,10 @@ export class PenetrationEstimationService {
     // Compute penetration rate
     const campusRate = campusDevices > 0 ? campusDevices / adjustedCommuters : 0;
 
-    // Use the most conservative (highest) rate → lowest estimate
-    const effectiveRate = Math.max(campusRate, lot.penetration_rate, MIN_PENETRATION_RATE);
+    // Use the most conservative (highest) rate — lowest estimate.
+    // Per-lot floor was dropped (was never auto-updated and only ever a fossil
+    // from before the campus-wide rate existed); rely on MIN_PENETRATION_RATE.
+    const effectiveRate = Math.max(campusRate, MIN_PENETRATION_RATE);
 
     // Determine scaling cap based on campus activity
     const maxScaling = this.getMaxScaling(campusDevices);
@@ -210,7 +212,7 @@ export class PenetrationEstimationService {
         continue;
       }
 
-      const effectiveRate = Math.max(campusRate, lot.penetration_rate, MIN_PENETRATION_RATE);
+      const effectiveRate = Math.max(campusRate, MIN_PENETRATION_RATE);
       const rawScaling = 1 / effectiveRate;
       const cappedScaling = Math.min(rawScaling, maxScaling);
       const scaledOccupancy = Math.round(lot.current_occupancy * cappedScaling);
