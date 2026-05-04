@@ -41,6 +41,24 @@ function redactLotIfRevoked<T extends ParkingLotResponse>(lot: T): T {
   };
 }
 
+/**
+ * Active operational notice for a lot — construction zone, full closure, partial
+ * detour. Sourced from the campus map (concept3d) and refreshed weekly by the
+ * `refresh-lot-advisories` backend cron. Always present (not contributor-gated)
+ * so users locked out of live occupancy can still see why a lot is unavailable.
+ */
+export interface LotAdvisory {
+  id: string;
+  title: string;
+  description: string | null;
+  severity: 'INFO' | 'ADVISORY' | 'CLOSURE';
+  source: 'CONCEPT3D';
+  match_reason: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  updated_at: string;
+}
+
 // Backend response interfaces (matching the backend)
 export interface ParkingLot {
   /** Prisma cuid — used as lotId when POSTing to /reports */
@@ -73,6 +91,12 @@ export interface ParkingLot {
   ev_charging_stations: number;
   motorcycle_spaces: number;
   accessible_spaces: number;
+  /** Designated short-term / visitor spaces. 0 = none. */
+  short_term_parking_spaces: number;
+  /** Signed low-emission-vehicle spaces (informational, unenforced). 0 = none. */
+  low_emission_spaces: number;
+  /** Number of pay stations physically located in this lot. */
+  pay_stations: number;
   has_lighting: boolean;
   has_cameras: boolean;
   has_emergency_phone: boolean;
@@ -82,6 +106,8 @@ export interface ParkingLot {
   penetration_rate: number;
   avg_turnover_minutes: number;
   confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  /** Active operational notices (closures, construction). Empty when none. */
+  advisories: LotAdvisory[];
   timestamp: string;
 }
 

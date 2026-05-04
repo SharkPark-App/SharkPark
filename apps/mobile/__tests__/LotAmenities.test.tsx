@@ -60,6 +60,9 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   ev_charging_stations: 4,
   motorcycle_spaces: 6,
   accessible_spaces: 10,
+  short_term_parking_spaces: 0,
+  low_emission_spaces: 0,
+  pay_stations: 0,
   has_lighting: true,
   has_cameras: true,
   has_emergency_phone: true,
@@ -77,6 +80,7 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   estimated_available: 250,
   raw_occupancy: 250,
   effective_penetration_rate: 0.15,
+  advisories: [],
   ...overrides,
 });
 
@@ -227,6 +231,45 @@ describe('LotAmenities', () => {
     const tree = renderLot({ motorcycle_spaces: 0 });
     const texts = collectTexts(tree.root);
     expect(texts).not.toContain('Motorcycle');
+  });
+
+  it('renders short-term spaces when > 0', () => {
+    const tree = renderLot({ short_term_parking_spaces: 19 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Short-term');
+    expect(texts).toContain('19 spaces');
+  });
+
+  it('does not render short-term row when 0', () => {
+    const tree = renderLot({ short_term_parking_spaces: 0 });
+    const texts = collectTexts(tree.root);
+    expect(texts).not.toContain('Short-term');
+  });
+
+  it('renders low-emission spaces when > 0', () => {
+    const tree = renderLot({ low_emission_spaces: 32 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Low-emission');
+    expect(texts).toContain('32 spaces');
+  });
+
+  it('does not render low-emission row when 0', () => {
+    const tree = renderLot({ low_emission_spaces: 0 });
+    const texts = collectTexts(tree.root);
+    expect(texts).not.toContain('Low-emission');
+  });
+
+  it('renders pay stations when > 0', () => {
+    const tree = renderLot({ pay_stations: 3 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Pay stations');
+    expect(texts).toContain('3 on-site');
+  });
+
+  it('does not render pay-stations row when 0', () => {
+    const tree = renderLot({ pay_stations: 0 });
+    const texts = collectTexts(tree.root);
+    expect(texts).not.toContain('Pay stations');
   });
 
   it('renders all safety chips', () => {

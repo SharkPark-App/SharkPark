@@ -1,10 +1,28 @@
-import type { Lot as PrismaLot } from '@prisma/client';
+import type { Lot as PrismaLot, AdvisorySeverity, AdvisorySource } from '@prisma/client';
 
 /**
  * Re-export Prisma's Lot type for convenience.
  * Services can use the Prisma-generated type directly.
  */
 export type ParkingLot = PrismaLot;
+
+/**
+ * Active operational notice for a lot — construction zone, full closure,
+ * partial detour. Sourced from the campus map (concept3d) and refreshed
+ * weekly by the `refresh-lot-advisories` cron. Always present in the
+ * response (static metadata, not contributor-gated).
+ */
+export interface LotAdvisoryResponse {
+  id: string;
+  title: string;
+  description: string | null;
+  severity: AdvisorySeverity;
+  source: AdvisorySource;
+  match_reason: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  updated_at: string;
+}
 
 export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'current_occupancy'> {
   /**
@@ -40,6 +58,8 @@ export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'curr
   effective_penetration_rate: number | null;
   /** Canonical names of buildings this lot serves (derived from LotBuilding join) */
   buildings: string[];
+  /** Active operational notices (closures, construction). Empty when none. */
+  advisories: LotAdvisoryResponse[];
 }
 
 export interface GetLotsQueryParams {

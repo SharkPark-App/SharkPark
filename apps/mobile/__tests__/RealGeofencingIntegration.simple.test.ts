@@ -44,6 +44,9 @@ describe('Real Geofencing Integration (Simple)', () => {
       ev_charging_stations: 5,
       motorcycle_spaces: 10,
       accessible_spaces: 15,
+      short_term_parking_spaces: 0,
+      low_emission_spaces: 0,
+      pay_stations: 0,
       has_lighting: true,
       has_cameras: true,
       has_emergency_phone: true,
@@ -62,6 +65,7 @@ describe('Real Geofencing Integration (Simple)', () => {
       effective_penetration_rate: 0.85,
       confidence: 'MEDIUM' as const,
       timestamp: '2024-01-01T00:00:00Z',
+      advisories: [],
     },
     {
       id: 'cltest000000000002',
@@ -92,6 +96,9 @@ describe('Real Geofencing Integration (Simple)', () => {
       ev_charging_stations: 2,
       motorcycle_spaces: 5,
       accessible_spaces: 8,
+      short_term_parking_spaces: 0,
+      low_emission_spaces: 0,
+      pay_stations: 0,
       has_lighting: true,
       has_cameras: true,
       has_emergency_phone: false,
@@ -110,6 +117,7 @@ describe('Real Geofencing Integration (Simple)', () => {
       effective_penetration_rate: 0.80,
       confidence: 'HIGH' as const,
       timestamp: '2024-01-01T00:00:00Z',
+      advisories: [],
     },
   ];
 

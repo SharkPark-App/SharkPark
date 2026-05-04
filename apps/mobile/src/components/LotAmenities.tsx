@@ -12,6 +12,19 @@ interface LotAmenitiesProps {
 
 /* ─── helpers ─── */
 
+/**
+ * Severity → color/icon palette for the Advisories card. Keep this in sync
+ * with the AdvisorySeverity enum on the backend (lot-advisory-extractor.ts).
+ */
+const ADVISORY_PALETTE: Record<
+  'INFO' | 'ADVISORY' | 'CLOSURE',
+  { bg: string; fg: string; icon: string }
+> = {
+  CLOSURE:  { bg: '#fee2e2', fg: '#b91c1c', icon: 'close-circle-outline' },
+  ADVISORY: { bg: '#ffedd5', fg: '#c2410c', icon: 'warning-outline' },
+  INFO:     { bg: '#dbeafe', fg: '#1d4ed8', icon: 'information-circle-outline' },
+};
+
 /** Format an hours field into a readable string */
 function formatHours(hours: { open: string; close: string } | string): string {
   if (typeof hours === 'string') return hours; // e.g. "CLOSED"
@@ -96,6 +109,45 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
 
   return (
     <View style={styles.container}>
+      {/* ── Advisories (only when active) ── */}
+      {lot.advisories.length > 0 && (
+        <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            Advisories
+          </Text>
+          {lot.advisories.map(advisory => {
+            const palette = ADVISORY_PALETTE[advisory.severity];
+            return (
+              <View
+                key={advisory.id}
+                style={[
+                  advisoryStyles.row,
+                  { backgroundColor: palette.bg, borderLeftColor: palette.fg },
+                ]}
+                accessibilityRole="alert"
+              >
+                <Icon
+                  name={palette.icon}
+                  size={20}
+                  color={palette.fg}
+                  style={advisoryStyles.icon}
+                />
+                <View style={advisoryStyles.body}>
+                  <Text style={[advisoryStyles.title, { color: palette.fg }]}>
+                    {advisory.title}
+                  </Text>
+                  {advisory.description ? (
+                    <Text style={[advisoryStyles.description, { color: colors.textPrimary }]}>
+                      {advisory.description}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {/* ── Lot Info ── */}
       <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
         <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
@@ -190,6 +242,28 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
             icon="bicycle-outline"
             label="Motorcycle"
             value={`${lot.motorcycle_spaces} space${lot.motorcycle_spaces !== 1 ? 's' : ''}`}
+          />
+        )}
+        {lot.short_term_parking_spaces > 0 && (
+          <AmenityRow
+            icon="time-outline"
+            label="Short-term"
+            value={`${lot.short_term_parking_spaces} space${lot.short_term_parking_spaces !== 1 ? 's' : ''}`}
+          />
+        )}
+        {lot.low_emission_spaces > 0 && (
+          <AmenityRow
+            icon="leaf-outline"
+            label="Low-emission"
+            value={`${lot.low_emission_spaces} space${lot.low_emission_spaces !== 1 ? 's' : ''}`}
+            color="#16a34a"
+          />
+        )}
+        {lot.pay_stations > 0 && (
+          <AmenityRow
+            icon="card-outline"
+            label="Pay stations"
+            value={`${lot.pay_stations} on-site`}
           />
         )}
       </View>
@@ -295,5 +369,33 @@ const chipStyles = StyleSheet.create({
   label: {
     fontSize: TYPOGRAPHY.fontSize.sm,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+});
+
+const advisoryStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    borderRadius: SPACING.sm,
+    borderLeftWidth: 4,
+    marginBottom: SPACING.sm,
+  },
+  icon: {
+    marginRight: SPACING.md,
+    marginTop: 2,
+  },
+  body: {
+    flex: 1,
+  },
+  title: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    marginBottom: 2,
+  },
+  description: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    lineHeight: 18,
   },
 });

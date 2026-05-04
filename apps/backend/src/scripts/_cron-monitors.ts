@@ -101,6 +101,11 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 30,
     maxRuntime: 30,
   },
+  'refresh-lot-metadata': {
+    schedule: '0 7 1 * *',
+    checkinMargin: 60,
+    maxRuntime: 30,
+  },
 };
 
 export const CRON_TIMEZONE = TIMEZONE;

@@ -68,3 +68,6 @@
 # external API hits don't bunch up. Geofences/buildings stay committed to
 # the repo (rare changes need code review); this only refreshes advisories.
 0 6 * * 0     node /app/apps/backend/dist/scripts/refresh-lot-advisories.js
+
+# Reconcile lot metadata (EV presence) from concept3d. Monthly at 7 AM PT on the 1st.
+0 7 1 * *     node /app/apps/backend/dist/scripts/refresh-lot-metadata.js

@@ -106,6 +106,9 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   ev_charging_stations: 0,
   motorcycle_spaces: 0,
   accessible_spaces: 0,
+  short_term_parking_spaces: 0,
+  low_emission_spaces: 0,
+  pay_stations: 0,
   has_lighting: true,
   has_cameras: true,
   has_emergency_phone: true,
@@ -122,6 +125,7 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   estimated_available: 100,
   raw_occupancy: 100,
   effective_penetration_rate: 1,
+  advisories: [],
   ...overrides,
 });
 

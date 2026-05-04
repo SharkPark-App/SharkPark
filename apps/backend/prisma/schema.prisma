@@ -54,6 +54,12 @@ model Lot {
   ev_charging_stations Int     @default(0)
   motorcycle_spaces   Int      @default(0)
   accessible_spaces   Int      @default(0)
+  /** Spaces dedicated to short-term/visitor parking (≤30 min metered or designated). */
+  short_term_parking_spaces Int @default(0)
+  /** Spaces designated for low-emission vehicles (signed but unenforced — count is informational). */
+  low_emission_spaces Int      @default(0)
+  /** Number of pay stations physically located in this lot. */
+  pay_stations        Int      @default(0)
   has_lighting        Boolean  @default(true)
   has_cameras         Boolean  @default(false)
   has_emergency_phone Boolean  @default(false)

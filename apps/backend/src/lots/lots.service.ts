@@ -8,6 +8,23 @@ import { OCCUPANCY_THRESHOLDS } from '../constants';
 
 const LOT_WITH_BUILDINGS_INCLUDE = {
   lot_buildings: { include: { building: { select: { name: true } } } },
+  // Only active advisories make it onto the response — historical/closed ones
+  // remain in the table for audit but aren't user-facing.
+  lot_advisories: {
+    where: { is_active: true },
+    orderBy: [{ severity: 'desc' as const }, { updated_at: 'desc' as const }],
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      severity: true,
+      source: true,
+      match_reason: true,
+      starts_at: true,
+      ends_at: true,
+      updated_at: true,
+    },
+  },
 } satisfies Prisma.LotInclude;
 
 type LotWithBuildings = Prisma.LotGetPayload<{ include: typeof LOT_WITH_BUILDINGS_INCLUDE }>;
@@ -388,10 +405,25 @@ export class LotsService {
   ): ParkingLotResponse {
     const { redactLive = false } = options;
 
-    // Strip Prisma `current_occupancy`, `daily_rate`, and the join relation from
+    // Strip Prisma `current_occupancy`, `daily_rate`, and the join relations from
     // the spread — we set them explicitly below so the type stays accurate.
-    const { current_occupancy, daily_rate, lot_buildings, ...meta } = lot;
+    const { current_occupancy, daily_rate, lot_buildings, lot_advisories, ...meta } = lot;
     const buildings = lot_buildings.map(lb => lb.building.name);
+    // Coerce DateTime fields to ISO strings for transport. Advisories are
+    // static metadata (not contributor-gated) — every caller, including App
+    // Store reviewers, sees them so the UI can warn about closures even when
+    // live occupancy is locked.
+    const advisories = lot_advisories.map(a => ({
+      id: a.id,
+      title: a.title,
+      description: a.description,
+      severity: a.severity,
+      source: a.source,
+      match_reason: a.match_reason,
+      starts_at: a.starts_at ? a.starts_at.toISOString() : null,
+      ends_at: a.ends_at ? a.ends_at.toISOString() : null,
+      updated_at: a.updated_at.toISOString(),
+    }));
 
     if (redactLive) {
       return {
@@ -406,6 +438,7 @@ export class LotsService {
         raw_occupancy: null,
         effective_penetration_rate: null,
         buildings,
+        advisories,
       };
     }
 
@@ -442,6 +475,7 @@ export class LotsService {
         ? Math.round(estimate.effectiveRate * 10000) / 10000
         : 1,
       buildings,
+      advisories,
     };
   }
 

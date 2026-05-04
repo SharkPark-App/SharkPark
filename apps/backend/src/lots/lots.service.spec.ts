@@ -87,7 +87,7 @@ describe('LotsService', () => {
       latitude: 33.78,
       longitude: -118.11,
       geofence_coordinates: [],
-      lot_buildings: [],
+      lot_buildings: [], lot_advisories: [],
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -151,7 +151,7 @@ describe('LotsService', () => {
         current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
         daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
         penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-        geofence_coordinates: [], lot_buildings: [], created_at: new Date(), updated_at: new Date(),
+        geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
       };
       prisma.lot.findFirst.mockResolvedValue(mockLot);
       const result = await service.findOne('G1');
@@ -181,14 +181,14 @@ describe('LotsService', () => {
           current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
           penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-          geofence_coordinates: [], lot_buildings: [], created_at: new Date(), updated_at: new Date(),
+          geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
         {
           id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
           current_occupancy: 30, lot_type: 'EMPLOYEE', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
           penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-          geofence_coordinates: [], lot_buildings: [], created_at: new Date(), updated_at: new Date(),
+          geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
       ];
       prisma.lot.findMany.mockResolvedValue(lots);
@@ -223,14 +223,14 @@ describe('LotsService', () => {
           current_occupancy: 90, lot_type: 'STUDENT', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
           penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-          geofence_coordinates: [], lot_buildings: [], created_at: new Date(), updated_at: new Date(),
+          geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
         {
           id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
           current_occupancy: 10, lot_type: 'EMPLOYEE', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
           penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
-          geofence_coordinates: [], lot_buildings: [], created_at: new Date(), updated_at: new Date(),
+          geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
       ];
       prisma.lot.findMany.mockResolvedValue(lots);
@@ -298,6 +298,7 @@ describe('LotsService', () => {
       current_occupancy: 190, // 95% — full
       location_description: 'East Campus',
       lot_buildings: [{ building: { name: 'ECS' } }],
+      lot_advisories: [],
       center_lat: 33.7838,
       center_lng: -118.1089,
       geofence_polygon: [],
@@ -311,6 +312,9 @@ describe('LotsService', () => {
       ev_charging_stations: 0,
       motorcycle_spaces: 4,
       accessible_spaces: 8,
+      short_term_parking_spaces: 0,
+      low_emission_spaces: 0,
+      pay_stations: 0,
       has_lighting: true,
       has_cameras: true,
       has_emergency_phone: true,
