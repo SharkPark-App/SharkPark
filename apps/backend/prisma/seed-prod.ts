@@ -147,8 +147,11 @@ async function seedProd() {
       lot_type: lot.lot_type,
       capacity: lot.capacity,
       location_description: lot.location_description,
-      center_lat: lot.center_lat,
-      center_lng: lot.center_lng,
+      // Geometry comes entirely from lot-geofences.generated.ts (concept3d).
+      // Lot.center_lat/lng = polygon centroid so the DB has one consistent
+      // geometric source matching geofence_polygon.
+      center_lat: geofence.centroid.lat,
+      center_lng: geofence.centroid.lng,
       geofence_polygon: geofence.polygon,
       geofence_radius: geofence.radius_m,
       permit_types: lot.permit_types,
@@ -273,7 +276,12 @@ async function seedProd() {
     });
     if (!lotRow) continue;
 
-    const nearbyNames = deriveLotBuildings(lot, buildingsWithFootprints);
+    const geofence = LOT_GEOFENCES[lot.lot_id];
+    if (!geofence) continue;
+    const nearbyNames = deriveLotBuildings(
+      { ...lot, center_lat: geofence.centroid.lat, center_lng: geofence.centroid.lng },
+      buildingsWithFootprints,
+    );
     const desiredBuildingIds = new Set<string>();
     for (const proximity of nearbyNames) {
       const building = buildingMap.get(proximity); // exact name match — no duplicates possible

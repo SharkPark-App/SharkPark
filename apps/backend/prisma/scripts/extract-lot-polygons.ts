@@ -12,10 +12,12 @@
  * If multiple polygons match the same name+catId (rare), pick the largest by area.
  *
  * Validation:
- *   - Every polygon centroid MUST be within CENTROID_DRIFT_MAX_M of the
- *     LotSeed.center_lat/lng. If exceeded → throw (fix LotSeed coords or
- *     update preference for that lot). NO graceful skip — bad data must fail loud.
  *   - Every LotSeed lot_id MUST get a polygon. Missing → throw.
+ *   - If a previous lot-geofences.generated.ts exists, every newly-extracted
+ *     polygon centroid MUST be within CENTROID_DRIFT_MAX_M of the centroid
+ *     committed last time. This catches concept3d data shifts (label swaps,
+ *     re-traced polygons) at extraction time before they reach the DB.
+ *     NO graceful skip — bad data must fail loud.
  *
  * Usage (from apps/backend):
  *   pnpm exec ts-node --project tsconfig.scripts.json prisma/scripts/extract-lot-polygons.ts
@@ -103,6 +105,28 @@ function ringCentroid(ring: LatLng[]): LatLng {
   return { lat: sum.lat / ring.length, lng: sum.lng / ring.length };
 }
 
+/**
+ * Parse the previously-generated lot-geofences file (if it exists) and return
+ * a map of lot_id → centroid. We deliberately read the rendered TS source via
+ * a dynamic import so we get the same shape that ships to runtime, rather than
+ * re-parsing the JSON ourselves.
+ *
+ * On first run (file doesn't exist) returns an empty map and the drift check
+ * is skipped.
+ */
+function loadPreviousCentroids(generatedPath: string): Map<string, LatLng> {
+  const out = new Map<string, LatLng>();
+  if (!fs.existsSync(generatedPath)) return out;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const prev = require(generatedPath) as {
+    LOT_GEOFENCES: Record<string, { centroid: LatLng }>;
+  };
+  for (const [id, g] of Object.entries(prev.LOT_GEOFENCES)) {
+    out.set(id, g.centroid);
+  }
+  return out;
+}
+
 /** Lookup rule: which (catId, name(s)) to find for a given LotSeed.lot_id. */
 function lookupRule(lot: LotSeed): { catId: number; nameCandidates: string[] } {
   const id = lot.lot_id;
@@ -143,6 +167,16 @@ function main(): void {
   const items: C3DLocation[] = Array.isArray(raw) ? raw : raw.locations ?? [];
   console.log(`[extract] loaded ${items.length} concept3d locations`);
 
+  // Load the previously-committed geofences (if any) so we can detect when
+  // a polygon has shifted significantly between extractions — this is the
+  // safety net against concept3d silently re-tracing or relabeling a lot.
+  const previousCentroids = loadPreviousCentroids(OUTPUT_PATH);
+  if (previousCentroids.size > 0) {
+    console.log(`[extract] loaded ${previousCentroids.size} previous centroids for drift check`);
+  } else {
+    console.log('[extract] no previous generated file — skipping drift check (first run)');
+  }
+
   const results: ExtractedGeofence[] = [];
   const errors: string[] = [];
 
@@ -180,15 +214,14 @@ function main(): void {
     const provenance = { catId: winner.c.catId, name: winner.c.name };
 
     const centroid = ringCentroid(chosenRing);
-    const drift = haversineMeters(
-      { lat: lot.center_lat, lng: lot.center_lng },
-      centroid,
-    );
+    const previous = previousCentroids.get(lot.lot_id);
+    const drift = previous ? haversineMeters(previous, centroid) : 0;
 
-    if (drift > CENTROID_DRIFT_MAX_M) {
+    if (previous && drift > CENTROID_DRIFT_MAX_M) {
       errors.push(
-        `${lot.lot_id}: extracted polygon centroid drifts ${drift.toFixed(1)}m from LotSeed.center (max ${CENTROID_DRIFT_MAX_M}m). ` +
-          `Either LotSeed coords are wrong, or the wrong concept3d entry was matched.`,
+        `${lot.lot_id}: extracted polygon centroid drifts ${drift.toFixed(1)}m from previously-committed centroid (max ${CENTROID_DRIFT_MAX_M}m). ` +
+          `Either concept3d shifted the polygon, or the wrong entry was matched. ` +
+          `Inspect manually before committing the new generated file.`,
       );
       continue;
     }
@@ -233,7 +266,7 @@ export type LotGeofence = {
   source: { catId: number; name: string };
   /** Geometric centroid of the ring (mean of vertices). */
   centroid: LatLng;
-  /** Distance (meters) from LotSeed.center_lat/lng to centroid at extraction time. */
+  /** Distance (meters) from the centroid in the previous generated file (0 on first run). */
   centroid_drift_m: number;
   /** Bounding-circle radius (m): max(centroid→vertex) + 5 m buffer. */
   radius_m: number;

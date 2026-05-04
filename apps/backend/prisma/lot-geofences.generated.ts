@@ -14,7 +14,7 @@ export type LotGeofence = {
   source: { catId: number; name: string };
   /** Geometric centroid of the ring (mean of vertices). */
   centroid: LatLng;
-  /** Distance (meters) from LotSeed.center_lat/lng to centroid at extraction time. */
+  /** Distance (meters) from the previously-committed centroid; 0 on first generation. */
   centroid_drift_m: number;
   /** Bounding-circle radius (m): max(centroid→vertex) + 5 m buffer. */
   radius_m: number;

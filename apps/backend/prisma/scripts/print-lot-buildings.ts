@@ -10,6 +10,7 @@
  */
 import { CSULB_BUILDINGS, parkingLots } from '../lot-data';
 import { BUILDING_FOOTPRINTS } from '../building-footprints.generated';
+import { LOT_GEOFENCES } from '../lot-geofences.generated';
 import { deriveLotBuildings } from '../../src/lots/derive-lot-buildings';
 
 const RADIUS_M = Number(process.env.LOT_BUILDING_RADIUS_M ?? 250);
@@ -25,7 +26,16 @@ console.log(
 );
 
 for (const lot of parkingLots) {
-  const names = deriveLotBuildings(lot, buildingsWithFootprints, RADIUS_M);
+  const geofence = LOT_GEOFENCES[lot.lot_id];
+  if (!geofence) {
+    console.log(`\n${lot.lot_id} — ${lot.display_name}\n  (no geofence — skipped)`);
+    continue;
+  }
+  const names = deriveLotBuildings(
+    { ...lot, center_lat: geofence.centroid.lat, center_lng: geofence.centroid.lng },
+    buildingsWithFootprints,
+    RADIUS_M,
+  );
   const overrideNote = lot.building_overrides
     ? ` [overrides: +${lot.building_overrides.add?.length ?? 0} / -${
         lot.building_overrides.exclude?.length ?? 0
