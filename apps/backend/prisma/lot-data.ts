@@ -138,6 +138,9 @@ export const CSULB_BUILDINGS = [
   { name: 'LBSU Softball Complex',                              alternate_names: ['Softball Complex'] },
   { name: 'LBSU Sand Courts',                                   alternate_names: ['Sand Courts', 'Beach Volleyball Courts'] },
   { name: 'Ken Lindgren Aquatics Center',                       alternate_names: ['Aquatics Center', 'Lindgren Aquatics'] },
+  // Bohl Diamond at Blair Field is in Recreation Park, ~2.5 mi off CSULB campus.
+  // Intentionally NOT referenced from any CSULB_LOTS[].buildings entry: no on-campus lot is
+  // within walking distance, so baseball events are stored but won't surface on any lot card.
   { name: 'Bohl Diamond at Blair Field',                        alternate_names: ['Blair Field', 'Bohl Diamond'] },
 ] as const satisfies readonly BuildingSeed[];
 
@@ -520,7 +523,8 @@ export const parkingLots: LotSeed[] = [
     lot_type: LotType.STUDENT, capacity: 751, current_occupancy: 98,
     location_description: 'East Campus - Engineering Complex',
     buildings: ['College of Business', 'Parking & Transportation Services', 'Jack Rose Track', 'Pyramid',
-      'Horn Center', 'Barrett Athletic Administration Building', 'Parkside College', 'Japanese Garden'
+      'Horn Center', 'Barrett Athletic Administration Building', 'Parkside College', 'Japanese Garden',
+      'LBSU Sand Courts', 'Ken Lindgren Aquatics Center'
     ],
     center_lat: 33.7867, center_lng: -118.1176, geofence_radius: 65,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
@@ -536,7 +540,8 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G8', lot_name: 'Lot G8', display_name: 'Lot G8 - Student Health', lot_number: 'G8',
     lot_type: LotType.STUDENT, capacity: 720, current_occupancy: 77,
     location_description: 'West Campus - Student Health Center',
-    buildings: ['Parkside College', 'Parkside North', 'Child Development Center', 'Pyramid'],
+    buildings: ['Parkside College', 'Parkside North', 'Child Development Center', 'Pyramid',
+      'LBSU Sand Courts', 'Ken Lindgren Aquatics Center'],
     center_lat: 33.7873, center_lng: -118.1176, geofence_radius: 60,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -579,7 +584,7 @@ export const parkingLots: LotSeed[] = [
     lot_type: LotType.STUDENT, capacity: 319, current_occupancy: 21,
     location_description: 'East Campus - Palo Verde',
     buildings: ['Pyramid', 'University Music Center', 'Dance Center', 'Carpenter Performing Arts Center',
-      'Barrett Athletic Administration Building'],
+      'Barrett Athletic Administration Building', 'LBSU Sand Courts'],
     center_lat: 33.7877, center_lng: -118.1157, geofence_radius: 50,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -593,7 +598,8 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G12', lot_name: 'Lot G12', display_name: 'Lot G12 - North Campus', lot_number: 'G12',
     lot_type: LotType.STUDENT, capacity: 628, current_occupancy: 36,
     location_description: 'North Campus',
-    buildings: ['University Music Center', 'Dance Center', 'Carpenter Performing Arts Center', 'George Allen Field'],
+    buildings: ['University Music Center', 'Dance Center', 'Carpenter Performing Arts Center', 'George Allen Field',
+      'LBSU Softball Complex'],
     center_lat: 33.7878, center_lng: -118.1106, geofence_radius: 45,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -607,7 +613,8 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G14', lot_name: 'Lot G14', display_name: 'Lot G14 - Beachside', lot_number: 'G14',
     lot_type: LotType.STUDENT, capacity: 262, current_occupancy: 26,
     location_description: 'West Campus - Near PCH',
-    buildings: ['Student Recreation & Wellness Center', 'George Allen Field'],
+    buildings: ['Student Recreation & Wellness Center', 'George Allen Field',
+      'LBSU Softball Complex', 'LBSU Sand Courts', 'Ken Lindgren Aquatics Center', 'Rhodes Tennis Center'],
     center_lat: 33.7861, center_lng: -118.1086, geofence_radius: 60,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: true, daily_rate: 8.00,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -702,7 +709,7 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E6', lot_name: 'Lot E6', display_name: 'Lot E6 - Faculty/Staff', lot_number: 'E6',
     lot_type: LotType.EMPLOYEE, capacity: 240, current_occupancy: 35,
     location_description: 'Central Campus - Faculty',
-    buildings: ['Engineering Technology', 'Human Services & Design', 'Design'],
+    buildings: ['Engineering Technology', 'Human Services & Design', 'Design', 'Rhodes Tennis Center'],
     center_lat: 33.7825, center_lng: -118.1084, geofence_radius: 40,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -734,7 +741,8 @@ export const parkingLots: LotSeed[] = [
     lot_type: LotType.STUDENT, capacity: 793, current_occupancy: 66,
     location_description: 'South Campus',
     buildings: ['College of Business', 'Parking & Transportation Services', 'Jack Rose Track', 'Japanese Garden',
-      'Horn Center', 'Barrett Athletic Administration Building', 'Parkside College', 'Hillside Gateway'
+      'Horn Center', 'Barrett Athletic Administration Building', 'Parkside College', 'Hillside Gateway',
+      'LBSU Sand Courts'
     ],
     center_lat: 33.7854, center_lng: -118.1176, geofence_radius: 55,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
@@ -749,7 +757,7 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G13', lot_name: 'Lot G13', display_name: 'Lot G13 - Upper Campus', lot_number: 'G13',
     lot_type: LotType.STUDENT, capacity: 304, current_occupancy: 18,
     location_description: 'Upper Campus',
-    buildings: ['Student Recreation & Wellness Center', 'George Allen Field'],
+    buildings: ['Student Recreation & Wellness Center', 'George Allen Field', 'LBSU Softball Complex'],
     center_lat: 33.7874, center_lng: -118.1086, geofence_radius: 50,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -825,7 +833,7 @@ export const parkingLots: LotSeed[] = [
     lot_type: LotType.STUDENT, capacity: 1400, current_occupancy: 91,
     location_description: 'North Campus - Palo Verde Structure',
     buildings: ['University Music Center', 'Dance Center', 'Carpenter Performing Arts Center', 'George Allen Field',
-      'Student Recreation & Wellness Center'],
+      'Student Recreation & Wellness Center', 'LBSU Softball Complex', 'LBSU Sand Courts'],
     center_lat: 33.7874, center_lng: -118.1094, geofence_radius: 50,
     permit_types: ['Gold', 'Green', 'Resident'], daily_permit_allowed: false,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -840,7 +848,8 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'PVS', lot_name: 'Palo Verde South', display_name: 'Palo Verde South - South Campus', lot_number: 'PVS',
     lot_type: LotType.STUDENT, capacity: 1410, current_occupancy: 82,
     location_description: 'South Campus - Palo Verde Structure',
-    buildings: ['George Allen Field', 'Student Recreation & Wellness Center', 'Rhodes Tennis Center'],
+    buildings: ['George Allen Field', 'Student Recreation & Wellness Center', 'Rhodes Tennis Center',
+      'LBSU Softball Complex', 'LBSU Sand Courts', 'Ken Lindgren Aquatics Center'],
     center_lat: 33.7861, center_lng: -118.1094, geofence_radius: 48,
     permit_types: ['Gold', 'Green', 'Resident'], daily_permit_allowed: false,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -856,7 +865,7 @@ export const parkingLots: LotSeed[] = [
     lot_type: LotType.STUDENT, capacity: 3000, current_occupancy: 380,
     location_description: 'East Campus - Near Walter Pyramid',
     buildings: ['Pyramid', 'Barrett Athletic Administration Building', 'Jack Rose Track', 'College of Business',
-      'Parking & Transportation Services'
+      'Parking & Transportation Services', 'LBSU Sand Courts'
     ],
     center_lat: 33.7861, center_lng: -118.1157, geofence_radius: 65,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: true, daily_rate: 10.00,
