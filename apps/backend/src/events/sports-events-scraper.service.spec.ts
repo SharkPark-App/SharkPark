@@ -36,6 +36,7 @@ interface RawEventInput {
   opponent?: string | null;
   tv?: string | null;
   previewUrl?: string | null;
+  recapUrl?: string | null;
 }
 
 const makeRaw = (e: RawEventInput) => ({
@@ -52,6 +53,7 @@ const makeRaw = (e: RawEventInput) => ({
     tv: e.tv ?? null,
     preview: e.previewUrl ? { url: e.previewUrl } : null,
   },
+  result: e.recapUrl ? { recap: { url: e.recapUrl } } : null,
 });
 
 const mockMonthResponse = (events: ReturnType<typeof makeRaw>[]) => [
@@ -65,7 +67,7 @@ describe('SportsEventsScraperService', () => {
 
   beforeEach(async () => {
     prisma = {
-      school: { findFirst: jest.fn().mockResolvedValue({ id: SCHOOL_ID, short_name: 'CSULB' }) },
+      school: { findFirst: jest.fn().mockResolvedValue({ id: SCHOOL_ID, short_name: 'CSULB', timezone: 'America/Los_Angeles' }) },
       building: { findMany: jest.fn().mockResolvedValue(SEEDED_BUILDINGS) },
       campusEvent: { upsert: jest.fn().mockResolvedValue({}) },
     };
@@ -131,10 +133,10 @@ describe('SportsEventsScraperService', () => {
     });
     expect(args.create.description).toContain('Conference game');
     expect(args.create.description).toContain('ESPN+');
-    expect(args.create.start_time).toEqual(new Date('2026-01-15T19:00:00'));
-    expect(args.create.end_time).toEqual(
-      new Date(new Date('2026-01-15T19:00:00').getTime() + 3 * 60 * 60 * 1000),
-    );
+    // 7 PM Pacific on 2026-01-15 (PST, UTC-8) → 2026-01-16T03:00:00Z.
+    // Asserts parsing is anchored to the school timezone, not the host's.
+    expect(args.create.start_time).toEqual(new Date('2026-01-16T03:00:00Z'));
+    expect(args.create.end_time).toEqual(new Date('2026-01-16T06:00:00Z'));
   });
 
   it('skips away, neutral, cancelled, postponed, TBA, and unmapped sport events', async () => {
@@ -203,6 +205,56 @@ describe('SportsEventsScraperService', () => {
     );
   });
 
+  it('falls back to the recap URL when no preview URL is published', async () => {
+    setMonthlyEvents([
+      makeRaw({
+        id: 40,
+        date: '2026-01-15T19:00:00',
+        sportShortname: 'wbball',
+        recapUrl: '/news/recap/40',
+      }),
+    ]);
+
+    await service.scrapeAll();
+
+    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_url).toBe(
+      'https://longbeachstate.com/news/recap/40',
+    );
+  });
+
+  it('falls back to the sport schedule page when no per-game URL exists', async () => {
+    setMonthlyEvents([
+      makeRaw({
+        id: 50,
+        date: '2026-01-15T19:00:00',
+        sportShortname: 'baseball',
+        sportTitle: 'Baseball',
+      }),
+      makeRaw({
+        id: 51,
+        date: '2026-01-16T19:00:00',
+        sportShortname: 'wsoc',
+        sportTitle: "Women's Soccer",
+      }),
+    ]);
+
+    await service.scrapeAll();
+
+    const calls = prisma.campusEvent.upsert.mock.calls;
+    const urlById = new Map<string, string>(
+      calls.map(([arg]: [{ where: { external_id: string }; create: { event_url: string } }]) => [
+        arg.where.external_id,
+        arg.create.event_url,
+      ]),
+    );
+    expect(urlById.get('lbsu-sports-50')).toBe(
+      'https://longbeachstate.com/sports/baseball/schedule',
+    );
+    expect(urlById.get('lbsu-sports-51')).toBe(
+      'https://longbeachstate.com/sports/wsoc/schedule',
+    );
+  });
+
   it('throws when the Sidearm endpoint returns a non-OK response', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
@@ -221,5 +273,66 @@ describe('SportsEventsScraperService', () => {
 
     expect(prisma.campusEvent.upsert).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('parses naive ISO timestamps as the school\'s wall clock during PDT', async () => {
+    setMonthlyEvents([
+      makeRaw({
+        id: 60,
+        // 6 PM Pacific on 2026-05-01 (PDT, UTC-7) → 01:00 UTC on 2026-05-02.
+        date: '2026-05-01T18:00:00',
+        sportShortname: 'softball',
+        sportTitle: 'Softball',
+      }),
+    ]);
+
+    await service.scrapeAll();
+
+    const args = prisma.campusEvent.upsert.mock.calls[0][0];
+    expect(args.create.start_time).toEqual(new Date('2026-05-02T01:00:00Z'));
+    expect(args.create.end_time).toEqual(new Date('2026-05-02T04:00:00Z'));
+  });
+
+  it('dedupes Sidearm duplicates on (building, start, sport) and keeps the lowest id', async () => {
+    setMonthlyEvents([
+      // Real Sidearm pattern: same baseball game returned under two ids.
+      makeRaw({ id: 10109, date: '2026-05-01T18:05:00', sportShortname: 'baseball', sportTitle: 'Baseball', opponent: 'UC San Diego' }),
+      makeRaw({ id: 10021, date: '2026-05-01T18:05:00', sportShortname: 'baseball', sportTitle: 'Baseball', opponent: 'UC San Diego' }),
+    ]);
+
+    await service.scrapeAll();
+
+    expect(prisma.campusEvent.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.campusEvent.upsert.mock.calls[0][0].where).toEqual({
+      external_id: 'lbsu-sports-10021',
+    });
+  });
+
+  it('strips a leading "Long Beach State vs." prefix from opponent titles', async () => {
+    setMonthlyEvents([
+      makeRaw({
+        id: 70,
+        date: '2026-05-02T18:00:00',
+        sportShortname: 'mvball',
+        sportTitle: "Men's Volleyball",
+        opponent: 'Long Beach State vs. Loyola Chicago',
+      }),
+    ]);
+
+    await service.scrapeAll();
+
+    expect(prisma.campusEvent.upsert.mock.calls[0][0].create.event_name).toBe(
+      "Men's Volleyball vs Loyola Chicago",
+    );
+  });
+
+  it('skips events with malformed naive ISO timestamps', async () => {
+    setMonthlyEvents([
+      makeRaw({ id: 80, date: 'not-a-date', sportShortname: 'wbball' }),
+    ]);
+
+    await service.scrapeAll();
+
+    expect(prisma.campusEvent.upsert).not.toHaveBeenCalled();
   });
 });

@@ -49,6 +49,10 @@ interface RawSidearmMedia {
   preview?: { url?: string | null } | null;
 }
 
+interface RawSidearmResult {
+  recap?: { url?: string | null } | null;
+}
+
 interface RawSidearmEvent {
   id: number;
   /** Local-naive ISO timestamp, e.g. "2026-05-01T18:00:00". May be midnight when time is TBA. */
@@ -66,6 +70,7 @@ interface RawSidearmEvent {
   sport: RawSidearmSport;
   opponent: RawSidearmOpponent | null;
   media?: RawSidearmMedia | null;
+  result?: RawSidearmResult | null;
 }
 
 interface RawSidearmDay {
@@ -98,7 +103,12 @@ interface ScrapedEvent {
   event_name: string;
   location: string;
   description: string | null;
-  event_url: string | null;
+  /**
+   * Always populated. Falls back to the sport's schedule page when the API
+   * doesn't provide a per-game preview/recap URL, mirroring the campus-events
+   * scraper which also always builds a deterministic URL.
+   */
+  event_url: string;
   start_time: Date;
   end_time: Date;
   building_id: string;
@@ -113,6 +123,54 @@ const SCHOOL_CONFIG: Record<string, SchoolSportsConfig> = {
   CSULB: { sidearmSubdomain: 'longbeachstate' },
 };
 
+/**
+ * Parse a naive ISO timestamp ("YYYY-MM-DDTHH:mm:ss" with no zone marker) as
+ * a wall-clock time in the given IANA timezone, returning the equivalent UTC
+ * `Date`. Sidearm's calendar API returns naive timestamps anchored to the
+ * school's local time, so we anchor parsing the same way instead of trusting
+ * the host machine's TZ (which is UTC on Fly).
+ *
+ * Implementation: parse the string as if it were UTC to get a candidate
+ * instant, ask Intl what wall-clock time that instant has in the target zone,
+ * and use the difference between the candidate and the formatted wall clock
+ * as the zone offset to subtract. Handles DST transitions correctly because
+ * Intl reports the offset that applies at the requested wall-clock moment.
+ */
+function parseNaiveIsoInZone(naiveIso: string, timeZone: string): Date | null {
+  // Strict shape check; Sidearm always returns this format but defend against
+  // malformed payloads rather than silently producing garbage Dates.
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/.exec(naiveIso);
+  if (!match) return null;
+  const asUtc = new Date(`${naiveIso}Z`);
+  if (isNaN(asUtc.getTime())) return null;
+
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts: Record<string, string> = {};
+  for (const p of dtf.formatToParts(asUtc)) {
+    if (p.type !== 'literal') parts[p.type] = p.value;
+  }
+  const hour = Number(parts.hour) % 24; // Intl emits "24" for midnight in some envs
+  const wallClockUtcMs = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    hour,
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  const offsetMs = wallClockUtcMs - asUtc.getTime();
+  return new Date(asUtc.getTime() - offsetMs);
+}
+
 @Injectable()
 export class SportsEventsScraperService {
   private readonly logger = new Logger(SportsEventsScraperService.name);
@@ -123,7 +181,7 @@ export class SportsEventsScraperService {
     for (const [shortName, config] of Object.entries(SCHOOL_CONFIG)) {
       const school = await this.prisma.school.findFirst({
         where: { short_name: shortName },
-        select: { id: true, short_name: true },
+        select: { id: true, short_name: true, timezone: true },
       });
 
       if (!school) {
@@ -132,7 +190,7 @@ export class SportsEventsScraperService {
       }
 
       try {
-        const { upserted, skipped } = await this.scrapeSchool(school.id, config);
+        const { upserted, skipped } = await this.scrapeSchool(school.id, school.timezone, config);
         this.logger.log(
           `[${shortName}] ${upserted} sports events upserted, ${skipped} skipped (away/neutral/TBA/unmapped sport)`,
         );
@@ -148,6 +206,7 @@ export class SportsEventsScraperService {
 
   private async scrapeSchool(
     schoolId: string,
+    timezone: string,
     config: SchoolSportsConfig,
   ): Promise<{ upserted: number; skipped: number }> {
     // Resolve sport → building_id once per scrape using the school's seeded buildings.
@@ -169,7 +228,7 @@ export class SportsEventsScraperService {
     }
 
     const rawEvents = await this.fetchAllEvents(config.sidearmSubdomain);
-    const scraped = this.transform(rawEvents, buildingIdByName);
+    const scraped = this.transform(rawEvents, buildingIdByName, config.sidearmSubdomain, timezone);
 
     await Promise.all(
       scraped.map(event =>
@@ -215,8 +274,17 @@ export class SportsEventsScraperService {
   private transform(
     raw: RawSidearmEvent[],
     buildingIdByName: Map<string, string>,
+    sidearmSubdomain: string,
+    timezone: string,
   ): ScrapedEvent[] {
-    const out: ScrapedEvent[] = [];
+    const siteOrigin = `https://${sidearmSubdomain}.com`;
+
+    // Sidearm sometimes lists the same baseball series twice under different
+    // ids (e.g. once on the team calendar and once on a conference calendar).
+    // We saw 2026-05-01 baseball returned as both id=10021 and id=10109 with
+    // identical date/time/opponent. Dedupe on (building, start, sport) and
+    // keep the lowest id so the external_id stays stable across scrapes.
+    const dedup = new Map<string, ScrapedEvent & { _rawId: number }>();
 
     for (const e of raw) {
       if (e.locationIndicator !== HOME_INDICATOR) continue;
@@ -229,11 +297,22 @@ export class SportsEventsScraperService {
       const buildingId = buildingIdByName.get(buildingName);
       if (!buildingId) continue;
 
-      const start = new Date(e.date);
-      if (isNaN(start.getTime())) continue;
+      // Sidearm returns naive ISO timestamps without a zone marker
+      // (e.g. "2026-05-01T18:00:00" for a 6 PM Pacific game). `new Date()`
+      // would parse those as the host machine's local time — fine on a Mac
+      // in PDT, off by 7-8h on Fly.io's UTC machines. Anchor parsing to the
+      // school's IANA timezone so production matches what's on the website.
+      const start = parseNaiveIsoInZone(e.date, timezone);
+      if (!start || isNaN(start.getTime())) continue;
       const end = new Date(start.getTime() + DEFAULT_GAME_DURATION_HOURS * 60 * 60 * 1000);
 
-      const opponent = e.opponent?.title?.trim();
+      // Some opponent titles already include the LBSU prefix
+      // (e.g. men's volleyball returns "Long Beach State vs. Loyola Chicago").
+      // Strip it so event_name doesn't end up as "…vs Long Beach State vs. …".
+      const rawOpponent = e.opponent?.title?.trim();
+      const opponent = rawOpponent
+        ? rawOpponent.replace(/^Long Beach State\s+vs\.?\s+/i, '').trim() || undefined
+        : undefined;
       const event_name = opponent
         ? `${e.sport.title} vs ${opponent}`
         : e.sport.title;
@@ -245,14 +324,25 @@ export class SportsEventsScraperService {
         ? descriptionParts.join(' · ').slice(0, DESCRIPTION_MAX_CHARS)
         : null;
 
-      const previewPath = e.media?.preview?.url ?? null;
-      const event_url = previewPath
-        ? previewPath.startsWith('http')
-          ? previewPath
-          : `https://longbeachstate.com${previewPath}`
-        : null;
+      // Prefer richer per-game URLs when available, otherwise fall back to the
+      // sport's schedule page so every sports event has a useful tap-target —
+      // matching the campus-events scraper which always builds an event_url
+      // from a known pattern. Sidearm sport `shortname` doubles as a valid
+      // schedule slug on every Sidearm-hosted athletics site we've seen.
+      const candidatePath =
+        e.media?.preview?.url
+          ?? e.result?.recap?.url
+          ?? `/sports/${e.sport.shortname}/schedule`;
+      const event_url = candidatePath.startsWith('http')
+        ? candidatePath
+        : `${siteOrigin}${candidatePath}`;
 
-      out.push({
+      const dedupKey = `${buildingId}|${start.getTime()}|${e.sport.shortname}`;
+      const existing = dedup.get(dedupKey);
+      if (existing && existing._rawId <= e.id) continue;
+
+      dedup.set(dedupKey, {
+        _rawId: e.id,
         external_id: `${EXTERNAL_ID_PREFIX}${e.id}`,
         event_name,
         location: buildingName,
@@ -264,7 +354,12 @@ export class SportsEventsScraperService {
       });
     }
 
-    return out;
+    // Strip the internal `_rawId` field before returning.
+    return Array.from(dedup.values()).map((entry) => {
+      const { _rawId, ...rest } = entry;
+      void _rawId;
+      return rest;
+    });
   }
 
   /**
