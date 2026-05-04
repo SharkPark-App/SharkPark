@@ -4,7 +4,7 @@
  * for the seeders.
  *
  * Production refresh is handled by the weekly cron at
- * src/scripts/refresh-lot-advisories.ts which writes the same advisories
+ * src/scheduler/jobs/refresh-lot-advisories.job.ts which writes the same advisories
  * directly to the lot_advisories table.
  *
  * Run: pnpm exec ts-node --project tsconfig.scripts.json \

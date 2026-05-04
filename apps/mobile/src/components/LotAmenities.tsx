@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, StyleSheet, Pressable, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Text } from './CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -9,6 +9,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import type { ParkingLotResponse, BuildingCategory } from '../services/api/lots';
+import { formatTime } from '../utils/formatTime';
 
 interface LotAmenitiesProps {
   lot: ParkingLotResponse;
@@ -19,36 +20,36 @@ interface LotAmenitiesProps {
 /**
  * Severity → color/icon palette for the Advisories card. Keep this in sync
  * with the AdvisorySeverity enum on the backend (lot-advisory-extractor.ts).
+ *
+ * Returns a theme-aware palette: light mode uses pastel chip backgrounds
+ * with deep accessible foregrounds; dark mode uses low-luminance translucent
+ * tints with brighter foregrounds so the icon + title stay readable on the
+ * dark card surface without the harsh "white pastel on near-black" look.
  */
-const ADVISORY_PALETTE: Record<
-  'INFO' | 'ADVISORY' | 'CLOSURE',
-  { bg: string; fg: string; icon: string }
-> = {
-  CLOSURE:  { bg: '#fee2e2', fg: '#b91c1c', icon: 'close-circle-outline' },
-  ADVISORY: { bg: '#ffedd5', fg: '#c2410c', icon: 'warning-outline' },
-  INFO:     { bg: '#dbeafe', fg: '#1d4ed8', icon: 'information-circle-outline' },
-};
-
-/**
- * Convert a "HH:MM" 24-hour string to "h:MM AM/PM". Returns the original
- * value when it does not match the expected pattern (e.g. "CLOSED").
- */
-function to12Hour(time: string): string {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(time);
-  if (!m) return time;
-  const h24 = Number(m[1]);
-  const minutes = m[2];
-  if (!Number.isFinite(h24) || h24 < 0 || h24 > 24) return time;
-  const period = h24 >= 12 && h24 < 24 ? 'PM' : 'AM';
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  // Drop ":00" for compact display ("9 AM" instead of "9:00 AM").
-  return minutes === '00' ? `${h12} ${period}` : `${h12}:${minutes} ${period}`;
+function getAdvisoryPalette(
+  isDark: boolean,
+): Record<'INFO' | 'ADVISORY' | 'CLOSURE', { bg: string; fg: string; icon: string }> {
+  if (isDark) {
+    return {
+      CLOSURE:  { bg: 'rgba(248, 113, 113, 0.18)', fg: '#fca5a5', icon: 'close-circle-outline' },
+      ADVISORY: { bg: 'rgba(251, 146, 60, 0.18)',  fg: '#fdba74', icon: 'warning-outline' },
+      INFO:     { bg: 'rgba(96, 165, 250, 0.18)',  fg: '#93c5fd', icon: 'information-circle-outline' },
+    };
+  }
+  return {
+    CLOSURE:  { bg: '#fee2e2', fg: '#b91c1c', icon: 'close-circle-outline' },
+    ADVISORY: { bg: '#ffedd5', fg: '#c2410c', icon: 'warning-outline' },
+    INFO:     { bg: '#dbeafe', fg: '#1d4ed8', icon: 'information-circle-outline' },
+  };
 }
 
-/** Format an hours field into a readable AM/PM string */
+/**
+ * Format an hours field. Time-of-day strings are rendered through
+ * `formatTime`, which honours the device's 12/24-hour preference.
+ */
 function formatHours(hours: { open: string; close: string } | string): string {
   if (typeof hours === 'string') return hours; // e.g. "CLOSED"
-  return `${to12Hour(hours.open)} – ${to12Hour(hours.close)}`;
+  return `${formatTime(hours.open)} – ${formatTime(hours.close)}`;
 }
 
 /**
@@ -255,7 +256,8 @@ function NearbyBuildings({
 }
 
 export function LotAmenities({ lot }: LotAmenitiesProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const advisoryPalette = useMemo(() => getAdvisoryPalette(isDark), [isDark]);
 
   const weekdayHours = formatHours(lot.hours_weekday);
   const saturdayHours = formatHours(lot.hours_saturday);
@@ -269,23 +271,27 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
           <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
             Advisories
           </Text>
-          {lot.advisories.map(advisory => {
-            const palette = ADVISORY_PALETTE[advisory.severity];
+          {lot.advisories.map((advisory, idx) => {
+            const palette = advisoryPalette[advisory.severity];
+            const isLast = idx === lot.advisories.length - 1;
             return (
               <View
                 key={advisory.id}
                 style={[
-                  advisoryStyles.row,
-                  { backgroundColor: palette.bg, borderLeftColor: palette.fg },
+                  advisoryStyles.item,
+                  !isLast && {
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: colors.borderGray,
+                  },
                 ]}
                 accessibilityRole="alert"
+                accessibilityLabel={`${advisory.title}${
+                  advisory.description ? `. ${advisory.description}` : ''
+                }`}
               >
-                <Icon
-                  name={palette.icon}
-                  size={20}
-                  color={palette.fg}
-                  style={advisoryStyles.icon}
-                />
+                <View style={[advisoryStyles.iconChip, { backgroundColor: palette.bg }]}>
+                  <Icon name={palette.icon} size={20} color={palette.fg} />
+                </View>
                 <View style={advisoryStyles.body}>
                   <Text style={[advisoryStyles.title, { color: palette.fg }]}>
                     {advisory.title}
@@ -372,6 +378,12 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
           Special Spaces
         </Text>
 
+        {/*
+         * All special-space rows always render so the section's footprint is
+         * stable lot-to-lot. Icon turns green when at least one space exists
+         * (single accent for "amenity present"), grey otherwise — same
+         * pattern already used for EV/Low-emission, now applied uniformly.
+         */}
         <AmenityRow
           icon="flash-outline"
           label="EV Charging"
@@ -385,37 +397,49 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
         <AmenityRow
           icon="accessibility-outline"
           label="Accessible"
-          value={`${lot.accessible_spaces} space${lot.accessible_spaces !== 1 ? 's' : ''}`}
+          value={
+            lot.accessible_spaces > 0
+              ? `${lot.accessible_spaces} space${lot.accessible_spaces !== 1 ? 's' : ''}`
+              : 'None'
+          }
+          color={lot.accessible_spaces > 0 ? '#16a34a' : undefined}
         />
-        {lot.motorcycle_spaces > 0 && (
-          <AmenityRow
-            icon="bicycle-outline"
-            label="Motorcycle"
-            value={`${lot.motorcycle_spaces} space${lot.motorcycle_spaces !== 1 ? 's' : ''}`}
-          />
-        )}
-        {lot.short_term_parking_spaces > 0 && (
-          <AmenityRow
-            icon="time-outline"
-            label="Short-term"
-            value={`${lot.short_term_parking_spaces} space${lot.short_term_parking_spaces !== 1 ? 's' : ''}`}
-          />
-        )}
-        {lot.low_emission_spaces > 0 && (
-          <AmenityRow
-            icon="leaf-outline"
-            label="Low-emission"
-            value={`${lot.low_emission_spaces} space${lot.low_emission_spaces !== 1 ? 's' : ''}`}
-            color="#16a34a"
-          />
-        )}
-        {lot.pay_stations > 0 && (
-          <AmenityRow
-            icon="card-outline"
-            label="Pay stations"
-            value={`${lot.pay_stations} on-site`}
-          />
-        )}
+        <AmenityRow
+          icon="bicycle-outline"
+          label="Motorcycle"
+          value={
+            lot.motorcycle_spaces > 0
+              ? `${lot.motorcycle_spaces} space${lot.motorcycle_spaces !== 1 ? 's' : ''}`
+              : 'None'
+          }
+          color={lot.motorcycle_spaces > 0 ? '#16a34a' : undefined}
+        />
+        <AmenityRow
+          icon="time-outline"
+          label="Short-term"
+          value={
+            lot.short_term_parking_spaces > 0
+              ? `${lot.short_term_parking_spaces} space${lot.short_term_parking_spaces !== 1 ? 's' : ''}`
+              : 'None'
+          }
+          color={lot.short_term_parking_spaces > 0 ? '#16a34a' : undefined}
+        />
+        <AmenityRow
+          icon="leaf-outline"
+          label="Low-emission"
+          value={
+            lot.low_emission_spaces > 0
+              ? `${lot.low_emission_spaces} space${lot.low_emission_spaces !== 1 ? 's' : ''}`
+              : 'None'
+          }
+          color={lot.low_emission_spaces > 0 ? '#16a34a' : undefined}
+        />
+        <AmenityRow
+          icon="card-outline"
+          label="Pay stations"
+          value={lot.pay_stations > 0 ? `${lot.pay_stations} on-site` : 'None'}
+          color={lot.pay_stations > 0 ? '#16a34a' : undefined}
+        />
       </View>
 
       {/* ── Safety & Features (chips) ── */}
@@ -445,10 +469,17 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
             label="Emergency Phone"
             available={lot.has_emergency_phone}
           />
+          {/*
+           * Covered/Open Air and Paved/Unpaved are mutually exclusive
+           * states of a single attribute (a lot is exactly one of each),
+           * so we render a single chip whose label/icon reflects the
+           * actual state \u2014 unlike the independent safety amenities
+           * above, where green-vs-grey reads "present vs absent".
+           */}
           <AmenityChip
-            icon="shield-checkmark-outline"
+            icon={lot.is_covered ? 'shield-checkmark-outline' : 'sunny-outline'}
             label={lot.is_covered ? 'Covered Structure' : 'Open Air'}
-            available={lot.is_covered}
+            available
           />
           <AmenityChip
             icon="trail-sign-outline"
@@ -528,30 +559,30 @@ const chipStyles = StyleSheet.create({
 });
 
 const advisoryStyles = StyleSheet.create({
-  row: {
+  item: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    borderRadius: SPACING.sm,
-    borderLeftWidth: 4,
-    marginBottom: SPACING.sm,
+    alignItems: 'center',
+    paddingVertical: SPACING.lg,
   },
-  icon: {
+  iconChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: SPACING.md,
-    marginTop: 2,
   },
   body: {
     flex: 1,
   },
   title: {
-    fontSize: TYPOGRAPHY.fontSize.md,
+    fontSize: TYPOGRAPHY.fontSize.lg,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
-    marginBottom: 2,
+    lineHeight: 22,
   },
   description: {
     fontSize: TYPOGRAPHY.fontSize.sm,
-    lineHeight: 18,
+    lineHeight: 19,
   },
 });
 

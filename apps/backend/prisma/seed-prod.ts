@@ -279,7 +279,12 @@ async function seedProd() {
     const geofence = LOT_GEOFENCES[lot.lot_id];
     if (!geofence) continue;
     const nearbyNames = deriveLotBuildings(
-      { ...lot, center_lat: geofence.centroid.lat, center_lng: geofence.centroid.lng },
+      {
+        ...lot,
+        center_lat: geofence.centroid.lat,
+        center_lng: geofence.centroid.lng,
+        polygon: geofence.polygon,
+      },
       buildingsWithFootprints,
     );
     const desiredBuildingIds = new Set<string>();

@@ -508,7 +508,7 @@ export class LotsService {
    *
    * Note: campus events are intentionally NOT bundled here — per the 2026-04-30
    * product decision they are surfaced to the client as a separate display
-   * layer (see the planned `GET /lots/:id/nearby-events` endpoint), not as a
+   * layer (see `GET /lots/:id/nearby-events` on `LotsController`), not as a
    * forecasting input or a prediction-response field.
    */
   async getShortTermPredictions(lotId: string): Promise<{
