@@ -337,9 +337,17 @@ export class OccupancyEventsService {
 
       let count = 0;
 
-      // Gather reliability input for all lots in parallel (avoids N+1 DB calls)
+      // Gather reliability input for all lots in parallel (avoids N+1 DB calls).
+      // Pass each lot's live effective penetration rate from the estimator
+      // (replaces the dropped static lot.penetration_rate seed field).
       const reliabilityInputs = await Promise.all(
-        lots.map((lot) => this.reliabilityComputationService.gatherReliabilityInput(lot)),
+        lots.map((lot) =>
+          this.reliabilityComputationService.gatherReliabilityInput(
+            lot,
+            undefined,
+            estimates.get(lot.id)?.effectiveRate,
+          ),
+        ),
       );
 
       // Build snapshot data array

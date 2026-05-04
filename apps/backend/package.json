@@ -21,6 +21,7 @@
     "cron:notify-events": "node dist/scripts/notify-events.js",
     "db:seed": "prisma db seed",
     "db:seed:prod": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed-prod.ts",
+    "audit:lots": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/audit-lots.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.scripts.json",
     "test": "jest --config ./jest.config.js",

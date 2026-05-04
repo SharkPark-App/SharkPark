@@ -21,6 +21,7 @@ import pg from 'pg';
 import { CSULB_SCHOOL, CSULB_BUILDINGS, parkingLots } from './lot-data';
 import { LOT_GEOFENCES } from './lot-geofences.generated';
 import { LOT_ADVISORIES } from './lot-advisories.generated';
+import { BUILDING_FOOTPRINTS } from './building-footprints.generated';
 import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
 import { getSemester, getWeekOfSemester } from '../src/lots/academic-calendar';
 
@@ -198,10 +199,9 @@ async function main() {
         is_covered: lot.is_covered,
         is_paved: lot.is_paved,
         is_structure: lot.is_structure ?? false,
+        has_solar_canopy: lot.has_solar_canopy,
         levels: lot.levels,
-        penetration_rate: lot.penetration_rate,
-        avg_turnover_minutes: lot.avg_turnover_minutes,
-        confidence: lot.confidence,
+        metadata_confidence: lot.metadata_confidence,
       },
     });
     lotMap.set(lot.lot_id, created.id);
@@ -212,7 +212,14 @@ async function main() {
   console.log('[seed] Seeding buildings...');
   const buildingMap = new Map<string, { id: string; alternate_names: string[] }>(); // name -> { id, alternate_names }
 
-  for (const b of CSULB_BUILDINGS) {
+  // Pre-merge footprint polygons so derive-lot-buildings can use point-to-edge
+  // distance (centroid haversine fallback when polygon is missing).
+  const buildingsWithFootprints = CSULB_BUILDINGS.map((b) => ({
+    ...b,
+    polygon: BUILDING_FOOTPRINTS[b.name]?.polygon ?? null,
+  }));
+
+  for (const b of buildingsWithFootprints) {
     const created = await prisma.building.create({
       data: {
         school_id: school.id,
@@ -220,6 +227,8 @@ async function main() {
         alternate_names: b.alternate_names,
         center_lat: b.lat,
         center_lng: b.lng,
+        footprint_polygon: b.polygon ?? undefined,
+        category: b.category,
       },
     });
     buildingMap.set(b.name, { id: created.id, alternate_names: b.alternate_names });
@@ -234,7 +243,7 @@ async function main() {
     const lotDbId = lotMap.get(lot.lot_id);
     if (!lotDbId) continue;
 
-    const nearbyNames = deriveLotBuildings(lot, CSULB_BUILDINGS);
+    const nearbyNames = deriveLotBuildings(lot, buildingsWithFootprints);
     for (const proximity of nearbyNames) {
       const building = buildingMap.get(proximity); // exact name match — no duplicates possible
       if (!building) continue;
@@ -407,7 +416,7 @@ async function main() {
             occupancy,
             available,
             occupancy_rate: Math.round(occRate * 1000) / 1000,
-            confidence: lot.confidence,
+            confidence: lot.metadata_confidence,
             is_campus_open: true,
             // Synthetic data is already "total cars" — no scaling applied.
             estimated_occupancy: occupancy,

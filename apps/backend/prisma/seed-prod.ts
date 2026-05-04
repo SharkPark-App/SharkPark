@@ -28,14 +28,14 @@ if (fs.existsSync(prodEnvPath)) {
   dotenv.config({ path: prodEnvPath, override: true });
 }
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, CSULB_BUILDINGS, parkingLots } from './lot-data';
 import { LOT_GEOFENCES } from './lot-geofences.generated';
+import { BUILDING_FOOTPRINTS } from './building-footprints.generated';
 import { LOT_ADVISORIES } from './lot-advisories.generated';
 import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
-import type { Prisma } from '@prisma/client';
 
 const rawConnectionString = process.env.DATABASE_URL;
 if (!rawConnectionString) {
@@ -169,10 +169,9 @@ async function seedProd() {
       is_covered: lot.is_covered,
       is_paved: lot.is_paved,
       is_structure: lot.is_structure ?? false,
+      has_solar_canopy: lot.has_solar_canopy,
       levels: lot.levels ?? null,
-      penetration_rate: lot.penetration_rate,
-      avg_turnover_minutes: lot.avg_turnover_minutes,
-      confidence: lot.confidence,
+      metadata_confidence: lot.metadata_confidence,
     };
 
     const existing = await prisma.lot.findUnique({
@@ -230,7 +229,14 @@ async function seedProd() {
   console.log('\n[seed-prod] Upserting buildings...');
   const buildingMap = new Map<string, { id: string; alternate_names: string[] }>();
 
-  for (const b of CSULB_BUILDINGS) {
+  // Pre-merge footprint polygons so derive-lot-buildings can use
+  // point-to-edge distance (centroid haversine fallback when polygon is missing).
+  const buildingsWithFootprints = CSULB_BUILDINGS.map((b) => ({
+    ...b,
+    polygon: BUILDING_FOOTPRINTS[b.name]?.polygon ?? null,
+  }));
+
+  for (const b of buildingsWithFootprints) {
     const building = await prisma.building.upsert({
       where: { school_id_name: { school_id: school.id, name: b.name } },
       create: {
@@ -239,11 +245,17 @@ async function seedProd() {
         alternate_names: b.alternate_names,
         center_lat: b.lat,
         center_lng: b.lng,
+        footprint_polygon: b.polygon ?? undefined,
+        category: b.category,
       },
       update: {
         alternate_names: b.alternate_names,
         center_lat: b.lat,
         center_lng: b.lng,
+        // Always sync footprint (including null when polygon was removed) so
+        // production stays consistent with the latest concept3d extraction.
+        footprint_polygon: b.polygon ?? Prisma.JsonNull,
+        category: b.category,
       },
     });
     buildingMap.set(b.name, { id: building.id, alternate_names: b.alternate_names });
@@ -261,7 +273,7 @@ async function seedProd() {
     });
     if (!lotRow) continue;
 
-    const nearbyNames = deriveLotBuildings(lot, CSULB_BUILDINGS);
+    const nearbyNames = deriveLotBuildings(lot, buildingsWithFootprints);
     const desiredBuildingIds = new Set<string>();
     for (const proximity of nearbyNames) {
       const building = buildingMap.get(proximity); // exact name match — no duplicates possible

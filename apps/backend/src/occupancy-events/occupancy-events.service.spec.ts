@@ -117,7 +117,6 @@ describe('OccupancyEventsService', () => {
       lot_id: 'G1',
       capacity: 100,
       current_occupancy: 50,
-      penetration_rate: 0.65,
     };
 
     it('should create an event and update occupancy for ENTER', async () => {
@@ -325,8 +324,8 @@ describe('OccupancyEventsService', () => {
   describe('createSnapshots', () => {
     it('should create snapshots for all lots with estimated occupancy', async () => {
       const mockLots = [
-        { id: 'lot-uuid-1', lot_id: 'G1', current_occupancy: 50, capacity: 100, penetration_rate: 0.8, school_id: 'school-1' },
-        { id: 'lot-uuid-2', lot_id: 'E7', current_occupancy: 30, capacity: 80, penetration_rate: 0.5, school_id: 'school-1' },
+        { id: 'lot-uuid-1', lot_id: 'G1', current_occupancy: 50, capacity: 100, school_id: 'school-1' },
+        { id: 'lot-uuid-2', lot_id: 'E7', current_occupancy: 30, capacity: 80, school_id: 'school-1' },
       ];
 
       prisma.lot.findMany.mockResolvedValue(mockLots);

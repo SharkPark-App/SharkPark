@@ -1,4 +1,4 @@
-import type { Lot as PrismaLot, AdvisorySeverity, AdvisorySource } from '@prisma/client';
+import type { Lot as PrismaLot, AdvisorySeverity, AdvisorySource, BuildingCategory } from '@prisma/client';
 
 /**
  * Re-export Prisma's Lot type for convenience.
@@ -22,6 +22,13 @@ export interface LotAdvisoryResponse {
   starts_at: string | null;
   ends_at: string | null;
   updated_at: string;
+}
+
+/** Building reference attached to a lot. Includes category so the mobile UI
+ *  can group nearby buildings (Academic, Housing, Athletic, etc.). */
+export interface LotBuildingResponse {
+  name: string;
+  category: BuildingCategory;
 }
 
 export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'current_occupancy'> {
@@ -56,8 +63,8 @@ export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'curr
   raw_occupancy: number | null;
   /** Effective penetration rate used for this estimate (0.01–1.0) */
   effective_penetration_rate: number | null;
-  /** Canonical names of buildings this lot serves (derived from LotBuilding join) */
-  buildings: string[];
+  /** Buildings this lot serves (derived from LotBuilding join), with category for grouped display. */
+  buildings: LotBuildingResponse[];
   /** Active operational notices (closures, construction). Empty when none. */
   advisories: LotAdvisoryResponse[];
 }

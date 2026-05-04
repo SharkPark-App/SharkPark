@@ -67,10 +67,12 @@ model Lot {
   is_paved            Boolean  @default(true)
   /** True for multi-level parking structures (PVN/PVS/PYR at CSULB). */
   is_structure        Boolean  @default(false)
+  /** True for surface lots with solar-panel canopies overhead (G6/G7/G8/E8 at CSULB). */
+  has_solar_canopy    Boolean  @default(false)
   levels              Int?
-  penetration_rate    Float    @default(0)
-  avg_turnover_minutes Float   @default(0)
-  confidence          ConfidenceLevel @default(LOW)
+  /// Quality grade of the static metadata (capacity, geofence, amenity counts, hours).
+  /// NOT a runtime/ML signal — see OccupancySnapshot.confidence for the live grade.
+  metadata_confidence ConfidenceLevel @default(LOW)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
@@ -200,6 +202,12 @@ model Building {
   /// Approximate centerpoint (degrees, WGS84). Used to compute proximity to lots / events.
   center_lat      Float
   center_lng      Float
+  /// Optional outer-ring polygon (array of {lat,lng}) extracted from concept3d.
+  /// Null when no authoritative footprint is available (e.g. small offices, off-campus venues).
+  /// When present, used for point-to-edge proximity instead of haversine-to-centroid.
+  footprint_polygon Json?
+  /// Functional category — drives grouped display in lot info and other UIs.
+  category        BuildingCategory @default(OTHER)
   created_at      DateTime @default(now())
 
   school        School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
@@ -494,6 +502,16 @@ enum AdvisorySeverity {
 
 enum AdvisorySource {
   CONCEPT3D
+}
+
+enum BuildingCategory {
+  ACADEMIC        // classroom buildings, faculty offices, libraries
+  ADMINISTRATIVE  // admin offices, services, support facilities
+  HOUSING         // residence halls and on-campus housing (non-public)
+  RETAIL          // bookstore, cafes, convenience stores
+  ATHLETIC        // athletics venues, performance halls, recreation
+  OUTDOOR         // outdoor spaces (quads, fields not used as venues)
+  OTHER           // misc / uncategorised
 }
 
 enum AuditEventType {

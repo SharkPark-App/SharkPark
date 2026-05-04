@@ -9,9 +9,15 @@
  * before running a real seed.
  */
 import { CSULB_BUILDINGS, parkingLots } from '../lot-data';
+import { BUILDING_FOOTPRINTS } from '../building-footprints.generated';
 import { deriveLotBuildings } from '../../src/lots/derive-lot-buildings';
 
 const RADIUS_M = Number(process.env.LOT_BUILDING_RADIUS_M ?? 250);
+
+const buildingsWithFootprints = CSULB_BUILDINGS.map((b) => ({
+  ...b,
+  polygon: BUILDING_FOOTPRINTS[b.name]?.polygon ?? null,
+}));
 
 console.log(
   `\nDerived lot↔building proximity (radius: ${RADIUS_M} m)\n` +
@@ -19,7 +25,7 @@ console.log(
 );
 
 for (const lot of parkingLots) {
-  const names = deriveLotBuildings(lot, CSULB_BUILDINGS, RADIUS_M);
+  const names = deriveLotBuildings(lot, buildingsWithFootprints, RADIUS_M);
   const overrideNote = lot.building_overrides
     ? ` [overrides: +${lot.building_overrides.add?.length ?? 0} / -${
         lot.building_overrides.exclude?.length ?? 0

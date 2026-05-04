@@ -58,11 +58,10 @@ const makeLot = (overrides: Partial<Lot> = {}): Lot => ({
   has_emergency_phone: false,
   is_covered: false,
   is_paved: true,
+  has_solar_canopy: false,
   levels: null,
   school_id: 'school-1',
-  penetration_rate: 0.01,
-  avg_turnover_minutes: 0,
-  confidence: 'LOW',
+  metadata_confidence: 'LOW',
   created_at: new Date(),
   updated_at: new Date(),
   ...overrides,
@@ -415,7 +414,7 @@ describe('PenetrationEstimationService', () => {
       // Even with a very high penetration rate (e.g. lot pen rate = 1.0)
       setupMocks();
 
-      const lot = makeLot({ current_occupancy: 100, penetration_rate: 1.0 });
+      const lot = makeLot({ current_occupancy: 100 });
       const result = await service.estimateForLot(lot, WEEKDAY_PEAK);
 
       expect(result.estimatedOccupancy).toBeGreaterThanOrEqual(100);
@@ -447,20 +446,6 @@ describe('PenetrationEstimationService', () => {
       expect(decimalStr.length).toBeLessThanOrEqual(4);
     });
 
-    it('uses lot penetration_rate when it is higher than campus rate', async () => {
-      // 100 campus devices / 35000 = 0.00286 campus rate
-      // lot penetration_rate = 0.5 → effective = max(0.00286, 0.5, 0.01) = 0.5
-      // scaling = 1/0.5 = 2, capped at 5 (100 devices)
-      // estimatedOccupancy = round(100 * 2) = 200
-      setupMocks({ commuters: 35_000, campusDeviceCount: 100 });
-
-      const lot = makeLot({ current_occupancy: 100, penetration_rate: 0.5 });
-      const result = await service.estimateForLot(lot, WEEKDAY_PEAK);
-
-      expect(result.effectiveRate).toBe(0.5);
-      expect(result.estimatedOccupancy).toBe(200);
-    });
-
     it('reduces estimated occupancy during weekend', async () => {
       // Saturday day: timeMultiplier = 0.15
       // adjustedCommuters = round(35000 * 0.15) = 5250
@@ -477,13 +462,13 @@ describe('PenetrationEstimationService', () => {
     });
 
     it('uses MIN_PENETRATION_RATE when all rates are very low', async () => {
-      // 0 campus devices → campusRate = 0, lot pen = 0.005
-      // effective = max(0, 0.005, 0.01) = 0.01
+      // 0 campus devices → campusRate = 0
+      // effective = max(0, 0.01) = 0.01
       // scaling = 100, capped at 2 (0 devices)
       // estimatedOccupancy = min(100 * 2, 1000) = 200
       setupMocks();
 
-      const lot = makeLot({ current_occupancy: 100, penetration_rate: 0.005 });
+      const lot = makeLot({ current_occupancy: 100 });
       const result = await service.estimateForLot(lot, WEEKDAY_PEAK);
 
       expect(result.effectiveRate).toBe(0.01);

@@ -5,9 +5,10 @@ import type { ParkingLotResponse, GetLotsQueryParams, OccupancySnapshotResponse,
 import { PenetrationEstimationService, PenetrationEstimate } from './penetration-estimation.service';
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
+import { studentEligibleLotTypes } from './csulb-eligibility';
 
 const LOT_WITH_BUILDINGS_INCLUDE = {
-  lot_buildings: { include: { building: { select: { name: true } } } },
+  lot_buildings: { include: { building: { select: { name: true, category: true } } } },
   // Only active advisories make it onto the response — historical/closed ones
   // remain in the table for audit but aren't user-facing.
   lot_advisories: {
@@ -281,10 +282,24 @@ export class LotsService {
       throw new NotFoundException(`Parking lot ${lotId} not found`);
     }
 
-    // Fetch all lots of the same type (students shouldn't see employee lots and vice versa)
+    // Determine which lot types are eligible candidates. Employees can park in
+    // any lot at any time; students can park in employee lots after 17:30 on
+    // weekdays and any time on weekends. Outside that window students stay in
+    // STUDENT lots only. (Static permit_types do not encode this rule —
+    // see csulb-eligibility.ts.)
+    const eligibleTypes: LotType[] = sourceLot.lot_type === 'STUDENT'
+      ? Array.from(
+          studentEligibleLotTypes(
+            new Date(),
+            await this.penetrationService.getSchoolTimezone(sourceLot.school_id),
+          ),
+        )
+      : ['STUDENT', 'EMPLOYEE'];
+
+    // Fetch all candidate lots within the eligible types.
     const candidates = await this.prisma.lot.findMany({
       where: {
-        lot_type: sourceLot.lot_type,
+        lot_type: { in: eligibleTypes },
         id: { not: sourceLot.id },
       },
       include: LOT_WITH_BUILDINGS_INCLUDE,
@@ -408,7 +423,10 @@ export class LotsService {
     // Strip Prisma `current_occupancy`, `daily_rate`, and the join relations from
     // the spread — we set them explicitly below so the type stays accurate.
     const { current_occupancy, daily_rate, lot_buildings, lot_advisories, ...meta } = lot;
-    const buildings = lot_buildings.map(lb => lb.building.name);
+    const buildings = lot_buildings.map(lb => ({
+      name: lb.building.name,
+      category: lb.building.category,
+    }));
     // Coerce DateTime fields to ISO strings for transport. Advisories are
     // static metadata (not contributor-gated) — every caller, including App
     // Store reviewers, sees them so the UI can warn about closures even when

@@ -16,6 +16,7 @@ describe('LotsService', () => {
   let penetrationService: {
     estimateForAllLots: jest.Mock;
     estimateForLot: jest.Mock;
+    getSchoolTimezone: jest.Mock;
   };
   let weatherService: {
     getCurrent: jest.Mock;
@@ -48,6 +49,7 @@ describe('LotsService', () => {
         return map;
       }),
       estimateForLot: jest.fn().mockImplementation(async (lot: any) => makeEstimate(lot)),
+      getSchoolTimezone: jest.fn().mockResolvedValue('America/Los_Angeles'),
     };
 
     weatherService = {
@@ -83,7 +85,6 @@ describe('LotsService', () => {
       daily_permit_allowed: true,
       ev_charging_stations: 2,
       school_id: 'school-1',
-      penetration_rate: 0.65,
       latitude: 33.78,
       longitude: -118.11,
       geofence_coordinates: [],
@@ -150,7 +151,7 @@ describe('LotsService', () => {
         id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
         current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
         daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-        penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+        latitude: 33.78, longitude: -118.11,
         geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
       };
       prisma.lot.findFirst.mockResolvedValue(mockLot);
@@ -180,14 +181,14 @@ describe('LotsService', () => {
           id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
           current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          latitude: 33.78, longitude: -118.11,
           geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
         {
           id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
           current_occupancy: 30, lot_type: 'EMPLOYEE', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          latitude: 33.78, longitude: -118.11,
           geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
       ];
@@ -222,14 +223,14 @@ describe('LotsService', () => {
           id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
           current_occupancy: 90, lot_type: 'STUDENT', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          latitude: 33.78, longitude: -118.11,
           geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
         {
           id: 'uuid-2', lot_id: 'E7', lot_name: 'Lot E7', capacity: 80,
           current_occupancy: 10, lot_type: 'EMPLOYEE', permit_types: [],
           daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
-          penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+          latitude: 33.78, longitude: -118.11,
           geofence_coordinates: [], lot_buildings: [], lot_advisories: [], created_at: new Date(), updated_at: new Date(),
         },
       ];
@@ -320,10 +321,9 @@ describe('LotsService', () => {
       has_emergency_phone: true,
       is_covered: false,
       is_paved: true,
+      has_solar_canopy: false,
       levels: null,
-      penetration_rate: 0.15,
-      avg_turnover_minutes: 240,
-      confidence: 'HIGH',
+      metadata_confidence: 'HIGH',
       school_id: 'school-1',
       created_at: new Date(),
       updated_at: new Date(),
@@ -428,10 +428,10 @@ describe('LotsService', () => {
 
       expect(prisma.lot.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {
-            lot_type: 'STUDENT',
+          where: expect.objectContaining({
+            lot_type: { in: expect.arrayContaining(['STUDENT']) },
             id: { not: 'uuid-source' },
-          },
+          }),
         }),
       );
     });
