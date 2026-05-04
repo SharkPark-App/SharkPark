@@ -27,11 +27,23 @@ export const useTransitData = () => {
     loadRoutesAndStops();
   }, []);
 
-  // Fetch static/non-live shuttle data
+  // Fetch static shuttle metadata (busName, color, route, capacity).
+  // Uses a functional update so live socket positions already in state are
+  // preserved — calling this during a backfill must not teleport shuttles
+  // back to the stale API snapshot.
   const loadInitialShuttles = useCallback(async () => {
     try {
-      const initialData = await TransitService.getLiveShuttles();
-      setShuttles(initialData);
+      const freshData = await TransitService.getLiveShuttles();
+      setShuttles((prev) => {
+        if (prev.length === 0) return freshData;
+        const livePositions = new Map(
+          prev.map((s) => [s.id, { latitude: s.latitude, longitude: s.longitude, heading: s.heading, paxLoad: s.paxLoad }])
+        );
+        return freshData.map((shuttle) => {
+          const live = livePositions.get(shuttle.id);
+          return live ? { ...shuttle, ...live } : shuttle;
+        });
+      });
     } catch (error) {
       console.error('Error loading initial shuttles:', error);
     }
