@@ -421,9 +421,12 @@ export interface LotSeed {
   /** Initial occupancy used by dev seed only. seed-prod.ts always sets 0 on create and never updates. */
   current_occupancy: number;
   location_description: string;
-  /** Canonical Building.name values this lot is near. Used by the seed to create LotBuilding rows.
-   *  Not stored directly on the Lot — the join table is the source of truth. */
-  buildings: BuildingName[];
+  /**
+   * OPTIONAL hand-curated tweaks to the auto-derived nearby-buildings list.
+   * Leave undefined for the default (haversine within DEFAULT_LOT_BUILDING_RADIUS_M).
+   * See `derive-lot-buildings.ts`.
+   */
+  building_overrides?: { add?: BuildingName[]; exclude?: BuildingName[] };
   center_lat: number;
   center_lng: number;
   geofence_radius: number;
@@ -453,8 +456,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G1', lot_name: 'Lot G1', display_name: 'Lot G1 - East Campus', lot_number: 'G1',
     lot_type: LotType.STUDENT, capacity: 231, current_occupancy: 27,
     location_description: 'East Campus - Near Japanese Garden',
-    buildings: ['International House', 'Nursing', 'Visitor Information Center', 'Los Cerritos Hall',
-      'Hillside Gateway', 'Student Health Services', 'Family & Consumer Sciences'],
     center_lat: 33.7817, center_lng: -118.1193, geofence_radius: 50,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -468,7 +469,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G2', lot_name: 'Lot G2', display_name: 'Lot G2 - Walter Pyramid', lot_number: 'G2',
     lot_type: LotType.STUDENT, capacity: 419, current_occupancy: 55,
     location_description: 'East Campus - Walter Pyramid',
-    buildings: ['Hillside Gateway', 'Japanese Garden', 'Los Cerritos Hall', 'Los Alamitos Hall', 'International House'],
     center_lat: 33.7839, center_lng: -118.1208, geofence_radius: 70,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: true, daily_rate: 8.00,
     hours_weekday: { open: '06:00', close: '23:00' },
@@ -483,8 +483,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G3', lot_name: 'Lot G3', display_name: 'Lot G3 - East Campus', lot_number: 'G3',
     lot_type: LotType.STUDENT, capacity: 230, current_occupancy: 21,
     location_description: 'East Campus',
-    buildings: ['Student Health Services', 'Los Cerritos Hall', 'Los Alamitos Hall', 'Hillside Gateway',
-      'Nursing', 'Anna W. Ngai Alumni Center', 'Family & Consumer Sciences', 'College of Business', 'Brotman Hall'],
     center_lat: 33.7829, center_lng: -118.1173, geofence_radius: 60,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -498,9 +496,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G4', lot_name: 'Lot G4', display_name: 'Lot G4 - Central Campus', lot_number: 'G4',
     lot_type: LotType.STUDENT, capacity: 463, current_occupancy: 66,
     location_description: 'Central Campus',
-    buildings: ['Japanese Garden', 'Los Alamitos Hall', 'Los Cerritos Hall', 'College of Business',
-      'Parking & Transportation Services', 'Parkside College'
-    ],
     center_lat: 33.7844, center_lng: -118.1184, geofence_radius: 80,
     permit_types: ['Gold', 'Green', 'Daily'], daily_permit_allowed: true, daily_rate: 8.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -515,9 +510,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G5', lot_name: 'Lot G5', display_name: 'Lot G5 - West Campus', lot_number: 'G5',
     lot_type: LotType.STUDENT, capacity: 120, current_occupancy: 8,
     location_description: 'West Campus',
-    buildings: ['College of Business', 'Parking & Transportation Services', 'Jack Rose Track',
-      'Horn Center'
-    ],
     center_lat: 33.7848, center_lng: -118.1164, geofence_radius: 55,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -531,10 +523,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G7', lot_name: 'Lot G7', display_name: 'Lot G7 - Engineering', lot_number: 'G7',
     lot_type: LotType.STUDENT, capacity: 751, current_occupancy: 98,
     location_description: 'East Campus - Engineering Complex',
-    buildings: ['College of Business', 'Parking & Transportation Services', 'Jack Rose Track', 'Pyramid',
-      'Horn Center', 'Barrett Athletic Administration Building', 'Parkside College', 'Japanese Garden',
-      'LBSU Sand Courts', 'Ken Lindgren Aquatics Center'
-    ],
     center_lat: 33.7867, center_lng: -118.1176, geofence_radius: 65,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -549,8 +537,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G8', lot_name: 'Lot G8', display_name: 'Lot G8 - Student Health', lot_number: 'G8',
     lot_type: LotType.STUDENT, capacity: 720, current_occupancy: 77,
     location_description: 'West Campus - Student Health Center',
-    buildings: ['Parkside College', 'Parkside North', 'Child Development Center', 'Pyramid',
-      'LBSU Sand Courts', 'Ken Lindgren Aquatics Center'],
     center_lat: 33.7873, center_lng: -118.1176, geofence_radius: 60,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -564,7 +550,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G9', lot_name: 'Lot G9', display_name: 'Lot G9 - Library', lot_number: 'G9',
     lot_type: LotType.STUDENT, capacity: 405, current_occupancy: 66,
     location_description: 'West Campus - University Library',
-    buildings: [],
     center_lat: 33.7880, center_lng: -118.1176, geofence_radius: 70,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: true, daily_rate: 8.00,
     hours_weekday: { open: '06:00', close: '23:00' },
@@ -578,7 +563,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G10', lot_name: 'Lot G10', display_name: 'Lot G10 - South Campus', lot_number: 'G10',
     lot_type: LotType.STUDENT, capacity: 19, current_occupancy: 2,
-    location_description: 'South Campus', buildings: [],
+    location_description: 'South Campus',
     center_lat: 33.7880, center_lng: -118.1201, geofence_radius: 55,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -592,8 +577,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G11', lot_name: 'Lot G11', display_name: 'Lot G11 - Palo Verde', lot_number: 'G11',
     lot_type: LotType.STUDENT, capacity: 319, current_occupancy: 21,
     location_description: 'East Campus - Palo Verde',
-    buildings: ['Pyramid', 'University Music Center', 'Dance Center', 'Carpenter Performing Arts Center',
-      'Barrett Athletic Administration Building', 'LBSU Sand Courts'],
     center_lat: 33.7877, center_lng: -118.1157, geofence_radius: 50,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -607,8 +590,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G12', lot_name: 'Lot G12', display_name: 'Lot G12 - North Campus', lot_number: 'G12',
     lot_type: LotType.STUDENT, capacity: 628, current_occupancy: 36,
     location_description: 'North Campus',
-    buildings: ['University Music Center', 'Dance Center', 'Carpenter Performing Arts Center', 'George Allen Field',
-      'LBSU Softball Complex'],
     center_lat: 33.7878, center_lng: -118.1106, geofence_radius: 45,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -622,8 +603,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G14', lot_name: 'Lot G14', display_name: 'Lot G14 - Beachside', lot_number: 'G14',
     lot_type: LotType.STUDENT, capacity: 262, current_occupancy: 26,
     location_description: 'West Campus - Near PCH',
-    buildings: ['Student Recreation & Wellness Center', 'George Allen Field',
-      'LBSU Softball Complex', 'LBSU Sand Courts', 'Ken Lindgren Aquatics Center', 'Rhodes Tennis Center'],
     center_lat: 33.7861, center_lng: -118.1086, geofence_radius: 60,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: true, daily_rate: 8.00,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -639,7 +618,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E1', lot_name: 'Lot E1', display_name: 'Lot E1 - Faculty/Staff', lot_number: 'E1',
     lot_type: LotType.EMPLOYEE, capacity: 440, current_occupancy: 79,
     location_description: 'Central Campus - Admin Area',
-    buildings: ['College of Business', 'Brotman Hall', 'Horn Center', 'Jack Rose Track'],
     center_lat: 33.7835, center_lng: -118.1166, geofence_radius: 40,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -653,9 +631,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E2', lot_name: 'Lot E2', display_name: 'Lot E2 - Faculty/Staff', lot_number: 'E2',
     lot_type: LotType.EMPLOYEE, capacity: 269, current_occupancy: 55,
     location_description: 'East Campus - Faculty',
-    buildings: ['College of Business', 'Brotman Hall', 'Horn Center', 'Jack Rose Track', 'Kinesiology',
-      'Health & Human Services 1', 'Health & Human Services 2', 'Grow Beach'
-    ],
     center_lat: 33.7825, center_lng: -118.1140, geofence_radius: 35,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -669,9 +644,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E3', lot_name: 'Lot E3', display_name: 'Lot E3 - Faculty/Staff', lot_number: 'E3',
     lot_type: LotType.EMPLOYEE, capacity: 65, current_occupancy: 10,
     location_description: 'West Campus - Faculty',
-    buildings: ['Kinesiology', 'Horn Center', 'Jack Rose Track', 'Vivian Engineering Center',
-      'Engineering 2', 'Engineering 3', 'Engineering 4', 'Engineering and Computer Science'
-    ],
     center_lat: 33.7837, center_lng: -118.1126, geofence_radius: 45,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -685,9 +657,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E4', lot_name: 'Lot E4', display_name: 'Lot E4 - Faculty/Staff', lot_number: 'E4',
     lot_type: LotType.EMPLOYEE, capacity: 81, current_occupancy: 20,
     location_description: 'Central Campus - Faculty',
-    buildings: ['Kinesiology', 'Vivian Engineering Center', 'Engineering 2', 'Engineering 3',
-      'Engineering 4', 'Engineering and Computer Science', 'Rhodes Tennis Center'
-    ],
     center_lat: 33.7843, center_lng: -118.1118, geofence_radius: 60,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -702,9 +671,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E5', lot_name: 'Lot E5', display_name: 'Lot E5 - Faculty/Staff', lot_number: 'E5',
     lot_type: LotType.EMPLOYEE, capacity: 66, current_occupancy: 15,
     location_description: 'North Campus - Faculty',
-    buildings: ['Rhodes Tennis Center', 'Beach Building Services', 'Vivian Engineering Center',
-      'Engineering 2', 'Engineering 3', 'Engineering 4', 'Engineering and Computer Science',
-      'University Police Bldg'],
     center_lat: 33.7845, center_lng: -118.1092, geofence_radius: 30,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -718,7 +684,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E6', lot_name: 'Lot E6', display_name: 'Lot E6 - Faculty/Staff', lot_number: 'E6',
     lot_type: LotType.EMPLOYEE, capacity: 240, current_occupancy: 35,
     location_description: 'Central Campus - Faculty',
-    buildings: ['Engineering Technology', 'Human Services & Design', 'Design', 'Rhodes Tennis Center'],
     center_lat: 33.7825, center_lng: -118.1084, geofence_radius: 40,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -732,9 +697,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E7', lot_name: 'Lot E7', display_name: 'Lot E7 - Faculty/Staff', lot_number: 'E7',
     lot_type: LotType.EMPLOYEE, capacity: 91, current_occupancy: 11,
     location_description: 'South Campus - Faculty',
-    buildings: ['Hall of Science', 'Faculty Office 4', 'Faculty Office 5', 'Fine Arts 4', 'Fine Arts 3',
-      'Molecular & Life Sciences Center', 'Microbiology'
-    ],
     center_lat: 33.7786, center_lng: -118.1118, geofence_radius: 30,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -749,10 +711,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G6', lot_name: 'Lot G6', display_name: 'Lot G6 - South Campus', lot_number: 'G6',
     lot_type: LotType.STUDENT, capacity: 793, current_occupancy: 66,
     location_description: 'South Campus',
-    buildings: ['College of Business', 'Parking & Transportation Services', 'Jack Rose Track', 'Japanese Garden',
-      'Horn Center', 'Barrett Athletic Administration Building', 'Parkside College', 'Hillside Gateway',
-      'LBSU Sand Courts'
-    ],
     center_lat: 33.7854, center_lng: -118.1176, geofence_radius: 55,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -766,7 +724,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'G13', lot_name: 'Lot G13', display_name: 'Lot G13 - Upper Campus', lot_number: 'G13',
     lot_type: LotType.STUDENT, capacity: 304, current_occupancy: 18,
     location_description: 'Upper Campus',
-    buildings: ['Student Recreation & Wellness Center', 'George Allen Field', 'LBSU Softball Complex'],
     center_lat: 33.7874, center_lng: -118.1086, geofence_radius: 50,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -780,9 +737,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E8', lot_name: 'Lot E8', display_name: 'Lot E8 - Faculty/Staff', lot_number: 'E8',
     lot_type: LotType.EMPLOYEE, capacity: 380, current_occupancy: 57,
     location_description: 'North Campus - Faculty',
-    buildings: ['Theatre Arts', 'Cinematic Arts', 'University Theatre', 'Language Arts', 'McIntosh Humanities Bldg',
-      'Bob and Barbara Ellis Education Building', 'Education 2'
-    ],
     center_lat: 33.7759, center_lng: -118.1121, geofence_radius: 25,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '22:00' },
@@ -796,7 +750,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E9', lot_name: 'Lot E9', display_name: 'Lot E9 - Faculty/Staff', lot_number: 'E9',
     lot_type: LotType.EMPLOYEE, capacity: 167, current_occupancy: 4,
     location_description: 'North Campus - Faculty',
-    buildings: ['Multimedia Center', 'Bob and Barbara Ellis Education Building', 'Education 2', 'Library'],
     center_lat: 33.7764, center_lng: -118.1150, geofence_radius: 32,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '18:00' },
@@ -810,9 +763,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E10', lot_name: 'Lot E10', display_name: 'Lot E10 - Faculty/Staff', lot_number: 'E10',
     lot_type: LotType.EMPLOYEE, capacity: 183, current_occupancy: 5,
     location_description: 'South Campus - Faculty',
-    buildings: ['Bookstore', 'Psychology', 'Liberal Arts 5', 'Liberal Arts 4', 'Liberal Arts 3',
-      'Faculty Office 2', 'Faculty Office 3'
-    ],
     center_lat: 33.7796, center_lng: -118.1150, geofence_radius: 35,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '18:00' },
@@ -826,7 +776,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'E11', lot_name: 'Lot E11', display_name: 'Lot E11 - Faculty/Staff', lot_number: 'E11',
     lot_type: LotType.EMPLOYEE, capacity: 98, current_occupancy: 4,
     location_description: 'Central Campus - Faculty',
-    buildings: ['Bookstore', 'Family & Consumer Sciences'],
     center_lat: 33.7809, center_lng: -118.1149, geofence_radius: 40,
     permit_types: ['Faculty', 'Staff'], daily_permit_allowed: false,
     hours_weekday: { open: '06:00', close: '18:00' },
@@ -841,8 +790,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'PVN', lot_name: 'Palo Verde North', display_name: 'Palo Verde North - North Campus', lot_number: 'PVN',
     lot_type: LotType.STUDENT, capacity: 1400, current_occupancy: 91,
     location_description: 'North Campus - Palo Verde Structure',
-    buildings: ['University Music Center', 'Dance Center', 'Carpenter Performing Arts Center', 'George Allen Field',
-      'Student Recreation & Wellness Center', 'LBSU Softball Complex', 'LBSU Sand Courts'],
     center_lat: 33.7874, center_lng: -118.1094, geofence_radius: 50,
     permit_types: ['Gold', 'Green', 'Resident'], daily_permit_allowed: false,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -857,8 +804,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'PVS', lot_name: 'Palo Verde South', display_name: 'Palo Verde South - South Campus', lot_number: 'PVS',
     lot_type: LotType.STUDENT, capacity: 1410, current_occupancy: 82,
     location_description: 'South Campus - Palo Verde Structure',
-    buildings: ['George Allen Field', 'Student Recreation & Wellness Center', 'Rhodes Tennis Center',
-      'LBSU Softball Complex', 'LBSU Sand Courts', 'Ken Lindgren Aquatics Center'],
     center_lat: 33.7861, center_lng: -118.1094, geofence_radius: 48,
     permit_types: ['Gold', 'Green', 'Resident'], daily_permit_allowed: false,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -873,9 +818,6 @@ export const parkingLots: LotSeed[] = [
     lot_id: 'PYR', lot_name: 'Pyramid Parking Structure', display_name: 'Pyramid Structure - Event Parking', lot_number: 'PYR',
     lot_type: LotType.STUDENT, capacity: 3000, current_occupancy: 380,
     location_description: 'East Campus - Near Walter Pyramid',
-    buildings: ['Pyramid', 'Barrett Athletic Administration Building', 'Jack Rose Track', 'College of Business',
-      'Parking & Transportation Services', 'LBSU Sand Courts'
-    ],
     center_lat: 33.7861, center_lng: -118.1157, geofence_radius: 65,
     permit_types: ['Gold', 'Green'], daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '06:00', close: '23:00' },

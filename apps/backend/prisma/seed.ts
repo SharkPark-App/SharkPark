@@ -19,6 +19,7 @@ import { PrismaClient, UserType, EventType, ConfidenceLevel } from '@prisma/clie
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, CSULB_BUILDINGS, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
+import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
 import { getSemester, getWeekOfSemester } from '../src/lots/academic-calendar';
 
 // Prisma v7: "client" engine requires a driver adapter for direct DB connections
@@ -220,7 +221,8 @@ async function main() {
     const lotDbId = lotMap.get(lot.lot_id);
     if (!lotDbId) continue;
 
-    for (const proximity of lot.buildings) {
+    const nearbyNames = deriveLotBuildings(lot, CSULB_BUILDINGS);
+    for (const proximity of nearbyNames) {
       const building = buildingMap.get(proximity); // exact name match — no duplicates possible
       if (!building) continue;
       await prisma.lotBuilding.create({

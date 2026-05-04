@@ -32,6 +32,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import { CSULB_SCHOOL, CSULB_BUILDINGS, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
+import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
 
 const rawConnectionString = process.env.DATABASE_URL;
 if (!rawConnectionString) {
@@ -248,15 +249,34 @@ async function seedProd() {
     });
     if (!lotRow) continue;
 
-    for (const proximity of lot.buildings) {
+    const nearbyNames = deriveLotBuildings(lot, CSULB_BUILDINGS);
+    const desiredBuildingIds = new Set<string>();
+    for (const proximity of nearbyNames) {
       const building = buildingMap.get(proximity); // exact name match — no duplicates possible
       if (!building) continue;
+      desiredBuildingIds.add(building.id);
       await prisma.lotBuilding.upsert({
         where: { lot_id_building_id: { lot_id: lotRow.id, building_id: building.id } },
         create: { lot_id: lotRow.id, building_id: building.id },
         update: {},
       });
       lotBuildingCount++;
+    }
+
+    // Reconcile: drop stale rows (previously hand-curated) no longer in the
+    // geometrically-derived set so the join table reflects the current truth.
+    const stale = await prisma.lotBuilding.findMany({
+      where: { lot_id: lotRow.id },
+      select: { building_id: true },
+    });
+    const toDelete = stale
+      .map((r) => r.building_id)
+      .filter((id) => !desiredBuildingIds.has(id));
+    if (toDelete.length > 0) {
+      await prisma.lotBuilding.deleteMany({
+        where: { lot_id: lotRow.id, building_id: { in: toDelete } },
+      });
+      console.log(`[seed-prod]   - ${lot.lot_id}: removed ${toDelete.length} stale building link(s)`);
     }
   }
   console.log(`[seed-prod] ${lotBuildingCount} lot-building associations upserted`);
