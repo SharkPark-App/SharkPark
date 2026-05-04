@@ -1,13 +1,66 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
 import type { CampusEvent } from '@prisma/client';
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Default lookahead window for `getEventsForLot` (preserves the historical 7-day behaviour). */
+export const DEFAULT_EVENTS_WINDOW_HOURS = 24 * 7;
+/** Hard cap on any caller-supplied lookahead window. Matches the longest forecast horizon. */
+export const MAX_EVENTS_WINDOW_HOURS = 24 * 7;
+
+/** Per-lot row in the bulk summary response. */
+export interface LotEventsSummary {
+  lot_id: string;
+  count: number;
+  /** Soonest upcoming event in the window, or `null` if `count === 0`. */
+  next_event: {
+    id: string;
+    event_name: string;
+    location: string;
+    start_time: Date;
+    end_time: Date;
+  } | null;
+}
 
 @Injectable()
 export class EventsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Upcoming events for a specific lot, matched via the lot's linked buildings */
-  async getEventsForLot(lotId: string): Promise<CampusEvent[]> {
+  /**
+   * Validate + clamp a caller-supplied `within_hours` value. Throws on
+   * non-finite / out-of-range input rather than silently coercing — callers
+   * are expected to validate at the controller boundary, so reaching the
+   * service with a bad value indicates a bug in the caller.
+   */
+  private resolveWindowHours(withinHours: number | undefined): number {
+    if (withinHours === undefined) return DEFAULT_EVENTS_WINDOW_HOURS;
+    if (!Number.isFinite(withinHours) || withinHours < 1) {
+      throw new BadRequestException(
+        `within_hours must be a finite number >= 1, got ${withinHours}`,
+      );
+    }
+    if (withinHours > MAX_EVENTS_WINDOW_HOURS) {
+      throw new BadRequestException(
+        `within_hours must be <= ${MAX_EVENTS_WINDOW_HOURS}, got ${withinHours}`,
+      );
+    }
+    return withinHours;
+  }
+
+  /**
+   * Upcoming events for a single lot, matched server-side via the lot's
+   * linked buildings. The window is `[now, now + withinHours)` and an event
+   * is included when it overlaps that window at all (started but not yet
+   * ended also counts).
+   */
+  async getEventsForLot(
+    lotId: string,
+    withinHours?: number,
+  ): Promise<CampusEvent[]> {
+    const hours = this.resolveWindowHours(withinHours);
+
     const lot = await this.prisma.lot.findFirst({
       where: { lot_id: lotId.toUpperCase() },
       select: {
@@ -19,7 +72,7 @@ export class EventsService {
 
     const buildingIds = lot.lot_buildings.map(lb => lb.building_id);
     const now = new Date();
-    const windowEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // next 7 days
+    const windowEnd = new Date(now.getTime() + hours * HOUR_MS);
 
     return this.prisma.campusEvent.findMany({
       where: {
@@ -28,6 +81,81 @@ export class EventsService {
         end_time: { gte: now },
       },
       orderBy: { start_time: 'asc' },
+    });
+  }
+
+  /**
+   * Bulk per-lot upcoming-event counts. One DB round trip (vs N round trips
+   * for per-lot fetches) — designed for the mobile map screen, which renders
+   * a badge on every visible pin.
+   *
+   * Returns one row per lot, including lots with `count: 0`, so the caller
+   * can render badges without a second "which lots exist?" lookup.
+   *
+   * Single-school assumption matches `LotsService.findAll`; if/when the
+   * deployment grows to multiple schools, add a `schoolShortName` filter
+   * here in lockstep.
+   */
+  async getEventsSummary(
+    withinHours?: number,
+  ): Promise<LotEventsSummary[]> {
+    const hours = this.resolveWindowHours(withinHours);
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + hours * HOUR_MS);
+
+    // Pull every lot plus its linked buildings' upcoming events in a single
+    // query. We fetch lightweight event fields (not a SQL COUNT) because we
+    // also need the soonest event for the badge tooltip; the payload is
+    // bounded (~28 lots × a handful of events) so this is cheaper than two
+    // round trips.
+    const lots = await this.prisma.lot.findMany({
+      select: {
+        lot_id: true,
+        lot_buildings: {
+          select: {
+            building: {
+              select: {
+                campus_events: {
+                  where: {
+                    start_time: { lte: windowEnd },
+                    end_time: { gte: now },
+                  },
+                  select: {
+                    id: true,
+                    event_name: true,
+                    location: true,
+                    start_time: true,
+                    end_time: true,
+                  },
+                  orderBy: { start_time: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { lot_id: 'asc' },
+    });
+
+    return lots.map((lot) => {
+      // Dedupe across buildings — the same event can be linked to multiple
+      // buildings of the same lot (rare, but possible after the polygon-edge
+      // upgrade puts e.g. Pyramid into 6 lots' join sets simultaneously).
+      const seen = new Map<string, LotEventsSummary['next_event']>();
+      for (const lb of lot.lot_buildings) {
+        for (const ev of lb.building.campus_events) {
+          if (!seen.has(ev.id)) seen.set(ev.id, ev);
+        }
+      }
+      const events = Array.from(seen.values()).filter(
+        (e): e is NonNullable<typeof e> => e !== null,
+      );
+      events.sort((a, b) => a.start_time.getTime() - b.start_time.getTime());
+      return {
+        lot_id: lot.lot_id,
+        count: events.length,
+        next_event: events[0] ?? null,
+      };
     });
   }
 
@@ -48,7 +176,7 @@ export class EventsService {
         `retentionDays must be a finite number >= 1, got ${retentionDays}`,
       );
     }
-    const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(now.getTime() - retentionDays * DAY_MS);
     const result = await this.prisma.campusEvent.deleteMany({
       where: { end_time: { lt: cutoff } },
     });

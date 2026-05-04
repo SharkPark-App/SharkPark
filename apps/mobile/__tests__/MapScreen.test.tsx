@@ -16,16 +16,23 @@ import ReactTestRenderer from 'react-test-renderer';
 // ────────────────────── Mocks ──────────────────────
 
 const mockNavigate = jest.fn();
-jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({
-    navigate: mockNavigate,
-    goBack: jest.fn(),
-    dispatch: jest.fn(),
-  }),
-  useRoute: () => ({ params: {} }),
-  useIsFocused: () => true,
-  NavigationContainer: ({ children }: { children: React.ReactNode }) => children,
-}));
+jest.mock('@react-navigation/native', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ReactImpl: typeof React = require('react');
+  return {
+    useNavigation: () => ({
+      navigate: mockNavigate,
+      goBack: jest.fn(),
+      dispatch: jest.fn(),
+    }),
+    useRoute: () => ({ params: {} }),
+    useIsFocused: () => true,
+    // Treat focus effects as plain effects in tests — the screen is
+    // always "focused" under the test renderer.
+    useFocusEffect: (cb: () => void | (() => void)) => ReactImpl.useEffect(cb, []),
+    NavigationContainer: ({ children }: { children: React.ReactNode }) => children,
+  };
+});
 
 jest.mock('../src/context/ThemeContext', () => ({
   useTheme: () => ({

@@ -7,9 +7,17 @@ import { useFocusEffect } from '@react-navigation/native';
 import { lotsApi, ParkingLotResponse, OccupancyHistoryRecord, ApiError, BackgroundLocationRequiredError } from '../services/api';
 import { subscribeContributorState } from '../services/api/contributor';
 
-/** How often to re-fetch lot data (ms) */
-const LOT_DETAIL_POLL_MS = 60_000;  // 60 seconds
-const LOTS_LIST_POLL_MS  = 30_000;  // 30 seconds
+/** How often to re-fetch lot data (ms). Each data type has its own cadence so
+ * a single screen tick doesn't synchronously refresh everything — occupancy +
+ * reliability are bundled in the lot payload and refresh together at 60s,
+ * while the short-term forecast (15-min bins) refreshes on its own loop
+ * aligned with the bin width. Snappy refresh after a contributor grant /
+ * revoke is handled separately by `subscribeContributorState`, so the
+ * forecast loop doesn't need to be tighter than the bin cadence.
+ */
+const LOT_DETAIL_POLL_MS = 60_000;        // 60 seconds — occupancy + reliability
+const FORECAST_POLL_MS   = 15 * 60_000;   // 15 minutes — matches forecast bin width
+const LOTS_LIST_POLL_MS  = 30_000;        // 30 seconds
 
 interface UseLotDataReturn {
   lot: ParkingLotResponse | null;
@@ -64,17 +72,20 @@ export function useLotData(lotId: string): UseLotDataReturn {
   // a ref avoids the stale-closure problem we'd hit reading `lot` directly.
   const hasLoadedOnceRef = useRef(false);
 
-  // Monotonic generation counter so a slow in-flight fetch from a previous
-  // call doesn't commit on top of a newer one (e.g. a revoke fires a fresh
-  // refetch while the prior fetch is still in flight). Refs (not state)
-  // so a bump doesn't re-render and a closure capture is always current.
-  const refreshGenRef = useRef(0);
+  // Monotonic generation counters — one per fetcher — so a slow in-flight
+  // fetch from a previous call doesn't commit on top of a newer one (e.g. a
+  // revoke fires a fresh refetch while the prior fetch is still in flight).
+  // Lot and forecast each have their own ref because they fire on independent
+  // intervals, so the lot poll bumping a shared counter would needlessly
+  // discard an in-flight forecast response and vice versa.
+  const lotGenRef = useRef(0);
+  const forecastGenRef = useRef(0);
 
   const refreshLot = useCallback(async () => {
     if (!lotId) return;
 
-    const myGen = ++refreshGenRef.current;
-    const isLatest = () => refreshGenRef.current === myGen;
+    const myGen = ++lotGenRef.current;
+    const isLatest = () => lotGenRef.current === myGen;
     const isFirstLoad = !hasLoadedOnceRef.current;
 
     try {
@@ -89,27 +100,34 @@ export function useLotData(lotId: string): UseLotDataReturn {
       setError(null);
       setBgLocationRequired(false);
 
-      // Note: lotsApi.getLotDetails / getForecast redact + 403 client-side
-      // based on the live OS contributor state (see lots.ts).  This hook
-      // therefore doesn't need its own commit-time redaction or cache
-      // bypass — a stale colored cached entry served to a just-revoked
-      // user still comes back null-shaped because the redactor runs after
-      // the cache read.
+      // Note: lotsApi.getLotDetails redacts + 403s client-side based on the
+      // live OS contributor state (see lots.ts). This hook therefore doesn't
+      // need its own commit-time redaction or cache bypass — a stale colored
+      // cached entry served to a just-revoked user still comes back
+      // null-shaped because the redactor runs after the cache read.
       const lotData = await lotsApi.getLotDetails(lotId);
       if (!isLatest()) return;
       setLot(lotData);
-
-      const forecastData = await lotsApi.getForecast(lotData);
-      if (!isLatest()) return;
-      setForecast(forecastData);
+      // Mirror into the ref synchronously so the chained refreshForecast()
+      // below can read the just-fetched lot — the useEffect that mirrors
+      // `lot` into `lotRef` doesn't run until after this render commits.
+      lotRef.current = lotData;
       setLastUpdatedAt(Date.now());
       hasLoadedOnceRef.current = true;
+      // Chain the initial forecast fetch off the first successful lot
+      // response so we never call `getForecast` with a placeholder lot.
+      // Subsequent forecast refreshes are driven by the independent
+      // forecast poll / AppState / contributor-state listeners and read
+      // the latest lot from `lotRef`.
+      if (!hasFetchedForecastOnceRef.current) {
+        hasFetchedForecastOnceRef.current = true;
+        void refreshForecastRef.current?.();
+      }
 
     } catch (err) {
       if (!isLatest()) return;
       if (err instanceof BackgroundLocationRequiredError) {
         setBgLocationRequired(true);
-        setForecast([]);
         // Locked is a valid "loaded" state — bump the timestamp so the
         // "Updated Xm ago" label reflects the redacted commit too, and
         // mark first-load complete so we never flash the spinner again
@@ -131,12 +149,65 @@ export function useLotData(lotId: string): UseLotDataReturn {
     }
   }, [lotId]);
 
+  // Independent forecast fetcher. Polled separately from `refreshLot` because
+  // 15-min forecast bins don't need to be refetched every 60s — but the lot
+  // payload (occupancy + reliability) does. Splitting the two also means the
+  // forecast chart can keep showing the previous bin set while a slow lot
+  // fetch is pending, instead of being held back by the bundled fetch.
+  //
+  // We mirror the latest lot into a ref so the forecast fetch can pass the
+  // required lot_id + metadata_confidence to `lotsApi.getForecast` without
+  // burning a second `getLotDetails` round-trip on every poll tick. The
+  // *initial* forecast fetch is chained off the first successful lot fetch
+  // (see refreshLot) so we never call `getForecast` with a placeholder.
+  const lotRef = useRef<ParkingLotResponse | null>(null);
+  useEffect(() => { lotRef.current = lot; }, [lot]);
+
+  // Tracks whether refreshLot has chained the first forecast fetch yet, so
+  // a re-mount or AppState resume doesn't double-fire the initial chain.
+  const hasFetchedForecastOnceRef = useRef(false);
+
+  const refreshForecast = useCallback(async () => {
+    if (!lotId) return;
+    const myGen = ++forecastGenRef.current;
+    const isLatest = () => forecastGenRef.current === myGen;
+    const lotData = lotRef.current;
+    // No-op if we don't yet have a lot record. The first forecast fetch is
+    // chained inside `refreshLot` once that resolves — prevents calling
+    // `getForecast` with a fabricated metadata_confidence, which would
+    // surface a misleading accuracy % in the chart for one tick.
+    if (!lotData) return;
+    try {
+      const forecastData = await lotsApi.getForecast(lotData);
+      if (!isLatest()) return;
+      setForecast(forecastData);
+    } catch (err) {
+      if (!isLatest()) return;
+      if (err instanceof BackgroundLocationRequiredError) {
+        setForecast([]);
+        return;
+      }
+      // Forecast errors are non-fatal — leave the previous bins in place
+      // and let the next poll retry. Don't surface to the screen-level
+      // error banner; that's reserved for lot-fetch failures.
+      console.error('Error fetching forecast:', err);
+    }
+  }, [lotId]);
+
+  // Mirror the latest refreshForecast into a ref so refreshLot (declared
+  // above it) can chain the initial forecast fetch without participating
+  // in its own dependency list — keeps the two callbacks independently
+  // memoizable instead of one re-creating every time the other does.
+  const refreshForecastRef = useRef<typeof refreshForecast | null>(null);
+  useEffect(() => { refreshForecastRef.current = refreshForecast; }, [refreshForecast]);
+
   // Reset first-load tracking when the lotId changes so navigating from one
   // lot's detail to another shows the full-screen spinner (we have nothing
   // useful to render for the new lot yet) instead of the previous lot's
   // stale data with just an inline \"Updating...\" indicator.
   useEffect(() => {
     hasLoadedOnceRef.current = false;
+    hasFetchedForecastOnceRef.current = false;
     setLot(null);
     setForecast([]);
     setHistory([]);
@@ -170,26 +241,34 @@ export function useLotData(lotId: string): UseLotDataReturn {
 
       refreshLot();
       refreshHistory();
+      // Don't kick refreshForecast here — the first forecast fetch is
+      // chained off refreshLot (so it has a real lot record). The poll
+      // covers everything after that.
 
-      const interval = setInterval(() => {
-        refreshLot();
-      }, LOT_DETAIL_POLL_MS);
+      const lotInterval = setInterval(refreshLot, LOT_DETAIL_POLL_MS);
+      const forecastInterval = setInterval(refreshForecast, FORECAST_POLL_MS);
 
-      return () => clearInterval(interval);
-    }, [lotId, refreshLot, refreshHistory]),
+      return () => {
+        clearInterval(lotInterval);
+        clearInterval(forecastInterval);
+      };
+    }, [lotId, refreshLot, refreshForecast, refreshHistory]),
   );
 
-  // Re-fetch when the app returns to the foreground
+  // Re-fetch when the app returns to the foreground. Both the lot and the
+  // forecast refresh independently — backgrounded for >5min means both are
+  // stale, and since they fire in parallel there's no extra latency.
   const appState = useRef(AppState.currentState);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (appState.current.match(/inactive|background/) && next === 'active') {
         refreshLot();
+        refreshForecast();
       }
       appState.current = next;
     });
     return () => sub.remove();
-  }, [refreshLot]);
+  }, [refreshLot, refreshForecast]);
 
   // Re-fetch the moment our contributor status changes (grant or revoke)
   // so the screen pulls fresh data without waiting for the next poll.
@@ -208,13 +287,17 @@ export function useLotData(lotId: string): UseLotDataReturn {
   useEffect(() => {
     return subscribeContributorState((state) => {
       if (state === 'revoked') {
-        refreshGenRef.current++;
+        // Bump both gen counters so any in-flight pre-revoke response is
+        // discarded and can't overwrite the redacted state.
+        lotGenRef.current++;
+        forecastGenRef.current++;
         setForecast([]);
         setBgLocationRequired(true);
       }
       refreshLot();
+      refreshForecast();
     });
-  }, [refreshLot]);
+  }, [refreshLot, refreshForecast]);
 
   return {
     lot,

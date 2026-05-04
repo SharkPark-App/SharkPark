@@ -1,12 +1,15 @@
 # SharkPark — Pre-Launch TODO
 
-*Last updated 2026-05-03 (post-merge through #172 — marketing site live at https://sharkpark.app, nav active-state + CSP fixes shipped, mobile critical-path items #139/#140/#147/#148/#149 all merged). This document tracks remaining work to App Store / Play Store submission. For day-to-day status, sections are organized per-owner with priority tiers.*
+*Last updated 2026-05-04 (post-merge through #177 — campus event scraper + lot metadata enrichment #152 merged, reports→reliability loop #146 merged, weather NWS migration #173 merged, cron stability cluster #176 + warm-machine #177 shipped). This document tracks remaining work to App Store / Play Store submission. For day-to-day status, sections are organized per-owner with priority tiers.*
 
 ---
 
 # ✅ Recently shipped (since 2026-04-28)
 
 **Backend / infra (Charles):**
+- PR #176 — **Stability cluster.** Bumped cron VM 1 GB → 2 GB (was OOM-killing the predict + retrain crons), raised health-check `grace_period` to cover cold-start XGBoost model load, dropped pg connect timeout from 30s → 10s so health checks fail fast on a wedged pool, made pool teardown idempotent (was double-closing on SIGTERM during deploys), and silenced 4xx scanner noise in Sentry (`/wp-login.php`, `/.env`, etc. were drowning real errors).
+- PR #177 — **`min_machines_running = 1` for the app process group.** Was scaling to zero between requests; first request after idle was eating a 6-8s cold start. Keeps one warm machine 24/7 (~$2/mo extra). The cron Machine was already always-on; this only affects the public-facing app process.
+- PR #173 — **Weather: NWS migration + long-term forecast cron + retention.** Replaced OWM with keyless `api.weather.gov`; new `WeatherForecast` model + `0 */6 * * *` long-term cron; weather rows kept permanently for future ML features (PR #173 dropped them from `prune-old-data`). Fixes the silently-zero `precipitation_probability` bug from OWM.
 - PR #118 — Mobile Sentry init (JS-side) wired through `react-native-dotenv`
 - PR #122 — Better Stack heartbeat pings on cron success across all 6 cron jobs *(superseded by #144 — see below)*
 - PR #123 — Mobile/backend access-tier alignment (`x-device-id`, HMAC-signed `POST /occupancy-events`, hardened `@student.csulb.edu` check, dropped legacy `UNKNOWN` user-type throw)
@@ -18,9 +21,11 @@
 
 **ML (Ly):**
 - PR #119 — Weather-aware short-term predictions (rule-based postprocess layer at `services/ml/src/postprocess/weather_adjustment.py`, with staleness gate)
+- PR #146 — **Reports → reliability score loop.** Wires `Report` rows into the weighted reliability formula in `apps/backend/src/reliability/reliability.service.ts`. Anonymous device 0.3-0.6, authed user 1.0, repeat-flagged user 0. (All current reports are authed via NOT-NULL `user_id` — anonymous tier is for future expansion.)
 
 **Backend (Zach):**
 - PR #121 — `POST /api/v1/reports` endpoint (DTO `{ lotId, type, message? }`, throttled 5/min/user, 401 for guests)
+- PR #152 — **Campus event scraper + lot metadata enrichment (concept3d).** `EventsScraperService` (179 lines) + Sidearm calendar LBSU sports scraper, weekly cron to prune past events. Replaces hand-traced geofences with concept3d polygons (Phase B), derives lot↔building proximity geometrically (Phase A), adds `is_structure` + EV reconciliation (Phase C), `LotAdvisory` model + concept3d construction extractor (Phase D), weekly cron to refresh advisories (Phase F). Adds short-term/low-emission/pay-station/motorcycle counts, building footprints + categories, lat/lng on all CSULB campus + athletic venues. **Unblocks Ly's nearby-events badge** (table is now populated).
 
 **Mobile (Lawrence):**
 - PR #82 — Env-based API URL (production points at `https://api.sharkpark.app/api/v1`)
@@ -184,23 +189,23 @@ NWS migration + long-term forecast cron landed together. The OWM `/data/2.5/weat
 - ✅ ~~`POST /api/v1/reports`~~ — *shipped in PR #121 (see critical path).* Mobile wire shipped in #149. New `Report` model with `user_id` cascade.
 - ✅ ~~**Verify reports endpoint actually requires auth**~~ — *covered.* `app.e2e-spec.ts` asserts anonymous `POST /reports` → 401 via the global `AzureAdGuard` (assertion landed alongside the access-tier audit closeout).
 - ✅ ~~AASA + assetlinks.json hosting~~ — *shipped via the marketing-site cluster.* Both manifests served from https://sharkpark.app/.well-known/.
-- **`GET /api/v1/min-version`** — trivial endpoint, returns `{ ios: { min: "1.0.0", current: "1.0.0" }, android: { ... } }`. Hardcode for now, move to env or a `MobileVersion` Prisma model later. Lawrence's force-update screen calls this on every app launch. *~30 min.*
+- ⏳ **`GET /api/v1/min-version`** — *PR #175 open (Zach, branch `Feat/min-version-endpoint`).* Awaiting review. Unblocks Lawrence's force-update screen (PR #160). Was 🔴 critical-path; downgraded to ⏳ now that the implementation exists.
 - ✅ ~~**`DELETE /api/v1/users/me` cascade**~~ — *shipped by Charles in PR #100.* Cascades favorites + writes audit log (P11.108e). Mobile UI to call it is now on Lawrence's list above. **Note:** does not yet delete `Report` rows — re-visit once `POST /reports` ships and the model exists.
 - ✅ ~~**Push notification service — backend (b)**~~ — *shipped in PR #147.* `push_tokens` + `notification_logs` schema, `POST /users/me/push-token` endpoint (upsert by token, supports re-installs/token rotation), sender service via `firebase-admin`, all 4 trigger crons (`notify-favorites-filling`, `notify-favorites-clearing`, `notify-surge`, `notify-events`) running on the Fly cron process group at 15-min cadence with `runCronJob` + advisory lock + Sentry Crons check-in.
 - ✅ ~~**Push notification service — sub-ticket (a) FCM project + APNs key setup**~~ — *done.* Firebase project provisioned, Cloud Messaging enabled, APNs auth key generated under Team ID `4K793ZW77F` and uploaded to Firebase. `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` all deployed as Fly secrets on `sharkpark-api`, so the notify-* crons can actually deliver. Lawrence's mobile FCM token registration is now the only remaining blocker for end-to-end push.
-- **Privacy nutrition data inventory** — single doc (`docs/privacy-data-inventory.md`) listing everything the app collects: device hash (SHA-256, no raw IDs), email (from Azure AD), location (used in-app only, never stored), favorites, reports. For each: where stored, retention window, third parties. Lawrence needs this for the App Store privacy labels questionnaire and Play Store data safety form. *~1-2 hrs of writing.*
-- ⏳ **Campus event scraper** — *PR #152 open (Zach, branch `Feat/campus-event-scraper`).* `apps/backend/src/events/events-scraper.service.ts` (179 lines) + crontab entry. **Blocked on review.** Once merged, unblocks Ly's nearby-events badge. *(NOT a forecasting input as of 2026-04-30 — feeds the nearby-events display/notification surface, see Ly's section.)*
+- ✅ ~~**Privacy nutrition data inventory**~~ — *shipped (commits `14c7308` + `c1ff4ad`).* `docs/privacy-data-inventory.md` lists every collected datum, retention window, and third party. Lawrence is unblocked for both App Store privacy labels and Play data safety form.
+- ✅ ~~**Campus event scraper**~~ — *shipped in PR #152 (2026-05-04).* `apps/backend/src/events/events-scraper.service.ts` + crontab entry. Includes the LBSU sports-events scraper (Sidearm calendar) and a weekly cron to prune past events. **Unblocks Ly's nearby-events badge** — table is now populated.
 
 **Lower priority**
-- **Update parking lot metadata** — Neon `lots` table has `id, name, capacity, type, lat, lng` etc. Verify all 28 CSULB lots have correct capacity (CSULB Parking Services PDF), accurate polygons (open `lots.geojson` if it exists in `apps/backend/data/`), and current permit codes. Coordinate with Lawrence if any new fields are needed (e.g., `accessibility_spaces`, `ev_chargers`).
+- ✅ ~~**Update parking lot metadata**~~ — *shipped in PR #152.* All 28 CSULB lots now carry concept3d-derived polygons, real centroids (single source of truth — see PR description), `is_structure`, EV/short-term/low-emission/pay-station/motorcycle/accessible counts reconciled against concept3d, plus `LotAdvisory` rows refreshed weekly from concept3d construction notices. Building footprints + categories + lat/lng landed alongside.
 - ⏳ **Reports/analytics endpoints** — *PR #163 open (Zach, branch `Feat/analytics-endpoints`).* `GET /api/v1/lots/:id/trends?range=Nd` (hourly occupancy averages) + `GET /api/v1/lots/utilization?range=Nd` (per-lot utilization). +150 lines across [`lots.controller.ts`](apps/backend/src/lots/lots.controller.ts), [`lots.service.ts`](apps/backend/src/lots/lots.service.ts), [`parking-lot.interface.ts`](apps/backend/src/lots/interfaces/parking-lot.interface.ts). **Blocked on review.**
 - **Admin dashboard** — either a separate Next.js app under `apps/admin/` or admin-scoped routes mounted at `/admin/*` with a JWT role check (`role: 'admin'` claim). Pages: lot CRUD, report review queue (acknowledge/dismiss reports), reliability score overrides. Probably the biggest single ticket on your list — a week of work — defer until after launch unless you have spare cycles.
 - **Audit parking-validation** — `grep -r "@sharkpark/parking-validation" apps/ packages/` — if zero non-self-references, delete the package. If used, add a one-paragraph README so the next person knows what it does. *30 sec check.*
-- **GDPR/CCPA data export** — `GET /api/v1/users/me/data` returning JSON of everything tied to the authenticated user (favorites, audit-log rows, push tokens once those exist, reports once those exist). Strictly required if any EU/CA traffic, soft-required for App Store privacy answers. Light lift since we have minimal PII. Pair with the existing `DELETE /users/me` so the privacy section is complete.
-- **Backend access-tier follow-ups** *(remaining slices from PR #101)*
-  - `GET /api/v1/users/me/forecast` — stack `AzureAdGuard` + `ContributorGuard` (personalized forecast: requires both auth and a recent contributor ping). Spec is in [docs/api-access-tiers.md](docs/api-access-tiers.md).
-  - `x-app-mode` header + tier-aware throttler (public 60rpm, contributor 300rpm, authed 600rpm). Today everyone shares the default bucket.
-  - Reliability scoring weights — anonymous device 0.3–0.6, authed user 1.0, flagged user 0. Belongs in `apps/backend/src/reliability/reliability.service.ts`.
+- ⏳ **GDPR/CCPA data export** — *PR #178 open (Zach, branch `Feat/gdpr-ccpa-data-export`).* `GET /api/v1/users/me/data` returns JSON of everything tied to the authenticated user. Awaiting review.
+- ⏳ **Backend access-tier follow-ups** *(remaining slices from PR #101)* — *PR #174 open (Zach, branch `Feat/user-throttling-forecasts-scoring`).* Single PR covers all three:
+  - `GET /api/v1/users/me/forecast` stacked `AzureAdGuard` + `ContributorGuard`.
+  - `TierThrottlerGuard` (public 60rpm, contributor 300rpm, authed 600rpm) with default exception handling.
+  - User reliability scoring weights wired through (complements PR #146's reports-factor work).
 
 ---
 
@@ -233,16 +238,16 @@ NWS migration + long-term forecast cron landed together. The OWM `/data/2.5/weat
 - **Automated retraining — `retrain-models.ts` weekly cron** — **Reassigned 2026-05-03: Charles** owns this alongside `predict-all-lots.ts` (Ly load relief). New file `apps/backend/src/scripts/retrain-models.ts` with a matching crontab entry. Sundays 3 AM PT (`0 3 * * 0`) — after the 2 AM Sunday backup and before the 4 AM Sunday retention prune. Pulls last N weeks of training data from Neon's `occupancy_snapshots`, shells out via `child_process.spawn` to `python services/ml/src/sharkpark_ml/train.py` (Python + ML venv already in the runtime image per PR #129), runs `evaluate.py` against persistence baseline, runs `promote.py` if MAE improvement ≥ 5%. Promoted model uploads to R2; next 15-min prediction cron picks it up automatically. **Caveat: XGBoost + pandas can easily exceed our 1 GB cron VM under load. Two options if it OOMs (exit 137):** (a) bump cron VM to 2 GB (~+$3/mo, edit `apps/backend/fly.toml [[vm]]` for the cron process group); or (b) run training as an ephemeral one-shot Fly Machine via `fly machine run --rm <image> -a sharkpark-api -g trainer` that scales to zero between weekly runs. Option (b) is cheaper and isolates the heavy load — default path unless option (a) proves sufficient in pre-launch dry runs.
 - **Model drift monitoring** — track live MAE (predictions vs actual `occupancy_snapshots` 1 hour after prediction window) vs training MAE. **Decide destination first** — easiest is Sentry custom metric (we already have Sentry wired backend-side, just `Sentry.metrics.distribution('ml.live_mae', value, { tags: { model_version }})`). Otherwise create a Better Stack dashboard. Alert if live MAE > 1.5× training MAE for 3 consecutive runs. *(Confirmed not implemented anywhere as of 2026-04-30 audit — no metric emit, no table writes, no comments in either predict script.)*
 
-**Unblocked (was blocked on #121)**
-- ⏳ **Feedback → model loop** — *PR #146 open (Ly, branch `feat/ml-feedback-reliability-loop`).* `Report` model + `POST /reports` endpoint are live (PR #121); this PR wires report data into the weighted reliability formula in `apps/backend/src/reliability/reliability.service.ts`. **Blocked on review.** Anonymous device weight 0.3-0.6, authed user 1.0, repeat-flagged user 0. (All current reports are authed — NOT NULL `user_id` — so the anonymous weight tier is for future expansion only.)
+**Shipped**
+- ✅ ~~**Feedback → model loop**~~ — *shipped in PR #146 (2026-05-03).* Report data now feeds the weighted reliability formula in `apps/backend/src/reliability/reliability.service.ts`.
 
-**Blocked on Zach's campus-event scraper (PR #152)**
-- 🟡 **Nearby-events surface — product decision (Ly owns the call, work is split across Zach + Lawrence)** *(decision 2026-04-30: replaces the previously-scoped “event-aware forecasting layer”. Events are too noisy/sparse to drive accurate per-lot occupancy predictions — we will surface them as context instead, not as a model feature.)*
+**Unblocked by PR #152 (merged 2026-05-04)**
+- 🟢 **Nearby-events surface — product decision (Ly owns the call, work is split across Zach + Lawrence)** *(decision 2026-04-30: replaces the previously-scoped “event-aware forecasting layer”. Events are too noisy/sparse to drive accurate per-lot occupancy predictions — we will surface them as context instead, not as a model feature.)*
   - **Zach (~1 hr)** — add `GET /api/v1/lots/:id/nearby-events?within_hours=2` returning the count + summary of `CampusEvent` rows whose `affected_lots[]` includes `:id` and whose `start_time` is within the window. Reuse existing `EventsService` query helpers. Public tier (mirrors `/lots`). *Currently only a forward-reference comment in [`apps/backend/src/lots/lots.service.ts`](apps/backend/src/lots/lots.service.ts) — endpoint not implemented.*
   - **Lawrence (~2 hr)** — badge on lot detail (“3 events nearby — occupancy may be affected”) sourced from the new endpoint; tap-through reveals event names + start times. No prediction-pipeline coupling.
   - **Lawrence (~1 hr, post-launch)** — when a favorited lot has ≥2 events starting within the next 2 hours, fire a local notification (“Events near \<lot\> may affect availability”). Throttled to once per lot per day.
   - **Ly (zero code)** — enforce the decision: do NOT wire `CampusEvent` into `predict_short_term.py`, `predict_long_term.py`, or `train.py`. There is no event-impact forecasting in this product — the `EventImpact` model + `ImpactLevel` enum + `/events/:id/impacts` route were removed 2026-04-30. Mobile decides which events are relevant to a given lot via the geographic `nearby-events` query at request time.
-  - **Hard-blocked by Zach's campus-event scraper (PR #152)** — table is empty in prod, so the badge is inert until the scraper lands.
+  - **Unblocked 2026-05-04** by PR #152 — `CampusEvent` table is now populated from the scraper, so the Zach + Lawrence sub-tickets above are actionable.
 
 ---
 
@@ -282,9 +287,9 @@ NWS migration + long-term forecast cron landed together. The OWM `/data/2.5/weat
 
 ```
 [✅ cleared]
-Zach POST /reports          →  Lawrence ReportModal wire (#149) + Ly model loop (PR #146 ⏳)
+Zach POST /reports          →  Lawrence ReportModal wire (#149) + Ly model loop (#146 ✅)
 Zach AASA hosting           →  Lawrence universal links (#161 cluster)
-Zach campus event scraper   →  Ly nearby-events badge (PR #152 ⏳ — unblocks on merge)
+Zach campus event scraper   →  Ly nearby-events badge (#152 ✅ — table populated)
 Lawrence access-tiers doc   →  Zach 403 handler + Ly endpoint shape freeze
 Lawrence api.config env     →  cross-team prod QA on real devices
 Ly forecast shape sync      →  Lawrence forecast UI implementation
@@ -292,8 +297,8 @@ Ly MLflow→R2 export         →  Ly predict-all-lots cron (PR #151 ⏳ — R2 
 
 [🔴 still blocking]
 Zach FCM/APNs setup         →  ✅ done — Fly secrets deployed; Lawrence's mobile FCM wire is now the only remaining gap
-Zach GET /min-version       →  Lawrence force-update screen (PR #160 ⏳ — ready, waits on backend)
-Zach data inventory         →  Lawrence privacy labels (App Store + Play)
+Zach GET /min-version       →  Lawrence force-update screen (PR #160 ⏳ — ready, soft-blocked on PR #175 ⏳)
+Zach data inventory         →  ✅ done — `docs/privacy-data-inventory.md` landed; Lawrence privacy labels unblocked
 Zach GET /lots/:id/nearby-events  →  Lawrence event badge + post-launch local notification (Ly's product call, Zach builds)
 Ly predict-all-lots cron    →  Lawrence forecast UI shows real data on day 1 (next critical — #151 unblocks)
 ```
@@ -355,17 +360,26 @@ If anyone wants to swap items, flag a blocker I missed, or push back on a priori
 - ✅ #171 — Charles — Marketing site: normalize trailing slash on active-nav comparison (insufficient — followed up by #172)
 - ✅ #172 — Charles — Marketing site: strip `.html` from build-time `Astro.url.pathname` so active-nav state actually works under `build.format: 'file'`; CSP allows Cloudflare Web Analytics (`static.cloudflareinsights.com` script-src, `cloudflareinsights.com` connect-src)
 
+**Merged 2026-05-03 / 2026-05-04 (stability + scraper cluster):**
+- ✅ #146 — Ly — Reports → reliability score loop
+- ✅ #173 — Charles — Weather: NWS migration + long-term forecast cron + retention
+- ✅ #176 — Charles — Stability cluster (cron VM 2 GB, cold-start health-check grace, pg connect timeout, idempotent pool teardown, Sentry 4xx noise)
+- ✅ #177 — Charles — `min_machines_running = 1` (warm app machine, kills cold-start latency on first request)
+- ✅ #152 — Zach — Campus event scraper + lot metadata enrichment (concept3d polygons, building footprints/categories, advisories, sports scraper, weekly prune cron)
+
 **Still open:**
 - #150 (Lawrence) — superseded by #161, **close without merging**.
-- #146 (Ly) — reports → reliability score loop. Awaiting review.
-- #151 (Ly) — MLflow R2 Registry (real upload + 156-line test). Awaiting review. **Unblocks `predict-all-lots.ts` cron.**
-- #152 (Zach) — campus event scraper service + crontab. Awaiting review. **Unblocks Ly's nearby-events badge.**
-- #160 (Lawrence) — force-update screen on launch. Awaiting review. **Soft-blocked on Zach's `GET /min-version` backend.**
+- #151 (Ly) — MLflow R2 Registry. Awaiting review. **Unblocks `predict-all-lots.ts` cron.**
+- #160 (Lawrence) — force-update screen on launch. Awaiting review. **Soft-blocked on PR #175 (Zach's `GET /min-version`).**
 - #163 (Zach) — analytics endpoints (`/lots/:id/trends`, `/lots/utilization`). Awaiting review.
+- #174 (Zach) — tier throttling + `/me/forecast` + reliability scoring (covers 3 backlog items in one PR).
+- #175 (Zach) — `GET /min-version` endpoint. Awaiting review. **Unblocks PR #160.**
+- #178 (Zach) — GDPR/CCPA data export `/me/data`. Awaiting review.
 - #164, #165 (dependabot) — Astro 5.18 → 6.1.6 in `apps/marketing` (major bump — needs migration check).
 - #155, #156, #162 (dependabot) — ML deps (gitpython, mako, uv group).
 
 **Direct-to-main commits (not in PR list):**
+- `14c7308` + `c1ff4ad` (Zach) — **`docs/privacy-data-inventory.md` landed.** App Store privacy labels + Play data safety form are now unblocked for Lawrence.
 - `a40eddb` (Lawrence, 2026-05-02) — *force-update screen scaffolding* (later promoted to PR #160 for review).
 - `c071caa` (Lawrence, 2026-05-02) — **assetlinks hardening per PR feedback** (drop debug fingerprint, runbook expansion, CI regex). See Recently shipped.
 - `c7c5eb6` (Lawrence) — initial `assetlinks.json` for App Links autoVerify.

@@ -120,7 +120,11 @@ describe('useLotData', () => {
     });
 
     expect(result.current.lot).toEqual(mockLot);
-    expect(result.current.forecast).toEqual(mockForecast);
+    // Forecast is chained off the first successful lot fetch, so it
+    // settles a microtask after `loading` flips. Wait for it explicitly.
+    await waitFor(() => {
+      expect(result.current.forecast).toEqual(mockForecast);
+    });
     expect(result.current.error).toBeNull();
     expect(mockGetLotDetails).toHaveBeenCalledWith('G1');
   });

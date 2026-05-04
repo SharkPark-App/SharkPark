@@ -94,6 +94,7 @@ const campusEvents = [
     event_name: "Men's Basketball — Home Game",
     description: 'Come cheer on the 49ers as they take on our rivals in an exciting home game at the Walter Pyramid! Free entry for students with valid ID. Go Beach!',
     location: 'Walter Pyramid',
+    event_url: 'https://longbeachstate.com/sports/mbball/schedule',
     start_time: daysFromNow(0, 19),
     end_time: daysFromNow(0, 21),
   },
@@ -101,6 +102,7 @@ const campusEvents = [
     external_id: 'seed-spring-commencement',
     event_name: 'Spring Commencement',
     location: 'Walter Pyramid',
+    event_url: 'https://www.csulb.edu/commencement',
     start_time: daysFromNow(2, 9),
     end_time: daysFromNow(2, 18),
   },
@@ -109,6 +111,7 @@ const campusEvents = [
     event_name: 'Spring Career Fair',
     description: 'Connect with potential employers and explore career opportunities at our annual Spring Career Fair!',
     location: 'USU Ballroom',
+    event_url: 'https://www.csulb.edu/careers',
     start_time: daysFromNow(4, 10),
     end_time: daysFromNow(4, 16),
   },
@@ -116,6 +119,7 @@ const campusEvents = [
     external_id: 'seed-concert',
     event_name: 'Spring Concert Series',
     location: 'University Theatre',
+    event_url: 'https://web.csulb.edu/colleges/cota/calendar',
     start_time: daysFromNow(6, 19),
     end_time: daysFromNow(6, 21),
   },
@@ -249,7 +253,12 @@ async function main() {
     const geofence = LOT_GEOFENCES[lot.lot_id];
     if (!geofence) continue;
     const nearbyNames = deriveLotBuildings(
-      { ...lot, center_lat: geofence.centroid.lat, center_lng: geofence.centroid.lng },
+      {
+        ...lot,
+        center_lat: geofence.centroid.lat,
+        center_lng: geofence.centroid.lng,
+        polygon: geofence.polygon,
+      },
       buildingsWithFootprints,
     );
     for (const proximity of nearbyNames) {
@@ -343,6 +352,7 @@ async function main() {
         event_name: event.event_name,
         description: event.description,
         location: event.location,
+        event_url: event.event_url,
         start_time: event.start_time,
         end_time: event.end_time,
         building_id: buildingId,

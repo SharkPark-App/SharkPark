@@ -18,6 +18,21 @@ import type { GetLotsQueryParams } from './interfaces/parking-lot.interface';
 import { Public } from '../auth/public.decorator';
 import { ContributorGuard } from '../auth/contributor.guard';
 import { ContributorService } from '../auth/contributor.service';
+import { EventsService, MAX_EVENTS_WINDOW_HOURS } from '../events/events.service';
+
+/** Default lookahead for nearby-events badge surfaces (next 2 hours). */
+const DEFAULT_NEARBY_EVENTS_HOURS = 2;
+
+/** Validate + clamp the `within_hours` query param shared by both events endpoints. */
+function parseWithinHours(raw: number | undefined): number {
+  if (raw === undefined) return DEFAULT_NEARBY_EVENTS_HOURS;
+  if (!Number.isInteger(raw) || raw < 1 || raw > MAX_EVENTS_WINDOW_HOURS) {
+    throw new BadRequestException(
+      `within_hours must be an integer between 1 and ${MAX_EVENTS_WINDOW_HOURS}`,
+    );
+  }
+  return raw;
+}
 
 /**
  * Handles parking lot queries including filtering, individual lot details,
@@ -39,6 +54,7 @@ export class LotsController {
   constructor(
     private readonly lotsService: LotsService,
     private readonly contributorService: ContributorService,
+    private readonly eventsService: EventsService,
   ) {}
 
   @Get()
@@ -91,6 +107,32 @@ export class LotsController {
 
     return {
       success: true,
+      data: summary,
+    };
+  }
+
+  /**
+   * Bulk per-lot upcoming-event counts for the next `within_hours` (default
+   * 2). Drives the event badge on the mobile map screen — one round trip
+   * for all 28 lots instead of N per-lot fetches.
+   *
+   * Public + shared-cacheable: response does not vary by tier, so the edge
+   * can serve hot reads. Scrapers refresh every ~30 min so a 1–2 minute
+   * cache is comfortably stale-tolerant.
+   */
+  @Get('events-summary')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300')
+  async getEventsSummary(
+    @Query('within_hours', new ParseIntPipe({ optional: true })) withinHours?: number,
+  ) {
+    const hours = parseWithinHours(withinHours);
+    const summary = await this.eventsService.getEventsSummary(hours);
+
+    return {
+      success: true,
+      within_hours: hours,
+      count: summary.length,
       data: summary,
     };
   }
@@ -194,6 +236,29 @@ export class LotsController {
     return {
       success: true,
       ...predictions,
+    };
+  }
+
+  /**
+   * Upcoming events for a single lot in the next `within_hours` (default 2).
+   * Public + shared-cacheable for the same reasons as the bulk summary.
+   */
+  @Get(':id/nearby-events')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300')
+  async getNearbyEvents(
+    @Param('id') id: string,
+    @Query('within_hours', new ParseIntPipe({ optional: true })) withinHours?: number,
+  ) {
+    const hours = parseWithinHours(withinHours);
+    const events = await this.eventsService.getEventsForLot(id.toUpperCase(), hours);
+
+    return {
+      success: true,
+      lot_id: id.toUpperCase(),
+      within_hours: hours,
+      count: events.length,
+      data: events,
     };
   }
 }

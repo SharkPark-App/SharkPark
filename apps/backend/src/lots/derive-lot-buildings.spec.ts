@@ -115,6 +115,37 @@ describe('deriveLotBuildings', () => {
   it('exports a sane default radius', () => {
     expect(DEFAULT_LOT_BUILDING_RADIUS_M).toBe(250);
   });
+
+  it('uses lot polygon edge (not centroid) when provided', () => {
+    // A long lot stretched ~400 m north–south. Its centroid sits at ~33.7838,
+    // but its north edge reaches ~33.78735. A building 50 m north of that
+    // edge (~33.78780) is ~440 m from the centroid but only ~50 m from the
+    // lot's nearest edge — must be matched.
+    const longLot = {
+      center_lat: 33.7838,
+      center_lng: -118.1141,
+      polygon: [
+        { lat: 33.78025, lng: -118.11430 },
+        { lat: 33.78025, lng: -118.11390 },
+        { lat: 33.78735, lng: -118.11390 },
+        { lat: 33.78735, lng: -118.11430 },
+      ],
+    };
+    const venue: BuildingPoint[] = [
+      { name: 'North Venue', lat: 33.78780, lng: -118.11410 },
+    ];
+
+    // Without polygon → centroid distance ~440 m → not matched.
+    const centroidOnly = deriveLotBuildings(
+      { center_lat: longLot.center_lat, center_lng: longLot.center_lng },
+      venue,
+    );
+    expect(centroidOnly).toEqual([]);
+
+    // With polygon → edge distance ~50 m → matched.
+    const polygonAware = deriveLotBuildings(longLot, venue);
+    expect(polygonAware).toEqual(['North Venue']);
+  });
 });
 
 describe('polygonToPolygonMeters', () => {

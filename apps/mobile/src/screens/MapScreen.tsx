@@ -23,6 +23,7 @@ import type { MapStackParamList } from '../types/navigation';
 import useFavorites from '../hooks/useFavorites';
 import { useTransitData } from '../hooks/useTransitData';
 import { useStopETAs } from '../hooks/useStopETAs';
+import { useEventsSummary } from '../hooks/useEventsSummary';
 import { ShuttleMarker } from '../components/Map/ShuttleMarker';
 import { StopModal } from '../components/Modals/StopModal';
 import { ShuttleModal } from '../components/Modals/ShuttleModal';
@@ -36,7 +37,8 @@ const InteractiveLot: React.FC<{
   onPress: (lot: ParkingLotResponse) => void;
   colors: ThemeColors;
   isContributor: boolean;
-}> = ({ lot, onPress, colors, isContributor }) => {
+  eventCount?: number;
+}> = ({ lot, onPress, colors, isContributor, eventCount = 0 }) => {
   // Pin lock state is driven by live OS contributor permission, not by
   // whether the most recent fetch returned null fields. The redactor in
   // lots.ts will eventually null out non-contributor data, but until that
@@ -79,8 +81,8 @@ const InteractiveLot: React.FC<{
         accessibilityRole="button"
         accessibilityLabel={
           isRedacted
-            ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
-            : `${lot.lot_name} parking lot, ${pct} percent full`
+            ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.${eventCount > 0 ? ` ${eventCount} ${eventCount === 1 ? 'event' : 'events'} nearby in the next 2 hours.` : ''}`
+            : `${lot.lot_name} parking lot, ${pct} percent full.${eventCount > 0 ? ` ${eventCount} ${eventCount === 1 ? 'event' : 'events'} nearby in the next 2 hours.` : ''}`
         }
       >
         <Text
@@ -91,6 +93,23 @@ const InteractiveLot: React.FC<{
         >
           {lot.lot_name}
         </Text>
+        {eventCount > 0 && (
+          <View
+            style={[
+              styles.eventBadge,
+              { backgroundColor: COLORS.secondary, borderColor: colors.white },
+            ]}
+            accessible={false}
+          >
+            <Text
+              style={[styles.eventBadgeText, { color: colors.white }]}
+              numberOfLines={1}
+              accessible={false}
+            >
+              {eventCount > 9 ? '9+' : String(eventCount)}
+            </Text>
+          </View>
+        )}
       </View>
     </Marker>
   );
@@ -129,6 +148,9 @@ const MapScreen: React.FC = () => {
   const { favoriteLots, refreshFavorites } = useFavorites();
   const { lots, bgLocationRequired, clearBgLocationRequired } = useLotsList();
   const { routes, stops, shuttles } = useTransitData();
+  // Bulk per-lot upcoming-event counts (next 2h) for the map badges. One
+  // round trip serves all ~28 markers; refreshes on a timer + foreground.
+  const { byLotId: eventCountByLot } = useEventsSummary(2);
 
   // Live OS contributor state. Drives pin color/lock decisions so a
   // permission toggle flips the map immediately rather than waiting for
@@ -256,13 +278,15 @@ const MapScreen: React.FC = () => {
                 : Math.round(
                     (lot.occupancy_rate ?? liveOcc / Math.max(lot.capacity, 1)) * 100,
                   );
+            const eventCount = eventCountByLot[lot.lot_id] ?? 0;
             return (
               <InteractiveLot
-                key={`${lot.lot_id}:${visualKey}`}
+                key={`${lot.lot_id}:${visualKey}:e${eventCount}`}
                 lot={lot}
                 onPress={handleLotPress}
                 colors={colors}
                 isContributor={isContributor}
+                eventCount={eventCount}
               />
             );
           })}
@@ -394,6 +418,24 @@ const styles = StyleSheet.create({
   lotText: {
     fontSize: TYPOGRAPHY.fontSize.xxs,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
+    textAlign: 'center',
+  },
+  eventBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+  },
+  eventBadgeText: {
+    fontSize: 10,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    lineHeight: 12,
     textAlign: 'center',
   },
   stopCircle: {

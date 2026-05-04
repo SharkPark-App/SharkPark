@@ -32,7 +32,12 @@ for (const lot of parkingLots) {
     continue;
   }
   const names = deriveLotBuildings(
-    { ...lot, center_lat: geofence.centroid.lat, center_lng: geofence.centroid.lng },
+    {
+      ...lot,
+      center_lat: geofence.centroid.lat,
+      center_lng: geofence.centroid.lng,
+      polygon: geofence.polygon,
+    },
     buildingsWithFootprints,
     RADIUS_M,
   );
