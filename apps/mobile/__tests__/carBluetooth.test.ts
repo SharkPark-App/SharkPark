@@ -6,7 +6,7 @@
  * every API returns a benign value instead of crashing.
  */
 
-import { NativeModules } from 'react-native';
+import { NativeModules, NativeEventEmitter } from 'react-native';
 
 // NativeEventEmitter is mocked globally by the RN Jest preset.
 // Provide a per-test factory for NativeModules.CarBluetoothModule.
@@ -14,8 +14,25 @@ import { NativeModules } from 'react-native';
 // We import the module under test AFTER configuring NativeModules so
 // the module-level `isAvailable` getter reads the right value.
 
+// Snapshot the original NativeModules.CarBluetoothModule (almost always
+// undefined in the Jest env) and the original NativeEventEmitter prototype
+// addListener so we can restore them between tests. Without restoration,
+// NativeModules is a process-wide singleton and `.prototype` mutations leak
+// into every other suite that runs after this one — ordering bugs that are
+// brutal to debug. (Flagged by Copilot review on PR #179.)
+const originalCarBluetoothModule = NativeModules.CarBluetoothModule;
+const originalAddListener = NativeEventEmitter.prototype.addListener;
+
 describe('carBluetooth service', () => {
   afterEach(() => {
+    // Restore native module
+    if (originalCarBluetoothModule === undefined) {
+      delete NativeModules.CarBluetoothModule;
+    } else {
+      NativeModules.CarBluetoothModule = originalCarBluetoothModule;
+    }
+    // Restore prototype mutation from the addListener tests below
+    NativeEventEmitter.prototype.addListener = originalAddListener;
     jest.resetModules();
     jest.clearAllMocks();
   });
@@ -90,9 +107,7 @@ describe('carBluetooth service', () => {
       // Provide the module so NativeEventEmitter can be constructed around it
       withNativeModule({ addListener: jest.fn(), removeListeners: jest.fn() });
 
-      // Patch NativeEventEmitter prototype after module reset
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const NativeEventEmitter = require('react-native').NativeEventEmitter;
+      // Patch the same NativeEventEmitter the SUT will see (afterEach restores).
       NativeEventEmitter.prototype.addListener = mockAddListener;
 
       const svc = loadService();
@@ -121,8 +136,6 @@ describe('carBluetooth service', () => {
       const mockAddListener = jest.fn().mockReturnValue({ remove: mockRemove });
       withNativeModule({ addListener: jest.fn(), removeListeners: jest.fn() });
 
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const NativeEventEmitter = require('react-native').NativeEventEmitter;
       NativeEventEmitter.prototype.addListener = mockAddListener;
 
       const svc = loadService();
