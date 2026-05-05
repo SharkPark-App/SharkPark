@@ -257,6 +257,8 @@ describe('LotsController', () => {
         avg_occupancy_rate: 0.55,
         avg_occupancy: 55,
         avg_available: 45,
+        avg_estimated_occupancy: 78,
+        avg_estimated_rate: 0.78,
         sample_count: 4,
       },
     ];
@@ -306,6 +308,7 @@ describe('LotsController', () => {
         lot_type: 'STUDENT',
         capacity: 100,
         avg_utilization: 0.72,
+        avg_estimated_utilization: 0.85,
         snapshot_count: 10,
       },
     ];
