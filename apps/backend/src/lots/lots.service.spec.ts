@@ -8,8 +8,9 @@ import { WeatherService } from '../weather/weather.service';
 describe('LotsService', () => {
   let service: LotsService;
   let prisma: {
+    $queryRaw: jest.Mock;
     lot: { findMany: jest.Mock; findFirst: jest.Mock; groupBy: jest.Mock };
-    occupancySnapshot: { findMany: jest.Mock };
+    occupancySnapshot: { findMany: jest.Mock; groupBy: jest.Mock };
     predictionShortTerm: { findMany: jest.Mock };
     predictionLongTerm: { findMany: jest.Mock };
   };
@@ -34,8 +35,9 @@ describe('LotsService', () => {
 
   beforeEach(async () => {
     prisma = {
+      $queryRaw: jest.fn(),
       lot: { findMany: jest.fn(), findFirst: jest.fn(), groupBy: jest.fn() },
-      occupancySnapshot: { findMany: jest.fn() },
+      occupancySnapshot: { findMany: jest.fn(), groupBy: jest.fn() },
       predictionShortTerm: { findMany: jest.fn().mockResolvedValue([]) },
       predictionLongTerm: { findMany: jest.fn().mockResolvedValue([]) },
     };
@@ -729,6 +731,141 @@ describe('LotsService', () => {
         expect(p.confidence_lower).toBeGreaterThanOrEqual(0);
         expect(p.confidence_upper).toBeLessThanOrEqual(1);
       }
+    });
+  });
+
+  describe('parseRangeDays', () => {
+    it('returns defaultDays when range is undefined', () => {
+      expect(service.parseRangeDays(undefined, 7, 90)).toBe(7);
+    });
+
+    it('parses a valid range string', () => {
+      expect(service.parseRangeDays('14d', 7, 90)).toBe(14);
+    });
+
+    it('clamps to maxDays', () => {
+      expect(service.parseRangeDays('200d', 7, 90)).toBe(90);
+    });
+
+    it('clamps to minimum of 1', () => {
+      expect(service.parseRangeDays('0d', 7, 90)).toBe(1);
+    });
+
+    it('returns defaultDays for non-matching format', () => {
+      expect(service.parseRangeDays('1week', 7, 90)).toBe(7);
+    });
+  });
+
+  describe('getTrends', () => {
+    const mockLot = {
+      id: 'uuid-1', lot_id: 'G1', lot_name: 'Lot G1', capacity: 100,
+      current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
+      daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+      penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+      geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+    };
+
+    it('returns mapped trend points from raw query', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.$queryRaw.mockResolvedValue([
+        {
+          hour: new Date('2026-04-25T08:00:00Z'),
+          avg_occupancy_rate: 0.55,
+          avg_occupancy: 55,
+          avg_available: 45,
+          sample_count: BigInt(4),
+        },
+      ]);
+
+      const result = await service.getTrends('G1', 7);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].hour).toBe('2026-04-25T08:00:00.000Z');
+      expect(result[0].avg_occupancy_rate).toBe(0.55);
+      expect(result[0].sample_count).toBe(4);
+    });
+
+    it('returns empty array when no snapshots exist', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.$queryRaw.mockResolvedValue([]);
+
+      const result = await service.getTrends('G1', 7);
+      expect(result).toEqual([]);
+    });
+
+    it('throws NotFoundException for unknown lot', async () => {
+      prisma.lot.findFirst.mockResolvedValue(null);
+      await expect(service.getTrends('INVALID', 7)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws InternalServerErrorException on DB failure', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.$queryRaw.mockRejectedValue(new Error('DB error'));
+      await expect(service.getTrends('G1', 7)).rejects.toThrow(InternalServerErrorException);
+    });
+  });
+
+  describe('getUtilization', () => {
+    const lots = [
+      {
+        id: 'uuid-1', lot_id: 'G1', display_name: 'Lot G1', lot_name: 'Lot G1',
+        capacity: 100, current_occupancy: 50, lot_type: 'STUDENT', permit_types: [],
+        daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+        penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+        geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+      },
+      {
+        id: 'uuid-2', lot_id: 'E1', display_name: 'Lot E1', lot_name: 'Lot E1',
+        capacity: 80, current_occupancy: 20, lot_type: 'EMPLOYEE', permit_types: [],
+        daily_permit_allowed: false, ev_charging_stations: 0, school_id: 'school-1',
+        penetration_rate: 0.5, latitude: 33.78, longitude: -118.11,
+        geofence_coordinates: [], created_at: new Date(), updated_at: new Date(),
+      },
+    ];
+
+    it('returns per-lot utilization sorted descending', async () => {
+      prisma.lot.findMany.mockResolvedValue(lots);
+      prisma.occupancySnapshot.groupBy.mockResolvedValue([
+        { lot_id: 'uuid-1', _avg: { occupancy_rate: 0.72 }, _count: { id: 10 } },
+        { lot_id: 'uuid-2', _avg: { occupancy_rate: 0.40 }, _count: { id: 8 } },
+      ]);
+
+      const result = await service.getUtilization(30);
+
+      expect(result).toHaveLength(2);
+      expect(result[0].lot_id).toBe('G1');
+      expect(result[0].avg_utilization).toBe(0.72);
+      expect(result[0].snapshot_count).toBe(10);
+      expect(result[1].lot_id).toBe('E1');
+    });
+
+    it('sets avg_utilization to null for lots with no snapshots', async () => {
+      prisma.lot.findMany.mockResolvedValue(lots);
+      prisma.occupancySnapshot.groupBy.mockResolvedValue([]);
+
+      const result = await service.getUtilization(30);
+
+      expect(result).toHaveLength(2);
+      expect(result[0].avg_utilization).toBeNull();
+      expect(result[0].snapshot_count).toBe(0);
+    });
+
+    it('sets avg_utilization to null when avg occupancy_rate is null', async () => {
+      prisma.lot.findMany.mockResolvedValue(lots);
+      prisma.occupancySnapshot.groupBy.mockResolvedValue([
+        { lot_id: 'uuid-1', _avg: { occupancy_rate: null }, _count: { id: 3 } },
+      ]);
+
+      const result = await service.getUtilization(30);
+
+      const g1 = result.find(r => r.lot_id === 'G1');
+      expect(g1?.avg_utilization).toBeNull();
+      expect(g1?.snapshot_count).toBe(3);
+    });
+
+    it('throws InternalServerErrorException on DB failure', async () => {
+      prisma.lot.findMany.mockRejectedValue(new Error('DB error'));
+      await expect(service.getUtilization(30)).rejects.toThrow(InternalServerErrorException);
     });
   });
 });
