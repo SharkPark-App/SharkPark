@@ -16,6 +16,7 @@ describe('UsersController', () => {
     updateNotificationPreferences: jest.fn(),
     findOrCreateUser: jest.fn(),
     deleteUser: jest.fn(),
+    exportUserData: jest.fn(),
     getForecast: jest.fn(),
   };
 
@@ -72,6 +73,31 @@ describe('UsersController', () => {
     it('should reject deleting another user\'s account', async () => {
       await expect(
         controller.deleteUser(reqAs('attacker@csulb.edu'), 'victim@csulb.edu'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('getMyData', () => {
+    it('should return exported user data', async () => {
+      const mockExport = {
+        exported_at: new Date(),
+        profile: { email: 'test@csulb.edu', first_name: 'Test', last_name: 'User', user_type: 'STUDENT', notification_preferences: {}, created_at: new Date(), last_login: null },
+        favorites: [{ lot_id: 'G1', added_at: new Date() }],
+        push_tokens: [],
+        reports: [],
+        notification_logs: [],
+      };
+      mockUsersService.exportUserData.mockResolvedValue(mockExport);
+
+      const result = await controller.getMyData(reqAs('test@csulb.edu'));
+
+      expect(result).toEqual({ success: true, data: mockExport });
+      expect(service.exportUserData).toHaveBeenCalledWith('test@csulb.edu');
+    });
+
+    it('should throw ForbiddenException when no authenticated email', async () => {
+      await expect(
+        controller.getMyData({ user: {} } as never),
       ).rejects.toThrow(ForbiddenException);
     });
   });

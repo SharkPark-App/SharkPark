@@ -31,6 +31,7 @@ describe('NotificationsService', () => {
       count: jest.Mock;
       create: jest.Mock;
       findMany: jest.Mock;
+      deleteMany: jest.Mock;
     };
     user: {
       findUniqueOrThrow: jest.Mock;
@@ -54,6 +55,7 @@ describe('NotificationsService', () => {
         count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       user: {
         findUniqueOrThrow: jest.fn(),
@@ -389,6 +391,26 @@ describe('NotificationsService', () => {
       expect(prisma.notificationLog.create).toHaveBeenCalledWith({
         data: { user_id: 'user-cuid', type: NotificationType.SURGE, lot_id: null, event_id: null },
       });
+    });
+  });
+
+  describe('pruneOldLogs', () => {
+    it('deletes notification log rows older than the cutoff', async () => {
+      prisma.notificationLog.deleteMany.mockResolvedValue({ count: 42 });
+
+      const result = await service.pruneOldLogs(90);
+
+      expect(prisma.notificationLog.deleteMany).toHaveBeenCalledTimes(1);
+      const call = prisma.notificationLog.deleteMany.mock.calls[0][0];
+      expect(call.where.sent_at.lt).toBeInstanceOf(Date);
+      expect(result.logs_deleted).toBe(42);
+      expect(result.cutoff).toMatch(/T/);
+    });
+
+    it('throws on retentionDays < 1', async () => {
+      await expect(service.pruneOldLogs(0)).rejects.toThrow(
+        'pruneOldLogs: retentionDays must be >= 1',
+      );
     });
   });
 });

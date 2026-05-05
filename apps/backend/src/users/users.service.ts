@@ -2,8 +2,18 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../database/database.module';
 import type { UserType } from '@prisma/client';
-import type { UserResponse } from './interfaces/user.interface';
+import type { UserResponse, UserDataExport } from './interfaces/user.interface';
 import type { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+
+/**
+ * Returns the last 6 chars of a push token, prefixed with an ellipsis.
+ * Used by /me/data to disclose token existence without leaking a value
+ * that can be used to send unauthenticated push notifications.
+ */
+function maskToken(token: string): string {
+  if (token.length <= 6) return '\u2026' + token;
+  return '\u2026' + token.slice(-6);
+}
 
 /**
  * Service for user profile and favorites management.
@@ -44,7 +54,6 @@ export class UsersService {
         first_name: user.first_name,
         last_name: user.last_name,
         user_type: user.user_type,
-        phone: user.phone,
         notification_preferences: user.notification_preferences,
         created_at: user.created_at,
         last_login: user.last_login,
@@ -178,7 +187,6 @@ export class UsersService {
           first_name: existingUser.first_name,
           last_name: existingUser.last_name,
           user_type: existingUser.user_type,
-          phone: existingUser.phone,
           notification_preferences: existingUser.notification_preferences,
           created_at: existingUser.created_at,
           last_login: now,
@@ -189,7 +197,7 @@ export class UsersService {
       // Determine user type from email domain. STUDENT is the @student.csulb.edu
       // sub-domain; everything else under csulb.edu is treated as EMPLOYEE.
       // Note: this column is metadata-only and gates no endpoint (see
-      // docs/api-access-tiers.md). Pending deletion in a follow-up migration.
+      // docs/api-access-tiers.md).
       const userType: UserType = email.toLowerCase().endsWith('@student.csulb.edu')
         ? 'STUDENT'
         : 'EMPLOYEE';
@@ -228,7 +236,6 @@ export class UsersService {
         first_name: newUser.first_name,
         last_name: newUser.last_name,
         user_type: newUser.user_type,
-        phone: newUser.phone,
         notification_preferences: newUser.notification_preferences,
         created_at: newUser.created_at,
         last_login: newUser.last_login,
@@ -291,6 +298,110 @@ export class UsersService {
     }));
 
     return { user_id: email, generated_at: now.toISOString(), lots };
+  }
+
+  /**
+   * Returns all data held for the authenticated user (GDPR Art. 15 /
+   * CCPA §1798.110 export). Writes a USER_DATA_EXPORTED audit row with
+   * a hashed actor identifier in the same call so the export is
+   * auditable without storing reversible PII.
+   *
+   * Internal database `id` is intentionally omitted; lot references use
+   * the human-readable `lot_id` (e.g. "G1") rather than internal UUIDs.
+   */
+  async exportUserData(email: string): Promise<UserDataExport> {
+    // Audit row + read live in the same interactive $transaction so a half-success
+    // (data returned but no audit row, or an audit row for a ghost user) is not
+    // possible. If the user lookup misses, the throw rolls back the audit write.
+    // Mirrors the durability guarantee deleteUser() gets from its $transaction.
+    // Bounded reads. The export is a single in-memory NestJS response; an
+    // attacker (or buggy client) replaying /me/data against a long-lived
+    // account with thousands of notification_logs/reports could OOM the
+    // worker. Caps are well above any realistic legitimate value:
+    //   favorites          → 100  (campus has ~50 lots)
+    //   push_tokens        → 50   (typical user has 1–3 devices)
+    //   reports            → 1000 (a heavy reporter ≈ 1–2/week for years)
+    //   notification_logs  → 5000 (~4 notifs/week × 4 years ≈ 832)
+    // If a user is ever truncated, they will see the most recent rows in
+    // each list (orderBy ... desc); follow-up paginated export is tracked
+    // separately. The caps satisfy GDPR Art. 15 in practice while bounding
+    // worst-case memory on the API worker.
+    const user = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.user.findUnique({
+        where: { email },
+        include: {
+          favorites: {
+            include: { lot: { select: { lot_id: true } } },
+            orderBy: { added_at: 'desc' },
+            take: 100,
+          },
+          push_tokens: {
+            select: { token: true, platform: true, created_at: true },
+            orderBy: { created_at: 'desc' },
+            take: 50,
+          },
+          reports: {
+            include: { lot: { select: { lot_id: true } } },
+            orderBy: { created_at: 'desc' },
+            take: 1000,
+          },
+          notification_logs: {
+            include: { lot: { select: { lot_id: true } } },
+            orderBy: { sent_at: 'desc' },
+            take: 5000,
+          },
+        },
+      });
+      if (!found) {
+        throw new NotFoundException(`User ${email} not found`);
+      }
+      await tx.auditEvent.create({
+        data: {
+          event_type: 'USER_DATA_EXPORTED',
+          actor_hash: this.hashEmail(email),
+        },
+      });
+      return found;
+    });
+
+    return {
+      exported_at: new Date(),
+      profile: {
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        user_type: user.user_type,
+        notification_preferences: user.notification_preferences,
+        created_at: user.created_at,
+        last_login: user.last_login,
+      },
+      favorites: user.favorites.map((f) => ({
+        lot_id: f.lot.lot_id,
+        added_at: f.added_at,
+      })),
+      // Push tokens are intentionally redacted: the raw FCM/APNs token can be
+      // used by anyone who holds it to send unauthenticated push notifications
+      // until the OS rotates it. Disclosing platform + last-6 + registered_at
+      // is sufficient to satisfy GDPR Art. 15 ("what we hold") without making
+      // the export file weaponizable if it leaks (e.g. via the user's cloud
+      // sync). Users can revoke any token by uninstalling or signing out.
+      push_tokens: user.push_tokens.map((t) => ({
+        token_preview: maskToken(t.token),
+        platform: t.platform,
+        registered_at: t.created_at,
+      })),
+      reports: user.reports.map((r) => ({
+        lot_id: r.lot.lot_id,
+        type: r.type,
+        message: r.message,
+        submitted_at: r.created_at,
+      })),
+      notification_logs: user.notification_logs.map((n) => ({
+        type: n.type,
+        lot_id: n.lot?.lot_id ?? null,
+        sent_at: n.sent_at,
+      })),
+    };
   }
 
   /**
