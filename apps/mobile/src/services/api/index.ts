@@ -30,6 +30,13 @@ export type { CampusEvent } from '../../types/events';
 export { reportsApi, ReportUnauthorizedError, ReportThrottledError } from './reports';
 export type { CreateReportPayload, CreateReportResponse, ReportType } from './reports';
 
+// Notifications service
+export { registerPushToken } from './notifications';
+
+// Users service
+export { deleteMyAccount, updateNotificationPreferences } from './users';
+export type { NotificationPreferences } from './users';
+
 // Import for default export
 import API_CONFIG from './config';
 import { apiService } from './base';

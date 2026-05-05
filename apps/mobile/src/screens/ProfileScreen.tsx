@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, Linking } from 'react-native';
 import { Text } from '../components/CustomText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,14 +21,22 @@ import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { deleteMyAccount } from '../services/api/users';
+import { deleteMyAccount, updateNotificationPreferences } from '../services/api/users';
+import type { NotificationPreferences } from '../services/api/users';
 
 const ProfileScreen: React.FC = () => {
   const { themeMode, setThemeMode, colors } = useTheme();
-  const [notifications, setNotifications] = useState({
-    highOccupancy: true, favoriteLots: true, incidents: false,
+
+  // Notification preferences — keys match the backend DTO.
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
+    favorites_filling: true,
+    favorites_clearing: true,
+    surge_alerts: false,
+    event_alerts: true,
   });
-  const { logout } = useAuth();
+  const [savingNotif, setSavingNotif] = useState(false);
+
+  const { logout, userEmail, isAuthenticated, isGuest } = useAuth();
 
   // Composite nav: from the Profile tab we need to jump into the Map stack to
   // push the LocationPermission soft-ask screen.
@@ -74,6 +82,32 @@ const ProfileScreen: React.FC = () => {
   const openLocationSettings = () => {
     navigation.navigate('Map', { screen: 'LocationPermission', params: {} });
   };
+
+  // Toggle a single notification preference and persist it to the backend.
+  // Optimistic update: flip the local state immediately then save in the
+  // background — this keeps the UI snappy. On failure the Alert surfaces an
+  // error and rolls back the toggle.
+  const toggleNotifPref = useCallback(
+    async (key: keyof NotificationPreferences) => {
+      if (!userEmail) return;
+      const next = !notifPrefs[key];
+      setNotifPrefs((prev) => ({ ...prev, [key]: next }));
+      setSavingNotif(true);
+      try {
+        await updateNotificationPreferences(userEmail, { [key]: next });
+      } catch (err) {
+        // Roll back on failure
+        setNotifPrefs((prev) => ({ ...prev, [key]: !next }));
+        Alert.alert(
+          'Could not save',
+          err instanceof Error ? err.message : 'Failed to update notification preference.',
+        );
+      } finally {
+        setSavingNotif(false);
+      }
+    },
+    [notifPrefs, userEmail],
+  );
 
   // Simple toggle component for notifications
   const ToggleSwitch = ({ value }: { value: boolean }) => (
@@ -148,45 +182,70 @@ const ProfileScreen: React.FC = () => {
           {/* Notification Settings */}
           <SectionCard title="Notifications">
             <View style={styles.settingsList}>
-              <View style={styles.settingItem}>
-                <View style={styles.settingText}>
-                <Text style={[styles.settingLabel, { color: colors.black }]}>High Occupancy Alerts</Text>
-                <Text style={[styles.settingDescription, { color: colors.gray }]}>Get notified when lots reach 80% capacity</Text>
-                </View>
-                <TouchableOpacity
-                onPress={() => setNotifications(prev => ({ ...prev, highOccupancy: !prev.highOccupancy }))}
-                >
-                  <ToggleSwitch value={notifications.highOccupancy} />
-                </TouchableOpacity>
-              </View>
-
-            <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
 
               <View style={styles.settingItem}>
                 <View style={styles.settingText}>
-                <Text style={[styles.settingLabel, { color: colors.black }]}>Favorite Lot Updates</Text>
-                <Text style={[styles.settingDescription, { color: colors.gray }]}>Receive updates on favorited parking lots</Text>
+                  <Text style={[styles.settingLabel, { color: colors.black }]}>Lot Filling Up</Text>
+                  <Text style={[styles.settingDescription, { color: colors.gray }]}>Alert when a favorite lot goes above 80%</Text>
                 </View>
                 <TouchableOpacity
-                onPress={() => setNotifications(prev => ({ ...prev, favoriteLots: !prev.favoriteLots }))}
+                  disabled={savingNotif || !isAuthenticated || isGuest}
+                  onPress={() => toggleNotifPref('favorites_filling')}
                 >
-                  <ToggleSwitch value={notifications.favoriteLots} />
+                  <ToggleSwitch value={!!notifPrefs.favorites_filling} />
                 </TouchableOpacity>
               </View>
 
-            <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
+              <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
 
               <View style={styles.settingItem}>
                 <View style={styles.settingText}>
-                <Text style={[styles.settingLabel, { color: colors.black }]}>Incident Alerts</Text>
-                <Text style={[styles.settingDescription, { color: colors.gray }]}>Get notified about parking lot incidents</Text>
+                  <Text style={[styles.settingLabel, { color: colors.black }]}>Lot Clearing Up</Text>
+                  <Text style={[styles.settingDescription, { color: colors.gray }]}>Alert when a favorite lot drops below 30%</Text>
                 </View>
                 <TouchableOpacity
-                onPress={() => setNotifications(prev => ({ ...prev, incidents: !prev.incidents }))}
+                  disabled={savingNotif || !isAuthenticated || isGuest}
+                  onPress={() => toggleNotifPref('favorites_clearing')}
                 >
-                  <ToggleSwitch value={notifications.incidents} />
+                  <ToggleSwitch value={!!notifPrefs.favorites_clearing} />
                 </TouchableOpacity>
               </View>
+
+              <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingLabel, { color: colors.black }]}>Campus Surge Alerts</Text>
+                  <Text style={[styles.settingDescription, { color: colors.gray }]}>Notify when multiple lots exceed 90% full</Text>
+                </View>
+                <TouchableOpacity
+                  disabled={savingNotif || !isAuthenticated || isGuest}
+                  onPress={() => toggleNotifPref('surge_alerts')}
+                >
+                  <ToggleSwitch value={!!notifPrefs.surge_alerts} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingLabel, { color: colors.black }]}>Event Alerts</Text>
+                  <Text style={[styles.settingDescription, { color: colors.gray }]}>Notify about campus events starting in 2 hours</Text>
+                </View>
+                <TouchableOpacity
+                  disabled={savingNotif || !isAuthenticated || isGuest}
+                  onPress={() => toggleNotifPref('event_alerts')}
+                >
+                  <ToggleSwitch value={!!notifPrefs.event_alerts} />
+                </TouchableOpacity>
+              </View>
+
+              {(!isAuthenticated || isGuest) && (
+                <Text style={[styles.settingDescription, { color: colors.gray, marginTop: SPACING.sm }]}>
+                  Sign in to manage notification preferences.
+                </Text>
+              )}
             </View>
           </SectionCard>
 
