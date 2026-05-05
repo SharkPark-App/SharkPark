@@ -12,6 +12,8 @@ import { ShuttleTrackerCoreModule } from '../shuttle-tracker/shuttle-tracker-cor
 import { EventsModule } from '../events/events.module';
 import { EventsScrapersModule } from '../events/events-scrapers.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ContributorService } from '../auth/contributor.service';
+import { ReportsService } from '../reports/reports.service';
 import {
   appConfig,
   authConfig,
@@ -42,6 +44,9 @@ import { NotifySurgeJob } from './jobs/notify-surge.job';
 import { NotifyEventsJob } from './jobs/notify-events.job';
 import { RefreshLotAdvisoriesJob } from './jobs/refresh-lot-advisories.job';
 import { RefreshLotMetadataJob } from './jobs/refresh-lot-metadata.job';
+import { PruneNotificationLogsJob } from './jobs/prune-notification-logs.job';
+import { PruneContributorPingsJob } from './jobs/prune-contributor-pings.job';
+import { PruneOldReportMessagesJob } from './jobs/prune-old-report-messages.job';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -108,6 +113,12 @@ const isProduction = process.env.NODE_ENV === 'production';
   ],
   providers: [
     CronRunnerService,
+    // Direct providers (not via AuthModule / ReportsModule) — the scheduler
+    // only needs the service classes themselves, not their controllers,
+    // strategies, or guards. Both depend solely on PrismaService, which
+    // is available through DatabaseModule above.
+    ContributorService,
+    ReportsService,
     SnapshotJob,
     FetchWeatherJob,
     FetchWeatherForecastJob,
@@ -126,6 +137,9 @@ const isProduction = process.env.NODE_ENV === 'production';
     NotifyEventsJob,
     RefreshLotAdvisoriesJob,
     RefreshLotMetadataJob,
+    PruneNotificationLogsJob,
+    PruneContributorPingsJob,
+    PruneOldReportMessagesJob,
   ],
 })
 export class SchedulerModule {}

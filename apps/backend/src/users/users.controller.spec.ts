@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { ContributorGuard } from '../auth/contributor.guard';
 
 describe('UsersController', () => {
   let controller: UsersController;
@@ -15,6 +16,8 @@ describe('UsersController', () => {
     updateNotificationPreferences: jest.fn(),
     findOrCreateUser: jest.fn(),
     deleteUser: jest.fn(),
+    exportUserData: jest.fn(),
+    getForecast: jest.fn(),
   };
 
   /** Helper: build a fake request with the authenticated user. */
@@ -29,7 +32,10 @@ describe('UsersController', () => {
           useValue: mockUsersService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(ContributorGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<UsersController>(UsersController);
     service = module.get<UsersService>(UsersService);
@@ -67,6 +73,31 @@ describe('UsersController', () => {
     it('should reject deleting another user\'s account', async () => {
       await expect(
         controller.deleteUser(reqAs('attacker@csulb.edu'), 'victim@csulb.edu'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('getMyData', () => {
+    it('should return exported user data', async () => {
+      const mockExport = {
+        exported_at: new Date(),
+        profile: { email: 'test@csulb.edu', first_name: 'Test', last_name: 'User', user_type: 'STUDENT', notification_preferences: {}, created_at: new Date(), last_login: null },
+        favorites: [{ lot_id: 'G1', added_at: new Date() }],
+        push_tokens: [],
+        reports: [],
+        notification_logs: [],
+      };
+      mockUsersService.exportUserData.mockResolvedValue(mockExport);
+
+      const result = await controller.getMyData(reqAs('test@csulb.edu'));
+
+      expect(result).toEqual({ success: true, data: mockExport });
+      expect(service.exportUserData).toHaveBeenCalledWith('test@csulb.edu');
+    });
+
+    it('should throw ForbiddenException when no authenticated email', async () => {
+      await expect(
+        controller.getMyData({ user: {} } as never),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -163,6 +194,44 @@ describe('UsersController', () => {
       expect(result.success).toBe(true);
       expect(result.message).toContain('G1');
       expect(service.removeFavorite).toHaveBeenCalledWith('test@csulb.edu', 'G1');
+    });
+  });
+
+  describe('getForecast', () => {
+    it('should return personalized forecast for authenticated user', async () => {
+      const mockForecast = {
+        user_id: 'test@csulb.edu',
+        generated_at: '2026-05-03T00:00:00.000Z',
+        lots: [
+          {
+            lot_id: 'G1',
+            predictions: [
+              {
+                target_time: '2026-05-03T01:00:00.000Z',
+                // predicted_occupancy is a rate in [0, 1] per PR #133
+                predicted_occupancy: 0.75,
+                confidence_lower: 0.6,
+                confidence_upper: 0.9,
+                model_version: 'v1',
+              },
+            ],
+          },
+        ],
+      };
+
+      mockUsersService.getForecast.mockResolvedValue(mockForecast);
+
+      const result = await controller.getForecast(reqAs('test@csulb.edu'));
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual(mockForecast);
+      expect(service.getForecast).toHaveBeenCalledWith('test@csulb.edu');
+    });
+
+    it('should reject when no authenticated email is present', async () => {
+      await expect(
+        controller.getForecast({ user: {} } as never),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

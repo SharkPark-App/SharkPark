@@ -4,7 +4,6 @@
  * 
  * This service:
  * - Collects behavioral data during parking sessions (speed, movement, bluetooth)
- * - Analyzes patterns using the @sharkpark/parking-validation package
  * - Provides validation results to include with occupancy events
  * - Maintains privacy by keeping all analysis on-device
  */

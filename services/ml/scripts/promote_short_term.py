@@ -7,6 +7,7 @@ Registers a candidate model in the MLflow Model Registry as
 Usage:
     python scripts/promote_short_term.py --run-id <mlflow-run-id>
     python scripts/promote_short_term.py --run-id <mlflow-run-id> --export-s3
+    python scripts/promote_short_term.py --upload-only <version>
 
 """
 
@@ -15,7 +16,7 @@ import logging
 import sys
 
 from src.config import SHORT_TERM_MODEL_NAME
-from src.utils.mlflow_utils import promote_model
+from src.utils.mlflow_utils import promote_model, upload_model_to_r2
 
 logger = logging.getLogger(__name__)
 
@@ -50,17 +51,23 @@ def promote(run_id: str, export_s3: bool = False) -> str | None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Promote a model to production")
-    parser.add_argument(
-        "--run-id",
-        required=True,
-        help="MLflow run ID of the model to promote",
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--run-id", help="MLflow run ID of the model to promote")
+    group.add_argument(
+        "--upload-only",
+        metavar="VERSION",
+        help="Upload an already-registered version to R2 without re-promoting",
     )
     parser.add_argument(
         "--export-s3",
         action="store_true",
-        help="Export model to S3 (placeholder — not yet implemented)",
+        help="Publish artifacts to R2 in addition to local MLflow registration",
     )
     args = parser.parse_args()
+
+    if args.upload_only:
+        upload_model_to_r2(SHORT_TERM_MODEL_NAME, args.upload_only)
+        sys.exit(0)
 
     version = promote(args.run_id, args.export_s3)
     if version is None:

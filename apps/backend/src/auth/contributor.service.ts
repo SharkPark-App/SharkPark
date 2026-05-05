@@ -55,6 +55,42 @@ export class ContributorService {
     if (ping.granted_at && now - ping.granted_at.getTime() <= this.grantTtlMs) return true;
     return false;
   }
+
+  /**
+   * Retention prune: delete `contributor_pings` rows that haven't been seen
+   * in `idleDays` AND whose grant (if any) is also older than `idleDays`.
+   *
+   * A `ContributorPing` row stores SHA-256(device_id) — not directly PII,
+   * but a stable per-device identifier we should not retain for users who
+   * have stopped using the app. The grant column is checked too because a
+   * recently re-granted device might not have pinged yet (first-run grace
+   * window from `isContributor`).
+   *
+   * 180 days is chosen so a college user who skips the entire summer
+   * (typical May–Aug recess ≈ 4 months) is not pruned and re-prompted in
+   * Fall semester. Anything shorter would force re-onboarding for the
+   * common student pattern.
+   */
+  async pruneIdlePings(
+    idleDays: number = 180,
+  ): Promise<{ pings_deleted: number; cutoff: string }> {
+    if (!Number.isFinite(idleDays) || idleDays < 1) {
+      throw new Error(
+        `pruneIdlePings: idleDays must be >= 1, got ${idleDays}`,
+      );
+    }
+    const cutoff = new Date(Date.now() - idleDays * 24 * 60 * 60 * 1000);
+    const { count } = await this.prisma.contributorPing.deleteMany({
+      where: {
+        last_seen_at: { lt: cutoff },
+        OR: [{ granted_at: null }, { granted_at: { lt: cutoff } }],
+      },
+    });
+    this.logger.log(
+      `[retention] Pruned ${count} contributor_pings idle since ${cutoff.toISOString()} (idleDays=${idleDays})`,
+    );
+    return { pings_deleted: count, cutoff: cutoff.toISOString() };
+  }
 }
 
 /**

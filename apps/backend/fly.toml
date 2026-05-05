@@ -107,3 +107,31 @@ primary_region = 'lax'
   # land back on this process group, bump back to 1024mb.
   memory = '512mb'
   processes = ['cron']
+
+# Restart policies. The `app` group keeps Fly's default (`on-failure`, 10
+# retries) — http_service health checks already gate routing, so a hard
+# loop just gets pulled out of the LB.
+#
+# The `cron` group gets `policy = "always"` because it has no http_service
+# and therefore no auto-start trigger. If the Machine ever exits the retry
+# budget and lands in a terminal Stopped state (as happened after the
+# WeatherFetchService DI bug in PR #192 — Fly retried 10 times in ~30s
+# and gave up, leaving the Machine stopped), a subsequent rolling deploy
+# preserves that desired-state and ships the new image WITHOUT starting
+# the Machine. The scheduler then silently stays down until someone runs
+# `fly machine start` by hand. With `always`, every Machine exit triggers
+# a restart attempt regardless of exit code, and a healthy redeploy will
+# re-enter the started state.
+#
+# NOTE: `retries` is still bounded; this is not a substitute for fixing
+# the underlying crash. The post-deploy `Ensure cron Machine started`
+# step in .github/workflows/deploy.yml is the durable safety net.
+[[restart]]
+  policy = 'on-failure'
+  retries = 10
+  processes = ['app']
+
+[[restart]]
+  policy = 'always'
+  retries = 10
+  processes = ['cron']

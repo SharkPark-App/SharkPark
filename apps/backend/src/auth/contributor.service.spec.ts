@@ -105,3 +105,38 @@ describe('ContributorService.isContributor', () => {
     });
   });
 });
+
+describe('ContributorService.pruneIdlePings', () => {
+  function makePrismaWithDelete(count: number) {
+    return {
+      contributorPing: {
+        findUnique: jest.fn(),
+        deleteMany: jest.fn().mockResolvedValue({ count }),
+      },
+    };
+  }
+
+  it('deletes pings whose last_seen_at AND granted_at are both stale', async () => {
+    const prisma = makePrismaWithDelete(3);
+    const svc = new ContributorService(prisma as never);
+
+    const result = await svc.pruneIdlePings(180);
+
+    expect(prisma.contributorPing.deleteMany).toHaveBeenCalledTimes(1);
+    const call = prisma.contributorPing.deleteMany.mock.calls[0][0];
+    expect(call.where.last_seen_at.lt).toBeInstanceOf(Date);
+    expect(call.where.OR).toEqual([
+      { granted_at: null },
+      { granted_at: { lt: expect.any(Date) } },
+    ]);
+    expect(result.pings_deleted).toBe(3);
+  });
+
+  it('throws on non-positive idleDays', async () => {
+    const prisma = makePrismaWithDelete(0);
+    const svc = new ContributorService(prisma as never);
+    await expect(svc.pruneIdlePings(0)).rejects.toThrow(
+      'pruneIdlePings: idleDays must be >= 1',
+    );
+  });
+});
