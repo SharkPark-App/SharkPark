@@ -3,6 +3,8 @@ import { TransitService } from '../services/api/transit';
 import { nearbyStopsForLot } from '../utils/transitProximity';
 import type { MapStop, RouteArrival } from '../types/transit';
 
+const LOG_TAG = '[useNearbyStopETAs]';
+
 export interface NearbyStopWithArrivals {
   stop: MapStop;
   arrivals: RouteArrival[];
@@ -20,7 +22,7 @@ export function useNearbyStopETAs(
   useEffect(() => {
     TransitService.getRoutesAndStops()
       .then((data) => setStops(data.stops))
-      .catch(() => {});
+      .catch((err) => console.warn(`${LOG_TAG} Failed to load stops — nearby transit card will be hidden`, err));
   }, []);
 
   const nearby = useMemo(
@@ -61,7 +63,7 @@ export function useNearbyStopETAs(
     };
 
     fetchAll(true);
-    const interval = setInterval(() => fetchAll(false), 30_000);
+    const interval = setInterval(() => fetchAll(false), 15_000);
     return () => {
       isMounted = false;
       clearInterval(interval);

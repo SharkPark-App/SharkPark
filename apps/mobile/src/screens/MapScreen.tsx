@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   StyleSheet,
@@ -210,6 +211,13 @@ const MapScreen: React.FC = () => {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
   const [hiddenRouteIds, setHiddenRouteIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.multiGet(['filter:selectedLots', 'filter:hiddenRouteIds']).then(([lots, routes]) => {
+      if (lots[1]) setSelectedLots(JSON.parse(lots[1]));
+      if (routes[1]) setHiddenRouteIds(JSON.parse(routes[1]));
+    }).catch(() => {});
+  }, []);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
   const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
@@ -255,6 +263,7 @@ const MapScreen: React.FC = () => {
   const handleApplyFilter = (filteredLots: string[]) => {
     setSelectedLots(filteredLots);
     setIsFilterModalOpen(false);
+    AsyncStorage.setItem('filter:selectedLots', JSON.stringify(filteredLots)).catch(() => {});
     // Filter is visual-only — does NOT affect geofence registration.
     // Geofences are registered for all lots at startup based on user type (see geoHelpers).
   };
@@ -411,7 +420,10 @@ const MapScreen: React.FC = () => {
         onApplyFilter={handleApplyFilter}
         routes={routes ?? []}
         hiddenRouteIds={hiddenRouteIds}
-        onApplyTransitFilter={setHiddenRouteIds}
+        onApplyTransitFilter={(ids) => {
+          setHiddenRouteIds(ids);
+          AsyncStorage.setItem('filter:hiddenRouteIds', JSON.stringify(ids)).catch(() => {});
+        }}
       />
 
       {/* Combined Favorites & Recommendations Modal */}

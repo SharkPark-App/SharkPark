@@ -48,8 +48,8 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
   },
   'fetch-shuttles': {
     schedule: '*/2 * * * *',
-    checkinMargin: 30,
-    maxRuntime: 30,
+    checkinMargin: 1,
+    maxRuntime: 1,
   },
   'cleanup-device-states': {
     schedule: '0 3 * * *',

@@ -18,7 +18,7 @@ const ROUTES_STOPS_TTL_S = 25 * 60 * 60;
 const SHUTTLES_TTL_S = 25 * 60 * 60;
 // ETAs are in whole-minute granularity; short cache deduplicates concurrent requests
 // without showing meaningfully stale data
-const ETA_TTL_S = 20;
+const ETA_TTL_S = 5;
 // How often the app process re-syncs from Redis to pick up cron writes
 const REDIS_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
@@ -147,14 +147,16 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       const stopInstances = plainToInstance(PassioStopDto, rawStopsArray);
       const validStops: PassioStopDto[] = [];
 
+      let droppedStops = 0;
       for (const stop of stopInstances) {
         try {
           await validateOrReject(stop);
           validStops.push(stop);
         } catch {
-          this.logger.warn(`Dropping malformed stop data from PassioGO! (Stop ID: ${stop.stopId || 'unknown'})`);
+          droppedStops++;
         }
       }
+      if (droppedStops > 0) this.logger.warn(`Dropped ${droppedStops} malformed stop(s) from PassioGO!`);
 
       // Map stops to interface
       this.currentStops = validStops.map((stop) => ({
@@ -162,7 +164,7 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
         name: stop.name,
         latitude: stop.latitude,
         longitude: stop.longitude,
-        routeIds: stopRouteIds.get(stop.stopId) ?? [stop.routeId],
+        routeIds: stopRouteIds.get(stop.stopId) ?? ([stop.routeId].filter(Boolean) as string[]),
         color: stop.color || '#ffffff',
       }));
 
@@ -170,14 +172,16 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       const routeInstances = plainToInstance(PassioRouteDto, rawRoutes);
       const validRoutes: PassioRouteDto[] = [];
 
+      let droppedRoutes = 0;
       for (const route of routeInstances) {
         try {
           await validateOrReject(route);
           validRoutes.push(route);
         } catch {
-          this.logger.warn(`Invalid route data received from PassioGO! (ID: ${route.myid || 'unknown'})`);
+          droppedRoutes++;
         }
       }
+      if (droppedRoutes > 0) this.logger.warn(`Dropped ${droppedRoutes} malformed route(s) from PassioGO!`);
 
       // Map routes to interface
       this.currentRoutes = validRoutes.map((routeData) => {
@@ -246,15 +250,16 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       const shuttleInstances = plainToInstance(PassioShuttleDto, flatShuttles);
       const validShuttles: PassioShuttleDto[] = [];
 
+      let droppedShuttles = 0;
       for (const shuttle of shuttleInstances) {
         try {
           await validateOrReject(shuttle);
           validShuttles.push(shuttle);
         } catch {
-          // Drop shuttle if malformed
-          this.logger.warn(`Dropping malformed shuttle data from PassioGO! (Bus ID: ${shuttle.busId || 'unknown'})`);
+          droppedShuttles++;
         }
       }
+      if (droppedShuttles > 0) this.logger.warn(`Dropped ${droppedShuttles} malformed shuttle(s) from PassioGO!`);
 
       // Map shuttles to interface
       this.latestShuttles = validShuttles.map((shuttle) => ({
@@ -306,14 +311,16 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
 
       const arrivalInstances = plainToInstance(PassioEtaDto, rawArrivals);
       const validArrivals: PassioEtaDto[] = [];
+      let droppedEtas = 0;
       for (const instance of arrivalInstances) {
         try {
           await validateOrReject(instance);
           validArrivals.push(instance);
         } catch {
-          this.logger.warn(`Dropping malformed ETA frame from PassioGO! (stop ${stopId})`);
+          droppedEtas++;
         }
       }
+      if (droppedEtas > 0) this.logger.warn(`Dropped ${droppedEtas} malformed ETA frame(s) from PassioGO! (stop ${stopId})`);
 
       const arrivals: RouteArrival[] = [];
       for (const arrival of validArrivals) {

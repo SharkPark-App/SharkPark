@@ -46,7 +46,7 @@ export const NearbyTransitCard: React.FC<NearbyTransitCardProps> = ({ nearbyStop
               accessibilityLabel="Loading arrival times"
             />
           ) : arrivals.length === 0 ? (
-            <Text style={[styles.emptyText, { color: colors.darkGray }]}>     No upcoming arrivals</Text>
+            <Text style={[styles.emptyText, { color: colors.darkGray }]}>No upcoming arrivals</Text>
           ) : (
             groupArrivals(arrivals).map((arrival) => (
               <View
@@ -114,6 +114,7 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     fontStyle: 'italic',
     marginBottom: SPACING.sm,
+    paddingLeft: SPACING.lg,
   },
   arrivalRow: {
     flexDirection: 'row',
