@@ -4,6 +4,7 @@ import { Text } from './CustomText';
 import { BarChart } from 'react-native-gifted-charts';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { getOccupancyColorGradient, getOccupancyStatusLabel } from '../utils/parkingUtils';
 
 interface HourData {
   time: string;
@@ -58,14 +59,8 @@ export function HourlyChart({data, name}: HourlyChartProps) {
     item => parseHour(item.time) === currentHour,
   );
 
-  const getStatusLabel = (occupancy: number) =>
-    occupancy >= 95
-      ? 'Full'
-      : occupancy >= 75
-        ? 'Nearly Full'
-        : occupancy >= 50
-          ? 'Filling'
-          : 'Available';
+  const getStatusLabel = (occupancy: number, previous?: number) =>
+    getOccupancyStatusLabel(occupancy, previous);
 
   // Track the selected bar by time string
   const currentTime = currentIndex >= 0 ? data[currentIndex].time : null;
@@ -89,11 +84,11 @@ export function HourlyChart({data, name}: HourlyChartProps) {
     const showLabel = index % 2 === 0; // show every other label
     return {
       value: item.occupancy,
-      frontColor: isCurrent
-        ? colors.primary
-        : isSelected
-          ? colors.darkGray
-          : colors.mediumLightGray,
+      frontColor: isSelected
+        ? colors.darkGray
+        : isCurrent
+          ? colors.primary
+          : getOccupancyColorGradient(item.occupancy),
       label: showLabel ? formatTime(item.time) : '',
       labelTextStyle: {
         fontSize: TYPOGRAPHY.fontSize.sm,
@@ -114,6 +109,11 @@ export function HourlyChart({data, name}: HourlyChartProps) {
   });
 
   const selectedData = selectedIndex >= 0 ? data[selectedIndex] : null;
+  const previousOccupancy =
+    selectedIndex > 0 ? data[selectedIndex - 1].occupancy : undefined;
+  const statusLabel = selectedData
+    ? getStatusLabel(selectedData.occupancy, previousOccupancy)
+    : '';
 
   return (
     <View style={[
@@ -123,7 +123,7 @@ export function HourlyChart({data, name}: HourlyChartProps) {
           shadowColor: colors.shadowDark
         }
       ]}>
-      <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>{name ?? 'Parking Occupancy Outlook'}</Text>
+      <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>{name ?? 'Hourly Forecast'}</Text>
 
       {/* Status Tooltip*/}
       {selectedData && (
@@ -132,7 +132,7 @@ export function HourlyChart({data, name}: HourlyChartProps) {
           accessible={true}
           importantForAccessibility="yes"
           accessibilityLiveRegion="polite"
-          accessibilityLabel={`Status: ${getStatusLabel(selectedData.occupancy)}${
+          accessibilityLabel={`Status: ${statusLabel}${
             selectedData.lowerBound != null && selectedData.upperBound != null
               ? `. Expected occupancy: ${selectedData.lowerBound} to ${selectedData.upperBound} percent`
               : ''
@@ -140,7 +140,7 @@ export function HourlyChart({data, name}: HourlyChartProps) {
         >
           <Text style={[styles.tooltipText, { color: colors.white }]}>
             {'Status: '}
-            {getStatusLabel(selectedData.occupancy)}
+            {statusLabel}
           </Text>
 
           {/* Confidence Interval*/}
@@ -226,18 +226,16 @@ export function HourlyChart({data, name}: HourlyChartProps) {
 const styles = StyleSheet.create({
   chartContainer: {
     borderRadius: SPACING.lg,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.lg,
+    padding: SPACING.xl,
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.lg,
     marginBottom: SPACING.xxxl,
     ...SHADOWS.card,
   },
   chartTitle: {
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.md,
-    fontSize: TYPOGRAPHY.fontSize.md,
+    fontSize: TYPOGRAPHY.fontSize.xl,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    marginBottom: SPACING.lg,
   },
   barOverlayRow: {
     position: 'absolute',

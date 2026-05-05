@@ -67,6 +67,32 @@ jobs:
           echo "Migrating against pooled endpoint: ${DATABASE_URL%%@*}@***"
           pnpm db:deploy
 
+      # Seed reference data (school + 28 lots + buildings + geofences +
+      # advisories) AFTER migrations succeed. seed-prod.ts is fully idempotent:
+      # pure upsert, never deletes rows, and intentionally excludes
+      # current_occupancy from the update payload so live state is preserved.
+      # Running this every deploy keeps the DB in sync with lot-data.ts +
+      # the *.generated.ts polygons whenever they change in source control.
+      # Required: NEON_DATABASE_URL (same secret used above). Missing secret =
+      # failed deploy, by design.
+      - name: Seed production reference data
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          DATABASE_URL=$(node -e '
+            const u = new URL(process.env.NEON_DATABASE_URL);
+            if (!u.hostname.includes("-pooler.")) {
+              u.hostname = u.hostname.replace(/^(ep-[^.]+)\./, "$1-pooler.");
+            }
+            u.searchParams.set("pgbouncer", "true");
+            u.searchParams.set("connection_limit", "1");
+            u.searchParams.set("connect_timeout", "60");
+            console.log(u.toString());
+          ')
+          export DATABASE_URL
+          echo "Seeding against pooled endpoint: ${DATABASE_URL%%@*}@***"
+          pnpm --filter @sharkpark/backend db:seed:prod
+
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       # ─── Sentry release tagging (P10.94) ────────────────────────────────

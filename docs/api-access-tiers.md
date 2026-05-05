@@ -32,7 +32,7 @@ A few endpoints stack tiers (e.g. *favorites* requires both Authenticated and Co
 | `GET`  | `/api/v1/lots/:id`                | Single-lot details. Same redaction + cache rules as `/api/v1/lots`. |
 | `GET`  | `/api/v1/lots/:id/history`        | Historical occupancy. Public: per-day aggregates, cached 5–10min, no live signal. Same data class as `/occupancy-events/snapshots/:lotId`. (Locked Public 2026-04-29.) |
 | `GET`  | `/api/v1/health`                  | Liveness                             |
-| `GET`  | `/api/v1/weather/current`         | Current weather (via OpenWeather proxy) |
+| `GET`  | `/api/v1/weather/current`         | Current weather (via NWS proxy)         |
 | `GET`  | `/api/v1/events`                  | Campus event calendar                |
 | `POST` | `/api/v1/occupancy-events`        | Anonymous device contribution. **This is the contribution mechanism that unlocks the Contributor tier.** Server hashes `device_id` and bumps `ContributorPing.last_seen_at` on every successful (or even deduplicated) call. |
 | `POST` | `/api/v1/contributor/grant`       | Records a permission-grant grace pass for the calling device. Requires `x-device-id` (no body). Sets `ContributorPing.granted_at = NOW()` so subsequent gated reads succeed for `CONTRIBUTOR_GRANT_TTL_MS` (24h) before any geofence event lands. Solves the cold-start chicken-and-egg without violating Apple App Review 5.1.1. Idempotent. Returns `204`. Throws `403 BG_LOCATION_REQUIRED` if `x-device-id` is missing. |
@@ -58,6 +58,12 @@ A few endpoints stack tiers (e.g. *favorites* requires both Authenticated and Co
 | `PATCH`    | `/api/v1/users/:userId/notifications`      | Notification preferences           |
 | `DELETE`   | `/api/v1/users/me`                         | Account deletion (P11.108e)        |
 | `DELETE`   | `/api/v1/users/:userId`                    | Own account only                   |
+
+### Authenticated + Contributor
+
+| Method     | Path                                       | Notes                              |
+|------------|--------------------------------------------|------------------------------------|
+| `GET`      | `/api/v1/users/me/forecast`                | Short-term forecast for favorites  |
 
 ## How the Contributor tier works
 
@@ -116,6 +122,39 @@ After grant, the next gated GET should succeed within seconds (the first geofenc
 | `CONTRIBUTOR_PING_TTL_MS`   | `1800000` (30m)| Maximum age of `ContributorPing.last_seen_at` for the guard to allow the request |
 | `CONTRIBUTOR_GRANT_TTL_MS`  | `86400000` (24h)| Maximum age of `ContributorPing.granted_at` (set on permission grant) — lets a freshly-granting device read live data even before the first geofence event lands |
 | `DEVICE_HASH_SALT`          | required in prod, dev-only fallback | Salt for `SHA-256(salt:device_id)` |
+
+## Global rate-limiting (server-derived tier)
+
+Every request is inspected by `TierThrottlerGuard` (the global `APP_GUARD`). The tier is **derived server-side** — the `x-app-mode` header from the client is ignored, because trusting it would let any caller claim the highest tier by spoofing one header. Resolution order:
+
+1. `Authorization: Bearer <token>` present → `tier-authed` (1200 req/min). The token's validity is enforced by `AzureAdGuard` later in the chain; the throttler only uses the header presence as a budget hint.
+2. `x-device-id` resolves to a fresh `ContributorPing` (same freshness check used for read-redaction) → `tier-contributor` (600 req/min).
+3. Otherwise → `tier-public` (120 req/min).
+
+| Tier              | Limit          | Throttler name    |
+|-------------------|----------------|-------------------|
+| Public            | 120 req/min    | `tier-public`     |
+| Contributor       | 600 req/min    | `tier-contributor`|
+| Authenticated     | 1200 req/min   | `tier-authed`     |
+
+In addition, every request is checked against:
+
+- `default` — global burst floor: 20 req per 10 s. Honours per-route `@Throttle({ default: ... })` overrides for tighter write limits (e.g. `POST /reports` = 5/min, `POST /occupancy-events` = 30/min, contributor enroll = 10/min).
+- `read` — opt-in 600 req/min bucket. Only enforced on routes that declare `@Throttle({ read: ... })` (currently `LotsController`).
+
+All buckets are keyed by `device:<x-device-id>` when present, falling back to client IP. This prevents shared-NAT pools (e.g. campus Wi-Fi with hundreds of devices behind one egress IP) from collectively exhausting one budget.
+
+## Reliability source weights
+
+`ReliabilityService.computeReliability` accepts an optional `sourceType` parameter that scales the computed score by a trust multiplier before it is returned:
+
+| `sourceType` | Multiplier          | When to use                                      |
+|--------------|---------------------|--------------------------------------------------|
+| `AUTHED`     | 1.0                 | **Default.** Preserves the unweighted score until per-event source attribution is wired through. |
+| `ANONYMOUS`  | 0.3 – 0.6 (dynamic) | Opt in once snapshot aggregation can attribute by source. Scales with penetration rate vs target. |
+| `FLAGGED`    | 0                   | Device/user marked as bad actor; score is zeroed.|
+
+The anonymous multiplier formula: `0.3 + 0.3 × min(1, penetrationRate / penetrationRateTarget)`. At zero penetration → 0.3; at or above the target penetration rate → 0.6.
 
 ## Public-with-redaction
 

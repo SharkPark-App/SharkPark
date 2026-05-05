@@ -2,6 +2,12 @@
  * @format
  */
 
+// Hermes lacks a built-in `globalThis.crypto`. This polyfill installs
+// `crypto.getRandomValues` before any other module loads, so anything that
+// generates UUIDs (deviceCredentials, etc.) works on the JS engine.
+// MUST stay above every other import.
+import 'react-native-get-random-values';
+
 // Sentry must be initialized before any other code runs so it can capture
 // errors from module-load and the headless geofence task below.
 import * as Sentry from '@sentry/react-native';

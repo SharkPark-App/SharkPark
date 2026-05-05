@@ -1,12 +1,18 @@
 # SharkPark — Pre-Launch TODO
 
-*Last updated 2026-05-01 (post-merge of #137, #138, #142, #143, #144). This document tracks remaining work to App Store / Play Store submission. For day-to-day status, sections are organized per-owner with priority tiers.*
+*Last updated 2026-05-04 (post-merge through #177 + direct-to-branch work on `refactor/nest-scheduler`: supercronic → NestJS scheduler refactor `c8e1fca`, sports-scraper polish + bulk events-summary endpoint cluster, mobile lot-detail/map/forecast polish, reliability-score absent-reports fix `83cff61`. PR #180 packages most of the events cluster for review.). This document tracks remaining work to App Store / Play Store submission. For day-to-day status, sections are organized per-owner with priority tiers.*
 
 ---
 
 # ✅ Recently shipped (since 2026-04-28)
 
 **Backend / infra (Charles):**
+- Direct commit `c8e1fca` (2026-05-04, branch `refactor/nest-scheduler`) — **Supercronic → single NestJS scheduler process.** Replaces the per-script `node dist/scripts/*.js` supercronic pattern with one long-running `scheduler-main.ts` that registers every `@Cron(...)` job in-process via `ScheduleModule`. Eliminates the per-tick Nest bootstrap that was OOM-cascading the cron VM, so `apps/backend/fly.toml` cron VM is sized **back down to 512 MB** (NOT 2 GB as PR #176 had set it — that bump is now obsolete). Python ML scripts still spawn as child processes, so xgboost/pandas memory lives outside the VM.
+- Direct commits on `refactor/nest-scheduler` (2026-05-04, packaged as **PR #180** for review) — **Events/sports cluster.** Bulk `GET /events/summary` endpoint with in-flight coalescer + split poll cadences, map event badges, sports-scraper anchored to school timezone, doubleheader dedupe, real Sidearm fields with 30-min FINAL refresh + 2-min live cron, EventBanner time-range formatting, mobile lot-detail/map/FAB polish, smooth occupancy gradient + trend-aware forecast label, covered/open-air amenity chip always shown.
+- Direct commit `83cff61` (2026-05-04) — **Reliability fix:** treat absent user reports as neutral (not perfect). Follow-up to PR #146 — was inflating scores for lots no one had reported on.
+- PR #176 — **Stability cluster.** Originally bumped cron VM 1 GB → 2 GB (was OOM-killing the predict + retrain crons) — **superseded by `c8e1fca` scheduler refactor**, cron VM is now 512 MB. The other fixes still stand: raised health-check `grace_period` to cover cold-start XGBoost model load, dropped pg connect timeout from 30s → 10s so health checks fail fast on a wedged pool, made pool teardown idempotent (was double-closing on SIGTERM during deploys), and silenced 4xx scanner noise in Sentry (`/wp-login.php`, `/.env`, etc. were drowning real errors).
+- PR #177 — **`min_machines_running = 1` for the app process group.** Was scaling to zero between requests; first request after idle was eating a 6-8s cold start. Keeps one warm machine 24/7 (~$2/mo extra). The cron Machine was already always-on; this only affects the public-facing app process.
+- PR #173 — **Weather: NWS migration + long-term forecast cron + retention.** Replaced OWM with keyless `api.weather.gov`; new `WeatherForecast` model + `0 */6 * * *` long-term cron; weather rows kept permanently for future ML features (PR #173 dropped them from `prune-old-data`). Fixes the silently-zero `precipitation_probability` bug from OWM.
 - PR #118 — Mobile Sentry init (JS-side) wired through `react-native-dotenv`
 - PR #122 — Better Stack heartbeat pings on cron success across all 6 cron jobs *(superseded by #144 — see below)*
 - PR #123 — Mobile/backend access-tier alignment (`x-device-id`, HMAC-signed `POST /occupancy-events`, hardened `@student.csulb.edu` check, dropped legacy `UNKNOWN` user-type throw)
@@ -18,9 +24,11 @@
 
 **ML (Ly):**
 - PR #119 — Weather-aware short-term predictions (rule-based postprocess layer at `services/ml/src/postprocess/weather_adjustment.py`, with staleness gate)
+- PR #146 — **Reports → reliability score loop.** Wires `Report` rows into the weighted reliability formula in `apps/backend/src/reliability/reliability.service.ts`. Anonymous device 0.3-0.6, authed user 1.0, repeat-flagged user 0. (All current reports are authed via NOT-NULL `user_id` — anonymous tier is for future expansion.)
 
 **Backend (Zach):**
 - PR #121 — `POST /api/v1/reports` endpoint (DTO `{ lotId, type, message? }`, throttled 5/min/user, 401 for guests)
+- PR #152 — **Campus event scraper + lot metadata enrichment (concept3d).** `EventsScraperService` (179 lines) + Sidearm calendar LBSU sports scraper, weekly cron to prune past events. Replaces hand-traced geofences with concept3d polygons (Phase B), derives lot↔building proximity geometrically (Phase A), adds `is_structure` + EV reconciliation (Phase C), `LotAdvisory` model + concept3d construction extractor (Phase D), weekly cron to refresh advisories (Phase F). Adds short-term/low-emission/pay-station/motorcycle counts, building footprints + categories, lat/lng on all CSULB campus + athletic venues. **Unblocks Ly's nearby-events badge** (table is now populated).
 
 **Mobile (Lawrence):**
 - PR #82 — Env-based API URL (production points at `https://api.sharkpark.app/api/v1`)
@@ -29,6 +37,10 @@
 - PR #126 — Delete Account UI in ProfileScreen (App Store guideline 5.1.1(v))
 - PR #127 — Guest Mode — "Continue without account" affordance (App Store guideline 2.1), with cancel-restores-guest follow-up
 - PR #143 — Re-bump `react-native` to 0.85.2 + migrate to `@react-native/jest-preset` (re-application of #135 after rebase noise)
+- Direct commit `c071caa` (2026-05-02) — **Android assetlinks hardening per PR feedback.** Drop debug-keystore SHA-256 from the in-repo template (anyone with the public debug.keystore could otherwise intercept deep-link taps), rename the placeholder to a deliberately-non-hex string so a CI regex check (`^[0-9A-F]{2}(:[0-9A-F]{2}){31}$`) fails loud instead of Android silently treating malformed entries as parse failures, document Play App Signing enrollment + which fingerprint actually matters (Google's deployment key, not the upload key), add the same regex check for the AASA TEAMID placeholder.
+
+**Marketing (Charles):**
+- Direct commit `7d1d358` (2026-05-03) — **Marketing copy/legal/a11y polish pass.** Hero h1 “Find a spot before you leave” cascades to title/og/twitter; rewrite features (Recommended lots / Events near campus / Live shuttle feed); CTA “No account needed”; Privacy §11 explicit no-cookies/no-trackers; **Terms §14 Apple App Store + Google Play EULA passthrough (App Store approval requirement)**; placeholder `appStoreUrl`/`playStoreUrl` (`#`) renders grayscale + “Coming soon” label instead of dead links; brand-500 → brand-700 on step pills + 404 to clear AA contrast — Lighthouse a11y 100/100 across all 6 pages.
 
 **Apple / Play store blockers cleared by these merges:**
 - 5.1.1(v) in-app account deletion (UI now wired to backend `DELETE /users/me`)
@@ -37,38 +49,28 @@
 
 ---
 
-# � App Store submission sequence (added 2026-05-02)
+# 🚀 App Store submission sequence (added 2026-05-02, updated 2026-05-03)
 
 Ordered list of what's actively in flight to get SharkPark submitted. Don't reorder — each step unblocks the next.
 
-**Step 0 — Email migrations** (independent, ~30 min total). Mailbox plan:
-- `ops@sharkpark.app` → Fly, Neon, Sentry, Better Stack, Prisma (operational alerts)
-- `security@sharkpark.app` → GitHub security advisories, future Snyk
-- `billing@sharkpark.app` → Apple Developer billing, Google Play billing, future Stripe
-- `support@sharkpark.app` → user-facing (App Store support URL, in-app email, press contact via `hello@`)
-- `hello@sharkpark.app` → press / general inbound (already used on marketing site)
-- All forward to personal inbox via Cloudflare Email Routing.
+**Step 0 — ✅ Email migrations done.** All 9 mailboxes migrated; Cloudflare Email Routing forwards to personal inbox.
+- `ops@sharkpark.app` — Fly, Neon, Sentry, Better Stack, Prisma
+- `security@sharkpark.app` — GitHub security advisories
+- `billing@sharkpark.app` — Apple Developer + Google Play billing
+- `support@sharkpark.app` — user-facing (App Store support URL, in-app email)
+- `hello@sharkpark.app` — press / general inbound (used on marketing site)
 
-Migration order (avoids lockouts):
-1. ⏳ Cloudflare Email Routing — set up forwarding for `ops@`, `security@`, `billing@`, `support@`, `hello@`
-2. ⏳ Fly.io account email → `ops@`
-3. ⏳ Neon account email → `ops@` (keep billing owner = Charles personal)
-4. ⏳ Sentry account + org owner email → `ops@`
-5. ⏳ Better Stack account email → `ops@`
-6. ⏳ Prisma Data Platform email → `ops@` (skip if not using Accelerate/Pulse)
-7. ⏳ GitHub — add `security@` as verified secondary email (don't replace primary)
-8. ⏳ Apple Developer — update billing email → `billing@` (defer if mid-onboarding)
-9. ⏳ Google Play Console — create new account with `ops@` ($25 fee, deferred until Android submission)
+**Step 1 — ✅ Marketing scaffold landed** (#161). Includes [`apps/marketing/`](apps/marketing/) + [`.github/workflows/deploy-marketing.yml`](.github/workflows/deploy-marketing.yml) + AASA/assetlinks with real Team ID `4K793ZW77F` and `app.sharkpark.mobile` bundle ID.
 
-**Step 1 — Land marketing scaffold PR** (separate from #154). Includes [`apps/marketing/`](apps/marketing/) + [`.github/workflows/deploy-marketing.yml`](.github/workflows/deploy-marketing.yml) + AASA/assetlinks updates with real Team ID `4K793ZW77F` and `app.sharkpark.mobile` bundle ID.
+**Step 2 — ✅ Cloudflare Workers Static Assets project** (`sharkpark-marketing`) created, repo not connected (we deploy via GH Actions only — Cloudflare dashboard Git integration intentionally OFF to avoid double-deploys). `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` set as GH secrets. *(Originally scoped as Cloudflare Pages; migrated to Workers Static Assets during the #166–#170 deploy cascade.)*
 
-**Step 2 — Cloudflare Pages project** — create `sharkpark-marketing`, connect repo, add `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` GH secrets.
+**Step 3 — ✅ DNS attached.** Apex `sharkpark.app` proxied to the Worker; `www` → apex 301 redirect rule. Verified `https://sharkpark.app/.well-known/apple-app-site-association` returns the AASA JSON.
 
-**Step 3 — DNS** — apex `sharkpark.app` + `www` → Pages project via custom-domain UI. Verify `https://sharkpark.app/.well-known/apple-app-site-association` returns JSON with `Content-Type: application/json`.
+**Step 4 — ✅ Marketing PR merged** (#161 + the #166–#172 follow-up cluster).
 
-**Step 4 — Merge marketing PR** once #154 is in.
+**Step 4b — Marketing site polish (post-launch, non-blocking)** — add hero phone-mockup video (`/hero-preview.{mp4,webm}` autoplay path is already wired in `BaseLayout.astro`), real app screenshots, and refresh `og-image.png` once the App Store screenshots are finalized. User flagged 2026-05-03: *"all we need to add is videos and images."* Discord embed cache (~30 days, per-URL) — share with `?v=1` if validating fresh OG previews before then.
 
-**Step 5 — App Store Connect** — paste `https://sharkpark.app/privacy`, run App Privacy questionnaire (cheat sheet: Email/Name/UserID/Location/DeviceID/CrashData/PerformanceData/ProductInteraction; Tracking = NO for everything), fill App Information (Navigation primary, Utilities secondary, support URL `https://sharkpark.app/support`), Pricing (Free, all territories), App Review contact + demo Azure AD creds.
+**Step 5 — ✅ App Store Connect listing configured.** Privacy URL `https://sharkpark.app/privacy` pasted, App Privacy questionnaire completed (Email/Name/UserID/Location/DeviceID/CrashData/PerformanceData/ProductInteraction declared; Tracking = NO across the board), App Information set (Navigation primary / Utilities secondary, support URL `https://sharkpark.app/support`), Pricing = Free / all territories, App Review contact + demo Azure AD creds provided. Only Step 6 (build upload, blocked on Lawrence's QA pass) and Step 7 (submit) remain.
 
 **Step 6 — Build upload** — Xcode → Archive → Distribute → App Store Connect (blocked on Lawrence's QA pass).
 
@@ -76,29 +78,36 @@ Migration order (avoids lockouts):
 
 ---
 
-# �🔴 Pre-launch credentials & signing — DO NOT FORGET
+# 🔴 Pre-launch credentials & signing — DO NOT FORGET
 
 These four are all "the binary won't ship without them." Cheap individually, catastrophic if discovered the day of submission. Owners split between Charles (CI/CD secrets) and Lawrence (Xcode/Apple developer console).
 
 - **Charles — `BG_GEOLOCATION_LICENSE` env var in CI/CD** — Transistor Software's `react-native-background-geolocation` license key. Without it the SDK runs in trial mode and **stops working after a few hours in production builds**. Set as a secret in GitHub Actions (`BG_GEOLOCATION_LICENSE`) and in whichever build service we use for archives (Xcode Cloud / EAS Build / Fastlane). Inject into `Info.plist` and `AndroidManifest.xml` at build time. License key lives in 1Password.
-- **Charles — Production Android keystore** — generate once with `keytool -genkey -v -keystore sharkpark-release.keystore -alias sharkpark -keyalg RSA -keysize 2048 -validity 10000`, **back up off-machine immediately** (lose this and you can never push an update to existing installs — ever). Store in 1Password + an offline copy. Set `RELEASE_KEYSTORE_PATH`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` as GitHub Actions secrets. Wire into `apps/mobile/android/app/build.gradle` `signingConfigs.release`.
-- **Lawrence — Replace `TEAMID` placeholder in [`apps/mobile/docs/apple-app-site-association.json`](apps/mobile/docs/apple-app-site-association.json)** — needs the real 10-character Apple Developer Team ID (find under Apple Developer → Membership). Then the file gets deployed to **`https://sharkpark.app/.well-known/apple-app-site-association`** (NOT `sharkpark.csulb.edu` — we standardized on the apex domain in PR #84). Hosting falls under Charles's marketing-site item; Lawrence just needs to fix the Team ID and hand it off.
-- **Lawrence — Set `DEVELOPMENT_TEAM` in [`apps/mobile/ios/mobile.xcodeproj/project.pbxproj`](apps/mobile/ios/mobile.xcodeproj/project.pbxproj) Release config** — same 10-character Team ID. Without this, archive builds fail with "No signing certificate found" in CI. Set for both `mobile` and `mobile-tvOS` (if present) targets, Release configuration. Easiest path: open in Xcode → Signing & Capabilities → pick the team in dropdown, commit the diff.
+- ✅ ~~**Charles — Production Android keystore**~~ — *done.* Release keystore generated, backed up off-machine, signing secrets set in GH Actions; deployed `assetlinks.json` at https://sharkpark.app/.well-known/assetlinks.json carries the real release SHA-256 (`D5:25:81:E0:7E:06:7C:69:CB:42:4F:33:6A:78:F0:D5:2B:4C:F5:72:1F:62:5C:A9:0F:2E:26:DB:47:EA:40:79`). **Follow-up:** the in-repo template at [`apps/mobile/docs/assetlinks.json`](apps/mobile/docs/assetlinks.json) still carries `REPLACE_WITH_PLAY_CONSOLE_SIGNING_KEY_SHA256` — once Play App Signing is enrolled and Charles pulls Google's deployment-key fingerprint from Play Console, swap it in there too (the deployed copy already uses the upload-key fingerprint as a stopgap). Per [`apps/mobile/docs/android-app-links.md`](apps/mobile/docs/android-app-links.md) §3 the deployed file must ultimately use Google's deployment key, not the upload key.
+- ✅ ~~**Lawrence — Replace `TEAMID` placeholder**~~ — *shipped in PR #140.* Real Team ID `4K793ZW77F` is now in [`apps/mobile/docs/apple-app-site-association.json`](apps/mobile/docs/apple-app-site-association.json) and the deployed copy at `apps/marketing/public/.well-known/apple-app-site-association` (live at https://sharkpark.app/.well-known/apple-app-site-association).
+- ✅ ~~**Lawrence — Set `DEVELOPMENT_TEAM` in `mobile.xcodeproj`**~~ — *shipped in PR #140.* `DEVELOPMENT_TEAM = 4K793ZW77F` set on both Debug and Release configs in [`apps/mobile/ios/mobile.xcodeproj/project.pbxproj`](apps/mobile/ios/mobile.xcodeproj/project.pbxproj).
 
 ---
 
-# 🔴 Long-term weather forecast — approved, scoped
+# ✅ ~~Long-term weather forecast — shipped~~
 
-Charles asked, answer is yes. Promoted from open-question to a real ticket pair.
+NWS migration + long-term forecast cron landed together. The OWM `/data/2.5/weather` endpoint never returned `pop`, so `precipitation_probability` had been silently 0 in production — the very check `weather.service.ts` line 66 (`> 0.6`) couldn't fire. NWS forecast `periods[0]` carries a real probability, so swapping vendors fixed the bug as a side effect.
 
-**Source:** NWS `api.weather.gov` hourly forecast (7-day, no key, no quota). Picked over OpenWeatherMap because finer granularity and no rate limit.
+**Shipped:**
+- `apps/backend/src/weather/nws.client.ts` — keyless NWS client with 24h `/points` cache, forecast helpers (`parseWindSpeedMph`, `probabilityToRate`, `deriveIsRaining`, `computeFeelsLikeF`).
+- `WeatherFetchService` rewritten to read NWS hourly forecast `periods[0]` (one endpoint = one failure domain, identical shape to the long-term cron).
+- New `WeatherForecast` Prisma model + migration `20260503111924_add_weather_forecasts` (unique on `(school_id, target_time)`, cascade on school delete).
+- New `WeatherForecastFetchService` + `apps/backend/src/scheduler/jobs/fetch-weather-forecast.job.ts` cron at `0 */6 * * *`. Opportunistically prunes past `target_time` rows on each run.
+- Sentry Cron monitor entry added to `_cron-monitors.ts` (lockstep spec stays green).
+- Config: `OPENWEATHER_API_KEY` removed; `WEATHER_USER_AGENT` added with sensible default. `.env.example`, runbook secrets table, `api-access-tiers.md`, and `configuration.spec.ts` updated.
+- Specs: `nws.client.spec.ts` (helpers), `weather-fetch.service.spec.ts` (rewritten — no more global-fetch mock), `weather-forecast-fetch.service.spec.ts` (new). All 53 weather/config/cron tests pass.
 
-**Order matters — Ly's `predict-all-lots.ts` cron must land first**, otherwise we'd be wiring weather features into a code path that doesn't run in prod.
-
-**Tickets:**
-- **Zach (backend, ~2 hr)** — new `WeatherForecast` Prisma model (`target_time`, `temperature_f`, `precipitation_probability`, `conditions`, `fetched_at`); new `apps/backend/src/scripts/fetch-weather-forecast.ts` cron; crontab entry `0 */6 * * *` (forecasts don't churn fast); add a new entry to `apps/backend/src/scripts/_cron-monitors.ts` (Sentry Cron auto-creates the monitor on first check-in — no Better Stack secret needed). Use the existing `runCronJob` + `withAdvisoryLock` pattern from `fetch-weather.ts`. NWS requires a `User-Agent` header — set it to something like `SharkPark/1.0 (charles@sharkpark.app)`.
-- **Ly (ML, ~3 hr, after Zach's cron)** — extend `services/ml/src/postprocess/weather_adjustment.py` to accept a forecasted-weather row keyed by `target_time` (instead of always reading the latest observation). Wire into the future `predict_long_term.py`. Same caveats from PR #119 apply: placeholder coefficients, asymmetric lower-bound widening, staleness gate.
-- **Track separately:** long-term live MAE, so we can tell whether the forecast feature actually helps or just stacks two error bands. Folds into the existing model-drift monitoring item on Ly's list.
+**Follow-ups (separate tickets):**
+- **Ly (ML)** — extend `services/ml/src/postprocess/weather_adjustment.py` to accept a `WeatherForecast` row keyed by `target_time`. Wire into `predict_long_term.py` once it lands.
+- **Ly (ML)** — `_SEVERE_KEYWORDS` in `services/ml/src/postprocess/weather_adjustment.py` matches bare `"thunderstorm"`, which over-corrects on NWS low-probability strings like *"Slight Chance Showers And Thunderstorms"* (50% median reduction triggered on a 20% forecast). Gate severity on `precipitation_probability` (or scope keyword to phrases like `"thunderstorms likely"` / `"severe thunderstorm"`). Folding into the long-term-weather PR.
+- **Ly (ML)** — `weather` table is now retained permanently (PR #173 dropped it from `prune-old-data`) for future model features. Current schema only stores `temperature_f`, `condition`, `precipitation_probability`, `feels_like_f`, `is_raining`, `timestamp`, `school_id`. Revisit column width (wind, humidity, pressure, cloud cover) when wiring weather features into training.
+- **Track separately:** long-term live MAE so we can tell whether the forecast feature actually helps or just stacks two error bands. Folds into the existing model-drift monitoring item.
+- ✅ ~~**Ops (Charles)** — `flyctl secrets unset OPENWEATHER_API_KEY -a sharkpark-api`~~ *(done 2026-05-04).* The default `WEATHER_USER_AGENT` (`SharkPark/1.0 (ops@sharkpark.app)`) is correct as-is; only override the secret if the contact mailbox changes.
 
 ---
 
@@ -106,15 +115,11 @@ Charles asked, answer is yes. Promoted from open-question to a real ticket pair.
 
 ✅ ~~**Zach — `POST /api/v1/reports` endpoint**~~ *(shipped in PR #121).* See Lawrence's mobile wire item and Ly's reliability-loop item below for the unblocked work.
 
-- 🔴 **Charles — Schema drift on `notification_logs` + `push_tokens`** *(blocks Zach's notification PR)*
-Both tables exist in prod (created via untracked manual SQL during Zach's spike) but are absent from `apps/backend/prisma/schema.prisma` and from every committed migration. `prisma migrate deploy` doesn't drop them (it only applies forward migrations), but Zach's incoming notif PR will collide with them — his `prisma migrate dev` will try to CREATE the same tables. Two options: (a) reverse-engineer the prod schema into a baseline migration that matches reality, then have Zach build on top, or (b) drop both tables in a controlled migration and let Zach's PR re-create them through the normal flow. Option (b) is cleaner since the data is non-critical (push tokens re-register on next app open, logs are append-only). Decide before reviewing his PR.
+- ✅ ~~**Charles — Schema drift on `notification_logs` + `push_tokens`**~~ — *shipped in PR #145.* Took option (b): both orphan tables dropped in a controlled migration; PR #147 then re-created them via the normal Prisma flow. No data lost (push tokens re-register on next app open; logs were dedup-only).
 
-🔴 **Zach — Host Apple/Google deep-link manifests**
-Apple and Google both require static JSON files served from your domain root to enable universal/app links. We need:
-- `https://api.sharkpark.app/.well-known/apple-app-site-association` (no extension, `Content-Type: application/json`)
-- `https://api.sharkpark.app/.well-known/assetlinks.json`
-
-Easiest: add a NestJS controller that returns the static JSON, or serve via Cloudflare Pages. Lawrence will give you the bundle IDs and SHA256 fingerprint. *Unblocks: Lawrence's universal links → App Store submission.*
+✅ ~~**Zach — Host Apple/Google deep-link manifests**~~ — *shipped via the marketing-site cluster.* Manifests are now served from the apex (NOT `api.sharkpark.app` — final standardization is on the marketing apex):
+- https://sharkpark.app/.well-known/apple-app-site-association — Team ID `4K793ZW77F`, bundle `app.sharkpark.mobile`, paths `/map`, `/map/lot/*`, `/forecast/short/*`, `/forecast/long`, `/profile`
+- https://sharkpark.app/.well-known/assetlinks.json — Android package `app.sharkpark.mobile`, real release-keystore SHA-256 fingerprint set
 
 ✅ **Lawrence — Write `docs/api-access-tiers.md`** *(shipped by Charles in PR #101 alongside the backend implementation)*
 - 126-line contract spec at `docs/api-access-tiers.md` covering: (1) full endpoint map (Public / Contributor / Authenticated tiers), (2) the `403 { code: "BG_LOCATION_REQUIRED" }` response contract + the three sub-cases that produce it, (3) recommended mobile soft-ask copy that mirrors the access matrix.
@@ -127,37 +132,35 @@ Easiest: add a NestJS controller that returns the static JSON, or serve via Clou
 ✅ **Charles — `DELETE /api/v1/users/me` cascade** *(PR #100, merged)*
 - Endpoint exists at `apps/backend/src/users/users.controller.ts` (`@Delete('me')`), cascades favorites + audit log per P11.108e. App Store / Play Store privacy questionnaire requirement is satisfied **on the backend**. Mobile UI to call it is still TODO — see Lawrence's list below.
 
-🔴 **Charles — Pre-launch credential rotation** *(do LAST, before store submission)*
-- Neon password (`npg_QTZNAxE96jDp`) and R2 token were both pasted in chat history during initial setup — treat as compromised. Rotate both, update GH Actions secrets (`NEON_DATABASE_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) and Fly secrets (`DATABASE_URL`, `DIRECT_URL`, R2 keys), redeploy backend, re-verify cron + backup. Per user mandate this is the very last item before App Store / Play submission.
+✅ ~~**Charles — Pre-launch credential rotation (Neon)**~~ — *done 2026-05-04.* Neon role password rotated in the Neon Console; `NEON_DATABASE_URL` updated in GH Actions; `DATABASE_URL` / `DIRECT_URL` rotated on Fly via `flyctl secrets set -a sharkpark-api` (with `sslmode=verify-full&channel_binding=require`, pooled URL gets `&pgbouncer=true&connection_limit=1`); old password verified dead. New values live only in 1Password + the secret stores — never in this repo.
+- **Follow-up — R2 access keys** *(do before store submission as a hygiene sweep)*: not known to be leaked, but rotate to give every prod credential a known post-launch birthdate. Mint new R2 keys in Cloudflare → update GH Actions (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) + Fly (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). Do not paste values into any tracked file.
 
-� **Charles — Marketing site at `sharkpark.app`** *(scaffold landed; deploy + DNS still blocking store submission)*
-- ✅ Astro + Tailwind v4 scaffold landed in [`apps/marketing/`](apps/marketing/) with pages: `/`, `/privacy`, `/terms`, `/support`, `/delete-account`, plus `_headers`, `robots.txt`, sitemap, favicon, and both `.well-known/` manifests. Build verified green (5 pages, 1.06s).
-- ✅ Deploy workflow at [`.github/workflows/deploy-marketing.yml`](.github/workflows/deploy-marketing.yml) (Cloudflare Pages via wrangler-action, triggered on `apps/marketing/**` changes).
-- ✅ All copy explicitly states SharkPark is **independent and not affiliated with CSULB** (hero, footer, privacy §intro, terms §1, support FAQ).
-- ⏳ **Cloudflare Pages project** — create project `sharkpark-marketing` in CF dashboard, connect GitHub repo, set build output `apps/marketing/dist` (build command blank — workflow handles it). One-time setup steps in [`apps/marketing/README.md`](apps/marketing/README.md#one-time-cloudflare-pages-setup).
-- ⏳ **GitHub Actions secrets** — add `CLOUDFLARE_API_TOKEN` (Pages:Edit scope) and `CLOUDFLARE_ACCOUNT_ID` to repo secrets. Workflow will fail loudly without them (per [development-principles](#) — no graceful skip gates).
-- ⏳ **DNS** — point apex `sharkpark.app` (and `www.sharkpark.app`) at the Pages project via custom-domain UI in CF.
-- ⏳ **Placeholder swaps** before first production deploy:
-  - `TEAMID` → real Apple Team ID in `apps/marketing/public/.well-known/apple-app-site-association` (and keep in sync with `apps/mobile/docs/apple-app-site-association.json` — Lawrence's item)
-  - `REPLACE_WITH_RELEASE_KEYSTORE_SHA256_FINGERPRINT` → release keystore fingerprint in `apps/marketing/public/.well-known/assetlinks.json` (Play Console → App integrity → App signing key certificate)
-  - `appStoreUrl` / `playStoreUrl` in [`apps/marketing/src/consts.ts`](apps/marketing/src/consts.ts) once listings are live (currently `#`)
-- ⏳ **Email routing** — confirm Cloudflare Email Routing is forwarding `support@`, `security@`, and `hello@sharkpark.app` to your real inbox (the site uses `support@` for general help, `security@` for privacy/data requests, `hello@` for press). `postmaster@` and `abuse@` are RFC-mandated and stay internal — not surfaced on the site.
-- ⏳ **Mailing address in privacy policy** — some store reviewers require it; placeholder needs swap before submission (currently omitted in `privacy.astro`).
+✅ ~~**Charles — Marketing site at `sharkpark.app`**~~ *(shipped in PR #161 + the #166–#172 follow-up cluster).*
+- Astro 5 + Tailwind v4 site at [`apps/marketing/`](apps/marketing/) with 6 pages: `/`, `/privacy`, `/terms`, `/support`, `/delete-account`, custom `/404`. SEO + JSON-LD (Organization, WebSite, MobileApplication, FAQPage, BreadcrumbList), og-image (1200×630), sitemap, hardened CSP.
+- Deploys via [`.github/workflows/deploy-marketing.yml`](.github/workflows/deploy-marketing.yml) → Cloudflare Workers Static Assets (NOT Pages — migrated during the #166–#170 cascade).
+- DNS attached: apex `sharkpark.app` proxied to the Worker; `www` → apex 301 redirect rule. AASA + assetlinks live at apex with real Team ID `4K793ZW77F` and real release-keystore SHA-256.
+- All copy explicitly states SharkPark is **independent and not affiliated with CSULB** (hero, footer, privacy §intro, terms §1, support FAQ).
+- Cloudflare Web Analytics zone-injected beacon allowed through CSP in #172.
+- **Follow-ups (post-launch, non-blocking):**
+  - Add real screenshots + hero phone-mockup video (autoplay path already wired)
+  - Swap `appStoreUrl` / `playStoreUrl` in [`apps/marketing/src/consts.ts`](apps/marketing/src/consts.ts) once listings are live (currently `#`)
+  - Mailing address in `privacy.astro` (some store reviewers require it — defer until reviewer pushes back)
+  - Cloudflare dashboard: confirm Git integration is OFF, kill the `*.workers.dev` route
+  - Re-verify Cloudflare Email Routing forwards `support@` / `security@` / `hello@sharkpark.app` to inbox
 
 ---
 
 # 🟡 Lawrence — Mobile
 
 **High priority**
-- 🔴 **Persist `isGuest` across app restarts** *(post-merge finding from PR #127)* — `AuthContext.isGuest` is `useState(false)`, so a user who picks "Continue without account" on first launch is dumped back onto the LoginScreen wall on the next cold start. Add an AsyncStorage flag (mirror the `useOnboarding` pattern: `@SharkPark:isGuest`), hydrate on mount, persist in `continueAsGuest` / `exitGuestMode`. ~30 min.
-- 🔴 **Wire `ReportModal.onSubmit` → `POST /reports`** *(unblocked by PR #121)* — endpoint is live. Payload is `{ lotId: string (cuid, NOT 'G2'-style code), type: 'blockage'|'crash'|'other', message?: string }`. Existing modal likely uses `reason`/`comment` — rename to `type`/`message` to match the DTO. Response is `{ id, created_at }`. Throttled 5/min/user, returns 401 for guests (route them to sign-in).
-- 🔴 **Replace `TEAMID` placeholder in [`apps/mobile/docs/apple-app-site-association.json`](apps/mobile/docs/apple-app-site-association.json)** — needs the real 10-character Apple Developer Team ID. File then deploys to `https://sharkpark.app/.well-known/apple-app-site-association`.
-- 🔴 **Set `DEVELOPMENT_TEAM` in [`apps/mobile/ios/mobile.xcodeproj/project.pbxproj`](apps/mobile/ios/mobile.xcodeproj/project.pbxproj) Release config** — same 10-character Team ID. Without this, archive builds fail with "No signing certificate found" in CI.
-- 🔴 **Add `assetlinks.json` for Android App Links** *(post-merge finding from PR #84)* — PR #84 set `android:autoVerify="true"` on the App Links intent filter for `https://sharkpark.app`, but no `assetlinks.json` exists in the repo. Without it deployed at `https://sharkpark.app/.well-known/assetlinks.json`, `autoVerify` silently fails and Android shows the disambiguation dialog. Generate via `keytool -list -v -keystore <release-keystore>` + Google's [Asset Links generator](https://developers.google.com/digital-asset-links/tools/generator). Coordinates with Charles's marketing-site item for hosting.
-- **Wire `BG_LOCATION_REQUIRED` 403 handler** — backend already returns this status code with that error string when a guest taps a contributor-gated endpoint. Mobile-side `BackgroundLocationRequiredError` class + interceptor were added in the access-tier audit cluster commit, but the **UX** still TODO: route to a soft-ask screen explaining why background location is needed instead of a generic toast. Two-stage prompt: WhenInUse first, escalate to Always only if user opts into auto-contribute.
-- **Force-update screen** — on app launch, call Zach's new `GET /min-version` endpoint. If `currentVersion < minSupportedVersion`, render a blocking screen with a button to the App Store / Play Store.
-- **Push notification handling** — once Zach's sender ships: register for FCM/APNs tokens, POST token to backend, render notifications when received, route taps to the right screen (e.g., a `favorites_filling` notification opens the map centered on that lot).
-- **Re-audit "4 missing tests" — actual gap is much wider** *(audit 2026-04-30)*. Only `apps/mobile/src/services/__tests__/behavioralDataCollector.test.ts` exists. Untested services include: `locationService`, `leaveDetectionService`, `parkingValidationService`, `carBluetooth`, `sdkConfig`, `headlessTask`, `modeSwitch`, `activityRecognition`, plus every API client (`lots`, `users`, `reliability`, `favorites`, `deviceCredentials`). Pick a coverage floor (suggest 60% on `services/`) and prioritize the API clients + `deviceCredentials` (HMAC signing has a single test vector pinned but no integration test against the actual `apiService`). The 569 mobile tests that pass today are mostly screens/components.
+- ✅ ~~**Persist `isGuest` across app restarts**~~ — *shipped in PR #148.* AsyncStorage flag `@SharkPark:isGuest` hydrates on mount; persists through `continueAsGuest` / `exitGuestMode`.
+- ✅ ~~**Wire `ReportModal.onSubmit` → `POST /reports`**~~ — *shipped in PR #149.* New `reportsApi.create` in `apps/mobile/src/services/api/reports.ts`, `ReportThrottledError` (429) + `ReportUnauthorizedError` (401), guest redirect to Profile tab, inline error banner + loading spinner in modal.
+- ✅ ~~**Replace `TEAMID` placeholder + set `DEVELOPMENT_TEAM`**~~ — *shipped in PR #140.* Team ID `4K793ZW77F` everywhere (AASA + pbxproj Debug & Release).
+- ✅ ~~**Add `assetlinks.json` for Android App Links**~~ — *shipped via the marketing-site cluster (#161+).* Live at https://sharkpark.app/.well-known/assetlinks.json with real release-keystore SHA-256.
+- ✅ ~~**Wire `BG_LOCATION_REQUIRED` 403 handler**~~ — *shipped in PR #139.* Two-stage location-permission soft-ask screen replaces the generic toast; WhenInUse first, escalate to Always on auto-contribute opt-in.
+- ⏳ **Force-update screen** — *PR #160 open (Lawrence, branch `Feat/force-update-screen`).* Mobile side built: [`ForceUpdateScreen.tsx`](apps/mobile/src/screens/ForceUpdateScreen.tsx) + [`api/version.ts`](apps/mobile/src/services/api/version.ts) + 139-line test file. Calls `GET /min-version` on launch and renders blocking screen with App Store / Play Store CTA. **Blocked on review + Zach's `GET /min-version` backend endpoint** (still 🔴 — see his list).
+- 🔴 **Push notification handling — mobile side** *(unblocked by PR #147 backend; FCM/APNs Fly secrets are now set on `sharkpark-api`, so this is the last remaining gap before push works end-to-end)* — install `@react-native-firebase/app` + `@react-native-firebase/messaging`, request permission, fetch FCM token, `POST /users/me/push-token` with `{ token, platform: 'ios' | 'android' }`, re-register on `onTokenRefresh`. Foreground + background message handlers, deep-link the tap into the right screen (favorites notification → map centered on that lot, event notification → forecast for affected lot).
+- ⏳ **Re-audit "4 missing tests" — first slice in flight** — *PR #179 open (Lawrence, branch `test/service-coverage-audit`)* adds 34 tests covering `users`, `carBluetooth`, `contributor` services. Awaiting review. Remaining untested services after #179 merges: `locationService`, `leaveDetectionService`, `parkingValidationService`, `sdkConfig`, `headlessTask`, `modeSwitch`, `activityRecognition`, plus the API clients (`lots`, `reliability`, `favorites`, `deviceCredentials`). Suggest 60% coverage floor on `services/` and prioritize the remaining API clients + `deviceCredentials` (HMAC signing has a single test vector pinned but no integration test against the actual `apiService`). The 569 mobile tests that pass today are mostly screens/components.
 
 **Already shipped (kept here for changelog visibility)**
 - ✅ ~~**Delete Account UI in Settings**~~ — *shipped in PR #126.* Destructive button in ProfileScreen with confirm modal, calls `DELETE /api/v1/users/me`, signs out, returns to LoginScreen.
@@ -173,8 +176,12 @@ Easiest: add a NestJS controller that returns the static JSON, or serve via Clou
 - **Pick + integrate analytics SDK** — Amplitude (free 10M events/mo), Mixpanel (free 20M events/mo), or PostHog (self-host or free 1M events/mo). Track: app_open, lot_view, favorite_added, report_submitted, forecast_view. Don't track location or device-identifying data.
 - **Delete dead `GeofencingProvider.tsx`** *(audit 2026-04-30)* — confirmed: `apps/mobile/src/context/GeofencingProvider.tsx` is an empty file, `EnhancedGeofencingProvider.tsx` is the only active implementation. Just `rm` it. ~30 sec.
 - **Resolve `// TODO` in [`apps/mobile/src/screens/LongTermForecastScreen.tsx`](apps/mobile/src/screens/LongTermForecastScreen.tsx#L84)** — `selectedDayIndex` is in the `useMemo` deps but never passed to `generateForecast`, so every day shows the same generic curve. Either (a) wire it through to the long-term API once Ly's `predict-all-lots.ts` cron seeds `PredictionLongTerm` rows, or (b) pass `selectedDayIndex` into the local generator as a temporary fix. Coordinates with Ly's prediction-cron item.
-- **Resolve `// TODO` in [`apps/mobile/src/services/api/lots.ts`](apps/mobile/src/services/api/lots.ts#L237)** — `position: { x: 0, y: 0 }` is a placeholder for the legacy custom-map UI. PR #120 (Zach's `react-native-maps` migration) replaces this surface entirely; once #120 lands and you rebase, delete the stubbed `position` field rather than carrying it forward.
-- **Gate stray `console.log` calls behind `__DEV__`** *(audit 2026-04-30)* — unconditional `console.log` in [`apps/mobile/src/services/locationService.ts`](apps/mobile/src/services/locationService.ts#L75) and [`apps/mobile/src/services/api/favorites.ts`](apps/mobile/src/services/api/favorites.ts#L23). Not PII, but ships noise to release builds. ~5 min.
+- ✅ ~~**Resolve `// TODO` in [`apps/mobile/src/services/api/lots.ts`](apps/mobile/src/services/api/lots.ts#L237)**~~ — *cleared post-#120 rebase.* The placeholder `position: { x: 0, y: 0 }` field is gone from `lots.ts`; the `react-native-maps` migration replaced the legacy custom-map UI that depended on it.
+- **Gate stray `console.log` calls behind `__DEV__`** *(audit re-run 2026-05-04)* — [`apps/mobile/src/services/api/favorites.ts`](apps/mobile/src/services/api/favorites.ts#L23) is already `__DEV__`-gated. Remaining offenders:
+  - [`apps/mobile/src/services/locationService.ts`](apps/mobile/src/services/locationService.ts) lines 83, 103, 116, 131, 146, 165, 531, 593, 609, 612 — SDK init / geofence registration / mode-switch / provider-change diagnostics.
+  - [`apps/mobile/src/hooks/useTransitData.ts`](apps/mobile/src/hooks/useTransitData.ts) lines 53, 57 — socket connect/disconnect logs.
+  - [`apps/mobile/src/auth/AzureAuth.tsx`](apps/mobile/src/auth/AzureAuth.tsx#L31) — internal `log()` helper that always fires; either gate the helper itself on `__DEV__` (one-line fix) or audit each call site.
+  Not PII, but ships noise to release builds. ~10 min total.
 - **Add `NSPhotoLibraryUsageDescription` to `Info.plist`** *only if* any feature actually touches photos (avatar upload, share-image-of-map, etc.). If no, skip — Apple rejects unused permission strings.
 - **Apple App Store submission** — App Store Connect listing, screenshots (6.7" and 6.5" required), privacy nutrition labels (use Zach's data inventory), TestFlight build for review, respond to reviewer questions. Allow 1-2 weeks for review cycles.
 - **Google Play submission** — Play Console listing, screenshots (phone + 7"/10" tablet), data safety form (mirror App Store labels), internal testing track first, then closed → open beta → production.
@@ -186,31 +193,26 @@ Easiest: add a NestJS controller that returns the static JSON, or serve via Clou
 # 🟡 Zach — Backend Features & Admin
 
 **High priority**
-- ✅ ~~`POST /api/v1/reports`~~ — *shipped in PR #121 (see critical path).* Mobile wire-up moved to Lawrence's queue. New `Report` model with `user_id` cascade.
-- **Verify reports endpoint actually requires auth** — `ReportsController` has no explicit guard decorator; relies on global guard chain. Add a one-line e2e: anonymous `POST /reports` → 401. ~10 min.
-- 🔴 AASA + assetlinks.json hosting (see critical path)
-- **`GET /api/v1/min-version`** — trivial endpoint, returns `{ ios: { min: "1.0.0", current: "1.0.0" }, android: { ... } }`. Hardcode for now, move to env or a `MobileVersion` Prisma model later. Lawrence's force-update screen calls this on every app launch. *~30 min.*
-- ✅ ~~**`DELETE /api/v1/users/me` cascade**~~ — *shipped by Charles in PR #100.* Cascades favorites + writes audit log (P11.108e). Mobile UI to call it is now on Lawrence's list above. **Note:** does not yet delete `Report` rows — re-visit once `POST /reports` ships and the model exists.
-- **Push notification service — split into 2 sub-tickets:**
-  - **(a) FCM project + APNs key setup** — one-time. Create Firebase project (free Spark tier), enable Cloud Messaging, generate APNs auth key in Apple Developer portal, upload to Firebase. Store `FIREBASE_SERVER_KEY` + `APNS_KEY_ID` as Fly secrets.
-  - **(b) Sender service + token endpoint + trigger crons** — new `NotificationsModule` with `sendPush(userId, payload)` using `firebase-admin`, exported so cron scripts can import it. New `POST /api/v1/users/me/push-token` endpoint to register device tokens (new `PushToken` Prisma model: `userId`, `token`, `platform`, `createdAt`). Trigger crons live in `apps/backend/src/scripts/notify-*.ts` (one file per trigger, follow `snapshot.ts` / `prune-old-data.ts` pattern: `runCronJob` + advisory lock), and each gets a line in `apps/backend/cron/crontab` — **NOT NestJS `@Cron` decorators**, our cron tier is the dedicated Fly `cron` process group. Add a `NotificationLog` model (`userId`, `type`, `lotId?`, `sentAt`) for dedup so a user doesn't get the same alert twice. Triggers (each script runs every 15 min):
-    - `notify-favorites-filling.ts` — favorite lot crosses 80% occupancy
-    - `notify-favorites-clearing.ts` — favorite lot drops below 30% after being >75%
-    - `notify-surge.ts` — campus-wide occupancy spike (any lot >90%)
-    - `notify-events.ts` — within 2 hours of a `CampusEvent` start
-- **Privacy nutrition data inventory** — single doc (`docs/privacy-data-inventory.md`) listing everything the app collects: device hash (SHA-256, no raw IDs), email (from Azure AD), location (used in-app only, never stored), favorites, reports. For each: where stored, retention window, third parties. Lawrence needs this for the App Store privacy labels questionnaire and Play Store data safety form. *~1-2 hrs of writing.*
-- 🔴 **Campus event scraper** *(feeds the nearby-events display/notification surface — see Ly's section. NOT a forecasting input as of 2026-04-30.)* — daily Fly Machine cron script at `apps/backend/src/scripts/scrape-campus-events.ts` that fetches CSULB events and upserts into the existing `CampusEvent` table. **Follow the pattern in `apps/backend/src/scripts/fetch-weather.ts`**: `runCronJob('scrape-campus-events', ...)` from `_bootstrap.ts`, advisory lock via `withAdvisoryLock`, idempotent upsert by `(source_id, start_time)`. Add the schedule line to `apps/backend/cron/crontab` (suggest `0 5 * * *` — daily 5 AM PT, after retention prune). **Do NOT use NestJS `@Cron` decorators** — our entire cron tier runs on the dedicated Fly `cron` process group via supercronic, not in the API process. **Verify a source exists before scoping**: check `https://www.csulb.edu/events` for a JSON feed / RSS / iCal. If only HTML, add a parser (cheerio is already in the tree). The read API for campus events (`GET /api/v1/events`, `GET /api/v1/events/upcoming`) already exists in `apps/backend/src/events/events.controller.ts` — this task is purely the scraper that populates the table. Today the table is empty in prod, so the nearby-events badge is inert.
+- ✅ ~~`POST /api/v1/reports`~~ — *shipped in PR #121 (see critical path).* Mobile wire shipped in #149. New `Report` model with `user_id` cascade.
+- ✅ ~~**Verify reports endpoint actually requires auth**~~ — *covered.* `app.e2e-spec.ts` asserts anonymous `POST /reports` → 401 via the global `AzureAdGuard` (assertion landed alongside the access-tier audit closeout).
+- ✅ ~~AASA + assetlinks.json hosting~~ — *shipped via the marketing-site cluster.* Both manifests served from https://sharkpark.app/.well-known/.
+- ⏳ **`GET /api/v1/min-version`** — *PR #175 open (Zach, branch `Feat/min-version-endpoint`).* Awaiting review. Unblocks Lawrence's force-update screen (PR #160). Was 🔴 critical-path; downgraded to ⏳ now that the implementation exists.
+- ✅ ~~**`DELETE /api/v1/users/me` cascade**~~ — *shipped by Charles in PR #100.* Cascades favorites + writes audit log (P11.108e). Mobile UI to call it is now on Lawrence's list above. **`Report` rows also cascade** — `Report.user_id` carries `onDelete: Cascade` in `schema.prisma` (verified 2026-05-04), so PR #121's report writes are covered by the same delete path with no extra work.
+- ✅ ~~**Push notification service — backend (b)**~~ — *shipped in PR #147.* `push_tokens` + `notification_logs` schema, `POST /users/me/push-token` endpoint (upsert by token, supports re-installs/token rotation), sender service via `firebase-admin`, all 4 trigger crons (`notify-favorites-filling`, `notify-favorites-clearing`, `notify-surge`, `notify-events`) running on the Fly cron process group at 15-min cadence with `runCronJob` + advisory lock + Sentry Crons check-in.
+- ✅ ~~**Push notification service — sub-ticket (a) FCM project + APNs key setup**~~ — *done.* Firebase project provisioned, Cloud Messaging enabled, APNs auth key generated under Team ID `4K793ZW77F` and uploaded to Firebase. `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` all deployed as Fly secrets on `sharkpark-api`, so the notify-* crons can actually deliver. Lawrence's mobile FCM token registration is now the only remaining blocker for end-to-end push.
+- ✅ ~~**Privacy nutrition data inventory**~~ — *shipped (commits `14c7308` + `c1ff4ad`).* `docs/privacy-data-inventory.md` lists every collected datum, retention window, and third party. Lawrence is unblocked for both App Store privacy labels and Play data safety form.
+- ✅ ~~**Campus event scraper**~~ — *shipped in PR #152 (2026-05-04).* `apps/backend/src/events/events-scraper.service.ts` + crontab entry. Includes the LBSU sports-events scraper (Sidearm calendar) and a weekly cron to prune past events. **Unblocks Ly's nearby-events badge** — table is now populated.
 
 **Lower priority**
-- **Update parking lot metadata** — Neon `lots` table has `id, name, capacity, type, lat, lng` etc. Verify all 28 CSULB lots have correct capacity (CSULB Parking Services PDF), accurate polygons (open `lots.geojson` if it exists in `apps/backend/data/`), and current permit codes. Coordinate with Lawrence if any new fields are needed (e.g., `accessibility_spaces`, `ev_chargers`).
-- **Reports/analytics endpoints** — `GET /api/v1/lots/:id/trends?range=7d` returns hourly occupancy averages for the past N days from `occupancy_snapshots`. `GET /api/v1/lots/utilization?range=30d` returns per-lot utilization rates. Useful for the admin dashboard and any future investor/CSULB-Parking demos.
+- ✅ ~~**Update parking lot metadata**~~ — *shipped in PR #152.* All 28 CSULB lots now carry concept3d-derived polygons, real centroids (single source of truth — see PR description), `is_structure`, EV/short-term/low-emission/pay-station/motorcycle/accessible counts reconciled against concept3d, plus `LotAdvisory` rows refreshed weekly from concept3d construction notices. Building footprints + categories + lat/lng landed alongside.
+- ⏳ **Reports/analytics endpoints** — *PR #163 open (Zach, branch `Feat/analytics-endpoints`).* `GET /api/v1/lots/:id/trends?range=Nd` (hourly occupancy averages) + `GET /api/v1/lots/utilization?range=Nd` (per-lot utilization). +150 lines across [`lots.controller.ts`](apps/backend/src/lots/lots.controller.ts), [`lots.service.ts`](apps/backend/src/lots/lots.service.ts), [`parking-lot.interface.ts`](apps/backend/src/lots/interfaces/parking-lot.interface.ts). **Blocked on review.**
 - **Admin dashboard** — either a separate Next.js app under `apps/admin/` or admin-scoped routes mounted at `/admin/*` with a JWT role check (`role: 'admin'` claim). Pages: lot CRUD, report review queue (acknowledge/dismiss reports), reliability score overrides. Probably the biggest single ticket on your list — a week of work — defer until after launch unless you have spare cycles.
-- **Audit parking-validation** — `grep -r "@sharkpark/parking-validation" apps/ packages/` — if zero non-self-references, delete the package. If used, add a one-paragraph README so the next person knows what it does. *30 sec check.*
-- **GDPR/CCPA data export** — `GET /api/v1/users/me/data` returning JSON of everything tied to the authenticated user (favorites, audit-log rows, push tokens once those exist, reports once those exist). Strictly required if any EU/CA traffic, soft-required for App Store privacy answers. Light lift since we have minimal PII. Pair with the existing `DELETE /users/me` so the privacy section is complete.
-- **Backend access-tier follow-ups** *(remaining slices from PR #101)*
-  - `GET /api/v1/users/me/forecast` — stack `AzureAdGuard` + `ContributorGuard` (personalized forecast: requires both auth and a recent contributor ping). Spec is in [docs/api-access-tiers.md](docs/api-access-tiers.md).
-  - `x-app-mode` header + tier-aware throttler (public 60rpm, contributor 300rpm, authed 600rpm). Today everyone shares the default bucket.
-  - Reliability scoring weights — anonymous device 0.3–0.6, authed user 1.0, flagged user 0. Belongs in `apps/backend/src/reliability/reliability.service.ts`.
+- ✅ ~~**Audit parking-validation**~~ — *resolved 2026-05-04 audit:* the `@sharkpark/parking-validation` package no longer exists in `packages/`. The only remaining reference is a stale doc-comment in [`apps/mobile/src/services/parkingValidationService.ts`](apps/mobile/src/services/parkingValidationService.ts) line 7 — follow-up: scrub that comment so it doesn't re-confuse the next person who greps for it.
+- ⏳ **GDPR/CCPA data export** — *PR #178 open (Zach, branch `Feat/gdpr-ccpa-data-export`).* `GET /api/v1/users/me/data` returns JSON of everything tied to the authenticated user. Awaiting review.
+- ⏳ **Backend access-tier follow-ups** *(remaining slices from PR #101)* — *PR #174 open (Zach, branch `Feat/user-throttling-forecasts-scoring`).* Single PR covers all three:
+  - `GET /api/v1/users/me/forecast` stacked `AzureAdGuard` + `ContributorGuard`.
+  - `TierThrottlerGuard` (public 60rpm, contributor 300rpm, authed 600rpm) with default exception handling.
+  - User reliability scoring weights wired through (complements PR #146's reports-factor work).
 
 ---
 
@@ -234,25 +236,25 @@ Easiest: add a NestJS controller that returns the static JSON, or serve via Clou
   Notes: hourly granularity (matches what the model actually trains on); window is operating hours 7–21 local time only (CSULB lots are dead overnight, simulator hardcodes 0); if request falls outside the window return `predictions: []` with a valid `predictedAt`, **not** a 404. Window is documented in the type so consumers don't expect a fixed 24h slice. Revisit window post-launch if a real overnight use case appears.
 - ✅ ~~**Reconcile `predict_short_term.py` output with the locked contract** *(audit 2026-04-30)*~~ — *resolved by Ly's INT→FLOAT change.* Script now outputs rates 0..1 + `ciLow`/`ciHigh` band matching the contract. Hourly granularity is the locked stepping (not 15-min as the original audit suggested). `PredictionShortTerm`/`PredictionLongTerm` Prisma columns flipped INT → FLOAT in the same change.
 - ✅ ~~**Weather → ML features**~~ — *shipped in PR #119 as a rule-based postprocess layer instead of a learned feature.* Lives at `services/ml/src/postprocess/weather_adjustment.py`; reads latest `weather` row, classifies severity (`SEVERE`/`SNOW`/`HEAVY_RAIN`/`RAIN`/`EXTREME_HEAT`/`NORMAL`), applies deterministic median multipliers + asymmetric lower-bound widening. **Deliberate scope deviation from the original learned-feature plan** — pre-launch occupancy data is synthetic, so a learned weather model would memorize fabricated correlations; rule layer stays permanent as a safety floor for under-sampled severe events. Multipliers and signs are placeholder until real data arrives. Wired into `services/ml/scripts/predict_short_term.py` with a `WEATHER_MAX_AGE_HOURS` (default 3h) staleness gate. **Follow-up after launch:** revisit with real data to either (a) replace with learned features in `train.py`, or (b) calibrate the rule magnitudes/signs from the live MAE feedback.
-- 🔴 **Scheduled prediction jobs — `predict-all-lots.ts` cron** *(NOT shipped by PR #119 — confirmed)*. PR #119 only added the postprocess module + modified the standalone `predict_short_term.py` script; no Node cron exists yet. **Good news from the 2026-04-30 audit:** [`services/ml/scripts/predict_long_term.py`](services/ml/scripts/predict_long_term.py) already exists, so the cron just needs to invoke both Python scripts — no second script to write. New file at `apps/backend/src/scripts/predict-all-lots.ts` following the same `runCronJob` + `withAdvisoryLock` pattern as `prune-old-data.ts` and `snapshot.ts`. Add schedule line to `apps/backend/cron/crontab` — `*/15 * * * *` aligned with snapshot cron (or 1 min after, e.g. `1-59/15`, so the latest snapshot row is already written when the predictor reads features). **Note:** prediction *granularity* is hourly (per locked contract) but cron *cadence* is every 15 min — the current-hour row gets refreshed 4× per hour as new snapshots arrive, so the mobile "last updated Xm ago" badge stays green and the next-hour estimate sharpens as the hour progresses. Every run: shell out to the Python `predict_short_term.py` and `predict_long_term.py`, which load the active model from R2 (cache to local disk after first call so we don't refetch every 15 min), pull latest features per lot from `occupancy_snapshots`, apply the weather adjustment layer (short-term only today — see long-term gap below), and write predictions to `PredictionShortTerm` and `PredictionLongTerm` tables. Backend's `/users/me/forecast` reads from these tables — no live inference needed. *Currently long-term predictions always fall back to a heuristic because the table is empty. This fixes that.* **Unblocked 2026-05-01:** Python 3.11 + ML venv now in the runtime image (PR #129) and cron VM bumped to 1 GB; Ly is fully unblocked on this item.
+- 🔴 **Scheduled prediction jobs — `predict-all-lots.ts` cron** *(NOT shipped by PR #119 — confirmed)*. **Reassigned 2026-05-03: Charles** owns this to lighten Ly's load (she's heads-down on PR #146 reliability loop + the long-term weather PR + PR #151 MLflow→R2). PR #119 only added the postprocess module + modified the standalone `predict_short_term.py` script; no Node cron exists yet. **Good news from the 2026-04-30 audit:** [`services/ml/scripts/predict_long_term.py`](services/ml/scripts/predict_long_term.py) already exists, so the cron just needs to invoke both Python scripts — no second script to write. New file at `apps/backend/src/scheduler/jobs/predict-all-lots.job.ts` following the same `@Cron(...)` + `CronRunnerService.run()` + `withAdvisoryLock` pattern as `prune-old-data.job.ts` and `snapshot.job.ts`. Add a matching entry to `apps/backend/src/scheduler/cron-monitors.ts` — `*/15 * * * *` aligned with snapshot cron (or 1 min after, e.g. `1-59/15`, so the latest snapshot row is already written when the predictor reads features). **Note:** prediction *granularity* is hourly (per locked contract) but cron *cadence* is every 15 min — the current-hour row gets refreshed 4× per hour as new snapshots arrive, so the mobile "last updated Xm ago" badge stays green and the next-hour estimate sharpens as the hour progresses. Every run: shell out to the Python `predict_short_term.py` and `predict_long_term.py`, which load the active model from R2 (cache to local disk after first call so we don't refetch every 15 min), pull latest features per lot from `occupancy_snapshots`, apply the weather adjustment layer (short-term only today — see long-term gap below), and write predictions to `PredictionShortTerm` and `PredictionLongTerm` tables. Backend's `/users/me/forecast` reads from these tables — no live inference needed. *Currently long-term predictions always fall back to a heuristic because the table is empty. This fixes that.* **Unblocked 2026-05-01:** Python 3.11 + ML venv now in the runtime image (PR #129) and cron VM bumped to 1 GB — fully unblocked. **Soft-blocked on PR #151 (MLflow→R2)** so the bucket isn't empty on first run; can land the cron + tests in parallel, just don't enable the crontab line until PR #151 merges and the first promote populates R2.
 - **One-time prediction backfill** — once the cron above is shipped, run it manually to seed `PredictionShortTerm` so the forecast UI has data on day 1 of launch. Single invocation populates the full operating-window (hours 7–21) for every lot, so a one-shot `node predict-all-lots.js` is sufficient — no loop needed.
 
 **Medium priority — all on Fly + Cloudflare R2, no AWS**
 *(We're Tier 3: Fly + Neon + Cloudflare. SageMaker and Lambda were carryovers from the old AWS plan and would add $30-100/mo for no benefit at our QPS.)*
-- 🔴 **MLflow → R2 export is currently a placeholder** *(audit 2026-04-30)* — [`services/ml/src/utils/mlflow_utils.py`](services/ml/src/utils/mlflow_utils.py#L76-L80) literally logs `"Not implemented yet"` for the `--export-s3` flag. Models are saved to local `./mlruns/` only, so the prediction cron has nothing to pull from R2 even after the cron itself is built. Bucket exists (`sharkpark-ml-exports`) and creds are set, just need to write the upload. Also add `boto3` to [`services/ml/pyproject.toml`](services/ml/pyproject.toml#L7) — only `botocore` is listed today, which is insufficient for the S3 client. Then point the artifact store at the R2 S3-compatible endpoint via `MLFLOW_S3_ENDPOINT_URL`, reuse the same R2 credentials, and use `s3://sharkpark-ml-exports/models/<model-name>/<version>/` as the artifact root. **Order of operations:** ship this *before* the `predict-all-lots.ts` cron, otherwise the cron will hit an empty bucket on first run.
-- **Automated retraining — `retrain-models.ts` weekly cron** — new file `apps/backend/src/scripts/retrain-models.ts` with a matching crontab entry. Sundays 3 AM PT (`0 3 * * 0`) — after the 2 AM Sunday backup and before the 4 AM Sunday retention prune. Pulls last N weeks of training data from Neon's `occupancy_snapshots`, shells out via `child_process.spawn` to `python services/ml/src/sharkpark_ml/train.py` (the runtime image will need Python + the ML package — coordinate with Charles on Dockerfile changes), runs `evaluate.py` against persistence baseline, runs `promote.py` if MAE improvement ≥ 5%. Promoted model uploads to R2; next 15-min prediction cron picks it up automatically. **Caveat: XGBoost + pandas can easily exceed our 512MB cron VM. Two options if it OOMs (exit 137):** (a) bump cron VM to 1GB (~+$3/mo, edit `apps/backend/fly.toml [[vm]]` for the cron process group); or (b) run training as an ephemeral one-shot Fly Machine via `fly machine run --rm <image> -a sharkpark-api -g trainer` that scales to zero between weekly runs — Charles can wire this up. Option (b) is cheaper and isolates the heavy load.
+- ⏳ **MLflow → R2 export** — *PR #151 open (Ly, branch `feat/ml-mlflow-r2-registry`).* Real upload now implemented in [`services/ml/src/utils/mlflow_utils.py`](services/ml/src/utils/mlflow_utils.py) (+208 lines) using `boto3` against R2's S3-compatible endpoint; `promote_short_term.py` + `promote_long_term.py` wired in; +156-line test suite at `tests/utils/test_mlflow_utils.py`; `boto3` added to `pyproject.toml`; new `.env.example` keys. **Blocked on review.** Once merged, unblocks the `predict-all-lots.ts` cron (so the bucket isn't empty on first run).
+- **Automated retraining — `retrain-models.ts` weekly cron** — **Reassigned 2026-05-03: Charles** owns this alongside `predict-all-lots.ts` (Ly load relief). New file `apps/backend/src/scheduler/jobs/retrain-models.job.ts` with a matching entry in `apps/backend/src/scheduler/cron-monitors.ts`. Sundays 3 AM PT (`0 3 * * 0`) — after the 2 AM Sunday backup and before the 4 AM Sunday retention prune. Pulls last N weeks of training data from Neon's `occupancy_snapshots`, shells out via `child_process.spawn` to `python services/ml/src/sharkpark_ml/train.py` (Python + ML venv already in the runtime image per PR #129), runs `evaluate.py` against persistence baseline, runs `promote.py` if MAE improvement ≥ 5%. Promoted model uploads to R2; next 15-min prediction cron picks it up automatically. **Caveat: XGBoost + pandas memory.** As of `c8e1fca` (supercronic → NestJS scheduler refactor), Python ML scripts run as **child processes spawned by the long-lived scheduler**, so their xgboost/pandas memory lives outside the cron VM's 512 MB resident footprint — but the child still allocates from the same Machine. If the child OOMs (exit 137 inside the spawn), two options: (a) bump cron VM to 2 GB (~+$3/mo, edit `apps/backend/fly.toml [[vm]] memory` for the cron process group); or (b) run training as an ephemeral one-shot Fly Machine via `fly machine run --rm <image> -a sharkpark-api -g trainer` that scales to zero between weekly runs. Option (b) is cheaper and isolates the heavy load — default path unless option (a) proves sufficient in pre-launch dry runs.
 - **Model drift monitoring** — track live MAE (predictions vs actual `occupancy_snapshots` 1 hour after prediction window) vs training MAE. **Decide destination first** — easiest is Sentry custom metric (we already have Sentry wired backend-side, just `Sentry.metrics.distribution('ml.live_mae', value, { tags: { model_version }})`). Otherwise create a Better Stack dashboard. Alert if live MAE > 1.5× training MAE for 3 consecutive runs. *(Confirmed not implemented anywhere as of 2026-04-30 audit — no metric emit, no table writes, no comments in either predict script.)*
 
-**Unblocked (was blocked on #121)**
-- 🔴 **Feedback → model loop** *(unblocked by PR #121)* — `Report` model + `POST /reports` endpoint are live. Wire report data into reliability scoring: a user reporting "blockage" / "crash" / "other" on a lot should reduce that lot's reliability score (existing weighted formula in `apps/backend/src/reliability/reliability.service.ts`). Anonymous device weight 0.3-0.6, authed user 1.0, repeat-flagged user 0. **Note:** all current reports are authed (NOT NULL `user_id`), so the anonymous weight tier is for future expansion only.
+**Shipped**
+- ✅ ~~**Feedback → model loop**~~ — *shipped in PR #146 (2026-05-03).* Report data now feeds the weighted reliability formula in `apps/backend/src/reliability/reliability.service.ts`.
 
-**Blocked on Zach's campus-event scraper**
-- � **Nearby-events display + notification surface** *(decision 2026-04-30: replaces the previously-scoped "event-aware forecasting layer". Events are too noisy/sparse to drive accurate per-lot occupancy predictions — we will surface them as context instead, not as a model feature.)*
-  - **Backend (~1 hr):** add `GET /api/v1/lots/:id/nearby-events?within_hours=2` returning the count + summary of `CampusEvent` rows whose `affected_lots[]` includes `:id` and whose `start_time` is within the window. Reuse existing `EventsService` query helpers. Public tier (mirrors `/lots`).
-  - **Mobile (~2 hr):** badge on lot detail ("3 events nearby — occupancy may be affected") sourced from the new endpoint; tap-through reveals event names + start times. No prediction-pipeline coupling.
-  - **Mobile push (~1 hr, post-launch):** when a favorited lot has ≥2 events starting within the next 2 hours, fire a local notification ("Events near <lot> may affect availability"). Throttled to once per lot per day.
-  - **Do NOT** wire `CampusEvent` into `predict_short_term.py`, `predict_long_term.py`, or `train.py`. There is no event-impact forecasting in this product — the `EventImpact` model + `ImpactLevel` enum + `/events/:id/impacts` route were removed 2026-04-30. Mobile decides which events are relevant to a given lot via the geographic `nearby-events` query at request time.
-  - **Hard-blocked by Zach's campus-event scraper** — table is empty in prod, so the badge is inert until the scraper lands.
+**Unblocked by PR #152 (merged 2026-05-04)**
+- 🟢 **Nearby-events surface — product decision (Ly owns the call, work is split across Zach + Lawrence)** *(decision 2026-04-30: replaces the previously-scoped “event-aware forecasting layer”. Events are too noisy/sparse to drive accurate per-lot occupancy predictions — we will surface them as context instead, not as a model feature.)*
+  - ✅ ~~**Zach (~1 hr)**~~ — *shipped.* `GET /api/v1/lots/:id/nearby-events?within_hours=2` (default 2h, capped server-side) is live on [`LotsController`](apps/backend/src/lots/lots.controller.ts#L220), Public tier. Returns the count + summary of `CampusEvent` rows whose `affected_lots[]` includes `:id` and whose `start_time` is within the window. The forward-reference comment in [`apps/backend/src/lots/lots.service.ts`](apps/backend/src/lots/lots.service.ts) was updated in the same pass.
+  - **Lawrence (~2 hr)** — badge on lot detail (“3 events nearby — occupancy may be affected”) sourced from the new endpoint; tap-through reveals event names + start times. No prediction-pipeline coupling.
+  - **Lawrence (~1 hr, post-launch)** — when a favorited lot has ≥2 events starting within the next 2 hours, fire a local notification (“Events near \<lot\> may affect availability”). Throttled to once per lot per day.
+  - **Ly (zero code)** — enforce the decision: do NOT wire `CampusEvent` into `predict_short_term.py`, `predict_long_term.py`, or `train.py`. There is no event-impact forecasting in this product — the `EventImpact` model + `ImpactLevel` enum + `/events/:id/impacts` route were removed 2026-04-30. Mobile decides which events are relevant to a given lot via the geographic `nearby-events` query at request time.
+  - **Unblocked 2026-05-04** by PR #152 — `CampusEvent` table is now populated from the scraper, so the Zach + Lawrence sub-tickets above are actionable.
 
 ---
 
@@ -278,7 +280,7 @@ Easiest: add a NestJS controller that returns the static JSON, or serve via Clou
 
 **Lower priority / standby**
 - **Document `FLY_API_TOKEN` rotation cadence in runbook** — we use a long-lived deploy token instead of Fly OIDC (still in beta and rough). Add a quarterly rotation reminder + the `flyctl tokens create deploy --expiry 720h` command to `docs/runbooks/runbook.md` so this doesn't get silently forgotten. ~15 min.
-- **Public status page at `status.sharkpark.app`** — deferred until launch-prep checklist. Better Stack free tier auto-publishes a status page from the `/health/ready` uptime monitor; ~10 min to enable + CNAME + link from marketing footer. No value pre-launch (no users to point at it).
+- ✅ ~~**Public status page at `status.sharkpark.app`**~~ — *done.* Better Stack status page live; CNAME attached; linked from marketing footer via `SITE.statusUrl` in [`apps/marketing/src/consts.ts`](apps/marketing/src/consts.ts).
 - **Evaluate consolidating uptime onto Sentry Uptime Monitoring** — Sentry now has a GA'd external uptime probe product. If we ever drop the public status page, we can move the `/health/ready` check off Better Stack and kill that vendor entirely. Not worth the migration cost while Better Stack is hosting the status page anyway. Revisit if Better Stack starts charging or status page gets killed.
 - **k6 load tests pre-launch** — sustained 600 req/min on `/lots` (matches Cloudflare rate-limit cap) + 5-min spike to 2000 req/min. Verifies single Fly instance survives, validates throttler buckets, surfaces Neon connection-pool ceilings. Skip until other launch-blocking items are clear.
 - On-call for any deploy/CI/DB pain anyone hits — ping me in groupchat
@@ -291,16 +293,21 @@ Easiest: add a NestJS controller that returns the static JSON, or serve via Clou
 # 🔗 Dependency map
 
 ```
-Zach POST /reports          →  Lawrence ReportModal wire + Ly model loop
-Zach AASA hosting           →  Lawrence universal links → App Store submission
-Zach GET /min-version       →  Lawrence force-update screen
-Zach data inventory         →  Lawrence privacy labels (App Store + Play)
-Zach push sender            →  Lawrence push handling
+[✅ cleared]
+Zach POST /reports          →  Lawrence ReportModal wire (#149) + Ly model loop (#146 ✅)
+Zach AASA hosting           →  Lawrence universal links (#161 cluster)
+Zach campus event scraper   →  Ly nearby-events badge (#152 ✅ — table populated)
+Zach GET /lots/:id/nearby-events  →  ✅ endpoint live on LotsController (Lawrence's badge wire is the next step)
 Lawrence access-tiers doc   →  Zach 403 handler + Ly endpoint shape freeze
 Lawrence api.config env     →  cross-team prod QA on real devices
 Ly forecast shape sync      →  Lawrence forecast UI implementation
-Ly prediction cron + back-  →  Lawrence forecast UI shows real data on day 1
-   fill
+Ly MLflow→R2 export         →  Ly predict-all-lots cron (PR #151 ⏳ — R2 has artifacts on merge)
+
+[🔴 still blocking]
+Zach FCM/APNs setup         →  ✅ done — Fly secrets deployed; Lawrence's mobile FCM wire is now the only remaining gap
+Zach GET /min-version       →  Lawrence force-update screen (PR #160 ⏳ — ready, soft-blocked on PR #175 ⏳)
+Zach data inventory         →  ✅ done — `docs/privacy-data-inventory.md` landed; Lawrence privacy labels unblocked
+Ly predict-all-lots cron    →  Lawrence forecast UI shows real data on day 1 (next critical — #151 unblocks)
 ```
 
 # Note on the ML infra choice
@@ -315,7 +322,7 @@ If anyone wants to swap items, flag a blocker I missed, or push back on a priori
 
 ---
 
-# 🆕 PR review queue snapshot (updated 2026-05-01)
+# 🆕 PR review queue snapshot (updated 2026-05-03)
 
 **Merged 2026-04-29:**
 - ✅ #118 — Charles — Mobile Sentry init (JS-side)
@@ -348,8 +355,52 @@ If anyone wants to swap items, flag a blocker I missed, or push back on a priori
 - ✅ #143 — Lawrence — RN 0.85.2 re-bump + jest-preset migration
 - ✅ #144 — Charles — Migrate cron monitoring from Better Stack heartbeats to Sentry Crons
 
+**Merged 2026-05-02 / 2026-05-03 (mobile critical-path + marketing launch):**
+- ✅ #139 — Lawrence — Mobile 403 `BG_LOCATION_REQUIRED` → two-stage location permission UX (replaces generic toast with soft-ask screen)
+- ✅ #140 — Lawrence — Real Apple Team ID `4K793ZW77F` in AASA + `DEVELOPMENT_TEAM` set in `mobile.xcodeproj` Release config
+- ✅ #145 — Charles — Drop orphan `notification_logs` + `push_tokens` tables (resolves prod schema drift before #147)
+- ✅ #147 — Zach — Push notifications backend: `push_tokens` + `notification_logs` schema, `POST /users/me/push-token` endpoint, sender service + 4 trigger crons (favorites filling/clearing, surge, events) at 15-min cadence
+- ✅ #148 — Lawrence — Persist `isGuest` across cold restarts via AsyncStorage (`@SharkPark:isGuest`)
+- ✅ #149 — Lawrence — Wire `ReportModal.onSubmit` → `POST /reports`; new `reportsApi.create`, throttle (429) + unauth (401) error classes, guest redirect to Profile tab
+- ✅ #161 — Charles — **SharkPark rebrand + sharkpark.app marketing site.** Bundle ID `com.sharkpark.mobile` → `app.sharkpark.mobile`, full iOS/Android icon regen, amber-500 theme, Astro 5 + Tailwind v4 marketing site (6 pages), AASA + assetlinks hosted at apex.
+- ✅ #166–#170 — Charles — Marketing CI cascade fixes (workflow path filters, build env, Cloudflare Workers Static Assets migration from Pages, custom domain attach, www→apex 301)
+- ✅ #171 — Charles — Marketing site: normalize trailing slash on active-nav comparison (insufficient — followed up by #172)
+- ✅ #172 — Charles — Marketing site: strip `.html` from build-time `Astro.url.pathname` so active-nav state actually works under `build.format: 'file'`; CSP allows Cloudflare Web Analytics (`static.cloudflareinsights.com` script-src, `cloudflareinsights.com` connect-src)
+
+**Merged 2026-05-03 / 2026-05-04 (stability + scraper cluster):**
+- ✅ #146 — Ly — Reports → reliability score loop
+- ✅ #173 — Charles — Weather: NWS migration + long-term forecast cron + retention
+- ✅ #176 — Charles — Stability cluster (cron VM 2 GB, cold-start health-check grace, pg connect timeout, idempotent pool teardown, Sentry 4xx noise)
+- ✅ #177 — Charles — `min_machines_running = 1` (warm app machine, kills cold-start latency on first request)
+- ✅ #152 — Zach — Campus event scraper + lot metadata enrichment (concept3d polygons, building footprints/categories, advisories, sports scraper, weekly prune cron)
+
 **Still open:**
-- (No other PRs open as of 2026-05-01.)
+- #150 (Lawrence) — superseded by #161, **close without merging**.
+- #151 (Ly) — MLflow R2 Registry. Awaiting review. **Unblocks `predict-all-lots.ts` cron.**
+- #160 (Lawrence) — force-update screen on launch. Awaiting review. **Soft-blocked on PR #175 (Zach's `GET /min-version`).**
+- #163 (Zach) — analytics endpoints (`/lots/:id/trends`, `/lots/utilization`). Awaiting review.
+- #174 (Zach) — tier throttling + `/me/forecast` + reliability scoring (covers 3 backlog items in one PR).
+- #175 (Zach) — `GET /min-version` endpoint. Awaiting review. **Unblocks PR #160.**
+- #178 (Zach) — GDPR/CCPA data export `/me/data`. Awaiting review.
+- #179 (Lawrence) — service-coverage audit, +34 tests for `users` / `carBluetooth` / `contributor`. Awaiting review.
+- #180 (Charles) — events bulk-summary endpoint + sports-scraper fixes + mobile event polish. Awaiting review.
+- #164, #165, #190 (dependabot) — Astro `apps/marketing` major bump (5.18 → 6.1.6 / 6.2.2). Needs migration check.
+- #155, #156, #162, #181, #182, #184, #185, #186 (dependabot) — ML deps (gitpython, mako, uv group, pandas, pytest, pytest-cov, cuid2, fastapi).
+- #183 (dependabot) — GitHub Actions group, 3 updates.
+- #187 (dependabot) — npm minor-and-patch group, 7 updates.
+- #188 (dependabot) — TypeScript 5.9 → 6.0 (root). Needs verification across all packages.
+- #189 (dependabot) — `@react-native-async-storage/async-storage` 2.2 → 3.0 (major bump — verify guest-mode persistence still works after #148).
+
+**Direct-to-main commits (not in PR list):**
+- `14c7308` + `c1ff4ad` (Zach) — **`docs/privacy-data-inventory.md` landed.** App Store privacy labels + Play data safety form are now unblocked for Lawrence.
+- `a40eddb` (Lawrence, 2026-05-02) — *force-update screen scaffolding* (later promoted to PR #160 for review).
+- `c071caa` (Lawrence, 2026-05-02) — **assetlinks hardening per PR feedback** (drop debug fingerprint, runbook expansion, CI regex). See Recently shipped.
+- `c7c5eb6` (Lawrence) — initial `assetlinks.json` for App Links autoVerify.
+- `e6485fb` (Zach, merged via #147) — push notifications backend.
+- `e8bd7b0` (Zach) — `POST /contributor/revoke` for immediate permission revocation.
+- `88a594c` (Zach) — redact live occupancy for non-contributors + 24h permission grant.
+- `c3b70aa` (Charles, via #137) — remove `EventImpact` forecasting layer.
+- `7d1d358` (Charles, 2026-05-03) — marketing copy/legal/a11y polish. See Recently shipped.
 
 ---
 

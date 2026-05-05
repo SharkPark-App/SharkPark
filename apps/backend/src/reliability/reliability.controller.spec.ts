@@ -21,36 +21,43 @@ describe('ReliabilityController', () => {
         name: 'penetrationRate',
         rawValue: 0.7,
         normalizedValue: 0.93,
-        weight: 0.35,
-        weightedScore: 32.55,
+        weight: 0.3,
+        weightedScore: 27.9,
       },
       dataFreshness: {
         name: 'dataFreshness',
         rawValue: 5,
         normalizedValue: 0.83,
-        weight: 0.25,
-        weightedScore: 20.75,
+        weight: 0.21,
+        weightedScore: 17.43,
       },
       eventFrequency: {
         name: 'eventFrequency',
         rawValue: 20,
         normalizedValue: 0.67,
-        weight: 0.2,
-        weightedScore: 13.4,
+        weight: 0.17,
+        weightedScore: 11.39,
       },
       sampleSize: {
         name: 'sampleSize',
         rawValue: 12,
         normalizedValue: 1,
-        weight: 0.15,
-        weightedScore: 15,
+        weight: 0.13,
+        weightedScore: 13,
       },
       historicalAccuracy: {
         name: 'historicalAccuracy',
         rawValue: 0.5,
         normalizedValue: 0.5,
-        weight: 0.05,
-        weightedScore: 2.5,
+        weight: 0.04,
+        weightedScore: 2,
+      },
+      userReports: {
+        name: 'User Reports',
+        rawValue: 0,
+        normalizedValue: 1,
+        weight: 0.15,
+        weightedScore: 15,
       },
     },
   };
@@ -62,11 +69,12 @@ describe('ReliabilityController', () => {
   ];
 
   const mockWeights = {
-    penetrationRate: 0.35,
-    dataFreshness: 0.25,
-    eventFrequency: 0.2,
-    sampleSize: 0.15,
-    historicalAccuracy: 0.05,
+    penetrationRate: 0.3,
+    dataFreshness: 0.21,
+    eventFrequency: 0.17,
+    sampleSize: 0.13,
+    historicalAccuracy: 0.04,
+    userReports: 0.15,
   };
 
   const mockThresholds = {
@@ -76,6 +84,8 @@ describe('ReliabilityController', () => {
     freshnessWindowMinutes: 30,
     eventFrequencyTarget: 30,
     sampleSizeTarget: 10,
+    userReportsTarget: 5,
+    userReportsWindowMinutes: 60,
   };
 
   beforeEach(async () => {

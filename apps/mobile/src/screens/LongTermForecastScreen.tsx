@@ -13,8 +13,8 @@ import { HourlyChart } from '../components/HourlyChart';
 import { lotsApi } from '../services/api';
 import { useLotsList } from '../hooks/useLotData';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
-import { upcomingEvents } from '../data/mockEvents';
 import { EventBanner } from '../components/EventBanner';
+import { useEvents } from '../hooks/useEvents';
 
 const DEFAULT_LOT = 'G6';
 const LOT_ORDER = ['G', 'E'];
@@ -59,13 +59,10 @@ const LongTermForecastScreen: React.FC = () => {
   const [selectedLot, setSelectedLot] = useState(DEFAULT_LOT);
   const [lotPickerOpen, setLotPickerOpen] = useState(false);
 
+  const { events: lotEvents } = useEvents(selectedLot);
+
   const hasEvent = (date: Date) =>
-    upcomingEvents.some(
-      e =>
-        (e.affectedLots.includes('all') ||
-          e.affectedLots.includes(selectedLot)) &&
-        e.date.toDateString() === date.toDateString(),
-    );
+    lotEvents.some(e => e.date.toDateString() === date.toDateString());
 
   useEffect(() => {
     AsyncStorage.getItem('selectedLot').then(saved => {
@@ -91,13 +88,10 @@ const LongTermForecastScreen: React.FC = () => {
 
   const selectedDayEvents = useMemo(() => {
     const selectedDate = days[selectedDayIndex];
-    return upcomingEvents.filter(
-      e =>
-        e.date.toDateString() === selectedDate.toDateString() &&
-        (e.affectedLots.includes('all') ||
-          e.affectedLots.includes(selectedLot)),
+    return lotEvents.filter(
+      e => e.date.toDateString() === selectedDate.toDateString(),
     );
-  }, [days, selectedDayIndex, selectedLot]);
+  }, [days, selectedDayIndex, lotEvents]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>

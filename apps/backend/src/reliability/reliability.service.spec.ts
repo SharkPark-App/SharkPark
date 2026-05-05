@@ -30,9 +30,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 15,
           uniqueDevicesInLastHour: 25,
           historicalAccuracy: 0.9,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-1', input);
+        const result = service.computeReliability('lot-1', input, undefined, undefined, 'AUTHED');
 
         expect(result.confidence).toBe('HIGH');
         expect(result.score).toBeGreaterThanOrEqual(70);
@@ -46,9 +47,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 5,
           uniqueDevicesInLastHour: 10,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-2', input);
+        const result = service.computeReliability('lot-2', input, undefined, undefined, 'AUTHED');
 
         expect(result.confidence).toBe('MEDIUM');
         expect(result.score).toBeGreaterThanOrEqual(40);
@@ -62,9 +64,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 2,
           uniqueDevicesInLastHour: 2,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-3', input);
+        const result = service.computeReliability('lot-3', input, undefined, undefined, 'AUTHED');
 
         expect(result.confidence).toBe('LOW');
         expect(result.score).toBeLessThan(40);
@@ -79,9 +82,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 5,
           uniqueDevicesInLastHour: 5,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-cold-1', input);
+        const result = service.computeReliability('lot-cold-1', input, undefined, undefined, 'AUTHED');
         expect(result.isColdStart).toBe(true);
         expect(result.explanation).toContain('Limited data');
       });
@@ -93,9 +97,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 1, // < 2 events
           uniqueDevicesInLastHour: 1,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-cold-2', input);
+        const result = service.computeReliability('lot-cold-2', input, undefined, undefined, 'AUTHED');
         expect(result.isColdStart).toBe(true);
       });
 
@@ -106,9 +111,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 5,
           uniqueDevicesInLastHour: 2, // < 3 devices
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-cold-3', input);
+        const result = service.computeReliability('lot-cold-3', input, undefined, undefined, 'AUTHED');
         expect(result.isColdStart).toBe(true);
       });
 
@@ -119,9 +125,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-cold-4', input);
+        const result = service.computeReliability('lot-cold-4', input, undefined, undefined, 'AUTHED');
         expect(result.isColdStart).toBe(true);
       });
 
@@ -132,9 +139,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 8,
           uniqueDevicesInLastHour: 6,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-warm', input);
+        const result = service.computeReliability('lot-warm', input, undefined, undefined, 'AUTHED');
         expect(result.isColdStart).toBe(false);
       });
     });
@@ -147,15 +155,16 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-pen', input);
+        const result = service.computeReliability('lot-pen', input, undefined, undefined, 'AUTHED');
         const penFactor = result.factors.penetrationRate;
 
         expect(penFactor.rawValue).toBe(0.25);
         expect(penFactor.normalizedValue).toBe(0.5);
-        expect(penFactor.weight).toBe(0.35);
-        expect(penFactor.weightedScore).toBeCloseTo(0.175, 3);
+        expect(penFactor.weight).toBe(0.3);
+        expect(penFactor.weightedScore).toBeCloseTo(0.15, 3);
       });
 
       it('should cap penetration rate factor at 1.0', () => {
@@ -165,9 +174,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-high-pen', input);
+        const result = service.computeReliability('lot-high-pen', input, undefined, undefined, 'AUTHED');
         expect(result.factors.penetrationRate.normalizedValue).toBe(1.0);
       });
 
@@ -178,15 +188,16 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-fresh', input);
+        const result = service.computeReliability('lot-fresh', input, undefined, undefined, 'AUTHED');
         const freshFactor = result.factors.dataFreshness;
 
         expect(freshFactor.rawValue).toBe(30);
         expect(freshFactor.normalizedValue).toBe(0.5);
-        expect(freshFactor.weight).toBe(0.25);
-        expect(freshFactor.weightedScore).toBeCloseTo(0.125, 3);
+        expect(freshFactor.weight).toBe(0.21);
+        expect(freshFactor.weightedScore).toBeCloseTo(0.105, 3);
       });
 
       it('should return 0 freshness for stale data', () => {
@@ -196,9 +207,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-stale', input);
+        const result = service.computeReliability('lot-stale', input, undefined, undefined, 'AUTHED');
         expect(result.factors.dataFreshness.normalizedValue).toBe(0);
       });
 
@@ -209,9 +221,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 5, // 50% of 10 target
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-freq', input);
+        const result = service.computeReliability('lot-freq', input, undefined, undefined, 'AUTHED');
         const freqFactor = result.factors.eventFrequency;
 
         expect(freqFactor.rawValue).toBe(5);
@@ -225,9 +238,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 10, // 50% of 20 target
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-sample', input);
+        const result = service.computeReliability('lot-sample', input, undefined, undefined, 'AUTHED');
         const sampleFactor = result.factors.sampleSize;
 
         expect(sampleFactor.rawValue).toBe(10);
@@ -241,9 +255,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-no-hist', input);
+        const result = service.computeReliability('lot-no-hist', input, undefined, undefined, 'AUTHED');
         const histFactor = result.factors.historicalAccuracy;
 
         expect(histFactor.rawValue).toBe(-1); // Indicates no data
@@ -257,9 +272,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: 0.85,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-hist', input);
+        const result = service.computeReliability('lot-hist', input, undefined, undefined, 'AUTHED');
         expect(result.factors.historicalAccuracy.normalizedValue).toBe(0.85);
       });
     });
@@ -272,12 +288,14 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 10, // 100% frequency
           uniqueDevicesInLastHour: 20, // 100% sample
           historicalAccuracy: 1.0, // 100% accuracy
+          uniqueReportersInWindow: 0, // neutral 0.5 (absence of reports is no signal)
         };
 
-        const result = service.computeReliability('lot-perfect', input);
+        const result = service.computeReliability('lot-perfect', input, undefined, undefined, 'AUTHED');
 
-        // All factors at max = score of 100
-        expect(result.score).toBe(100);
+        // Five factors at max + userReports neutral (0.5 * weight 0.15 = 0.075)
+        // -> 1 * 0.85 + 0.5 * 0.15 = 0.925 -> 93 after rounding
+        expect(result.score).toBe(93);
         expect(result.confidence).toBe('HIGH');
       });
 
@@ -288,9 +306,12 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: 0,
+          // Reporters at the target zeroes out the userReports factor too,
+          // matching the test's "all zero inputs" intent.
+          uniqueReportersInWindow: 5,
         };
 
-        const result = service.computeReliability('lot-zero', input);
+        const result = service.computeReliability('lot-zero', input, undefined, undefined, 'AUTHED');
         expect(result.score).toBe(0);
         expect(result.confidence).toBe('LOW');
       });
@@ -304,9 +325,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 1,
           uniqueDevicesInLastHour: 1,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-cold', input);
+        const result = service.computeReliability('lot-cold', input, undefined, undefined, 'AUTHED');
         expect(result.explanation).toContain('Limited data');
       });
 
@@ -317,9 +339,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 15,
           uniqueDevicesInLastHour: 25,
           historicalAccuracy: 0.9,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-high', input);
+        const result = service.computeReliability('lot-high', input, undefined, undefined, 'AUTHED');
         expect(result.explanation).toContain('High confidence');
       });
 
@@ -330,9 +353,10 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 2, // This is the weakest
           uniqueDevicesInLastHour: 10,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
-        const result = service.computeReliability('lot-med', input);
+        const result = service.computeReliability('lot-med', input, undefined, undefined, 'AUTHED');
         expect(result.explanation).toContain('Moderate confidence');
       });
     });
@@ -345,6 +369,7 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 0,
           uniqueDevicesInLastHour: 0,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
         const customWeights: ReliabilityWeights = {
@@ -353,12 +378,15 @@ describe('ReliabilityService', () => {
           eventFrequency: 0,
           sampleSize: 0,
           historicalAccuracy: 0,
+          userReports: 0,
         };
 
         const result = service.computeReliability(
           'lot-custom',
           input,
           customWeights,
+          undefined,
+          'AUTHED',
         );
 
         // Score should be 100% since only penetration rate matters and it's at max
@@ -372,6 +400,7 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 5,
           uniqueDevicesInLastHour: 10,
           historicalAccuracy: null,
+          uniqueReportersInWindow: 0,
         };
 
         const customThresholds: ReliabilityThresholds = {
@@ -381,6 +410,8 @@ describe('ReliabilityService', () => {
           freshnessWindowMinutes: 60,
           eventFrequencyTarget: 10,
           sampleSizeTarget: 20,
+          userReportsTarget: 5,
+          userReportsWindowMinutes: 60,
         };
 
         const result = service.computeReliability(
@@ -388,6 +419,7 @@ describe('ReliabilityService', () => {
           input,
           undefined,
           customThresholds,
+          'AUTHED',
         );
 
         // Should be HIGH with lower threshold
@@ -404,6 +436,7 @@ describe('ReliabilityService', () => {
         eventsInLastHour: 5,
         uniqueDevicesInLastHour: 10,
         historicalAccuracy: null,
+        uniqueReportersInWindow: 0,
       };
 
       const result = service.computeReliabilitySummary('lot-summary', input);
@@ -429,6 +462,7 @@ describe('ReliabilityService', () => {
             eventsInLastHour: 10,
             uniqueDevicesInLastHour: 15,
             historicalAccuracy: null,
+            uniqueReportersInWindow: 0,
           },
         },
         {
@@ -439,6 +473,7 @@ describe('ReliabilityService', () => {
             eventsInLastHour: 2,
             uniqueDevicesInLastHour: 3,
             historicalAccuracy: null,
+            uniqueReportersInWindow: 0,
           },
         },
       ];
@@ -449,6 +484,67 @@ describe('ReliabilityService', () => {
       expect(results[0].lotId).toBe('lot-1');
       expect(results[1].lotId).toBe('lot-2');
       expect(results[0].score).toBeGreaterThan(results[1].score);
+    });
+  });
+
+  describe('user reports factor', () => {
+    const baseHighInput: ReliabilityInput = {
+      penetrationRate: 0.6,
+      minutesSinceLastEvent: 5,
+      eventsInLastHour: 15,
+      uniqueDevicesInLastHour: 25,
+      historicalAccuracy: 0.9,
+      uniqueReportersInWindow: 0,
+    };
+
+    it('returns a neutral 0.5 when no reporters (absence is no signal)', () => {
+      const result = service.computeReliability('lot-no-reports', baseHighInput);
+      expect(result.factors.userReports.rawValue).toBe(0);
+      expect(result.factors.userReports.normalizedValue).toBe(0.5);
+    });
+
+    it('drops normalized value as distinct reporters approach the target', () => {
+      const result = service.computeReliability('lot-some-reports', {
+        ...baseHighInput,
+        uniqueReportersInWindow: 2,
+      });
+      expect(result.factors.userReports.normalizedValue).toBeCloseTo(0.6, 5);
+    });
+
+    it('clamps normalized value to 0 once reporters meet or exceed the target', () => {
+      const result = service.computeReliability('lot-many-reports', {
+        ...baseHighInput,
+        uniqueReportersInWindow: 50,
+      });
+      expect(result.factors.userReports.normalizedValue).toBe(0);
+    });
+
+    it('moves a HIGH lot lower when reports accumulate', () => {
+      const clean = service.computeReliability('lot-clean', baseHighInput);
+      const reported = service.computeReliability('lot-reported', {
+        ...baseHighInput,
+        uniqueReportersInWindow: 5,
+      });
+      // userReports weight 0.15: clean=neutral 0.5 -> reported=0
+      // delta in factor = 0.5, weighted delta = 0.5 * 0.15 = 0.075 -> ~7-8 pts
+      expect(clean.score - reported.score).toBeGreaterThanOrEqual(6);
+      expect(clean.score - reported.score).toBeLessThanOrEqual(9);
+    });
+
+    it('uses report-aware copy at MEDIUM when user reports are the weakest factor', () => {
+      // Push the sensor factors down enough to land in MEDIUM, then make
+      // user reports the weakest of the lot (5 reporters = normalized 0).
+      const result = service.computeReliability('lot-report-weakest', {
+        penetrationRate: 0.4,
+        minutesSinceLastEvent: 15,
+        eventsInLastHour: 8,
+        uniqueDevicesInLastHour: 16,
+        historicalAccuracy: 0.7,
+        uniqueReportersInWindow: 5,
+      }, undefined, undefined, 'AUTHED');
+
+      expect(result.confidence).toBe('MEDIUM');
+      expect(result.explanation.toLowerCase()).toContain('user reports');
     });
   });
 
@@ -465,7 +561,7 @@ describe('ReliabilityService', () => {
       const weights2 = service.getDefaultWeights();
 
       weights1.penetrationRate = 0.99;
-      expect(weights2.penetrationRate).toBe(0.35);
+      expect(weights2.penetrationRate).toBe(0.3);
     });
   });
 
@@ -490,9 +586,10 @@ describe('ReliabilityService', () => {
         eventsInLastHour: -5, // Invalid
         uniqueDevicesInLastHour: -3, // Invalid
         historicalAccuracy: -0.5, // Invalid
+        uniqueReportersInWindow: 0,
       };
 
-      const result = service.computeReliability('lot-negative', input);
+      const result = service.computeReliability('lot-negative', input, undefined, undefined, 'AUTHED');
 
       // Should clamp to 0
       expect(result.factors.penetrationRate.normalizedValue).toBe(0);
@@ -506,9 +603,10 @@ describe('ReliabilityService', () => {
         eventsInLastHour: 1000,
         uniqueDevicesInLastHour: 500,
         historicalAccuracy: 1.5, // Invalid >1
+        uniqueReportersInWindow: 0,
       };
 
-      const result = service.computeReliability('lot-large', input);
+      const result = service.computeReliability('lot-large', input, undefined, undefined, 'AUTHED');
 
       // Should cap at normalized 1.0
       expect(result.factors.penetrationRate.normalizedValue).toBeLessThanOrEqual(
@@ -530,6 +628,7 @@ describe('ReliabilityService', () => {
         eventsInLastHour: 10,
         uniqueDevicesInLastHour: 20,
         historicalAccuracy: 1.0,
+        uniqueReportersInWindow: 0,
       };
 
       const badWeights: ReliabilityWeights = {
@@ -537,7 +636,8 @@ describe('ReliabilityService', () => {
         dataFreshness: 0.5,
         eventFrequency: 0.5,
         sampleSize: 0.5,
-        historicalAccuracy: 0.5, // Sum = 2.5
+        historicalAccuracy: 0.5,
+        userReports: 0.5, // Sum = 3.0
       };
 
       // Should normalize and still produce valid result
@@ -545,6 +645,52 @@ describe('ReliabilityService', () => {
 
       expect(result.score).toBeGreaterThanOrEqual(0);
       expect(result.score).toBeLessThanOrEqual(100);
+    });
+  });
+
+  describe('source weighting', () => {
+    const goodInput: ReliabilityInput = {
+      penetrationRate: 0.6, // above default target=0.5 → ANONYMOUS multiplier saturates at 0.6
+      minutesSinceLastEvent: 0,
+      eventsInLastHour: 10,
+      uniqueDevicesInLastHour: 20,
+      historicalAccuracy: 1.0,
+      uniqueReportersInWindow: 0,
+    };
+
+    it('defaults to AUTHED (1.0 multiplier) so existing callers preserve their score', () => {
+      const explicit = service.computeReliability('lot-a', goodInput, undefined, undefined, 'AUTHED');
+      const defaulted = service.computeReliability('lot-a', goodInput);
+      expect(defaulted.score).toBe(explicit.score);
+      expect(defaulted.score).toBeGreaterThan(0);
+    });
+
+    it('zeroes the score for FLAGGED sources regardless of factor strength', () => {
+      const result = service.computeReliability('lot-bad', goodInput, undefined, undefined, 'FLAGGED');
+      expect(result.score).toBe(0);
+      expect(result.confidence).toBe('LOW');
+    });
+
+    it('scales ANONYMOUS sources to 0.6× of authed when penetration is at/above target', () => {
+      const authed = service.computeReliability('lot-x', goodInput, undefined, undefined, 'AUTHED');
+      const anon = service.computeReliability('lot-x', goodInput, undefined, undefined, 'ANONYMOUS');
+      // 0.3 + 0.3 * min(1, 0.6/0.5) = 0.6 (saturated)
+      expect(anon.score).toBe(Math.round(authed.score * 0.6));
+    });
+
+    it('scales ANONYMOUS sources to 0.3× of authed when penetration is zero', () => {
+      const lowPen = { ...goodInput, penetrationRate: 0 };
+      const authed = service.computeReliability('lot-y', lowPen, undefined, undefined, 'AUTHED');
+      const anon = service.computeReliability('lot-y', lowPen, undefined, undefined, 'ANONYMOUS');
+      // 0.3 + 0.3 * 0 = 0.3
+      expect(anon.score).toBe(Math.round(authed.score * 0.3));
+    });
+
+    it('forwards sourceType through computeReliabilitySummary', () => {
+      const flagged = service.computeReliabilitySummary('lot-z', goodInput, 'FLAGGED');
+      expect(flagged.score).toBe(0);
+      const authed = service.computeReliabilitySummary('lot-z', goodInput, 'AUTHED');
+      expect(authed.score).toBeGreaterThan(0);
     });
   });
 });
