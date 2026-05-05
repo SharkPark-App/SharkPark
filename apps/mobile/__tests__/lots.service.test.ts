@@ -320,7 +320,7 @@ describe('LotsService', () => {
       lot_id: 'G1',
       capacity: 100,
       occupancy_rate: 0.5,
-      confidence: 'HIGH' as const,
+      metadata_confidence: 'HIGH' as const,
     } as unknown as ParkingLotResponse;
 
     it('should return backend predictions when available', async () => {
@@ -377,7 +377,7 @@ describe('LotsService', () => {
     it('should generate 15 hourly forecasts', () => {
       const lot = {
         occupancy_rate: 0.5,
-        confidence: 'MEDIUM' as const,
+        metadata_confidence: 'MEDIUM' as const,
         capacity: 100,
       } as unknown as ParkingLotResponse;
 
@@ -392,8 +392,8 @@ describe('LotsService', () => {
     });
 
     it('should map confidence to accuracy', () => {
-      const low = lotsApi.generateForecast({ occupancy_rate: 0.5, confidence: 'LOW', capacity: 100 } as unknown as ParkingLotResponse);
-      const high = lotsApi.generateForecast({ occupancy_rate: 0.5, confidence: 'HIGH', capacity: 100 } as unknown as ParkingLotResponse);
+      const low = lotsApi.generateForecast({ occupancy_rate: 0.5, metadata_confidence: 'LOW', capacity: 100 } as unknown as ParkingLotResponse);
+      const high = lotsApi.generateForecast({ occupancy_rate: 0.5, metadata_confidence: 'HIGH', capacity: 100 } as unknown as ParkingLotResponse);
 
       expect(low[0].accuracy).toBe(70);
       expect(high[0].accuracy).toBe(95);

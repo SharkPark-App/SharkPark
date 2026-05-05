@@ -42,7 +42,7 @@ describe('API Configuration', () => {
     expect(ENDPOINTS.LOTS_SUMMARY).toBe('/lots/summary');
     expect(ENDPOINTS.USERS).toBe('/users');
     expect(ENDPOINTS.WEATHER).toBe('/weather');
-    expect(ENDPOINTS.EVENTS).toBe('/events');
+    expect(ENDPOINTS.EVENTS_FOR_LOT('G1')).toBe('/events/for-lot/G1');
     expect(ENDPOINTS.OCCUPANCY_EVENTS).toBe('/occupancy-events');
   });
 

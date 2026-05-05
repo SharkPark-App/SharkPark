@@ -1,9 +1,11 @@
 /** ReliabilityMeter - Visual indicator for occupancy data confidence level */
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, ViewStyle, TextStyle } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { Text } from './CustomText';
 import { ConfidenceLevel, CONFIDENCE_COLORS, CONFIDENCE_LABELS } from '../types/reliability';
 import { TYPOGRAPHY } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export interface ReliabilityMeterProps {
   confidence: ConfidenceLevel;
@@ -151,6 +153,90 @@ export const ReliabilityBar: React.FC<{
     </View>
   );
 };
+
+/**
+ * Compact corner annotation for data quality.
+ *
+ * Designed to sit in a corner of the lot header card as a subtle
+ * footnote on the occupancy reading — not as its own section. Visual:
+ * just a small colored dot + lowercase "<level> data" + chevron, in
+ * muted secondary type. Reads as "this number is <quality>" rather than
+ * a separate status. Tap opens the full reliability detail modal.
+ */
+export const ReliabilityRow: React.FC<{
+  confidence: ConfidenceLevel;
+  isColdStart?: boolean;
+  onPress?: () => void;
+  style?: ViewStyle;
+}> = ({ confidence, isColdStart = false, onPress, style }) => {
+  const { colors } = useTheme();
+  const dotColor = CONFIDENCE_COLORS[confidence];
+  const description = getConfidenceDescription(confidence, isColdStart);
+
+  const content = (
+    <>
+      <View style={[rowStyles.dot, { backgroundColor: dotColor }]} />
+      <Text style={[rowStyles.value, { color: colors.darkGray }]}>
+        {description}
+      </Text>
+      {onPress && (
+        <Icon
+          name="chevron-up"
+          size={12}
+          color={colors.darkGray}
+          style={rowStyles.chevron}
+        />
+      )}
+    </>
+  );
+
+  const containerStyle = [rowStyles.row, style];
+
+  if (onPress) {
+    return (
+      <TouchableOpacity
+        style={containerStyle}
+        onPress={onPress}
+        activeOpacity={0.6}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={`Data quality: ${description}`}
+        accessibilityHint="Tap to see data quality details"
+      >
+        {content}
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View
+      style={containerStyle}
+      accessibilityLabel={`Data quality: ${description}`}
+    >
+      {content}
+    </View>
+  );
+};
+
+const rowStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  } as ViewStyle,
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  } as ViewStyle,
+  value: {
+    fontSize: 11,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+  } as TextStyle,
+  chevron: {
+    marginLeft: 1,
+  } as TextStyle,
+});
 
 const styles = StyleSheet.create({
   container: {
