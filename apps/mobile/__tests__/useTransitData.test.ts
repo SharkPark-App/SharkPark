@@ -15,7 +15,7 @@ const mockTransitService = TransitService as jest.Mocked<typeof TransitService>;
 
 describe('useTransitData hook', () => {
   const mockRoutes = [{ id: 'r1', name: 'Route One', shortName: 'R1', color: '#00ff00', status: 'On Time', coordinates: [] }];
-  const mockStops = [{ id: 's1', name: 'Student Union', latitude: 33.0, longitude: -118.0, routeId: 'r1', color: '#00ff00' }];
+  const mockStops = [{ id: 's1', name: 'Student Union', latitude: 33.0, longitude: -118.0, routeIds: ['r1'], color: '#00ff00' }];
   const mockShuttles = [
     { id: 'sh1', busName: 'Shuttle 1', color: '#ff0000', routeId: 'r1', route: 'Route One', latitude: 33.0, longitude: -118.0, heading: 0, paxLoad: 0, capacity: 30 }
   ];
@@ -115,7 +115,7 @@ describe('useTransitData hook', () => {
     });
   });
 
-  it('inserts a placeholder for unknown shuttles and refreshes static metadata', async () => {
+  it('suppresses unknown shuttles — socket updates for unknown IDs are dropped silently', async () => {
     mockTransitService.getRoutesAndStops.mockResolvedValueOnce({ routes: [], stops: [] });
     mockTransitService.getLiveShuttles.mockResolvedValueOnce(mockShuttles as any);
 
@@ -125,10 +125,7 @@ describe('useTransitData hook', () => {
       expect(result.current.shuttles).toHaveLength(1);
     });
 
-    // A second call from the placeholder-triggered refresh
-    mockTransitService.getLiveShuttles.mockResolvedValueOnce(mockShuttles as any);
-
-    // Sending an ID ('sh999') that wasn't in mockShuttles
+    // Socket update for an ID not in the static snapshot
     const phantomUpdate = [{
       id: 'sh999',
       latitude: 50.0,
@@ -141,24 +138,9 @@ describe('useTransitData hook', () => {
       socketHandlers['shuttle_update'](phantomUpdate);
     });
 
-    // Placeholder added so the unknown shuttle still renders on the map
-    expect(result.current.shuttles).toHaveLength(2);
-    expect(result.current.shuttles[1]).toMatchObject({
-      id: 'sh999',
-      busName: 'Shuttle',
-      route: '',
-      routeId: '',
-      latitude: 50.0,
-      longitude: -50.0,
-      heading: 90,
-      paxLoad: 7,
-      capacity: 0,
-    });
-
-    // And we trigger a static-metadata refresh so the placeholder gets enriched
-    await waitFor(() => {
-      expect(mockTransitService.getLiveShuttles).toHaveBeenCalledTimes(2);
-    });
+    // Unknown shuttle is NOT added — it stays hidden until static metadata includes it
+    expect(result.current.shuttles).toHaveLength(1);
+    expect(mockTransitService.getLiveShuttles).toHaveBeenCalledTimes(1);
   });
 
   it('logs a warning on socket connect_error', () => {

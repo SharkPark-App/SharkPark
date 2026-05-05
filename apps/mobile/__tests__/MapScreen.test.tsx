@@ -72,7 +72,7 @@ jest.mock('../src/hooks/useLotData', () => ({
 jest.mock('../src/hooks/useTransitData', () => ({
   useTransitData: () => ({
     routes: [{ id: 'r1', color: '#ff0000', coordinates: [{ latitude: 33.78, longitude: -118.11 }] }],
-    stops: [{ id: 's1', name: 'Student Union', latitude: 33.78, longitude: -118.11, color: '#ff0000' }],
+    stops: [{ id: 's1', name: 'Student Union', latitude: 33.78, longitude: -118.11, routeIds: ['r1'], color: '#ff0000' }],
     shuttles: [{ id: 'sh1', routeId: 'r1', latitude: 33.78, longitude: -118.11, heading: 90 }],
   }),
 }));
@@ -90,13 +90,21 @@ jest.mock('react-native-maps', () => {
   const { View } = require('react-native');
   const MockMapView = (props: any) => <View testID="map-view" {...props}>{props.children}</View>;
   const MockMarker = (props: any) => <View testID="marker" {...props}>{props.children}</View>;
+  MockMarker.Animated = (props: any) => <View testID="animated-marker" {...props}>{props.children}</View>;
   const MockPolyline = (props: any) => <View testID="polyline" {...props} />;
-  
+  const MockPolygon = (props: any) => <View testID="polygon" {...props} />;
+  class AnimatedRegion {
+    constructor(coords: Record<string, unknown>) { Object.assign(this, coords); }
+    timing() { return { start: jest.fn() }; }
+  }
+
   return {
     __esModule: true,
     default: MockMapView,
     Marker: MockMarker,
     Polyline: MockPolyline,
+    Polygon: MockPolygon,
+    AnimatedRegion,
     PROVIDER_DEFAULT: 'default',
   };
 });

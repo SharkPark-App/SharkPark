@@ -136,7 +136,7 @@ describe('ShuttleTrackerService', () => {
       expect(stops[0]).toMatchObject({
         id: 'stop-1',
         name: 'Main Station',
-        routeId: 'route-1',
+        routeIds: ['route-1'],
       });
 
       expect(mockRedis.set).toHaveBeenCalledWith('transit:routes', routes, expect.any(Number));
@@ -162,7 +162,7 @@ describe('ShuttleTrackerService', () => {
       await service.fetchRoutesAndStops();
 
       expect(service.getCurrentStops()).toHaveLength(0);
-      expect(loggerWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Dropping malformed stop data'));
+      expect(loggerWarnSpy).toHaveBeenCalledWith(expect.stringContaining('malformed stop'));
     });
 
     it('should log an error if the HTTP request fails', async () => {
@@ -256,7 +256,7 @@ describe('ShuttleTrackerService', () => {
       await service.fetchShuttles();
 
       expect(service.getCurrentShuttles()).toHaveLength(0);
-      expect(loggerWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Dropping malformed shuttle data'));
+      expect(loggerWarnSpy).toHaveBeenCalledWith(expect.stringContaining('malformed shuttle'));
     });
 
     it('should log an error if the shuttle request fails', async () => {

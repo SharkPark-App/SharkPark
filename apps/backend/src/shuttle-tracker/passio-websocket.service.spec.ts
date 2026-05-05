@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import WebSocket from 'ws';
 import { PassioWebSocketService } from './passio-websocket.service';
 import { ShuttleTrackerGateway } from './shuttle-tracker.gateway';
+import { ShuttleTrackerService } from './shuttle-tracker.service';
 
 // Mock ws
 jest.mock('ws');
@@ -27,16 +28,24 @@ describe('PassioWebSocketService', () => {
     };
 
     (WebSocket as unknown as jest.Mock).mockImplementation(() => wsInstanceMock);
+    // Preserve the OPEN constant (auto-mock drops static numeric properties)
+    (WebSocket as any).OPEN = 1;
 
     // Mock gateway
     const mockGateway = {
       broadcastShuttles: jest.fn(),
     };
 
+    const mockShuttleService = {
+      applyLiveUpdates: jest.fn(),
+      refreshAllLastSeen: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PassioWebSocketService,
         { provide: ShuttleTrackerGateway, useValue: mockGateway },
+        { provide: ShuttleTrackerService, useValue: mockShuttleService },
       ],
     }).compile();
 
