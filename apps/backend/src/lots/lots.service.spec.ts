@@ -773,6 +773,8 @@ describe('LotsService', () => {
           avg_occupancy_rate: 0.55,
           avg_occupancy: 55,
           avg_available: 45,
+          avg_estimated_occupancy: 78,
+          avg_estimated_rate: 0.78,
           sample_count: BigInt(4),
         },
       ]);
@@ -782,7 +784,28 @@ describe('LotsService', () => {
       expect(result).toHaveLength(1);
       expect(result[0].hour).toBe('2026-04-25T08:00:00.000Z');
       expect(result[0].avg_occupancy_rate).toBe(0.55);
+      expect(result[0].avg_estimated_occupancy).toBe(78);
+      expect(result[0].avg_estimated_rate).toBe(0.78);
       expect(result[0].sample_count).toBe(4);
+    });
+
+    it('passes through null estimated fields for legacy snapshots', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLot);
+      prisma.$queryRaw.mockResolvedValue([
+        {
+          hour: new Date('2026-04-25T08:00:00Z'),
+          avg_occupancy_rate: 0.55,
+          avg_occupancy: 55,
+          avg_available: 45,
+          avg_estimated_occupancy: null,
+          avg_estimated_rate: null,
+          sample_count: BigInt(4),
+        },
+      ]);
+
+      const result = await service.getTrends('G1', 7);
+      expect(result[0].avg_estimated_occupancy).toBeNull();
+      expect(result[0].avg_estimated_rate).toBeNull();
     });
 
     it('returns empty array when no snapshots exist', async () => {
@@ -826,8 +849,8 @@ describe('LotsService', () => {
     it('returns per-lot utilization sorted descending', async () => {
       prisma.lot.findMany.mockResolvedValue(lots);
       prisma.occupancySnapshot.groupBy.mockResolvedValue([
-        { lot_id: 'uuid-1', _avg: { occupancy_rate: 0.72 }, _count: { id: 10 } },
-        { lot_id: 'uuid-2', _avg: { occupancy_rate: 0.40 }, _count: { id: 8 } },
+        { lot_id: 'uuid-1', _avg: { occupancy_rate: 0.72, estimated_occupancy: 85 }, _count: { id: 10 } },
+        { lot_id: 'uuid-2', _avg: { occupancy_rate: 0.40, estimated_occupancy: 48 }, _count: { id: 8 } },
       ]);
 
       const result = await service.getUtilization(30);
@@ -835,8 +858,30 @@ describe('LotsService', () => {
       expect(result).toHaveLength(2);
       expect(result[0].lot_id).toBe('G1');
       expect(result[0].avg_utilization).toBe(0.72);
+      // 85 / 100 = 0.85
+      expect(result[0].avg_estimated_utilization).toBe(0.85);
       expect(result[0].snapshot_count).toBe(10);
       expect(result[1].lot_id).toBe('E1');
+      // 48 / 80 = 0.6
+      expect(result[1].avg_estimated_utilization).toBe(0.6);
+    });
+
+    it('sorts by estimated utilization, falling back to raw rate for legacy rows', async () => {
+      prisma.lot.findMany.mockResolvedValue(lots);
+      prisma.occupancySnapshot.groupBy.mockResolvedValue([
+        // G1: only legacy data — no estimate available, raw rate 0.95
+        { lot_id: 'uuid-1', _avg: { occupancy_rate: 0.95, estimated_occupancy: null }, _count: { id: 10 } },
+        // E1: has estimate giving 0.50 fullness
+        { lot_id: 'uuid-2', _avg: { occupancy_rate: 0.30, estimated_occupancy: 40 }, _count: { id: 8 } },
+      ]);
+
+      const result = await service.getUtilization(30);
+
+      // G1 (raw 0.95 fallback) should outrank E1 (estimated 0.50)
+      expect(result[0].lot_id).toBe('G1');
+      expect(result[0].avg_estimated_utilization).toBeNull();
+      expect(result[1].lot_id).toBe('E1');
+      expect(result[1].avg_estimated_utilization).toBe(0.5);
     });
 
     it('sets avg_utilization to null for lots with no snapshots', async () => {
@@ -847,19 +892,21 @@ describe('LotsService', () => {
 
       expect(result).toHaveLength(2);
       expect(result[0].avg_utilization).toBeNull();
+      expect(result[0].avg_estimated_utilization).toBeNull();
       expect(result[0].snapshot_count).toBe(0);
     });
 
     it('sets avg_utilization to null when avg occupancy_rate is null', async () => {
       prisma.lot.findMany.mockResolvedValue(lots);
       prisma.occupancySnapshot.groupBy.mockResolvedValue([
-        { lot_id: 'uuid-1', _avg: { occupancy_rate: null }, _count: { id: 3 } },
+        { lot_id: 'uuid-1', _avg: { occupancy_rate: null, estimated_occupancy: null }, _count: { id: 3 } },
       ]);
 
       const result = await service.getUtilization(30);
 
       const g1 = result.find(r => r.lot_id === 'G1');
       expect(g1?.avg_utilization).toBeNull();
+      expect(g1?.avg_estimated_utilization).toBeNull();
       expect(g1?.snapshot_count).toBe(3);
     });
 

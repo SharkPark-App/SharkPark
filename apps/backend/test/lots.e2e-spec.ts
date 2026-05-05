@@ -243,6 +243,7 @@ describe('LotsController (e2e)', () => {
             expect(item).toHaveProperty('lot_type');
             expect(typeof item.capacity).toBe('number');
             expect(item).toHaveProperty('avg_utilization');
+            expect(item).toHaveProperty('avg_estimated_utilization');
             expect(typeof item.snapshot_count).toBe('number');
           }
         });
@@ -283,6 +284,8 @@ describe('LotsController (e2e)', () => {
             expect(typeof point.avg_occupancy_rate).toBe('number');
             expect(typeof point.avg_occupancy).toBe('number');
             expect(typeof point.avg_available).toBe('number');
+            expect(point).toHaveProperty('avg_estimated_occupancy');
+            expect(point).toHaveProperty('avg_estimated_rate');
             expect(typeof point.sample_count).toBe('number');
           }
         });

@@ -434,14 +434,18 @@ export class LotsService {
         avg_occupancy_rate: number;
         avg_occupancy: number;
         avg_available: number;
+        avg_estimated_occupancy: number | null;
+        avg_estimated_rate: number | null;
         sample_count: bigint;
       }>>`
         SELECT
           date_trunc('hour', timestamp) AS hour,
-          ROUND(AVG(occupancy_rate)::numeric, 3)::float8 AS avg_occupancy_rate,
-          ROUND(AVG(occupancy)::numeric, 1)::float8    AS avg_occupancy,
-          ROUND(AVG(available)::numeric, 1)::float8    AS avg_available,
-          COUNT(*)                                     AS sample_count
+          ROUND(AVG(occupancy_rate)::numeric, 3)::float8           AS avg_occupancy_rate,
+          ROUND(AVG(occupancy)::numeric, 1)::float8                AS avg_occupancy,
+          ROUND(AVG(available)::numeric, 1)::float8                AS avg_available,
+          ROUND(AVG(estimated_occupancy)::numeric, 1)::float8      AS avg_estimated_occupancy,
+          ROUND((AVG(estimated_occupancy) / NULLIF(${lot.capacity}::float8, 0))::numeric, 3)::float8 AS avg_estimated_rate,
+          COUNT(*)                                                 AS sample_count
         FROM occupancy_snapshots
         WHERE lot_id = ${lot.id} AND timestamp >= ${since}
         GROUP BY date_trunc('hour', timestamp)
@@ -453,6 +457,10 @@ export class LotsService {
         avg_occupancy_rate: Number(r.avg_occupancy_rate),
         avg_occupancy: Number(r.avg_occupancy),
         avg_available: Number(r.avg_available),
+        avg_estimated_occupancy:
+          r.avg_estimated_occupancy != null ? Number(r.avg_estimated_occupancy) : null,
+        avg_estimated_rate:
+          r.avg_estimated_rate != null ? Number(r.avg_estimated_rate) : null,
         sample_count: Number(r.sample_count),
       }));
     } catch (error) {
@@ -463,8 +471,15 @@ export class LotsService {
   }
 
   /**
-   * Returns per-lot average utilization (occupancy_rate) over the past N days.
-   * Lots with no snapshots in the range get avg_utilization: null.
+   * Returns per-lot average utilization over the past N days.
+   *
+   * Emits both the raw `avg_utilization` (device-coverage rate) and the
+   * penetration-corrected `avg_estimated_utilization` (true fullness proxy).
+   * Lots with no snapshots in the range get both averages as `null`; lots
+   * that have only legacy snapshots written before the penetration rollout
+   * keep `avg_utilization` populated and `avg_estimated_utilization` null.
+   * Sort order prefers `avg_estimated_utilization` and falls back to the raw
+   * rate so legacy rows still rank.
    */
   async getUtilization(rangeDays: number): Promise<LotUtilization[]> {
     try {
@@ -475,7 +490,7 @@ export class LotsService {
         this.prisma.occupancySnapshot.groupBy({
           by: ['lot_id'],
           where: { timestamp: { gte: since } },
-          _avg: { occupancy_rate: true },
+          _avg: { occupancy_rate: true, estimated_occupancy: true },
           _count: { id: true },
         }),
       ]);
@@ -486,16 +501,27 @@ export class LotsService {
         .map(lot => {
           const agg = aggMap.get(lot.id);
           const rate = agg?._avg.occupancy_rate;
+          const estOcc = agg?._avg.estimated_occupancy;
+          const estRate =
+            estOcc != null && lot.capacity > 0 ? estOcc / lot.capacity : null;
           return {
             lot_id: lot.lot_id,
             display_name: lot.display_name,
             lot_type: lot.lot_type as string,
             capacity: lot.capacity,
             avg_utilization: rate != null ? Math.round(rate * 1000) / 1000 : null,
+            avg_estimated_utilization:
+              estRate != null ? Math.round(estRate * 1000) / 1000 : null,
             snapshot_count: agg?._count.id ?? 0,
           };
         })
-        .sort((a, b) => (b.avg_utilization ?? -1) - (a.avg_utilization ?? -1));
+        // Sort by penetration-corrected utilization when available; fall back
+        // to the raw rate so older lots without estimates still rank.
+        .sort(
+          (a, b) =>
+            (b.avg_estimated_utilization ?? b.avg_utilization ?? -1) -
+            (a.avg_estimated_utilization ?? a.avg_utilization ?? -1),
+        );
     } catch (error) {
       this.logger.error('Failed to fetch lot utilization', error);
       throw new InternalServerErrorException('Failed to fetch lot utilization');
