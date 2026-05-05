@@ -73,10 +73,18 @@ export const API_CONFIG = {
     LOT_NEARBY_EVENTS: (lotId: string) => `/lots/${lotId}/nearby-events`,
   },
 
-  // Default headers for all requests
+  // Default headers for all requests.
+  //
+  // `x-platform` is read by the backend `MinVersionController` to pick a
+  // per-platform force-update floor (`MIN_SUPPORTED_APP_VERSION_IOS` /
+  // `_ANDROID`). It also doubles as a useful breadcrumb for log filtering
+  // on every other endpoint. `Platform.OS` returns 'ios' | 'android' on
+  // mobile builds; on the rare web/dev path it falls back to a string the
+  // backend treats as "unknown" and resolves to the global floor.
   DEFAULT_HEADERS: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    'x-platform': Platform.OS,
   },
 };
 

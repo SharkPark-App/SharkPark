@@ -121,6 +121,21 @@ export const CRON_MONITORS = {
     checkinMargin: 60,
     maxRuntime: 30,
   },
+  'prune-notification-logs': {
+    schedule: '15 4 * * *',
+    checkinMargin: 30,
+    maxRuntime: 30,
+  },
+  'prune-contributor-pings': {
+    schedule: '30 5 * * 1',
+    checkinMargin: 30,
+    maxRuntime: 30,
+  },
+  'prune-old-report-messages': {
+    schedule: '45 4 * * 0',
+    checkinMargin: 30,
+    maxRuntime: 30,
+  },
 } as const satisfies Record<string, CronMonitorConfig>;
 
 export type CronJobName = keyof typeof CRON_MONITORS;

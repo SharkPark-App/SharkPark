@@ -5,6 +5,7 @@ import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AzureAdGuard } from '../src/auth/azure-ad.guard';
+import { TierThrottlerGuard } from '../src/common/guards/tier-throttler.guard';
 import { bootstrapTestApp } from './utils/bootstrap';
 import { PrismaService } from '../src/database/database.module';
 
@@ -31,8 +32,10 @@ describe('ReportsController (e2e)', () => {
   let lotCuid: string;
 
   beforeAll(async () => {
-    // Disable throttler globally for test suite, due to combination of APP_GUARD + route override registrations
+    // Disable throttler globally for test suite, due to combination of APP_GUARD + route override registrations.
+    // TierThrottlerGuard overrides canActivate, so patching ThrottlerGuard.prototype alone is not enough.
     ThrottlerGuard.prototype.canActivate = () => Promise.resolve(true);
+    TierThrottlerGuard.prototype.canActivate = () => Promise.resolve(true);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],

@@ -10,9 +10,12 @@ import {
   HttpCode,
   HttpStatus,
   ForbiddenException,
+  UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { UsersService } from './users.service';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { ContributorGuard } from '../auth/contributor.guard';
 import { Request } from 'express';
 
 interface AuthenticatedRequest extends Request {
@@ -35,6 +38,48 @@ export class UsersController {
     if (req.user?.email !== userId) {
       throw new ForbiddenException('You can only access your own resources');
     }
+  }
+
+  /**
+   * Personalized short-term forecast for the caller's favorite lots.
+   * Requires both Azure AD authentication (global AzureAdGuard) and an
+   * active contributor ping (ContributorGuard).
+   */
+  @Get('me/forecast')
+  @UseGuards(ContributorGuard)
+  @HttpCode(HttpStatus.OK)
+  async getForecast(@Req() req: AuthenticatedRequest) {
+    const email = req.user?.email;
+    if (!email) {
+      throw new ForbiddenException('Authenticated user email missing');
+    }
+    const data = await this.usersService.getForecast(email);
+    return { success: true, data };
+  }
+
+  /**
+   * Returns all data the backend holds for the authenticated user
+   * (GDPR Art. 15 / CCPA §1798.110 portable export). Caller is identified
+   * from the JWT (no :userId param → no IDOR surface). Writes a
+   * USER_DATA_EXPORTED audit row with the same SHA-256(salt:email) actor
+   * hash used for USER_DELETED, so an export is auditable without storing
+   * reversible PII.
+   *
+   * Heavily throttled (3 / hour / IP) because the response is a multi-table
+   * dump and each call writes an audit row — neither should be hammerable.
+   * GDPR compliance does not require unlimited export attempts; ICO guidance
+   * permits refusing "manifestly unfounded or excessive" repeat requests.
+   */
+  @Get('me/data')
+  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
+  @HttpCode(HttpStatus.OK)
+  async getMyData(@Req() req: AuthenticatedRequest) {
+    const email = req.user?.email;
+    if (!email) {
+      throw new ForbiddenException('Authenticated user email missing');
+    }
+    const data = await this.usersService.exportUserData(email);
+    return { success: true, data };
   }
 
   @Get(':userId')
