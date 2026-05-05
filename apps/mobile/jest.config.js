@@ -26,6 +26,10 @@ module.exports = {
     '^@noble/hashes/(.+)$': '<rootDir>/../../node_modules/@noble/hashes/$1.js',
     // Map image imports to a simple stub so Jest doesn't choke on binary assets
     '\\.(png|jpg|jpeg|gif|webp|svg)$': '<rootDir>/__mocks__/fileMock.js',
+    // Firebase packages require native modules that don't exist in Jest.
+    // Redirect them to manual mocks so tests never touch the native bridge.
+    '^@react-native-firebase/app$': '<rootDir>/__mocks__/@react-native-firebase/app.js',
+    '^@react-native-firebase/messaging$': '<rootDir>/__mocks__/@react-native-firebase/messaging.js',
   },
   testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/', '__tests__/testUtils\\.ts$'],
   // GitHub Actions runners are noticeably slower than local; the default 5s

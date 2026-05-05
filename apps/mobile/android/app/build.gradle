@@ -1,6 +1,13 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+// Firebase / FCM. Requires `android/app/google-services.json` (downloaded
+// from the Firebase Console for an Android app registered under the
+// applicationId below). Without that file the build fails with a clear
+// error from the plugin — we want loud failure rather than silent no-op
+// because push notifications would otherwise look like they work in dev
+// but never reach Android devices.
+apply plugin: "com.google.gms.google-services"
 
 /**
  * This is the configuration block to customize your React Native Android app.

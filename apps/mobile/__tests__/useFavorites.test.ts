@@ -38,6 +38,7 @@ describe('useFavorites hooks', () => {
       login: jest.fn(),
       logout: jest.fn(),
       isLoading: false,
+      userEmail: null,
     });
   });
 
@@ -156,6 +157,7 @@ describe('useFavorites hooks', () => {
         isLoading: false,
         login: jest.fn(),
         logout: jest.fn(),
+        userEmail: null,
       });
 
       await act(async () => {
