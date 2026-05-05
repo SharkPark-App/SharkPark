@@ -41,15 +41,10 @@ export const CRON_MONITORS: Record<string, CronMonitorConfig> = {
     checkinMargin: 30,
     maxRuntime: 30,
   },
-  'fetch-routes-stops': {
+  'fetch-transit': {
     schedule: '0 6 * * *',
     checkinMargin: 30,
-    maxRuntime: 30,
-  },
-  'fetch-shuttles': {
-    schedule: '*/2 * * * *',
-    checkinMargin: 1,
-    maxRuntime: 1,
+    maxRuntime: 60,
   },
   'cleanup-device-states': {
     schedule: '0 3 * * *',
