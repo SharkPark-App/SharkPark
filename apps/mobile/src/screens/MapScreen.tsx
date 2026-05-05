@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -212,6 +212,8 @@ const MapScreen: React.FC = () => {
   const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
   const [selectedShuttleId, setSelectedShuttleId] = useState<string | null>(null);
+  const [mapBearing, setMapBearing] = useState(0);
+  const mapRef = useRef<MapView>(null);
   const { arrivals, isLoading: stopLoading } = useStopETAs(selectedStop?.id);
 
   // Re-derive the selected shuttle from the live `shuttles` array on every
@@ -263,6 +265,12 @@ const MapScreen: React.FC = () => {
     });
   };
 
+  const handleRegionChangeComplete = useCallback(async () => {
+    if (!mapRef.current) return;
+    const camera = await mapRef.current.getCamera();
+    setMapBearing(camera.heading ?? 0);
+  }, []);
+
   const openRecommendationModal = useCallback(() => {
     refreshFavorites();
     setIsRecommendationModalOpen(true);
@@ -288,6 +296,7 @@ const MapScreen: React.FC = () => {
 
       <View style={styles.mapContainer}>
         <MapView
+          ref={mapRef}
           key={isDark ? 'dark-map' : 'light-map'} // Android (Google Maps) requires a forced re-render
           provider={PROVIDER_DEFAULT} // Apple Maps for iOS, Google Maps for Android
           style={styles.map}
@@ -297,6 +306,7 @@ const MapScreen: React.FC = () => {
           pitchEnabled={false}
           moveOnMarkerPress={false}
           userInterfaceStyle={isDark ? 'dark' : 'light'}
+          onRegionChangeComplete={handleRegionChangeComplete}
         >
           {filteredParkingLots?.map((lot) => {
             // Force remount of the Marker whenever the visual state changes
@@ -370,6 +380,7 @@ const MapScreen: React.FC = () => {
               key={shuttle.id}
               shuttle={shuttle}
               colors={colors}
+              mapBearing={mapBearing}
               onPress={(s) => setSelectedShuttleId(s.id)}
             />
           ))}

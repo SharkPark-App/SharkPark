@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
+import { View, ScrollView, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
 import { Text } from '../CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { ThemeColors } from '../../context/ThemeContext';
@@ -64,7 +64,7 @@ export const StopModal: React.FC<StopModalProps> = ({
                 modal card to jump in size as state transitions. Loading and
                 empty branches center their content vertically inside the
                 reserved space. */}
-            <View style={styles.arrivalsContainer}>
+            <ScrollView style={styles.arrivalsContainer} contentContainerStyle={styles.arrivalsContent}>
               {isLoading ? (
                 <View style={styles.stateContainer}>
                   <ActivityIndicator
@@ -93,7 +93,7 @@ export const StopModal: React.FC<StopModalProps> = ({
                     {/* Badge and Route Name */}
                     <View style={styles.routeInfo}>
                       <View style={[styles.routeBadge, { backgroundColor: arrival.color }]} accessible={false}>
-                        <Text style={styles.badgeText}>{arrival.abbreviation} </Text>
+                        <Text style={styles.badgeText}>{arrival.abbreviation}</Text>
                       </View>
                       <Text style={[styles.routeName, { color: colors.textPrimary }]} accessible={false}>
                         {arrival.routeName}
@@ -107,7 +107,7 @@ export const StopModal: React.FC<StopModalProps> = ({
                   </View>
                 ))
               )}
-            </View>
+            </ScrollView>
           </View>
         </TouchableWithoutFeedback>
       </TouchableOpacity>
@@ -164,11 +164,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   arrivalsContainer: {
+    maxHeight: 300,
+  },
+  arrivalsContent: {
     gap: SPACING.md,
-    // Reserve enough vertical space for ~3 arrival rows so the modal stays the
-    // same size whether we're loading, showing an empty state, or rendering
-    // a populated list. Without this the card visibly jumps as states change.
-    minHeight: 140,
   },
   arrivalRow: {
     flexDirection: 'row',
@@ -214,7 +213,7 @@ const styles = StyleSheet.create({
   // of arrivalsContainer so transitions don't bounce the modal card.
   stateContainer: {
     flex: 1,
-    minHeight: 140,
+    minHeight: 100,
     justifyContent: 'center',
     alignItems: 'center',
   },
