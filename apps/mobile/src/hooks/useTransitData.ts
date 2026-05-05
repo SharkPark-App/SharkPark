@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MapRoute, MapStop, MapShuttle, ShuttleLocationUpdate } from '../types/transit';
 import { API_CONFIG } from '../services';
 import { TransitService } from '../services/api/transit';
@@ -8,10 +8,6 @@ export const useTransitData = () => {
   const [routes, setRoutes] = useState<MapRoute[]>([]);
   const [stops, setStops] = useState<MapStop[]>([]);
   const [shuttles, setShuttles] = useState<MapShuttle[]>([]);
-  // Mirror of `shuttles` we can read synchronously inside socket callbacks
-  // without depending on React having flushed pending state.
-  const shuttlesRef = useRef<MapShuttle[]>([]);
-  shuttlesRef.current = shuttles;
 
   useEffect(() => {
     const loadRoutesAndStops = async () => {
@@ -23,7 +19,6 @@ export const useTransitData = () => {
         console.error('Error loading static transit data:', error);
       }
     };
-
     loadRoutesAndStops();
   }, []);
 
@@ -86,21 +81,13 @@ export const useTransitData = () => {
 
     // Merge live shuttle updates into existing state
     socket.on('shuttle_update', (updates: ShuttleLocationUpdate[]) => {
-      // Determine up-front whether any incoming update belongs to a shuttle
-      // we haven't seen yet. We read from a ref so the decision doesn't
-      // depend on whether React has flushed pending state from the updater.
-      const knownIds = new Set(shuttlesRef.current.map((s) => s.id));
-      const sawUnknownShuttle = updates.some((u) => !knownIds.has(u.id));
-
       setShuttles((prevShuttles) => {
         const updatedShuttles = [...prevShuttles];
 
         updates.forEach((update) => {
-          // Get existing shuttle
           const index = updatedShuttles.findIndex((s) => s.id === update.id);
 
           if (index !== -1) {
-            // Perform update (coords/heading/paxLoad)
             updatedShuttles[index] = {
               ...updatedShuttles[index],
               latitude: update.latitude,
@@ -113,18 +100,12 @@ export const useTransitData = () => {
 
         return updatedShuttles;
       });
-
-      // Pull the static metadata once for the new shuttle so it gets its real
-      // busName/color/route immediately rather than waiting for the next poll.
-      if (sawUnknownShuttle) {
-        loadInitialShuttles();
-      }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [loadInitialShuttles]);
+  }, []);
 
   return { routes, stops, shuttles };
 };

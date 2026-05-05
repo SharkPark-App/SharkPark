@@ -39,6 +39,17 @@ export interface MapShuttle {
 }
 
 /**
+ * Live position frame received from the PassioGO! WebSocket.
+ */
+export interface ShuttleLiveUpdate {
+  id: string;
+  latitude: number;
+  longitude: number;
+  heading: number;
+  paxLoad: number;
+}
+
+/**
  * Representation of the ETA of one shuttle.
  */
 export interface RouteArrival {

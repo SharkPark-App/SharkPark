@@ -3,7 +3,9 @@ import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
 import WebSocket from 'ws';
 import { ShuttleTrackerGateway } from './shuttle-tracker.gateway';
+import { ShuttleTrackerService } from './shuttle-tracker.service';
 import { PassioLiveShuttleDto } from './dto/passiogo.dto';
+import type { ShuttleLiveUpdate } from './interfaces/shuttle-tracker.interface';
 
 @Injectable()
 export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
@@ -19,7 +21,7 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   private pingInterval: ReturnType<typeof setInterval> | null = null;
 
   // Batch outgoing broadcasts: accumulate updates within a window, emit once
-  private pendingUpdates = new Map<string, Record<string, unknown>>();
+  private pendingUpdates = new Map<string, ShuttleLiveUpdate>();
   private batchTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly BATCH_WINDOW_MS = 200;
 
@@ -35,8 +37,11 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     field: ['busId', 'latitude', 'longitude', 'course', 'paxLoad', 'more']
   });
 
-  constructor(private readonly shuttleGateway: ShuttleTrackerGateway) {}
-  
+  constructor(
+    private readonly shuttleGateway: ShuttleTrackerGateway,
+    private readonly shuttleService: ShuttleTrackerService,
+  ) {}
+
   onModuleInit() {
     this.connect();
   }
@@ -87,6 +92,8 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
         clearInterval(this.pingInterval);
         this.pingInterval = null;
       }
+      // Refresh lastSeen so buses aren't pruned during the reconnect backoff window
+      this.shuttleService.refreshAllLastSeen();
       this.scheduleReconnect();
     });
 
@@ -111,7 +118,7 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      const locationUpdate = {
+      const update: ShuttleLiveUpdate = {
         id: liveData.busId.toString(),
         latitude: liveData.latitude,
         longitude: liveData.longitude,
@@ -120,7 +127,7 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
       };
 
       // Accumulate by bus ID — last frame wins if two arrive within the window
-      this.pendingUpdates.set(locationUpdate.id, locationUpdate);
+      this.pendingUpdates.set(update.id, update);
       if (!this.batchTimer) {
         this.batchTimer = setTimeout(() => this.flushBatch(), this.BATCH_WINDOW_MS);
       }
@@ -130,7 +137,9 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private flushBatch() {
-    this.shuttleGateway.broadcastShuttles([...this.pendingUpdates.values()]);
+    const updates = [...this.pendingUpdates.values()];
+    this.shuttleService.applyLiveUpdates(updates);
+    this.shuttleGateway.broadcastShuttles(updates as unknown as Record<string, unknown>[]);
     this.pendingUpdates.clear();
     this.batchTimer = null;
   }
@@ -174,20 +183,20 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
 
     if (this.ws) {
       this.ws.removeAllListeners();
-      
+
       // Swallow error if close() is called during connection establishment
       this.ws.on('error', () => {});
-      
+
       try {
         if (this.ws.readyState === WebSocket.OPEN) {
           this.ws.close();
         } else {
-          this.ws.terminate(); 
+          this.ws.terminate();
         }
       } catch {
         this.logger.debug('Safely caught error during WebSocket teardown');
       }
-      
+
       this.ws = null;
     }
   }

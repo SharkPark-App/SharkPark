@@ -5,7 +5,7 @@ import { ShuttleTrackerService } from './shuttle-tracker.service';
  * Lightweight shuttle-tracker module exposing only `ShuttleTrackerService`
  * (REST fetches against PassioGo + Redis read/write).
  *
- * Use this from cron scripts (`fetch-routes-stops.ts` and `fetch-shuttles.ts`)
+ * Use this from cron scripts (`fetch-transit.ts`)
  * so they don't pull in `PassioWebSocketService` (opens a `wss://passio3.com/`
  * connection in onModuleInit) or `ShuttleTrackerGateway` (Socket.IO server) —
  * both of those only make sense inside the long-lived `app` Fly process.
