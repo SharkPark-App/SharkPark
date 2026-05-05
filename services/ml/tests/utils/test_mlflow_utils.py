@@ -12,6 +12,7 @@ Run from services/ml/:
 """
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -105,15 +106,20 @@ class TestR2Upload:
         assert version is not None
 
     def test_missing_r2_env_vars_does_not_fail_promotion(
-        self, trained_run_id, monkeypatch
+        self, trained_run_id, monkeypatch, caplog
     ):
         """Missing R2 credentials log a warning but mlflow promotion still succeeds."""
         # Ensure no R2 env vars are set
         for var in ("R2_ENDPOINT_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
             monkeypatch.delenv(var, raising=False)
 
-        version = promote(trained_run_id, export_s3=True)
+        with caplog.at_level(logging.WARNING):
+            version = promote(trained_run_id, export_s3=True)
+
         assert version is not None
+        assert any(
+            "Missing required R2 env vars" in r.message for r in caplog.records
+        ), "Expected a warning naming the missing R2 env vars"
 
     def test_promote_is_idempotent_for_same_run_id(self, trained_run_id, r2_env):
         """Re-promoting the same run_id reuses the existing version (no duplicates)."""

@@ -21,7 +21,7 @@ __all__ = [
     "upload_model_to_r2",
 ]
 
-# Matches BageXGBoostModel.save() in services/ml/src/models/base.py
+# Matches BaseXGBoostModel.save() in services/ml/src/models/base.py
 _MODEL_ARTIFACT_FILES = (
     "model.json",
     "model_lower.json",
@@ -38,6 +38,13 @@ def promote_model(
 ) -> tuple[str | None, bool, mlflow.entities.Run | None]:
     """
     Register a model version and set the production alias.
+
+    Idempotent: if the run is already registered, the existing version is reused.
+    Re-promoting an already-registered run will (re-)point the @production alias
+    to that version. If @production currently points elsewhere, a warning is
+    logged. To re-publish artifacts without moving the alias, use the
+    --upload-only flag in the promote scripts (which calls upload_model_to_r2
+    directly and skips this function).
 
     Args:
         run_id: MLflow run ID of the model to promote.
@@ -65,14 +72,18 @@ def promote_model(
         )
         raise
 
-    # Idempotent: reuse the existing version if this run is already registered
+    # Idempotent: reuse the existing version if this run is already registered.
+    # Note: re-promoting a previously-registered run will ALSO re-point the
+    # @production alias to that version (see alias-set call below). If the
+    # current @production points elsewhere, a warning is logged so the operator
+    # is aware. Use --upload-only to re-publish artifacts without changing the alias.
     try:
         registered_versions = client.search_model_versions(f"name='{model_name}'")
     except mlflow.exceptions.MlflowException:
         registered_versions = []
 
     existing = next(
-        (mv for mv in registered_versions if run_id in (mv.source or "")),
+        (mv for mv in registered_versions if _resolve_run_id(mv) == run_id),
         None,
     )
     if existing is not None:
@@ -83,6 +94,22 @@ def promote_model(
             model_name,
             version,
         )
+        # Warn if reusing this version would move @production backwards.
+        try:
+            current_prod = client.get_model_version_by_alias(model_name, "production")
+            if current_prod.version != version:
+                logger.warning(
+                    "Re-promoting %s v%s will move @production from v%s to v%s. "
+                    "Use --upload-only %s to re-publish artifacts without changing the alias.",
+                    model_name,
+                    version,
+                    current_prod.version,
+                    version,
+                    version,
+                )
+        except mlflow.exceptions.MlflowException:
+            # No @production alias set yet — nothing to warn about.
+            pass
     else:
         artifact_uri = run.info.artifact_uri
         model_uri = f"{artifact_uri}/model"
@@ -175,7 +202,7 @@ def _upload_to_r2(model_name: str, version: str, run_id: str) -> None:
     endpoint_url = os.environ.get("R2_ENDPOINT_URL")
     access_key = os.environ.get("R2_ACCESS_KEY_ID")
     secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
-    bucket = os.environ.get("R2_BUCKET", _DEFAULT_R2_BUCKET)
+    bucket = os.environ.get("R2_BUCKET") or _DEFAULT_R2_BUCKET
 
     missing = [
         name
@@ -225,7 +252,17 @@ def _upload_to_r2(model_name: str, version: str, run_id: str) -> None:
                 )
 
             key = f"{artifact_prefix}/{filename}"
-            client.upload_file(str(src), bucket, key)
+            content_type = (
+                "application/json"
+                if filename.endswith(".json")
+                else "application/octet-stream"
+            )
+            client.upload_file(
+                str(src),
+                bucket,
+                key,
+                ExtraArgs={"ContentType": content_type},
+            )
             logger.info("  uploaded s3://%s/%s", bucket, key)
 
     # Write pointer last to avoid reading partial uploads.
