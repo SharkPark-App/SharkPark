@@ -209,6 +209,104 @@ describe('LotsController (e2e)', () => {
     });
   });
 
+  describe('/api/v1/lots/utilization (GET)', () => {
+    it('should return per-lot utilization with default range', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/utilization')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.range_days).toBe(30);
+          expect(typeof res.body.count).toBe('number');
+          expect(Array.isArray(res.body.data)).toBe(true);
+          expect(res.body.count).toBe(res.body.data.length);
+        });
+    });
+
+    it('should accept a custom range', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/utilization?range=7d')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.range_days).toBe(7);
+        });
+    });
+
+    it('each item has the expected shape', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/utilization')
+        .expect(200)
+        .expect((res: Response) => {
+          for (const item of res.body.data) {
+            expect(item).toHaveProperty('lot_id');
+            expect(item).toHaveProperty('display_name');
+            expect(item).toHaveProperty('lot_type');
+            expect(typeof item.capacity).toBe('number');
+            expect(item).toHaveProperty('avg_utilization');
+            expect(item).toHaveProperty('avg_estimated_utilization');
+            expect(typeof item.snapshot_count).toBe('number');
+          }
+        });
+    });
+  });
+
+  describe('/api/v1/lots/:id/trends (GET)', () => {
+    it('should return trend data with default range', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/trends')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.lot_id).toBe('G1');
+          expect(res.body.range_days).toBe(7);
+          expect(typeof res.body.count).toBe('number');
+          expect(Array.isArray(res.body.data)).toBe(true);
+          expect(res.body.count).toBe(res.body.data.length);
+        });
+    });
+
+    it('should accept a custom range', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/trends?range=30d')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.range_days).toBe(30);
+        });
+    });
+
+    it('each trend point has the expected shape', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1/trends')
+        .expect(200)
+        .expect((res: Response) => {
+          for (const point of res.body.data) {
+            expect(typeof point.hour).toBe('string');
+            expect(typeof point.avg_occupancy_rate).toBe('number');
+            expect(typeof point.avg_occupancy).toBe('number');
+            expect(typeof point.avg_available).toBe('number');
+            expect(point).toHaveProperty('avg_estimated_occupancy');
+            expect(point).toHaveProperty('avg_estimated_rate');
+            expect(typeof point.sample_count).toBe('number');
+          }
+        });
+    });
+
+    it('should uppercase lot id and return 404 for unknown lot', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/INVALID/trends')
+        .expect(404);
+    });
+
+    it('should handle lowercase lot id', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/g1/trends')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.lot_id).toBe('G1');
+        });
+    });
+  });
+
   describe('/api/v1/lots/:id/recommendations (GET)', () => {
     it('should return recommendations for a valid lot', () => {
       return request(app.getHttpServer())
@@ -343,8 +441,14 @@ describe('LotsController (e2e)', () => {
     it('GET /lots is public', () =>
       noAuth('/api/v1/lots').expect(200));
 
+    it('GET /lots/utilization is public', () =>
+      noAuth('/api/v1/lots/utilization').expect(200));
+
     it('GET /lots/:id is public', () =>
       noAuth('/api/v1/lots/G1').expect(200));
+
+    it('GET /lots/:id/trends is public', () =>
+      noAuth('/api/v1/lots/G1/trends').expect(200));
 
     it('GET /lots/:id (404 path) does not require auth', () =>
       noAuth('/api/v1/lots/INVALID').expect(404));

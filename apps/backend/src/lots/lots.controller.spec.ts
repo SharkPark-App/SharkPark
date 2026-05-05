@@ -3,6 +3,7 @@ import { LotsController } from './lots.controller';
 import { LotsService } from './lots.service';
 import { ContributorGuard } from '../auth/contributor.guard';
 import { ContributorService } from '../auth/contributor.service';
+import { EventsService } from '../events/events.service';
 
 describe('LotsController', () => {
   let controller: LotsController;
@@ -14,6 +15,16 @@ describe('LotsController', () => {
     getHistory: jest.fn(),
     getOccupancySummary: jest.fn(),
     getRecommendations: jest.fn(),
+    getTrends: jest.fn(),
+    getUtilization: jest.fn(),
+    parseRangeDays: jest.fn().mockImplementation(
+      (range: string | undefined, defaultDays: number, maxDays: number) => {
+        if (!range) return defaultDays;
+        const match = /^(\d+)d$/.exec(range);
+        if (!match) return defaultDays;
+        return Math.min(Math.max(1, parseInt(match[1], 10)), maxDays);
+      },
+    ),
   };
 
   // Default to "is contributor" so existing test cases see the unredacted shape.
@@ -22,9 +33,14 @@ describe('LotsController', () => {
     isContributor: jest.fn().mockResolvedValue(true),
   };
 
+  const mockEventsService = {
+    getEventsForLot: jest.fn(),
+  };
+
   beforeEach(async () => {
     mockContributorService.isContributor.mockClear();
     mockContributorService.isContributor.mockResolvedValue(true);
+    mockEventsService.getEventsForLot.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LotsController],
@@ -36,6 +52,10 @@ describe('LotsController', () => {
         {
           provide: ContributorService,
           useValue: mockContributorService,
+        },
+        {
+          provide: EventsService,
+          useValue: mockEventsService,
         },
       ],
     })
@@ -227,6 +247,134 @@ describe('LotsController', () => {
         count: 0,
         data: [],
       });
+    });
+  });
+
+  describe('getLotTrends', () => {
+    const mockTrends = [
+      {
+        hour: '2026-04-25T08:00:00.000Z',
+        avg_occupancy_rate: 0.55,
+        avg_occupancy: 55,
+        avg_available: 45,
+        avg_estimated_occupancy: 78,
+        avg_estimated_rate: 0.78,
+        sample_count: 4,
+      },
+    ];
+
+    it('should return trend data with default range', async () => {
+      mockLotsService.getTrends.mockResolvedValue(mockTrends);
+
+      const result = await controller.getLotTrends('g1');
+
+      expect(result).toMatchObject({
+        success: true,
+        lot_id: 'G1',
+        range_days: 7,
+        count: 1,
+        data: mockTrends,
+      });
+      expect(typeof result.since).toBe('string');
+      expect(typeof result.until).toBe('string');
+      expect(new Date(result.until).getTime() - new Date(result.since).getTime()).toBe(
+        7 * 24 * 60 * 60 * 1000,
+      );
+      expect(service.getTrends).toHaveBeenCalledWith('G1', 7);
+    });
+
+    it('should parse range query param', async () => {
+      mockLotsService.getTrends.mockResolvedValue([]);
+
+      await controller.getLotTrends('G1', '30d');
+
+      expect(service.getTrends).toHaveBeenCalledWith('G1', 30);
+    });
+
+    it('should uppercase the lot id', async () => {
+      mockLotsService.getTrends.mockResolvedValue([]);
+
+      await controller.getLotTrends('g7');
+
+      expect(service.getTrends).toHaveBeenCalledWith('G7', expect.any(Number));
+    });
+  });
+
+  describe('getUtilization', () => {
+    const mockUtilization = [
+      {
+        lot_id: 'G1',
+        display_name: 'Lot G1',
+        lot_type: 'STUDENT',
+        capacity: 100,
+        avg_utilization: 0.72,
+        avg_estimated_utilization: 0.85,
+        snapshot_count: 10,
+      },
+    ];
+
+    it('should return utilization data with default range', async () => {
+      mockLotsService.getUtilization.mockResolvedValue(mockUtilization);
+
+      const result = await controller.getUtilization();
+
+      expect(result).toMatchObject({
+        success: true,
+        range_days: 30,
+        count: 1,
+        data: mockUtilization,
+      });
+      expect(typeof result.since).toBe('string');
+      expect(typeof result.until).toBe('string');
+      expect(new Date(result.until).getTime() - new Date(result.since).getTime()).toBe(
+        30 * 24 * 60 * 60 * 1000,
+      );
+      expect(service.getUtilization).toHaveBeenCalledWith(30);
+    });
+
+    it('should parse range query param', async () => {
+      mockLotsService.getUtilization.mockResolvedValue([]);
+
+      await controller.getUtilization('14d');
+
+      expect(service.getUtilization).toHaveBeenCalledWith(14);
+    });
+  });
+
+  describe('getNearbyEvents', () => {
+    it('defaults within_hours to 2 and uppercases the lot id', async () => {
+      mockEventsService.getEventsForLot.mockResolvedValue([]);
+
+      const result = await controller.getNearbyEvents('g7');
+
+      expect(mockEventsService.getEventsForLot).toHaveBeenCalledWith('G7', 2);
+      expect(result).toEqual({
+        success: true,
+        lot_id: 'G7',
+        within_hours: 2,
+        count: 0,
+        data: [],
+      });
+    });
+
+    it('passes a caller-supplied within_hours through to the service', async () => {
+      const events = [{ id: 'ev-1' }, { id: 'ev-2' }];
+      mockEventsService.getEventsForLot.mockResolvedValue(events);
+
+      const result = await controller.getNearbyEvents('G7', 24);
+
+      expect(mockEventsService.getEventsForLot).toHaveBeenCalledWith('G7', 24);
+      expect(result).toMatchObject({ within_hours: 24, count: 2, data: events });
+    });
+
+    it('rejects out-of-range within_hours values', async () => {
+      await expect(controller.getNearbyEvents('G7', 0)).rejects.toThrow(
+        /within_hours/,
+      );
+      await expect(controller.getNearbyEvents('G7', 200)).rejects.toThrow(
+        /within_hours/,
+      );
+      expect(mockEventsService.getEventsForLot).not.toHaveBeenCalled();
     });
   });
 });

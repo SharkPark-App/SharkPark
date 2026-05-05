@@ -95,3 +95,49 @@ export interface LotRecommendation extends ParkingLotResponse {
   /** Why this lot was recommended */
   reason: string;
 }
+
+export interface TrendPoint {
+  /** ISO 8601 datetime truncated to the hour */
+  hour: string;
+  /**
+   * Average raw `occupancy_rate` (device count / capacity) over the bucket.
+   * This is a device-coverage signal, NOT true lot fullness — it understates
+   * occupancy whenever penetration < 100%. Prefer `avg_estimated_rate` when
+   * measuring actual utilization.
+   */
+  avg_occupancy_rate: number;
+  avg_occupancy: number;
+  avg_available: number;
+  /**
+   * Average penetration-corrected fullness (`estimated_occupancy / capacity`)
+   * over the bucket — a better proxy for actual lot occupancy than the raw
+   * device rate, since each snapshot's `estimated_occupancy` was scaled by
+   * the live penetration rate at write time. `null` when no snapshot in the
+   * bucket carried an estimate (rows written before the penetration rollout).
+   */
+  avg_estimated_rate: number | null;
+  /** Average `estimated_occupancy` (vehicles, not devices) over the bucket. */
+  avg_estimated_occupancy: number | null;
+  sample_count: number;
+}
+
+export interface LotUtilization {
+  lot_id: string;
+  display_name: string;
+  lot_type: string;
+  capacity: number;
+  /**
+   * Average raw `occupancy_rate` over the range; `null` when no snapshots
+   * exist. Device-coverage signal — see `avg_estimated_utilization` for true
+   * fullness.
+   */
+  avg_utilization: number | null;
+  /**
+   * Average penetration-corrected utilization
+   * (`estimated_occupancy / capacity`) over the range. Prefer this over
+   * `avg_utilization` when ranking lots by actual fullness. `null` when no
+   * snapshot in the range carried an estimate.
+   */
+  avg_estimated_utilization: number | null;
+  snapshot_count: number;
+}

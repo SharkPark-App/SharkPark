@@ -16,16 +16,23 @@ import ReactTestRenderer from 'react-test-renderer';
 // ────────────────────── Mocks ──────────────────────
 
 const mockNavigate = jest.fn();
-jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({
-    navigate: mockNavigate,
-    goBack: jest.fn(),
-    dispatch: jest.fn(),
-  }),
-  useRoute: () => ({ params: {} }),
-  useIsFocused: () => true,
-  NavigationContainer: ({ children }: { children: React.ReactNode }) => children,
-}));
+jest.mock('@react-navigation/native', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ReactImpl: typeof React = require('react');
+  return {
+    useNavigation: () => ({
+      navigate: mockNavigate,
+      goBack: jest.fn(),
+      dispatch: jest.fn(),
+    }),
+    useRoute: () => ({ params: {} }),
+    useIsFocused: () => true,
+    // Treat focus effects as plain effects in tests — the screen is
+    // always "focused" under the test renderer.
+    useFocusEffect: (cb: () => void | (() => void)) => ReactImpl.useEffect(cb, []),
+    NavigationContainer: ({ children }: { children: React.ReactNode }) => children,
+  };
+});
 
 jest.mock('../src/context/ThemeContext', () => ({
   useTheme: () => ({
@@ -308,7 +315,7 @@ describe('MapScreen', () => {
       expect(filterIcons.length).toBeGreaterThan(0);
     });
 
-    it('renders the navigate button and opens RecommendationModal', async () => {
+    it('renders the favorites button and opens RecommendationModal', async () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
       await ReactTestRenderer.act(async () => {
         tree = ReactTestRenderer.create(<MapScreen />);
@@ -317,7 +324,7 @@ describe('MapScreen', () => {
       let json = JSON.stringify(tree!.toJSON());
       expect(json).not.toContain('RecommendationModal Open');
 
-      const navIcons = tree!.root.findAllByProps({ name: 'navigate' });
+      const navIcons = tree!.root.findAllByProps({ name: 'star' });
       let touchable = navIcons[0].parent;
       while (touchable && !touchable.props.onPress) {
         touchable = touchable.parent;

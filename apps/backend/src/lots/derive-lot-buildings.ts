@@ -267,21 +267,33 @@ export interface BuildingPoint<TName extends string = string> {
 export interface LotPoint<TName extends string = string> {
   center_lat: number;
   center_lng: number;
+  /**
+   * Optional lot footprint polygon (lat/lng vertices, no closing duplicate).
+   * When present, proximity is computed edge-to-edge instead of from the
+   * lot's centroid — important for long/large lots where the centroid can
+   * sit hundreds of meters from the nearest practical entrance (e.g. G7
+   * vs. Walter Pyramid).
+   */
+  polygon?: ReadonlyArray<{ lat: number; lng: number }> | null;
   building_overrides?: BuildingOverrides<TName>;
 }
 
 /**
  * Default proximity radius (meters) — covers a brisk ~3 minute walk
- * from the lot centerpoint. Tuned against the existing manual lists.
+ * from the lot edge. Tuned against the existing manual lists.
  */
 export const DEFAULT_LOT_BUILDING_RADIUS_M = 250;
 
 /**
- * Returns the building names within `radiusMeters` of the lot's centerpoint,
- * applying any overrides. Uses point-to-edge polygon distance when a
- * footprint is available, falling back to point-to-centroid haversine
- * when the polygon is null/missing. Output is deterministic (sorted) for
- * stable diffs.
+ * Returns the building names within `radiusMeters` of the lot, applying any
+ * overrides. Uses the most precise geometry available for each side:
+ *
+ *   - lot polygon × building polygon → polygon-edge to polygon-edge
+ *   - lot polygon × building point   → point-to-polygon (lot edge)
+ *   - lot point   × building polygon → point-to-polygon (building edge)
+ *   - lot point   × building point   → centroid haversine (legacy fallback)
+ *
+ * Output is deterministic (sorted) for stable diffs.
  */
 export function deriveLotBuildings<TName extends string>(
   lot: LotPoint<TName>,
@@ -289,13 +301,25 @@ export function deriveLotBuildings<TName extends string>(
   radiusMeters: number = DEFAULT_LOT_BUILDING_RADIUS_M,
 ): TName[] {
   const lotPoint = { lat: lot.center_lat, lng: lot.center_lng };
+  const lotPolygon =
+    lot.polygon && lot.polygon.length >= 3 ? lot.polygon : null;
   const within = new Set<TName>();
 
   for (const b of buildings) {
-    const d =
-      b.polygon && b.polygon.length >= 3
-        ? pointToPolygonMeters(lotPoint, b.polygon)
-        : haversineMeters(lotPoint, { lat: b.lat, lng: b.lng });
+    const buildingPoint = { lat: b.lat, lng: b.lng };
+    const buildingPolygon =
+      b.polygon && b.polygon.length >= 3 ? b.polygon : null;
+
+    let d: number;
+    if (lotPolygon && buildingPolygon) {
+      d = polygonToPolygonMeters(lotPolygon, buildingPolygon, lotPoint, buildingPoint);
+    } else if (lotPolygon) {
+      d = pointToPolygonMeters(buildingPoint, lotPolygon);
+    } else if (buildingPolygon) {
+      d = pointToPolygonMeters(lotPoint, buildingPolygon);
+    } else {
+      d = haversineMeters(lotPoint, buildingPoint);
+    }
     if (d <= radiusMeters) within.add(b.name);
   }
 

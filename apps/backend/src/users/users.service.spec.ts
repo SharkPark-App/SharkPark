@@ -52,7 +52,6 @@ describe('UsersService', () => {
         first_name: 'Test',
         last_name: 'User',
         user_type: 'STUDENT',
-        phone: null,
         notification_preferences: {},
         created_at: new Date(),
         last_login: new Date(),
@@ -146,7 +145,6 @@ describe('UsersService', () => {
         first_name: 'Test',
         last_name: 'User',
         user_type: 'STUDENT',
-        phone: null,
         notification_preferences: { favorites_filling: true, surge_alerts: false },
         created_at: new Date(),
         last_login: new Date(),
@@ -189,7 +187,6 @@ describe('UsersService', () => {
       first_name: 'Existing',
       last_name: 'User',
       user_type: 'STUDENT',
-      phone: null,
       notification_preferences: { favorites_filling: true },
       created_at: new Date('2025-01-01'),
       last_login: new Date('2025-06-01'),
@@ -226,7 +223,6 @@ describe('UsersService', () => {
         first_name: 'New',
         last_name: 'Student',
         user_type: 'STUDENT',
-        phone: null,
         notification_preferences: {
           favorites_filling: false,
           favorites_clearing: false,
@@ -266,7 +262,6 @@ describe('UsersService', () => {
         first_name: 'Prof',
         last_name: 'Smith',
         user_type: 'EMPLOYEE',
-        phone: null,
         notification_preferences: {},
         created_at: new Date(),
         last_login: new Date(),
@@ -302,7 +297,6 @@ describe('UsersService', () => {
           first_name: 'X',
           last_name: 'Y',
           user_type: 'EMPLOYEE',
-          phone: null,
           notification_preferences: {},
           created_at: new Date(),
           last_login: new Date(),
@@ -363,6 +357,87 @@ describe('UsersService', () => {
 
       await expect(service.removeFavorite('test@csulb.edu', 'G1'))
         .rejects.toThrow('DB delete error');
+    });
+  });
+
+  describe('exportUserData', () => {
+    const baseUser = {
+      id: 'user-uuid',
+      email: 'test@csulb.edu',
+      first_name: 'Test',
+      last_name: 'User',
+      user_type: 'STUDENT',
+      notification_preferences: { favorites_filling: false },
+      created_at: new Date('2025-01-01'),
+      last_login: new Date('2026-01-01'),
+      favorites: [
+        { lot: { lot_id: 'G1' }, added_at: new Date('2026-01-10') },
+      ],
+      push_tokens: [
+        { token: 'ExponentPushToken[abc]', platform: 'ios', created_at: new Date('2026-02-01') },
+      ],
+      reports: [
+        { lot: { lot_id: 'G1' }, type: 'BLOCKAGE', message: null, created_at: new Date('2026-03-01') },
+      ],
+      notification_logs: [
+        { type: 'favorites_filling', lot: { lot_id: 'G1' }, sent_at: new Date('2026-04-01') },
+        { type: 'surge', lot: null, sent_at: new Date('2026-04-02') },
+      ],
+    };
+
+    it('should return all user data and write a USER_DATA_EXPORTED audit row', async () => {
+      // exportUserData uses an interactive $transaction(async tx => …); the mock
+      // invokes the callback with a tx that proxies to the same prisma mock so
+      // the inner findUnique / auditEvent.create assertions still apply.
+      prisma.user.findUnique.mockResolvedValue(baseUser);
+      prisma.auditEvent.create.mockResolvedValue({});
+      prisma.$transaction.mockImplementation((cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+
+      const result = await service.exportUserData('test@csulb.edu');
+
+      expect(result.profile.email).toBe('test@csulb.edu');
+      expect(result.favorites).toEqual([{ lot_id: 'G1', added_at: baseUser.favorites[0].added_at }]);
+      // Raw token must NOT be returned; only the masked preview (last 6 chars).
+      expect(result.push_tokens[0]).not.toHaveProperty('token');
+      expect(result.push_tokens[0].token_preview).toBe('\u2026n[abc]');
+      expect(result.push_tokens[0].registered_at).toEqual(baseUser.push_tokens[0].created_at);
+      expect(result.reports[0]).toEqual({
+        lot_id: 'G1',
+        type: 'BLOCKAGE',
+        message: null,
+        submitted_at: baseUser.reports[0].created_at,
+      });
+      expect(result.notification_logs[0].lot_id).toBe('G1');
+      expect(result.notification_logs[1].lot_id).toBeNull();
+      expect(result.exported_at).toBeInstanceOf(Date);
+      expect(prisma.auditEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          event_type: 'USER_DATA_EXPORTED',
+          actor_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      });
+    });
+
+    it('should not include raw email in the audit row', async () => {
+      prisma.user.findUnique.mockResolvedValue(baseUser);
+      prisma.auditEvent.create.mockResolvedValue({});
+      prisma.$transaction.mockImplementation((cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+
+      await service.exportUserData('test@csulb.edu');
+
+      const call = prisma.auditEvent.create.mock.calls[0][0];
+      expect(JSON.stringify(call)).not.toContain('test@csulb.edu');
+    });
+
+    it('should throw NotFoundException and not write an audit row when user does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      // Interactive transaction propagates the throw and rolls back; mimic that
+      // by re-throwing whatever the callback throws so auditEvent.create is
+      // never reached inside the callback.
+      prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+
+      await expect(service.exportUserData('ghost@csulb.edu')).rejects.toThrow(NotFoundException);
+      expect(prisma.auditEvent.create).not.toHaveBeenCalled();
     });
   });
 

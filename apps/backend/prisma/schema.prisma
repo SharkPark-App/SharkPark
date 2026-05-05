@@ -100,7 +100,6 @@ model User {
   first_name     String
   last_name      String
   user_type      UserType
-  phone          String?
   notification_preferences Json @default("{\"favorites_filling\":false,\"favorites_clearing\":false,\"surge_alerts\":false,\"event_alerts\":false}")
   created_at     DateTime @default(now())
   last_login     DateTime?
@@ -239,14 +238,36 @@ model CampusEvent {
   event_url   String?
   building_id String?
   start_time  DateTime
-  end_time    DateTime
+  // Optional: sports games scraped from Sidearm only have a published start
+  // time. The scraper leaves this null at create; refreshFinalScores backfills
+  // it with the wall-clock moment the box score was published when status
+  // flips SCHEDULED → FINAL. CampusLabs (academic / club) events always set a
+  // real end_time from the source feed.
+  end_time    DateTime?
   created_at  DateTime @default(now())
+
+  // ── Live sports state ────────────────────────────────────
+  // Populated by the sports scraper for LBSU home games. Null for
+  // non-sports CampusLabs events. `status` is the canonical lifecycle
+  // (SCHEDULED → LIVE → FINAL, plus POSTPONED/CANCELLED), derived from
+  // Sidearm's `gameState` integer. Scores are strings on the wire
+  // (Sidearm sends "16"/"" for not-yet-played) but normalised to ints
+  // here so mobile/UI doesn't have to parse.
+  status            SportsEventStatus?
+  home_score        Int?
+  away_score        Int?
+  result_status     SportsResultStatus? // W/L/T, populated when status=FINAL
+  status_updated_at DateTime?
 
   school            School            @relation(fields: [school_id], references: [id], onDelete: Cascade)
   building          Building?         @relation(fields: [building_id], references: [id], onDelete: SetNull)
   notification_logs NotificationLog[]
 
   @@index([building_id, start_time])
+  // Live-events lookup: scan only currently-LIVE rows quickly. Partial-style
+  // index via composite ordering — `status` first means a `WHERE status='LIVE'`
+  // probe walks a tight slice instead of the full table.
+  @@index([status, start_time])
   @@map("campus_events")
 }
 
@@ -524,4 +545,34 @@ enum NotificationType {
   FAVORITES_CLEARING @map("favorites_clearing")
   SURGE              @map("surge")
   EVENTS             @map("events")
+}
+
+/// Lifecycle of a sports CampusEvent. Mapped from Sidearm's top-level
+/// `status` flag and `result` payload at scrape time:
+///   "A" + no result            → SCHEDULED
+///   "O" + result.teamScore set → FINAL (result_status populated W/L/T)
+///   gameStateDisplay POSTPONED → POSTPONED
+///   gameStateDisplay CANCELLED → CANCELLED
+///   noplayText populated       → CANCELLED
+///
+/// LIVE is reserved but intentionally NEVER written: the Sidearm calendar
+/// API has no in-progress signal (`gameCenterEnabled` is always false and
+/// no third top-level status value exists, verified across April + May
+/// 2026 LBSU games). Per-sport live stats live on third-party sites and
+/// are out of scope for the calendar scraper.
+enum SportsEventStatus {
+  SCHEDULED
+  LIVE
+  FINAL
+  POSTPONED
+  CANCELLED
+}
+
+/// Outcome of a FINAL sports event from the LBSU perspective. Mapped from
+/// Sidearm's `result.status` ("W" / "L" / "T"). Only populated when
+/// `status = FINAL`.
+enum SportsResultStatus {
+  W
+  L
+  T
 }
