@@ -24,7 +24,10 @@ import { fetchMinVersion } from './src/services/api/version';
  * Handles major.minor.patch — pre-release tags are ignored.
  */
 function semverLt(a: string, b: string): boolean {
-  const parse = (s: string) => s.split('.').map(n => parseInt(n, 10) || 0);
+  const parse = (s: string) => {
+    const parts = s.split('.').map(n => parseInt(n, 10));
+    return [0, 1, 2].map(i => (Number.isFinite(parts[i]) ? parts[i] : 0));
+  };
   const [aMaj, aMin, aPatch] = parse(a);
   const [bMaj, bMin, bPatch] = parse(b);
   if (aMaj !== bMaj) return aMaj < bMaj;
@@ -97,9 +100,16 @@ function AppContent() {
     return null;
   }
 
-  // Block outdated builds from accessing the app
+  // Block outdated builds from accessing the app.
+  // Wrapped in SafeAreaProvider so the screen's <SafeAreaView> resolves insets,
+  // and StatusBar matches the white background.
   if (updateRequired) {
-    return <ForceUpdateScreen />;
+    return (
+      <SafeAreaProvider>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+        <ForceUpdateScreen />
+      </SafeAreaProvider>
+    );
   }
 
   // First-launch onboarding (shown before login).

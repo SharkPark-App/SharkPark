@@ -21,7 +21,7 @@ const logo = require('../assets/images/SharkParkV4.webp') as ImageSourcePropType
  */
 const STORE_URLS = {
   ios: 'https://apps.apple.com/app/sharkpark/id0000000000', // TODO: replace with real App Store ID
-  android: 'https://play.google.com/store/apps/details?id=com.sharkpark.mobile',
+  android: 'https://play.google.com/store/apps/details?id=app.sharkpark.mobile',
 } as const;
 
 /**
