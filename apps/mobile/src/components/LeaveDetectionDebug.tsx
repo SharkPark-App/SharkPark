@@ -147,7 +147,7 @@ export const LeaveDetectionDebug: React.FC = () => {
                     <Text style={styles.signalConfidence}>{Math.round(signal.confidence * 100)}%</Text>
                   </View>
                   <Text style={styles.signalTimestamp}>
-                    {new Date(signal.timestamp).toLocaleTimeString()}
+                    {new Date(signal.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })}
                   </Text>
                 </View>
               ))}

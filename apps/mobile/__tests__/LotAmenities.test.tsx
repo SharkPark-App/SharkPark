@@ -37,6 +37,7 @@ import { collectTexts } from './testUtils';
 // ────────────────────── Helpers ──────────────────────
 
 const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotResponse => ({
+  id: 'cltest000000000001',
   lot_id: 'G1',
   lot_name: 'Lot G1',
   display_name: 'Lot G1',
@@ -45,7 +46,10 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   capacity: 500,
   current_occupancy: 250,
   location_description: 'East Campus near ECS Building',
-  building_proximity: ['ECS', 'Library'],
+  buildings: [
+    { name: 'ECS', category: 'ACADEMIC' },
+    { name: 'Library', category: 'ACADEMIC' },
+  ],
   center_lat: 33.78,
   center_lng: -118.11,
   geofence_polygon: [],
@@ -59,15 +63,17 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   ev_charging_stations: 4,
   motorcycle_spaces: 6,
   accessible_spaces: 10,
+  short_term_parking_spaces: 0,
+  low_emission_spaces: 0,
+  pay_stations: 0,
   has_lighting: true,
   has_cameras: true,
   has_emergency_phone: true,
   is_covered: false,
   is_paved: true,
   levels: undefined,
-  penetration_rate: 0.15,
-  avg_turnover_minutes: 120,
-  confidence: 'HIGH',
+  has_solar_canopy: false,
+  metadata_confidence: 'HIGH',
   timestamp: new Date().toISOString(),
   available: 250,
   occupancy_rate: 0.5,
@@ -76,6 +82,7 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   estimated_available: 250,
   raw_occupancy: 250,
   effective_penetration_rate: 0.15,
+  advisories: [],
   ...overrides,
 });
 
@@ -136,17 +143,30 @@ describe('LotAmenities', () => {
     expect(texts).not.toContain('Levels');
   });
 
-  it('renders building proximity when non-empty', () => {
-    const tree = renderLot({ building_proximity: ['Library', 'ECS'] });
+  it('renders nearby buildings grouped by category when non-empty', () => {
+    const tree = renderLot({
+      buildings: [
+        { name: 'Library', category: 'ACADEMIC' },
+        { name: 'ECS', category: 'ACADEMIC' },
+        { name: 'Hillside Halls', category: 'HOUSING' },
+      ],
+    });
     const texts = collectTexts(tree.root);
-    expect(texts).toContain('Near');
-    expect(texts).toContain('Library, ECS');
+    expect(texts).toContain('Nearby buildings');
+    expect(texts).toContain('Academic');
+    expect(texts).toContain('Housing & Residence');
+    expect(texts).toContain('Library');
+    expect(texts).toContain('ECS');
+    expect(texts).toContain('Hillside Halls');
+    // Empty categories must not render section headings.
+    expect(texts).not.toContain('Retail Stores');
+    expect(texts).not.toContain('Athletic & Performance Venues');
   });
 
-  it('does not render Near when building_proximity is empty', () => {
-    const tree = renderLot({ building_proximity: [] });
+  it('does not render nearby buildings block when empty', () => {
+    const tree = renderLot({ buildings: [] });
     const texts = collectTexts(tree.root);
-    expect(texts).not.toContain('Near');
+    expect(texts).not.toContain('Nearby buildings');
   });
 
   it('renders permit types', () => {
@@ -173,10 +193,16 @@ describe('LotAmenities', () => {
     expect(texts).toContain('Not Available');
   });
 
-  it('renders weekday hours from object format', () => {
+  it('renders weekday hours from object format using the device locale', () => {
     const tree = renderLot({ hours_weekday: { open: '06:00', close: '22:00' } });
     const texts = collectTexts(tree.root);
-    expect(texts).toContain('06:00 – 22:00');
+    expect(texts).toContain('6:00 AM – 10:00 PM');
+  });
+
+  it('preserves non-zero minutes when formatting hours', () => {
+    const tree = renderLot({ hours_saturday: { open: '07:30', close: '17:45' } });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('7:30 AM – 5:45 PM');
   });
 
   it('renders CLOSED string hours directly', () => {
@@ -222,10 +248,53 @@ describe('LotAmenities', () => {
     expect(texts).toContain('6 spaces');
   });
 
-  it('does not render motorcycle row when 0', () => {
+  it('renders motorcycle row as None when 0', () => {
     const tree = renderLot({ motorcycle_spaces: 0 });
     const texts = collectTexts(tree.root);
-    expect(texts).not.toContain('Motorcycle');
+    expect(texts).toContain('Motorcycle');
+    expect(texts).toContain('None');
+  });
+
+  it('renders short-term spaces when > 0', () => {
+    const tree = renderLot({ short_term_parking_spaces: 19 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Short-term');
+    expect(texts).toContain('19 spaces');
+  });
+
+  it('renders short-term row as None when 0', () => {
+    const tree = renderLot({ short_term_parking_spaces: 0 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Short-term');
+    expect(texts).toContain('None');
+  });
+
+  it('renders low-emission spaces when > 0', () => {
+    const tree = renderLot({ low_emission_spaces: 32 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Low-emission');
+    expect(texts).toContain('32 spaces');
+  });
+
+  it('renders low-emission row as None when 0', () => {
+    const tree = renderLot({ low_emission_spaces: 0 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Low-emission');
+    expect(texts).toContain('None');
+  });
+
+  it('renders pay stations when > 0', () => {
+    const tree = renderLot({ pay_stations: 3 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Pay stations');
+    expect(texts).toContain('3 on-site');
+  });
+
+  it('renders pay-stations row as None when 0', () => {
+    const tree = renderLot({ pay_stations: 0 });
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Pay stations');
+    expect(texts).toContain('None');
   });
 
   it('renders all safety chips', () => {
@@ -245,10 +314,10 @@ describe('LotAmenities', () => {
     expect(texts).toContain('Paved');     // is_paved = true
   });
 
-  it('renders Covered chip when is_covered is true', () => {
+  it('renders Covered Structure chip when is_covered is true', () => {
     const tree = renderLot({ is_covered: true });
     const texts = collectTexts(tree.root);
-    expect(texts).toContain('Covered');
+    expect(texts).toContain('Covered Structure');
   });
 
   it('renders Unpaved chip when is_paved is false', () => {

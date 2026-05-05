@@ -16,6 +16,7 @@ export interface ReliabilityFactors {
   eventFrequency: FactorScore;
   sampleSize: FactorScore;
   historicalAccuracy: FactorScore;
+  userReports: FactorScore;
 }
 
 export interface ReliabilityScore {
@@ -43,6 +44,7 @@ export interface ReliabilityConfig {
     eventFrequency: number;
     sampleSize: number;
     historicalAccuracy: number;
+    userReports: number;
   };
   thresholds: {
     highConfidence: number;
@@ -51,6 +53,8 @@ export interface ReliabilityConfig {
     freshnessWindowMinutes: number;
     eventFrequencyTarget: number;
     sampleSizeTarget: number;
+    userReportsTarget: number;
+    userReportsWindowMinutes: number;
   };
 }
 

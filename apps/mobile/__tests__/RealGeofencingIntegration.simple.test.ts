@@ -16,6 +16,7 @@ describe('Real Geofencing Integration (Simple)', () => {
   // Sample minimal parking lot data
   const mockRealLots: ParkingLotResponse[] = [
     {
+      id: 'cltest000000000001',
       lot_id: 'G1',
       lot_name: 'G1 Student Parking',
       display_name: 'G1 Parking Lot',
@@ -24,7 +25,7 @@ describe('Real Geofencing Integration (Simple)', () => {
       capacity: 500,
       current_occupancy: 250,
       location_description: 'Near Engineering Building',
-      building_proximity: ['Engineering'],
+      buildings: [{ name: 'Engineering', category: 'ACADEMIC' }],
       center_lat: 33.7838,
       center_lng: -118.1141,
       geofence_polygon: [
@@ -43,14 +44,16 @@ describe('Real Geofencing Integration (Simple)', () => {
       ev_charging_stations: 5,
       motorcycle_spaces: 10,
       accessible_spaces: 15,
+      short_term_parking_spaces: 0,
+      low_emission_spaces: 0,
+      pay_stations: 0,
       has_lighting: true,
       has_cameras: true,
       has_emergency_phone: true,
       is_covered: false,
       is_paved: true,
       levels: undefined,
-      penetration_rate: 0.85,
-      avg_turnover_minutes: 180,
+      has_solar_canopy: false,
       // ParkingLotResponse additional fields
       available: 250,
       occupancy_rate: 0.5,
@@ -59,10 +62,12 @@ describe('Real Geofencing Integration (Simple)', () => {
       estimated_available: 250,
       raw_occupancy: 213,
       effective_penetration_rate: 0.85,
-      confidence: 'MEDIUM' as const,
+      metadata_confidence: 'MEDIUM' as const,
       timestamp: '2024-01-01T00:00:00Z',
+      advisories: [],
     },
     {
+      id: 'cltest000000000002',
       lot_id: 'G2',
       lot_name: 'G2 Student Parking',
       display_name: 'G2 Parking Lot',
@@ -71,7 +76,7 @@ describe('Real Geofencing Integration (Simple)', () => {
       capacity: 300,
       current_occupancy: 150,
       location_description: 'Near Library',
-      building_proximity: ['Library'],
+      buildings: [{ name: 'Library', category: 'ACADEMIC' }],
       center_lat: 33.7840,
       center_lng: -118.1145,
       geofence_polygon: [
@@ -90,14 +95,16 @@ describe('Real Geofencing Integration (Simple)', () => {
       ev_charging_stations: 2,
       motorcycle_spaces: 5,
       accessible_spaces: 8,
+      short_term_parking_spaces: 0,
+      low_emission_spaces: 0,
+      pay_stations: 0,
       has_lighting: true,
       has_cameras: true,
       has_emergency_phone: false,
       is_covered: false,
       is_paved: true,
       levels: undefined,
-      penetration_rate: 0.80,
-      avg_turnover_minutes: 150,
+      has_solar_canopy: false,
       // ParkingLotResponse additional fields
       available: 150,
       occupancy_rate: 0.5,
@@ -106,8 +113,9 @@ describe('Real Geofencing Integration (Simple)', () => {
       estimated_available: 150,
       raw_occupancy: 120,
       effective_penetration_rate: 0.80,
-      confidence: 'HIGH' as const,
+      metadata_confidence: 'HIGH' as const,
       timestamp: '2024-01-01T00:00:00Z',
+      advisories: [],
     },
   ];
 

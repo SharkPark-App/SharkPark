@@ -175,6 +175,103 @@ describe('CacheService', () => {
     });
   });
 
+  describe('in-flight fetcher coalescing', () => {
+    it('coalesces concurrent fetches on the same key into one fetcher call', async () => {
+      // Two callers race on the same key (e.g. focus + AppState resume on
+      // the same tick). Both miss the cache (neither has written yet), so
+      // without coalescing both would invoke the fetcher.
+      let resolveFn: ((v: string) => void) | undefined;
+      const pending = new Promise<string>((r) => { resolveFn = r; });
+      const fetcher = jest.fn().mockReturnValue(pending);
+
+      const p1 = cacheService.getOrFetch('lots:race', fetcher, { ttl: 60000 });
+      const p2 = cacheService.getOrFetch('lots:race', fetcher, { ttl: 60000 });
+
+      // Flush microtasks so both calls progress past the cache + NetInfo
+      // awaits and reach coalescedFetch. The fetcher returns a still-pending
+      // promise, so both calls block at the same point.
+      await new Promise((r) => setImmediate(() => r(undefined)));
+
+      // Both calls reached the fetcher boundary, but only one fetcher
+      // invocation actually fired — the second caller joined the in-flight
+      // promise instead.
+      expect(fetcher).toHaveBeenCalledTimes(1);
+
+      resolveFn!('shared');
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(r1.data).toBe('shared');
+      expect(r2.data).toBe('shared');
+    });
+
+    it('does not coalesce across different keys', async () => {
+      const fetcher = jest.fn().mockResolvedValue('x');
+
+      await Promise.all([
+        cacheService.getOrFetch('lots:a', fetcher),
+        cacheService.getOrFetch('lots:b', fetcher),
+      ]);
+
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('evicts on success so the next post-settle call fires fresh', async () => {
+      const fetcher = jest.fn()
+        .mockResolvedValueOnce('first')
+        .mockResolvedValueOnce('second');
+
+      // Use ttl:1 + a small delay so the second call also misses the cache
+      // and goes to the fetcher path. Without eviction the second call
+      // would await the already-settled first promise and get 'first'.
+      const r1 = await cacheService.getOrFetch('lots:evict-success', fetcher, { ttl: 1 });
+      await new Promise((r) => setTimeout(() => r(undefined), 10));
+      const r2 = await cacheService.getOrFetch('lots:evict-success', fetcher, { ttl: 1 });
+
+      expect(r1.data).toBe('first');
+      expect(r2.data).toBe('second');
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('evicts on failure so a transient error does not poison the slot', async () => {
+      // Critical: if a rejected promise stayed in the in-flight map, every
+      // subsequent caller would re-await it forever and never get a chance
+      // to retry.
+      const fetcher = jest.fn()
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValueOnce('recovered');
+
+      await expect(
+        cacheService.getOrFetch('lots:evict-failure', fetcher, { ttl: 60000 }),
+      ).rejects.toThrow('transient');
+
+      const r2 = await cacheService.getOrFetch('lots:evict-failure', fetcher, { ttl: 60000 });
+      expect(r2.data).toBe('recovered');
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('only writes the AsyncStorage entry once for N coalesced callers', async () => {
+      // The set() must live inside the coalesced fetcher (not after the
+      // shared await) so that 10 concurrent callers don't each fire a
+      // redundant AsyncStorage write of the same payload. We assert this
+      // indirectly: with a fetcher that returns a fresh object every
+      // call, all 10 callers should see the SAME object reference (the
+      // one written by the single coalesced fetcher invocation), not
+      // distinct objects from separate fetcher invocations.
+      const fetcher = jest.fn(() => Promise.resolve({ value: Math.random() }));
+
+      const calls = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          cacheService.getOrFetch<{ value: number }>('lots:write-dedupe', fetcher, { ttl: 60000 }),
+        ),
+      );
+
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      const firstValue = calls[0].data.value;
+      for (const call of calls) {
+        expect(call.data.value).toBe(firstValue);
+      }
+    });
+  });
+
   describe('LRU eviction', () => {
     it('should maintain a cache index', async () => {
       await cacheService.set('key1', 'val1');

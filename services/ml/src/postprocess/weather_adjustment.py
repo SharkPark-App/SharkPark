@@ -70,8 +70,10 @@ class WeatherSnapshot:
 # current values are a hand-picked heuristic, not derived.
 _COMMUTE_HOURS = (7, 8, 9, 16, 17, 18)
 
-# Keywords matched against OWM's text.
-# "freezing rain" (OWM id 511, Rain group) is bucketed as snow.
+# Keywords matched against the lower-cased NWS `shortForecast` text written
+# by the backend's WeatherFetchService (e.g. "heavy rain", "scattered
+# thunderstorms", "freezing rain likely"). Freezing rain is bucketed as snow
+# because its impact on driver behavior matches snow more than rain.
 _SEVERE_KEYWORDS = ("thunderstorm", "tornado", "squall")
 _SNOW_KEYWORDS = ("snow", "sleet", "freezing rain")
 _HEAVY_KEYWORD = "heavy"

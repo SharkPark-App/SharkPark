@@ -1,0 +1,71 @@
+---
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { SITE } from '../consts';
+
+const faqs = [
+  {
+    q: 'Why does the lot show different occupancy than what I see in person?',
+    a: 'SharkPark estimates occupancy by counting anonymous, hashed entry and exit events from people who use the app. The fewer users contributing data for a given lot, the less accurate the estimate. Each lot displays a HIGH, MEDIUM, or LOW reliability indicator so you can judge how much to trust the number.',
+  },
+  {
+    q: 'How do I delete my account?',
+    a: 'In the app, go to Settings → Account → Delete Account. You can also follow the instructions at the Delete Account page.',
+  },
+  {
+    q: 'Why does the app need background location?',
+    a: 'SharkPark uses geofencing — your phone fires an event only when it crosses the boundary of a parking lot. We never collect or store your continuous location. Background permission is required by iOS and Android in order to detect those boundary crossings while the app is closed.',
+  },
+  {
+    q: 'Does SharkPark work at other schools or parking areas?',
+    a: 'Today, SharkPark only covers parking lots in the area around CSULB. We may expand later — let us know if you want to see a particular area supported.',
+  },
+  {
+    q: 'Is SharkPark affiliated with CSULB?',
+    a: 'No. SharkPark is an independent app. It is not affiliated with, endorsed by, or sponsored by California State University, Long Beach.',
+  },
+  {
+    q: 'How do I report a bug or request a feature?',
+    a: `Email us at ${SITE.contactEmail} with a short description of what went wrong or what you\u2019d like to see.`,
+  },
+];
+
+// FAQPage JSON-LD — eligible for FAQ rich results in Google search.
+const faqJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((f) => ({
+    '@type': 'Question',
+    name: f.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.a },
+  })),
+};
+---
+<DocsLayout
+  title="Support"
+  description={`Get help with ${SITE.name} — FAQ, contact information, and account help.`}
+>
+  <script type="application/ld+json" set:html={JSON.stringify(faqJsonLd)} />
+  <p>
+    Need help with {SITE.name}? Start with the FAQ below. If you can&rsquo;t find what you&rsquo;re looking for, email us at <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a> and we&rsquo;ll get back to you.
+  </p>
+
+  <h2>Contact</h2>
+  <ul>
+    <li><strong>General support:</strong> <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a></li>
+    <li><strong>Privacy &amp; data requests:</strong> <a href={`mailto:${SITE.privacyEmail}`}>{SITE.privacyEmail}</a></li>
+    <li><strong>Service status:</strong> <a href={SITE.statusUrl} rel="noopener">{SITE.statusUrl}</a></li>
+  </ul>
+
+  <h2>Frequently asked questions</h2>
+  {faqs.map((item) => (
+    <>
+      <h3>{item.q}</h3>
+      <p>{item.a}</p>
+    </>
+  ))}
+
+  <h2>Still need help?</h2>
+  <p>
+    Send us an email at <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a> with a short description of what you were trying to do and what happened instead. The shorter you keep it, the faster we can help.
+  </p>
+</DocsLayout>

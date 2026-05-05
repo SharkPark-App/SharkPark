@@ -15,10 +15,14 @@
  */
 
 import 'dotenv/config';
-import { PrismaClient, UserType, CampusEventType, EventType, ConfidenceLevel } from '@prisma/client';
+import { PrismaClient, UserType, EventType, ConfidenceLevel } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
-import { CSULB_SCHOOL, GEOFENCE_POLYGONS, generateGeofence, parkingLots } from './lot-data';
+import { CSULB_SCHOOL, CSULB_BUILDINGS, parkingLots } from './lot-data';
+import { LOT_GEOFENCES } from './lot-geofences.generated';
+import { LOT_ADVISORIES } from './lot-advisories.generated';
+import { BUILDING_FOOTPRINTS } from './building-footprints.generated';
+import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
 import { getSemester, getWeekOfSemester } from '../src/lots/academic-calendar';
 
 // Prisma v7: "client" engine requires a driver adapter for direct DB connections
@@ -72,41 +76,52 @@ const testUsers = [
 ];
 
 // ────────────────────────────────────────────────────────────
-// Campus Events (mapped to CampusEventType enum)
+// Campus Events — seed data for local development.
+// In production these are populated by the fetch-events cron (CampusLabs scraper).
+// Dates are relative to now so the events always fall within the 7-day query window.
 // ────────────────────────────────────────────────────────────
+
+function daysFromNow(days: number, hour = 19): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(hour, 0, 0, 0);
+  return d;
+}
 
 const campusEvents = [
   {
-    event_name: "Men's Basketball vs UC Irvine",
-    event_type: CampusEventType.ATHLETIC,
+    external_id: 'seed-basketball-home',
+    event_name: "Men's Basketball — Home Game",
+    description: 'Come cheer on the 49ers as they take on our rivals in an exciting home game at the Walter Pyramid! Free entry for students with valid ID. Go Beach!',
     location: 'Walter Pyramid',
-    start_time: new Date('2025-12-15T19:00:00Z'),
-    end_time: new Date('2025-12-15T21:30:00Z'),
-    expected_attendance: 4500,
+    event_url: 'https://longbeachstate.com/sports/mbball/schedule',
+    start_time: daysFromNow(0, 19),
+    end_time: daysFromNow(0, 21),
   },
   {
-    event_name: 'Spring Commencement 2025',
-    event_type: CampusEventType.ACADEMIC,
+    external_id: 'seed-spring-commencement',
+    event_name: 'Spring Commencement',
     location: 'Walter Pyramid',
-    start_time: new Date('2025-05-17T09:00:00Z'),
-    end_time: new Date('2025-05-17T18:00:00Z'),
-    expected_attendance: 12000,
+    event_url: 'https://www.csulb.edu/commencement',
+    start_time: daysFromNow(2, 9),
+    end_time: daysFromNow(2, 18),
   },
   {
-    event_name: 'Winter Concert Series',
-    event_type: CampusEventType.PERFORMANCE,
-    location: 'University Theatre',
-    start_time: new Date('2025-12-20T19:30:00Z'),
-    end_time: new Date('2025-12-20T21:30:00Z'),
-    expected_attendance: 800,
-  },
-  {
+    external_id: 'seed-career-fair',
     event_name: 'Spring Career Fair',
-    event_type: CampusEventType.ACADEMIC,
+    description: 'Connect with potential employers and explore career opportunities at our annual Spring Career Fair!',
     location: 'USU Ballroom',
-    start_time: new Date('2025-01-15T10:00:00Z'),
-    end_time: new Date('2025-01-15T16:00:00Z'),
-    expected_attendance: 2500,
+    event_url: 'https://www.csulb.edu/careers',
+    start_time: daysFromNow(4, 10),
+    end_time: daysFromNow(4, 16),
+  },
+  {
+    external_id: 'seed-concert',
+    event_name: 'Spring Concert Series',
+    location: 'University Theatre',
+    event_url: 'https://web.csulb.edu/colleges/cota/calendar',
+    start_time: daysFromNow(6, 19),
+    end_time: daysFromNow(6, 21),
   },
 ];
 
@@ -148,6 +163,13 @@ async function main() {
   const lotMap = new Map<string, string>(); // lot_id -> prisma id
 
   for (const lot of parkingLots) {
+    const geofence = LOT_GEOFENCES[lot.lot_id];
+    if (!geofence) {
+      throw new Error(
+        `[seed] No concept3d geofence for lot_id=${lot.lot_id}. ` +
+          `Re-run prisma/scripts/extract-lot-polygons.ts after updating lookup rules.`,
+      );
+    }
     const created = await prisma.lot.create({
       data: {
         school_id: school.id,
@@ -159,11 +181,13 @@ async function main() {
         capacity: lot.capacity,
         current_occupancy: lot.current_occupancy,
         location_description: lot.location_description,
-        building_proximity: lot.building_proximity,
-        center_lat: lot.center_lat,
-        center_lng: lot.center_lng,
-        geofence_polygon: GEOFENCE_POLYGONS[lot.lot_id] ?? generateGeofence(lot.center_lat, lot.center_lng, lot.geofence_radius),
-        geofence_radius: lot.geofence_radius,
+        // Geometry comes entirely from lot-geofences.generated.ts (concept3d).
+        // Lot.center_lat/lng = polygon centroid so the DB has one consistent
+        // geometric source matching geofence_polygon.
+        center_lat: geofence.centroid.lat,
+        center_lng: geofence.centroid.lng,
+        geofence_polygon: geofence.polygon,
+        geofence_radius: geofence.radius_m,
         permit_types: lot.permit_types,
         daily_permit_allowed: lot.daily_permit_allowed,
         daily_rate: lot.daily_rate,
@@ -173,22 +197,107 @@ async function main() {
         ev_charging_stations: lot.ev_charging_stations,
         motorcycle_spaces: lot.motorcycle_spaces,
         accessible_spaces: lot.accessible_spaces,
+        short_term_parking_spaces: lot.short_term_parking_spaces,
+        low_emission_spaces: lot.low_emission_spaces,
+        pay_stations: lot.pay_stations,
         has_lighting: lot.has_lighting,
         has_cameras: lot.has_cameras,
         has_emergency_phone: lot.has_emergency_phone,
         is_covered: lot.is_covered,
         is_paved: lot.is_paved,
+        is_structure: lot.is_structure ?? false,
+        has_solar_canopy: lot.has_solar_canopy,
         levels: lot.levels,
-        penetration_rate: lot.penetration_rate,
-        avg_turnover_minutes: lot.avg_turnover_minutes,
-        confidence: lot.confidence,
+        metadata_confidence: lot.metadata_confidence,
       },
     });
     lotMap.set(lot.lot_id, created.id);
   }
   console.log(`[seed] Seeded ${parkingLots.length} parking lots\n`);
 
-  // 4. Seed Users & Favorites
+  // 4. Seed Buildings
+  console.log('[seed] Seeding buildings...');
+  const buildingMap = new Map<string, { id: string; alternate_names: string[] }>(); // name -> { id, alternate_names }
+
+  // Pre-merge footprint polygons so derive-lot-buildings can use point-to-edge
+  // distance (centroid haversine fallback when polygon is missing).
+  const buildingsWithFootprints = CSULB_BUILDINGS.map((b) => ({
+    ...b,
+    polygon: BUILDING_FOOTPRINTS[b.name]?.polygon ?? null,
+  }));
+
+  for (const b of buildingsWithFootprints) {
+    const created = await prisma.building.create({
+      data: {
+        school_id: school.id,
+        name: b.name,
+        alternate_names: b.alternate_names,
+        center_lat: b.lat,
+        center_lng: b.lng,
+        footprint_polygon: b.polygon ?? undefined,
+        category: b.category,
+      },
+    });
+    buildingMap.set(b.name, { id: created.id, alternate_names: b.alternate_names });
+  }
+  console.log(`[seed] Seeded ${CSULB_BUILDINGS.length} buildings\n`);
+
+  // 5. Seed Lot-Building associations
+  console.log('[seed] Seeding lot-building associations...');
+  let lotBuildingCount = 0;
+
+  for (const lot of parkingLots) {
+    const lotDbId = lotMap.get(lot.lot_id);
+    if (!lotDbId) continue;
+
+    const geofence = LOT_GEOFENCES[lot.lot_id];
+    if (!geofence) continue;
+    const nearbyNames = deriveLotBuildings(
+      {
+        ...lot,
+        center_lat: geofence.centroid.lat,
+        center_lng: geofence.centroid.lng,
+        polygon: geofence.polygon,
+      },
+      buildingsWithFootprints,
+    );
+    for (const proximity of nearbyNames) {
+      const building = buildingMap.get(proximity); // exact name match — no duplicates possible
+      if (!building) continue;
+      await prisma.lotBuilding.create({
+        data: { lot_id: lotDbId, building_id: building.id },
+      });
+      lotBuildingCount++;
+    }
+  }
+  console.log(`[seed] Seeded ${lotBuildingCount} lot-building associations\n`);
+
+  // 6. Seed Lot Advisories (concept3d construction/closure overlay)
+  console.log('[seed] Seeding lot advisories...');
+  let advisoryCount = 0;
+  for (const adv of LOT_ADVISORIES) {
+    const lotDbId = lotMap.get(adv.lot_id);
+    if (!lotDbId) continue;
+    await prisma.lotAdvisory.create({
+      data: {
+        school_id: school.id,
+        lot_id: lotDbId,
+        title: adv.title,
+        description: adv.description,
+        severity: adv.severity,
+        source: 'CONCEPT3D',
+        source_cat_id: adv.source_cat_id,
+        source_marker_id: adv.source_marker_id,
+        match_reason: adv.match_reason,
+        polygon: adv.polygon as unknown as object,
+        is_active: true,
+      },
+    });
+    advisoryCount++;
+  }
+  console.log(`[seed] Seeded ${advisoryCount} lot advisories\n`);
+
+  // 7. Seed Users & Favorites
   console.log('[seed] Seeding users...');
   let totalFavorites = 0;
 
@@ -223,19 +332,30 @@ async function main() {
   }
   console.log(`[seed] Seeded ${testUsers.length} users with ${totalFavorites} favorites\n`);
 
-  // 5. Seed Campus Events
+  // 8. Seed Campus Events
   console.log('[seed] Seeding campus events...');
 
   for (const event of campusEvents) {
+    const loc = event.location.toLowerCase();
+    let buildingId: string | null = null;
+    for (const [, b] of buildingMap) {
+      if (b.alternate_names.some(alt => loc.includes(alt.toLowerCase()))) {
+        buildingId = b.id;
+        break;
+      }
+    }
+
     await prisma.campusEvent.create({
       data: {
         school_id: school.id,
+        external_id: event.external_id,
         event_name: event.event_name,
-        event_type: event.event_type,
+        description: event.description,
         location: event.location,
+        event_url: event.event_url,
         start_time: event.start_time,
         end_time: event.end_time,
-        expected_attendance: event.expected_attendance,
+        building_id: buildingId,
       },
     });
   }
@@ -314,7 +434,7 @@ async function main() {
             occupancy,
             available,
             occupancy_rate: Math.round(occRate * 1000) / 1000,
-            confidence: lot.confidence,
+            confidence: lot.metadata_confidence,
             is_campus_open: true,
             // Synthetic data is already "total cars" — no scaling applied.
             estimated_occupancy: occupancy,
@@ -410,7 +530,7 @@ async function main() {
     lots: await prisma.lot.count(),
     users: await prisma.user.count(),
     favorites: await prisma.userFavorite.count(),
-    events: await prisma.campusEvent.count(),
+    campusEvents: await prisma.campusEvent.count(),
     weather: await prisma.weather.count(),
     snapshots: await prisma.occupancySnapshot.count(),
     occEvents: await prisma.occupancyEvent.count(),
