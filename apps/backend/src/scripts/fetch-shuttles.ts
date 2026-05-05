@@ -4,11 +4,10 @@ import { ShuttleTrackerCoreModule } from '../shuttle-tracker/shuttle-tracker-cor
 import { ShuttleTrackerService } from '../shuttle-tracker/shuttle-tracker.service';
 
 void runCronJob(
-  'fetch-transit',
+  'fetch-shuttles',
   [RedisModule, ShuttleTrackerCoreModule],
   async ({ app }) => {
     const svc = app.get(ShuttleTrackerService);
-    await svc.fetchRoutesAndStops();
     await svc.fetchShuttles();
   },
 );
