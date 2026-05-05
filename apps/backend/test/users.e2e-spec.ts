@@ -1,9 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, CanActivate, ExecutionContext } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AzureAdGuard } from '../src/auth/azure-ad.guard';
+import { TierThrottlerGuard } from '../src/common/guards/tier-throttler.guard';
 import { PrismaService } from '../src/database/database.module';
 import { bootstrapTestApp } from './utils/bootstrap';
 
@@ -15,7 +17,14 @@ class MockAuthGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
 
-    // Extract the userId (email) from the URL path so IDOR checks pass.
+    // /me/data needs a fixed, real email so the full export path can be exercised.
+    // The disposable-user block below creates this user in beforeAll.
+    if (/\/users\/me\/data/.test(req.url)) {
+      req.user = { email: ME_DATA_EMAIL, first_name: 'Test', last_name: 'User', user_type: 'STUDENT' };
+      return true;
+    }
+
+    // Extract the userId (email) from the URL path so assertOwner() sees a matching email.
     // Routes: /api/v1/users/:userId, /api/v1/users/:userId/favorites, etc.
     const match = req.url.match(/\/users\/([^/]+)/);
     const email = match ? decodeURIComponent(match[1]) : 'test@csulb.edu';
@@ -31,11 +40,20 @@ class MockAuthGuard implements CanActivate {
   }
 }
 
+// Dedicated email for the /me/data describe block — must match MockAuthGuard above.
+const ME_DATA_EMAIL = 'me-data-e2e@csulb.edu';
+
 describe('UsersController (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
   beforeAll(async () => {
+    // Disable throttler globally for this suite — /me/data is throttled to 3/hour
+    // in production, but the suite makes more than 3 calls. TierThrottlerGuard
+    // overrides canActivate, so patching ThrottlerGuard.prototype alone is not enough.
+    ThrottlerGuard.prototype.canActivate = () => Promise.resolve(true);
+    TierThrottlerGuard.prototype.canActivate = () => Promise.resolve(true);
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -254,6 +272,89 @@ describe('UsersController (e2e)', () => {
       return request(app.getHttpServer())
         .delete('/api/v1/users/me')
         .expect(404);
+    });
+  });
+
+  describe('/api/v1/users/me/data (GET)', () => {
+    // Fixed token so the masking assertion below is deterministic.
+    const FAKE_PUSH_TOKEN = 'fake-fcm-token-FOR-E2E-only-aB3xY9';
+
+    beforeAll(async () => {
+      const school = await prisma.school.findFirstOrThrow();
+      const user = await prisma.user.upsert({
+        where: { email: ME_DATA_EMAIL },
+        update: {},
+        create: {
+          email: ME_DATA_EMAIL,
+          first_name: 'Export',
+          last_name: 'Test',
+          user_type: 'STUDENT',
+          school: { connect: { id: school.id } },
+        },
+      });
+      // Register a push token so the masking branch is exercised.
+      await prisma.pushToken.upsert({
+        where: { token: FAKE_PUSH_TOKEN },
+        update: {},
+        create: {
+          user_id: user.id,
+          token: FAKE_PUSH_TOKEN,
+          platform: 'ios',
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.pushToken.deleteMany({ where: { token: FAKE_PUSH_TOKEN } });
+      await prisma.user.deleteMany({ where: { email: ME_DATA_EMAIL } });
+    });
+
+    it('should return 200 with the full export envelope', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/users/me/data')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.success).toBe(true);
+          const { data } = res.body;
+          expect(data.exported_at).toBeDefined();
+          expect(data.profile.email).toBe(ME_DATA_EMAIL);
+          expect(data.profile.first_name).toBe('Export');
+          expect(data.profile.last_name).toBe('Test');
+          expect(data.profile).not.toHaveProperty('id');
+          expect(Array.isArray(data.favorites)).toBe(true);
+          expect(Array.isArray(data.push_tokens)).toBe(true);
+          expect(Array.isArray(data.reports)).toBe(true);
+          expect(Array.isArray(data.notification_logs)).toBe(true);
+        });
+    });
+
+    it('should mask raw push tokens (no full FCM/APNs value in response)', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/users/me/data')
+        .expect(200)
+        .expect((res: Response) => {
+          const { data } = res.body;
+          expect(data.push_tokens.length).toBeGreaterThan(0);
+          for (const t of data.push_tokens) {
+            expect(t).not.toHaveProperty('token');
+            expect(typeof t.token_preview).toBe('string');
+            // Preview is "\u2026" + last 6 chars; must not contain the full raw token.
+            expect(t.token_preview.length).toBeLessThanOrEqual(7);
+          }
+          // Body as a whole must not leak the raw token anywhere.
+          expect(JSON.stringify(res.body)).not.toContain(FAKE_PUSH_TOKEN);
+        });
+    });
+
+    it('should write a USER_DATA_EXPORTED audit row with a hashed actor (no PII)', async () => {
+      const audits = await prisma.auditEvent.findMany({
+        where: { event_type: 'USER_DATA_EXPORTED' },
+        orderBy: { created_at: 'desc' },
+        take: 5,
+      });
+      expect(audits.length).toBeGreaterThan(0);
+      expect(audits[0].actor_hash).toMatch(/^[a-f0-9]{64}$/);
+      expect(JSON.stringify(audits)).not.toContain(ME_DATA_EMAIL);
     });
   });
 });

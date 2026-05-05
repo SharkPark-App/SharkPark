@@ -11,7 +11,7 @@ describe('ReportsService', () => {
   // Mock lot & report
   let prisma: {
     lot: { findUnique: jest.Mock };
-    report: { create: jest.Mock };
+    report: { create: jest.Mock; updateMany: jest.Mock };
   };
 
   const mockUser = { id: 'cuid-user-420', email: 'test@csulb.edu' } as User;
@@ -19,7 +19,7 @@ describe('ReportsService', () => {
   beforeEach(async () => {
     prisma = {
       lot: { findUnique: jest.fn() },
-      report: { create: jest.fn() },
+      report: { create: jest.fn(), updateMany: jest.fn() },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -113,6 +113,53 @@ describe('ReportsService', () => {
 
       await expect(service.createReport(validDto, mockUser)).rejects.toThrow(NotFoundException);
       expect(prisma.report.create).not.toHaveBeenCalled();
+    });
+
+    it('censors profanity in the message before persistence', async () => {
+      const dtoWithProfanity = { ...validDto, message: 'This guy is an asshole, blocking row B' };
+      prisma.lot.findUnique.mockResolvedValue(mockLot);
+      prisma.report.create.mockResolvedValue({ id: 'report-x' });
+
+      await service.createReport(dtoWithProfanity, mockUser);
+
+      const persisted = prisma.report.create.mock.calls[0][0].data.message as string;
+      expect(persisted).not.toContain('asshole');
+      expect(persisted).toContain('*');
+      expect(persisted).toMatch(/blocking row B/);
+    });
+
+    it('truncates messages above the cap server-side as defense in depth', async () => {
+      const longMessage = 'A'.repeat(5000);
+      const dtoLong = { ...validDto, message: longMessage };
+      prisma.lot.findUnique.mockResolvedValue(mockLot);
+      prisma.report.create.mockResolvedValue({ id: 'report-y' });
+
+      await service.createReport(dtoLong, mockUser);
+
+      const persisted = prisma.report.create.mock.calls[0][0].data.message as string;
+      expect(persisted.length).toBeLessThanOrEqual(500);
+    });
+  });
+
+  describe('pruneOldMessages', () => {
+    it('redacts messages on rows older than the retention window', async () => {
+      prisma.report.updateMany.mockResolvedValue({ count: 7 });
+
+      const result = await service.pruneOldMessages(90);
+
+      expect(prisma.report.updateMany).toHaveBeenCalledTimes(1);
+      const call = prisma.report.updateMany.mock.calls[0][0];
+      expect(call.where.message).toEqual({ not: null });
+      expect(call.where.created_at.lt).toBeInstanceOf(Date);
+      expect(call.data).toEqual({ message: null });
+      expect(result.messages_redacted).toBe(7);
+      expect(result.cutoff).toMatch(/T/);
+    });
+
+    it('throws on a non-positive retention', async () => {
+      await expect(service.pruneOldMessages(0)).rejects.toThrow(
+        'pruneOldMessages: retentionDays must be >= 1',
+      );
     });
   });
 });

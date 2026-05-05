@@ -8,11 +8,13 @@ import {
   ReliabilityWeights,
   ReliabilityThresholds,
   ReliabilityScoreSummary,
+  SourceType,
 } from './interfaces';
 
 /**
  * Computes confidence levels for occupancy data using multi-factor weighted scoring.
- * Score = Σ(factor_normalized × weight) × 100
+ * Score = Σ(factor_normalized × weight) × sourceWeight × 100
+ * sourceWeight: AUTHED=1.0, ANONYMOUS=0.3–0.6 (by penetration rate), FLAGGED=0
  * Thresholds: HIGH >= 70, MEDIUM >= 40, LOW < 40
  */
 @Injectable()
@@ -44,6 +46,10 @@ export class ReliabilityService {
     input: ReliabilityInput,
     weights: ReliabilityWeights = this.defaultWeights,
     thresholds: ReliabilityThresholds = this.defaultThresholds,
+    // Defaults to AUTHED (1.0 multiplier) so existing call sites that don't yet
+    // track per-event source attribution preserve their score. Opt callers in to
+    // ANONYMOUS / FLAGGED weighting as source tracking is wired through.
+    sourceType: SourceType = 'AUTHED',
   ): ReliabilityScore {
     // Clone + normalize weights to avoid mutating the default object
     const w = { ...weights };
@@ -57,14 +63,16 @@ export class ReliabilityService {
 
     const factors = this.computeFactors(input, w, thresholds);
 
-    const score = Math.round(
-      (factors.penetrationRate.weightedScore +
-        factors.dataFreshness.weightedScore +
-        factors.eventFrequency.weightedScore +
-        factors.sampleSize.weightedScore +
-        factors.historicalAccuracy.weightedScore +
-        factors.userReports.weightedScore) * 100,
-    );
+    const rawScore =
+      factors.penetrationRate.weightedScore +
+      factors.dataFreshness.weightedScore +
+      factors.eventFrequency.weightedScore +
+      factors.sampleSize.weightedScore +
+      factors.historicalAccuracy.weightedScore +
+      factors.userReports.weightedScore;
+
+    const sourceWeight = this.getSourceWeight(sourceType, input.penetrationRate, thresholds);
+    const score = Math.round(rawScore * sourceWeight * 100);
 
     const confidence = this.getConfidenceLevel(score, thresholds);
     const isColdStart = this.isColdStartMode(input, thresholds);
@@ -81,8 +89,18 @@ export class ReliabilityService {
     };
   }
 
-  computeReliabilitySummary(lotId: string, input: ReliabilityInput): ReliabilityScoreSummary {
-    const { score, confidence, isColdStart, computedAt } = this.computeReliability(lotId, input);
+  computeReliabilitySummary(
+    lotId: string,
+    input: ReliabilityInput,
+    sourceType: SourceType = 'AUTHED',
+  ): ReliabilityScoreSummary {
+    const { score, confidence, isColdStart, computedAt } = this.computeReliability(
+      lotId,
+      input,
+      this.defaultWeights,
+      this.defaultThresholds,
+      sourceType,
+    );
     return { lotId, score, confidence, isColdStart, computedAt };
   }
 
@@ -162,6 +180,27 @@ export class ReliabilityService {
       weight,
       weightedScore: normalizedValue * weight,
     };
+  }
+
+  /**
+   * Scales the final score by contributor source trust:
+   *   FLAGGED   → 0      (score zeroed; data is considered tainted)
+   *   ANONYMOUS → 0.3–0.6 (interpolated by penetration rate vs target)
+   *   AUTHED    → 1.0    (full weight; Azure AD identity verified)
+   */
+  private getSourceWeight(
+    sourceType: SourceType,
+    penetrationRate: number,
+    thresholds: ReliabilityThresholds,
+  ): number {
+    switch (sourceType) {
+      case 'FLAGGED':
+        return 0;
+      case 'AUTHED':
+        return 1.0;
+      case 'ANONYMOUS':
+        return 0.3 + 0.3 * Math.min(1, penetrationRate / thresholds.penetrationRateTarget);
+    }
   }
 
   /** Generic factor: normalized = min(1, value / target) */
@@ -251,7 +290,11 @@ export class ReliabilityService {
     return { ...this.defaultThresholds };
   }
 
-  computeReliabilityBatch(inputs: Array<{ lotId: string; input: ReliabilityInput }>): ReliabilityScore[] {
-    return inputs.map(({ lotId, input }) => this.computeReliability(lotId, input));
+  computeReliabilityBatch(
+    inputs: Array<{ lotId: string; input: ReliabilityInput; sourceType?: SourceType }>,
+  ): ReliabilityScore[] {
+    return inputs.map(({ lotId, input, sourceType }) =>
+      this.computeReliability(lotId, input, this.defaultWeights, this.defaultThresholds, sourceType),
+    );
   }
 }

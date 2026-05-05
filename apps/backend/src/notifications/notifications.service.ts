@@ -152,4 +152,36 @@ export class NotificationsService implements OnModuleInit {
       data: { user_id: userId, type, lot_id: lotId, event_id: eventId },
     });
   }
+
+  /**
+   * Retention prune: delete `notification_logs` rows older than `retentionDays`.
+   *
+   * The dedup window read by `wasRecentlyNotified` is bounded by an explicit
+   * `gte: since` filter (millisecond-resolution `windowMs`), so older rows
+   * never affect dedup behavior — they are pure history. Keeping them
+   * indefinitely is a privacy-data-minimization issue (each row links a
+   * user to a lot at a moment in time) and an unbounded growth source on
+   * the `idx_notification_log_dedup` index.
+   *
+   * 90 days is comfortably wider than any current dedup window (longest is
+   * 30 days for `notify-events`) and matches the retention rationale used
+   * for diagnostic logs elsewhere in the stack.
+   */
+  async pruneOldLogs(
+    retentionDays: number = 90,
+  ): Promise<{ logs_deleted: number; cutoff: string }> {
+    if (!Number.isFinite(retentionDays) || retentionDays < 1) {
+      throw new Error(
+        `pruneOldLogs: retentionDays must be >= 1, got ${retentionDays}`,
+      );
+    }
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const { count } = await this.prisma.notificationLog.deleteMany({
+      where: { sent_at: { lt: cutoff } },
+    });
+    this.logger.log(
+      `[retention] Pruned ${count} notification_logs older than ${retentionDays}d (cutoff=${cutoff.toISOString()})`,
+    );
+    return { logs_deleted: count, cutoff: cutoff.toISOString() };
+  }
 }
