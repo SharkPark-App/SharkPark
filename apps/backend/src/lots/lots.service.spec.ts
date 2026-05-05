@@ -629,9 +629,10 @@ describe('LotsService', () => {
       prisma.predictionShortTerm.findMany.mockResolvedValue([
         {
           target_time: new Date('2026-03-01T14:00:00Z'),
-          predicted_occupancy: 150,
-          confidence_lower: 130,
-          confidence_upper: 170,
+          // predicted_occupancy is a rate in [0, 1] per PR #133
+          predicted_occupancy: 0.75,
+          confidence_lower: 0.65,
+          confidence_upper: 0.85,
           model_version: 'v1.0',
         },
       ]);
@@ -682,9 +683,10 @@ describe('LotsService', () => {
         {
           target_date: new Date('2026-04-13'),
           target_hour: 10,
-          predicted_occupancy: 150,
-          confidence_lower: 130,
-          confidence_upper: 170,
+          // predicted_occupancy is a rate in [0, 1] per PR #133
+          predicted_occupancy: 0.75,
+          confidence_lower: 0.65,
+          confidence_upper: 0.85,
           model_version: 'xgboost-v2',
         },
       ]);
