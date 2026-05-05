@@ -11,6 +11,14 @@ jobs:
     env:
       SKIP_LOCAL_INFRA: "1"
       DATABASE_URL: "postgresql://sharkpark:sharkpark@localhost:5432/sharkpark?schema=public"
+      # Dummy values so the Azure AD strategy initialises in CI without crashing.
+      # The e2e suite tests that unauthenticated requests return 401; Passport
+      # short-circuits before contacting Microsoft, so a fake (but valid-format)
+      # tenant ID is sufficient.
+      AZURE_CLIENT_ID: "00000000-0000-0000-0000-000000000001"
+      AZURE_TENANT_ID: "00000000-0000-0000-0000-000000000001"
+      DEVICE_HASH_SALT: "ci-test-salt"
+      DEVICE_EVENT_SECRET: "ci-test-secret"
     
     services:
       postgres:
