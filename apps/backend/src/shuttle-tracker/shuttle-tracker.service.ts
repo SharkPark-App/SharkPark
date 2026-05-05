@@ -120,8 +120,27 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       const rawRoutes = (await routesResponse.json()) as unknown[];
       const rawMapData = (await stopsResponse.json()) as {
         stops?: Record<string, unknown>;
+        routes?: Record<string, unknown[]>;
         routePoints?: Record<string, { lat: string; lng: string }[]>;
       };
+
+      // Build stopId → routeIds[] from the routes field, which is the
+      // authoritative source for multi-route stop membership. The stops dict
+      // only carries one routeId (the "primary" assignment), so cross-
+      // referencing here is the only way to capture shared stops correctly.
+      const stopRouteIds = new Map<string, string[]>();
+      for (const [routeId, routeData] of Object.entries(rawMapData.routes || {})) {
+        if (!Array.isArray(routeData)) continue;
+        for (let i = 2; i < routeData.length; i++) {
+          const entry = routeData[i];
+          if (!Array.isArray(entry) || entry.length < 2) continue;
+          const stopId = String(entry[1]);
+          const existing = stopRouteIds.get(stopId) ?? [];
+          if (!existing.includes(routeId)) {
+            stopRouteIds.set(stopId, [...existing, routeId]);
+          }
+        }
+      }
 
       /** Transform/validate stops */
       const rawStopsArray = Object.values(rawMapData.stops || {});
@@ -143,8 +162,8 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
         name: stop.name,
         latitude: stop.latitude,
         longitude: stop.longitude,
-        routeId: stop.routeId,
-        color: stop.color || '#ffffff', // Should be provided, but just in case
+        routeIds: stopRouteIds.get(stop.stopId) ?? [stop.routeId],
+        color: stop.color || '#ffffff',
       }));
 
       /** Transform/validate routes */

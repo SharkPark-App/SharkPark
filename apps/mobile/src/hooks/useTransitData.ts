@@ -54,9 +54,10 @@ export const useTransitData = () => {
   }, [loadInitialShuttles]);
 
   // Prune out-of-service shuttles. The socket never sends a removal event —
-  // a bus that goes offline just stops broadcasting. Polling the REST endpoint
-  // every 60s keeps the list in sync: any shuttle absent from the response is
-  // dropped from state via the functional update in loadInitialShuttles.
+  // a bus that goes offline just stops broadcasting. The backend drops it from
+  // the active-bus set after a 2-minute silence window; polling here every 60s
+  // ensures that change propagates to the map within ~3 minutes of the bus
+  // going dark (2-min backend TTL + up to 60s poll phase).
   useEffect(() => {
     const interval = setInterval(loadInitialShuttles, 60_000);
     return () => clearInterval(interval);
@@ -107,29 +108,14 @@ export const useTransitData = () => {
               heading: update.heading,
               paxLoad: update.paxLoad ?? updatedShuttles[index].paxLoad,
             };
-          } else {
-            // Shuttle not seeded by the daily cron yet (e.g. went on-route
-            // mid-day). Insert a placeholder so it still renders; the next
-            // refresh below backfills the static metadata (busName/color).
-            updatedShuttles.push({
-              id: update.id,
-              busName: 'Shuttle',
-              route: '',
-              routeId: '',
-              latitude: update.latitude,
-              longitude: update.longitude,
-              heading: update.heading,
-              paxLoad: update.paxLoad ?? 0,
-              capacity: 0,
-            });
           }
         });
 
         return updatedShuttles;
       });
 
-      // Pull the static metadata once for the new shuttle so the placeholder
-      // gets its real busName/color/route without waiting for the daily cron.
+      // Pull the static metadata once for the new shuttle so it gets its real
+      // busName/color/route immediately rather than waiting for the next poll.
       if (sawUnknownShuttle) {
         loadInitialShuttles();
       }

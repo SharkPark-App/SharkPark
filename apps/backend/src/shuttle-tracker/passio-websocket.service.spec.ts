@@ -1,5 +1,3 @@
-// src/transit/passio-websocket.service.spec.ts
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import WebSocket from 'ws';

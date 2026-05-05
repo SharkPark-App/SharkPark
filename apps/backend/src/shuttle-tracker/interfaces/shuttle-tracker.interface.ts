@@ -6,7 +6,7 @@ export interface MapStop {
   name: string;
   latitude: number;
   longitude: number;
-  routeId: string;
+  routeIds: string[];
   color: string;
 }
 
