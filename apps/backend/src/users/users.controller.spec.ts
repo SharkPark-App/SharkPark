@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { ContributorGuard } from '../auth/contributor.guard';
 
 describe('UsersController', () => {
   let controller: UsersController;
@@ -16,6 +17,7 @@ describe('UsersController', () => {
     findOrCreateUser: jest.fn(),
     deleteUser: jest.fn(),
     exportUserData: jest.fn(),
+    getForecast: jest.fn(),
   };
 
   /** Helper: build a fake request with the authenticated user. */
@@ -30,7 +32,10 @@ describe('UsersController', () => {
           useValue: mockUsersService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(ContributorGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<UsersController>(UsersController);
     service = module.get<UsersService>(UsersService);
@@ -189,6 +194,44 @@ describe('UsersController', () => {
       expect(result.success).toBe(true);
       expect(result.message).toContain('G1');
       expect(service.removeFavorite).toHaveBeenCalledWith('test@csulb.edu', 'G1');
+    });
+  });
+
+  describe('getForecast', () => {
+    it('should return personalized forecast for authenticated user', async () => {
+      const mockForecast = {
+        user_id: 'test@csulb.edu',
+        generated_at: '2026-05-03T00:00:00.000Z',
+        lots: [
+          {
+            lot_id: 'G1',
+            predictions: [
+              {
+                target_time: '2026-05-03T01:00:00.000Z',
+                // predicted_occupancy is a rate in [0, 1] per PR #133
+                predicted_occupancy: 0.75,
+                confidence_lower: 0.6,
+                confidence_upper: 0.9,
+                model_version: 'v1',
+              },
+            ],
+          },
+        ],
+      };
+
+      mockUsersService.getForecast.mockResolvedValue(mockForecast);
+
+      const result = await controller.getForecast(reqAs('test@csulb.edu'));
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual(mockForecast);
+      expect(service.getForecast).toHaveBeenCalledWith('test@csulb.edu');
+    });
+
+    it('should reject when no authenticated email is present', async () => {
+      await expect(
+        controller.getForecast({ user: {} } as never),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

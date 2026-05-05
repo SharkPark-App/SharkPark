@@ -240,7 +240,68 @@ export class UsersService {
     }
   }
 
-  /** Returns all data held for the authenticated user (GDPR/CCPA data export). */
+  /** Returns short-term predictions for each of the user's favorited lots. */
+  async getForecast(email: string): Promise<{
+    user_id: string;
+    generated_at: string;
+    lots: Array<{
+      lot_id: string;
+      predictions: Array<{
+        target_time: string;
+        predicted_occupancy: number;
+        confidence_lower: number;
+        confidence_upper: number;
+        model_version: string;
+      }>;
+    }>;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { favorites: { include: { lot: true } } },
+    });
+    if (!user) {
+      throw new NotFoundException(`User ${email} not found`);
+    }
+
+    const now = new Date();
+    const favsByLotId = new Map(user.favorites.map((fav) => [fav.lot.id, fav.lot.lot_id]));
+
+    const allPredictions = await this.prisma.predictionShortTerm.findMany({
+      where: { lot_id: { in: [...favsByLotId.keys()] }, target_time: { gte: now } },
+      orderBy: { target_time: 'asc' },
+    });
+
+    // Group predictions by lot, capped at 20 per lot to match per-lot endpoint pattern
+    const byLot = new Map<string, typeof allPredictions>();
+    for (const p of allPredictions) {
+      const bucket = byLot.get(p.lot_id) ?? [];
+      if (bucket.length < 20) bucket.push(p);
+      byLot.set(p.lot_id, bucket);
+    }
+
+    const lots = [...favsByLotId.entries()].map(([internalId, lotId]) => ({
+      lot_id: lotId,
+      predictions: (byLot.get(internalId) ?? []).map((p) => ({
+        target_time: p.target_time.toISOString(),
+        predicted_occupancy: p.predicted_occupancy,
+        confidence_lower: p.confidence_lower,
+        confidence_upper: p.confidence_upper,
+        model_version: p.model_version,
+      })),
+    }));
+
+    return { user_id: email, generated_at: now.toISOString(), lots };
+  }
+
+  /**
+   * Returns all data held for the authenticated user (GDPR Art. 15 /
+   * CCPA §1798.110 export). Writes a USER_DATA_EXPORTED audit row with
+   * a hashed actor identifier in the same call so the export is
+   * auditable without storing reversible PII.
+   *
+   * Internal database `id` is intentionally omitted; lot references use
+   * the human-readable `lot_id` (e.g. "G1") rather than internal UUIDs.
+   */
   async exportUserData(email: string): Promise<UserDataExport> {
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -299,7 +360,8 @@ export class UsersService {
   }
 
   /**
-   * Hard-deletes a user and cascades to favorites (per schema FK rules).
+   * Hard-deletes a user and cascades to favorites, occupancy events, notification
+   * logs, and reports (per schema FK rules).
    * Writes a USER_DELETED audit row in the same transaction so a deletion
    * is auditable even after the row is gone. The audit row stores only
    * SHA-256(salt:email), no reversible PII.

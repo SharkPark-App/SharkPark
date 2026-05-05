@@ -12,7 +12,7 @@ export type { ApiResponse } from './base';
 
 // Lots service
 export { lotsApi } from './lots';
-export type { 
+export type {
   ParkingLot,
   ParkingLotResponse,
   OccupancySummary,
@@ -22,6 +22,10 @@ export type {
   LotRecommendation,
 } from './lots';
 
+// Events service
+export { eventsApi } from './events';
+export type { CampusEvent } from '../../types/events';
+
 // Reports service
 export { reportsApi, ReportUnauthorizedError, ReportThrottledError } from './reports';
 export type { CreateReportPayload, CreateReportResponse, ReportType } from './reports';
@@ -30,10 +34,14 @@ export type { CreateReportPayload, CreateReportResponse, ReportType } from './re
 import API_CONFIG from './config';
 import { apiService } from './base';
 import { lotsApi } from './lots';
+import { eventsApi } from './events';
+import { reportsApi } from './reports';
 
 // Re-export everything as default object
 export default {
   config: API_CONFIG,
   base: apiService,
   lots: lotsApi,
+  events: eventsApi,
+  reports: reportsApi,
 };

@@ -29,9 +29,13 @@ describe('API Configuration', () => {
   });
 
   it('should have correct default headers', () => {
+    // `x-platform` is required by the backend MinVersionController to pick
+    // per-platform force-update floors. It is sourced from Platform.OS,
+    // which the test setup mocks to 'ios'.
     expect(API_CONFIG.DEFAULT_HEADERS).toEqual({
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'x-platform': 'ios',
     });
   });
 
@@ -42,7 +46,7 @@ describe('API Configuration', () => {
     expect(ENDPOINTS.LOTS_SUMMARY).toBe('/lots/summary');
     expect(ENDPOINTS.USERS).toBe('/users');
     expect(ENDPOINTS.WEATHER).toBe('/weather');
-    expect(ENDPOINTS.EVENTS).toBe('/events');
+    expect(ENDPOINTS.EVENTS_FOR_LOT('G1')).toBe('/events/for-lot/G1');
     expect(ENDPOINTS.OCCUPANCY_EVENTS).toBe('/occupancy-events');
   });
 

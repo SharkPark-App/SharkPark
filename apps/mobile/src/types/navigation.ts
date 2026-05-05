@@ -14,6 +14,10 @@ export type MapStackParamList = {
   MapMain: undefined;
   'Short Term Forecast': { lotId: string; lotName: string };
   LocationPermission: { reason?: string };
+  // Dev-only debug screen. Registered with the stack only when __DEV__ is
+  // true; production builds never see it. Kept in the typed param list so
+  // navigation.navigate('GeofenceDebug') is type-safe in dev tooling.
+  GeofenceDebug: undefined;
 };
 
 /**

@@ -13,6 +13,6 @@ import { NwsClient } from './nws.client';
     WeatherForecastFetchService,
     NwsClient,
   ],
-  exports: [WeatherService],
+  exports: [WeatherService, WeatherFetchService, WeatherForecastFetchService],
 })
 export class WeatherModule {}

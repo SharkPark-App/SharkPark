@@ -8,7 +8,7 @@ import { OccupancyEventsService } from './occupancy-events.service';
 /**
  * Module for anonymous occupancy events - geofencing ENTER/EXIT + 15-min
  * snapshots for ML. Snapshot generation and stale-state cleanup run as
- * out-of-process Fly cron Machines (see src/scripts/{snapshot,cleanup-device-states}.ts);
+ * the in-process NestJS scheduler (see src/scheduler/jobs/{snapshot,cleanup-device-states}.job.ts);
  * the API process no longer carries an in-process scheduler.
  */
 @Module({

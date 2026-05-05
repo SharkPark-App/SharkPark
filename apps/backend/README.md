@@ -1,98 +1,87 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# SharkPark Backend (`@sharkpark/backend`)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS 11 API + standalone scheduler for the SharkPark monorepo. The full
+project overview, architecture diagram, environment variables, and API
+reference live in the [root README](../../README.md). This file is the
+backend-specific entry-point cheat sheet.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Process model
 
-## Description
+The backend ships as **two processes** from a single Docker image, switched at
+container start by the entry-point file:
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| Process | Entry | Fly process group | Purpose |
+|---------|-------|-------------------|---------|
+| HTTP API | [`src/main.ts`](src/main.ts) | `app` | Serves `/api/v1/*` REST + the `/shuttles` socket.io namespace. |
+| Cron / scheduler | [`src/scheduler-main.ts`](src/scheduler-main.ts) | `cron` | Boots a Nest standalone application context (no HTTP listener) that owns all 18 `@nestjs/schedule` jobs. Sentry Cron check-ins + Postgres advisory locks per job. |
 
-## Project setup
+Both processes share the same module graph, Prisma client, Redis client, and
+Sentry SDK — the difference is only what's mounted at boot.
+
+## Local development
 
 ```bash
-$ pnpm install
+# From repo root (sets up Docker + env + DB):
+pnpm install
+
+# Then, in this directory:
+pnpm dev              # Watch-mode HTTP API (port 3000)
+pnpm dev:scheduler    # Watch-mode standalone scheduler process (jobs only)
 ```
 
-## Compile and run the project
+Useful one-shots:
 
 ```bash
-# development
-$ pnpm run start
+pnpm test                 # Jest unit suite (664 tests / 49 suites)
+pnpm test:e2e             # Jest E2E suite (requires running DB)
+pnpm lint
+pnpm typecheck
+pnpm build                # Compiles to dist/
 
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+# Prisma
+pnpm db:generate          # Regenerate Prisma client after schema edits
+pnpm db:migrate           # Create + apply a new migration locally
+pnpm db:deploy            # Apply pending migrations (used in CI/prod)
+pnpm db:seed              # Full local demo seed
+pnpm db:seed:prod         # Idempotent prod reference-data seed (auto-runs in deploy.yml)
+pnpm db:studio            # Open Prisma Studio
 ```
 
-## Run tests
+## Layout
 
-```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+```
+src/
+├── auth/             # Azure AD JWT (Passport) + contributor grant/revoke
+├── common/           # Global exception filters, interceptors
+├── config/           # Typed config namespaces + boot-time validation
+├── database/         # Global Prisma module (env-aware pool, @prisma/adapter-pg)
+├── events/           # Campus events + scrapers
+├── health/           # /health, /health/live, /health/ready
+├── lots/             # Lots CRUD, history, predictions, recommendations
+├── notifications/    # FCM push + 4 user-preference fan-out jobs
+├── occupancy-events/ # Geofence event pipeline + atomic occupancy updates
+├── redis/            # Global ioredis cache module
+├── reliability/      # 5-factor weighted reliability scoring
+├── reports/          # User-submitted lot status reports
+├── scheduler/        # Standalone cron app + 18 @nestjs/schedule jobs
+├── shuttle-tracker/  # PassioGO WS client + /shuttles socket.io gateway
+├── users/            # Profiles, favorites, notification prefs, account deletion
+├── weather/          # NWS api.weather.gov client + /weather/impact
+├── main.ts           # HTTP entry (Fly app process)
+└── scheduler-main.ts # Cron entry (Fly cron process)
 ```
 
-## Deployment
+## Environment variables
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+The canonical, fully-commented reference is [`.env.example`](.env.example).
+Required for production: `DATABASE_URL`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+`DEVICE_HASH_SALT`, `DEVICE_EVENT_SECRET`, `WS_CONNECT_SECRET`, `REDIS_URL`,
+`CORS_ORIGINS`, plus the R2 credentials (`AWS_*` + `S3_ENDPOINT`) used by the
+backup and ML-export jobs. Sentry, Firebase, and weather overrides are
+optional and degrade gracefully when unset (logged as warnings).
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Operations
 
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- **Runbook:** [`docs/runbooks/runbook.md`](../../docs/runbooks/runbook.md) — alerting playbook, secret rotation, common incidents.
+- **Restore drill:** [`docs/runbooks/restore.md`](../../docs/runbooks/restore.md) — pulling the latest R2 backup and restoring to a Neon branch.
+- **Deploy pipeline:** `.github/workflows/deploy.yml` — push to `main` triggers migrations → seed-prod → Sentry release → `flyctl deploy`.

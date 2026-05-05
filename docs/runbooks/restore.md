@@ -184,7 +184,7 @@ rm restore.dump restore.dump.gz
 
 ## Related
 
-- Backup cron: [apps/backend/src/scripts/backup-db.ts](../../apps/backend/src/scripts/backup-db.ts)
-- Verification cron: [apps/backend/src/scripts/verify-latest-backup.ts](../../apps/backend/src/scripts/verify-latest-backup.ts)
-- Crontab: [apps/backend/cron/crontab](../../apps/backend/cron/crontab)
+- Backup cron: [apps/backend/src/scheduler/jobs/backup-db.job.ts](../../apps/backend/src/scheduler/jobs/backup-db.job.ts)
+- Verification cron: [apps/backend/src/scheduler/jobs/verify-latest-backup.job.ts](../../apps/backend/src/scheduler/jobs/verify-latest-backup.job.ts)
+- Schedule registry: [apps/backend/src/scheduler/cron-monitors.ts](../../apps/backend/src/scheduler/cron-monitors.ts)
 - Lifecycle policy: 35-day delete on `daily/` prefix (configured in Cloudflare R2 dashboard)

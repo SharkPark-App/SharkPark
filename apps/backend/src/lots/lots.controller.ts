@@ -18,6 +18,21 @@ import type { GetLotsQueryParams } from './interfaces/parking-lot.interface';
 import { Public } from '../auth/public.decorator';
 import { ContributorGuard } from '../auth/contributor.guard';
 import { ContributorService } from '../auth/contributor.service';
+import { EventsService, MAX_EVENTS_WINDOW_HOURS } from '../events/events.service';
+
+/** Default lookahead for nearby-events badge surfaces (next 2 hours). */
+const DEFAULT_NEARBY_EVENTS_HOURS = 2;
+
+/** Validate + clamp the `within_hours` query param shared by both events endpoints. */
+function parseWithinHours(raw: number | undefined): number {
+  if (raw === undefined) return DEFAULT_NEARBY_EVENTS_HOURS;
+  if (!Number.isInteger(raw) || raw < 1 || raw > MAX_EVENTS_WINDOW_HOURS) {
+    throw new BadRequestException(
+      `within_hours must be an integer between 1 and ${MAX_EVENTS_WINDOW_HOURS}`,
+    );
+  }
+  return raw;
+}
 
 /**
  * Handles parking lot queries including filtering, individual lot details,
@@ -39,6 +54,7 @@ export class LotsController {
   constructor(
     private readonly lotsService: LotsService,
     private readonly contributorService: ContributorService,
+    private readonly eventsService: EventsService,
   ) {}
 
   @Get()
@@ -79,6 +95,25 @@ export class LotsController {
       success: true,
       count: lots.length,
       data: lots,
+    };
+  }
+
+  @Get('utilization')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=300, s-maxage=600')
+  async getUtilization(@Query('range') range?: string) {
+    const rangeDays = this.lotsService.parseRangeDays(range, 30, 90);
+    const until = new Date();
+    const since = new Date(until.getTime() - rangeDays * 24 * 60 * 60 * 1000);
+    const data = await this.lotsService.getUtilization(rangeDays);
+
+    return {
+      success: true,
+      range_days: rangeDays,
+      since: since.toISOString(),
+      until: until.toISOString(),
+      count: data.length,
+      data,
     };
   }
 
@@ -167,6 +202,29 @@ export class LotsController {
     };
   }
 
+  @Get(':id/trends')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=300, s-maxage=600')
+  async getLotTrends(
+    @Param('id') id: string,
+    @Query('range') range?: string,
+  ) {
+    const rangeDays = this.lotsService.parseRangeDays(range, 7, 90);
+    const until = new Date();
+    const since = new Date(until.getTime() - rangeDays * 24 * 60 * 60 * 1000);
+    const data = await this.lotsService.getTrends(id.toUpperCase(), rangeDays);
+
+    return {
+      success: true,
+      lot_id: id.toUpperCase(),
+      range_days: rangeDays,
+      since: since.toISOString(),
+      until: until.toISOString(),
+      count: data.length,
+      data,
+    };
+  }
+
   @Get(':id/predictions/short-term')
   @UseGuards(ContributorGuard)
   @HttpCode(HttpStatus.OK)
@@ -194,6 +252,29 @@ export class LotsController {
     return {
       success: true,
       ...predictions,
+    };
+  }
+
+  /**
+   * Upcoming events for a single lot in the next `within_hours` (default 2).
+   * Public + shared-cacheable for the same reasons as the bulk summary.
+   */
+  @Get(':id/nearby-events')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300')
+  async getNearbyEvents(
+    @Param('id') id: string,
+    @Query('within_hours', new ParseIntPipe({ optional: true })) withinHours?: number,
+  ) {
+    const hours = parseWithinHours(withinHours);
+    const events = await this.eventsService.getEventsForLot(id.toUpperCase(), hours);
+
+    return {
+      success: true,
+      lot_id: id.toUpperCase(),
+      within_hours: hours,
+      count: events.length,
+      data: events,
     };
   }
 }

@@ -19,4 +19,11 @@ DROP TABLE IF EXISTS "notification_logs";
 DROP TABLE IF EXISTS "push_tokens";
 
 -- Remove the orphan migration record so `prisma migrate status` reports a clean state.
-DELETE FROM "_prisma_migrations" WHERE migration_name = '20260501010714_add_push_notifications';
+-- Guarded against shadow DB / fresh installs where `_prisma_migrations` may not yet exist.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '_prisma_migrations') THEN
+    DELETE FROM "_prisma_migrations" WHERE migration_name = '20260501010714_add_push_notifications';
+  END IF;
+END
+$$;
