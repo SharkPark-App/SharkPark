@@ -12,7 +12,6 @@ export interface UserResponse {
   first_name: string;
   last_name: string;
   user_type: string;
-  phone: string | null;
   notification_preferences: unknown;
   created_at: Date;
   last_login: Date | null;
@@ -26,7 +25,6 @@ export interface UserDataExport {
     first_name: string;
     last_name: string;
     user_type: string;
-    phone: string | null;
     notification_preferences: unknown;
     created_at: Date;
     last_login: Date | null;

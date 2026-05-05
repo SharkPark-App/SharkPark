@@ -81,7 +81,7 @@ describe('UsersController', () => {
     it('should return exported user data', async () => {
       const mockExport = {
         exported_at: new Date(),
-        profile: { email: 'test@csulb.edu', first_name: 'Test', last_name: 'User', user_type: 'STUDENT', phone: null, notification_preferences: {}, created_at: new Date(), last_login: null },
+        profile: { email: 'test@csulb.edu', first_name: 'Test', last_name: 'User', user_type: 'STUDENT', notification_preferences: {}, created_at: new Date(), last_login: null },
         favorites: [{ lot_id: 'G1', added_at: new Date() }],
         push_tokens: [],
         reports: [],

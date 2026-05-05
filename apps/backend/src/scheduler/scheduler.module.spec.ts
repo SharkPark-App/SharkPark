@@ -23,6 +23,9 @@ import { NotifySurgeJob } from './jobs/notify-surge.job';
 import { NotifyEventsJob } from './jobs/notify-events.job';
 import { RefreshLotAdvisoriesJob } from './jobs/refresh-lot-advisories.job';
 import { RefreshLotMetadataJob } from './jobs/refresh-lot-metadata.job';
+import { PruneNotificationLogsJob } from './jobs/prune-notification-logs.job';
+import { PruneContributorPingsJob } from './jobs/prune-contributor-pings.job';
+import { PruneOldReportMessagesJob } from './jobs/prune-old-report-messages.job';
 
 /**
  * The 18 job classes the SchedulerModule registers as providers. Tuple is
@@ -49,6 +52,9 @@ const ALL_JOBS = [
   NotifyEventsJob,
   RefreshLotAdvisoriesJob,
   RefreshLotMetadataJob,
+  PruneNotificationLogsJob,
+  PruneContributorPingsJob,
+  PruneOldReportMessagesJob,
 ] as const;
 
 interface CronMetadata {

@@ -100,7 +100,6 @@ model User {
   first_name     String
   last_name      String
   user_type      UserType
-  phone          String?
   notification_preferences Json @default("{\"favorites_filling\":false,\"favorites_clearing\":false,\"surge_alerts\":false,\"event_alerts\":false}")
   created_at     DateTime @default(now())
   last_login     DateTime?
