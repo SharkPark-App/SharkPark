@@ -57,6 +57,23 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
+   * Remove a push token belonging to the given user. Scoped by `user_id` so
+   * a hostile actor cannot evict another user's device by guessing tokens.
+   * Idempotent: returns silently if the token does not exist or already
+   * belongs to a different user (e.g. token was reissued after a reinstall).
+   */
+  async unregisterPushTokenByEmail(email: string, token: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (!user) return;
+    await this.prisma.pushToken.deleteMany({
+      where: { token, user_id: user.id },
+    });
+  }
+
+  /**
    * Send an FCM push to every registered device for the given user.
    * Stale/unregistered tokens are removed automatically after a failed send.
    * Returns true if at least one device received the message.

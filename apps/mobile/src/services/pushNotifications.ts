@@ -17,7 +17,7 @@ import { Platform } from 'react-native';
 import messaging, {
   FirebaseMessagingTypes,
 } from '@react-native-firebase/messaging';
-import { registerPushToken } from './api/notifications';
+import { registerPushToken, unregisterPushToken } from './api/notifications';
 
 export type PushMessage = FirebaseMessagingTypes.RemoteMessage;
 
@@ -112,4 +112,27 @@ export function subscribeNotificationOpenedApp(
   onOpen: (message: PushMessage) => void,
 ): () => void {
   return messaging().onNotificationOpenedApp(onOpen);
+}
+
+/**
+ * Unregister the device's current FCM token with the backend.
+ *
+ * Called from the auth context on sign-out so the previous user's account
+ * doesn't keep accumulating push targets on this device. Best-effort: any
+ * error is swallowed because we never want logout to fail because of a
+ * notification cleanup hiccup. The backend will eventually GC orphaned
+ * tokens via FCM `registration-token-not-registered` errors at send time
+ * (see backend `NotificationsService.sendPush`).
+ *
+ * Must be called BEFORE the auth tokens are cleared from storage,
+ * otherwise the request will be skipped (no bearer to attach).
+ */
+export async function unregisterCurrentPushToken(): Promise<void> {
+  try {
+    const token = await messaging().getToken();
+    if (!token) return;
+    await unregisterPushToken(token);
+  } catch (e) {
+    if (__DEV__) console.warn('[Push] unregisterCurrentPushToken failed:', e);
+  }
 }

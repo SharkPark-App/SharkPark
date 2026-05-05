@@ -33,6 +33,12 @@ import type { RootTabParamList } from './src/types/navigation';
 // trigger navigation (e.g. background/quit tap → lot screen).
 export const navigationRef = createNavigationContainerRef<RootTabParamList>();
 
+// If the app was launched from a quit-state notification we may receive the
+// payload before <NavigationContainer> has finished mounting. Park it here
+// and replay it from the container's onReady callback, which is the
+// canonical hook for "navigation is now safe to call".
+let pendingInitialNotificationData: Record<string, string> | undefined;
+
 /**
  * Navigate to the relevant screen based on the notification data payload.
  * Called both from the background-open handler and the quit-state handler.
@@ -159,17 +165,19 @@ function AppContent() {
       handleNotificationNavigation(message.data as Record<string, string> | undefined);
     });
 
-    // Quit state: app was fully closed and user tapped to open it.
+    // Quit state: app was fully closed and user tapped to open it. We can't
+    // navigate yet — NavigationContainer probably hasn't mounted. Stash the
+    // payload and let onReady replay it once the navigator is up.
     getInitialNotification().then((message) => {
-      if (message) {
-        // Small delay so NavigationContainer has time to mount.
-        setTimeout(
-          () =>
-            handleNotificationNavigation(
-              message.data as Record<string, string> | undefined,
-            ),
-          500,
-        );
+      if (message?.data) {
+        pendingInitialNotificationData = message.data as Record<string, string>;
+        // If the navigator happens to already be ready (e.g. fast-refresh in
+        // dev), drain immediately rather than waiting for the next mount.
+        if (navigationRef.isReady()) {
+          const data = pendingInitialNotificationData;
+          pendingInitialNotificationData = undefined;
+          handleNotificationNavigation(data);
+        }
       }
     });
 
@@ -236,6 +244,16 @@ function AppContent() {
           ref={navigationRef}
           theme={navigationTheme}
           linking={linkingConfig}
+          onReady={() => {
+            // Drain any quit-state notification payload that arrived before
+            // the navigator mounted. Replaces the previous setTimeout(500)
+            // race-prone hack.
+            if (pendingInitialNotificationData) {
+              const data = pendingInitialNotificationData;
+              pendingInitialNotificationData = undefined;
+              handleNotificationNavigation(data);
+            }
+          }}
         >
           <MainTabNavigator />
         </NavigationContainer>

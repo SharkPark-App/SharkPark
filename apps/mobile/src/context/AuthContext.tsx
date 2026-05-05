@@ -2,7 +2,7 @@ import React, { createContext, useState, useContext, useEffect, useRef, ReactNod
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode';
 import { loginWithAzure, logoutFromAzure, loadAuth, saveAuth, AuthResult } from '../auth/AzureAuth';
-import { initPushNotifications } from '../services/pushNotifications';
+import { initPushNotifications, unregisterCurrentPushToken } from '../services/pushNotifications';
 
 const GUEST_MODE_KEY = '@SharkPark:isGuest';
 const GUEST_FLAG = 'true';
@@ -121,6 +121,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Handle Logout
   const logout = async () => {
+    // Unregister this device's FCM token on the backend BEFORE clearing
+    // local auth — the request needs the access token to authenticate, and
+    // logoutFromAzure wipes saved credentials. Best-effort; never blocks
+    // logout (errors are swallowed inside unregisterCurrentPushToken).
+    await unregisterCurrentPushToken();
+
     try {
       // Invoke Azure logout to clear browser cookie/session
       // logoutFromAzure handles clearing local auth state internally

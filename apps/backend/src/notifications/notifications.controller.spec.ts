@@ -3,9 +3,11 @@ import { UnauthorizedException } from '@nestjs/common';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { RegisterPushTokenDto } from './dto/register-push-token.dto';
+import { UnregisterPushTokenDto } from './dto/unregister-push-token.dto';
 
 const mockNotificationsService = {
   registerPushTokenByEmail: jest.fn(),
+  unregisterPushTokenByEmail: jest.fn(),
 };
 
 describe('NotificationsController', () => {
@@ -49,6 +51,29 @@ describe('NotificationsController', () => {
       const req = {} as any;
 
       await expect(controller.registerPushToken(req, dto)).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('DELETE me/push-token', () => {
+    const dto: UnregisterPushTokenDto = { token: 'fcm-abc123' };
+
+    it('delegates to unregisterPushTokenByEmail with the authenticated email', async () => {
+      mockNotificationsService.unregisterPushTokenByEmail.mockResolvedValue(undefined);
+      const req = { user: { email: 'student@csulb.edu' } } as any;
+
+      await controller.unregisterPushToken(req, dto);
+
+      expect(mockNotificationsService.unregisterPushTokenByEmail).toHaveBeenCalledWith(
+        'student@csulb.edu',
+        'fcm-abc123',
+      );
+    });
+
+    it('throws UnauthorizedException when the request carries no email', async () => {
+      const req = { user: {} } as any;
+
+      await expect(controller.unregisterPushToken(req, dto)).rejects.toThrow(UnauthorizedException);
+      expect(mockNotificationsService.unregisterPushTokenByEmail).not.toHaveBeenCalled();
     });
   });
 });

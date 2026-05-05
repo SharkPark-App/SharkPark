@@ -31,7 +31,7 @@ export { reportsApi, ReportUnauthorizedError, ReportThrottledError } from './rep
 export type { CreateReportPayload, CreateReportResponse, ReportType } from './reports';
 
 // Notifications service
-export { registerPushToken } from './notifications';
+export { registerPushToken, unregisterPushToken } from './notifications';
 
 // Users service
 export { deleteMyAccount, updateNotificationPreferences } from './users';

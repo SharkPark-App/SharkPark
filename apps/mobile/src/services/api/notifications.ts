@@ -31,3 +31,24 @@ export async function registerPushToken(
     },
   );
 }
+
+/**
+ * Unregister a device push token on logout. Scoped server-side to the
+ * authenticated user so this call cannot evict another user's device.
+ *
+ * Best-effort: failures are caught by the caller and never block logout —
+ * if the request fails the row is left orphaned and will be cleaned up on
+ * the next FCM `messaging/registration-token-not-registered` send error
+ * (see `NotificationsService.sendPush`).
+ */
+export async function unregisterPushToken(token: string): Promise<void> {
+  const auth = await loadAuth();
+  if (!auth?.accessToken) return;
+
+  await apiService.delete<void>('/users/me/push-token', {
+    headers: {
+      Authorization: `Bearer ${auth.accessToken}`,
+    },
+    body: JSON.stringify({ token }),
+  });
+}
