@@ -4,5 +4,5 @@
     "rootDir": ".",
     "types": ["node", "jest", "supertest"]
   },
-  "include": ["src/**/*.spec.ts", "src/**/*.d.ts", "test/**/*.ts"]
+  "include": ["src/**/*.spec.ts", "test/**/*.ts"]
 }

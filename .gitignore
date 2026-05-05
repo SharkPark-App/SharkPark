@@ -12,9 +12,6 @@ apps/backend/src/**/*.js
 apps/backend/src/**/*.js.map
 apps/backend/src/**/*.d.ts
 apps/backend/src/**/*.d.ts.map
-# Hand-authored ambient type shims (e.g. for libs without @types) live here
-# and must not be excluded by the generic *.d.ts rule above.
-!apps/backend/src/types/*.d.ts
 apps/backend/test/**/*.js
 apps/backend/test/**/*.js.map
 apps/backend/test/**/*.d.ts
