@@ -1,18 +1,23 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Modal,
   TouchableOpacity, ScrollView,
   StyleSheet, Pressable,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Text } from '../CustomText';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { SPACING, TYPOGRAPHY } from '../../constants/theme';
+import type { MapRoute } from '../../types/transit';
 
 interface LotFilterModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedLots: string[];
   onApplyFilter: (selectedLots: string[]) => void;
+  routes: MapRoute[];
+  hiddenRouteIds: string[];
+  onApplyTransitFilter: (hiddenRouteIds: string[]) => void;
 }
 
 interface LotOption {
@@ -21,13 +26,23 @@ interface LotOption {
   category: 'general' | 'employee';
 }
 
-export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }: LotFilterModalProps) {  
+export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter, routes, hiddenRouteIds, onApplyTransitFilter }: LotFilterModalProps) {
   const { colors, spacing, typography } = useTheme();
+  const [activeTab, setActiveTab] = useState<'parking' | 'transit'>('parking');
   const [tempSelected, setTempSelected] = useState<string[]>(selectedLots);
+  const [tempHiddenRouteIds, setTempHiddenRouteIds] = useState<string[]>(hiddenRouteIds);
+  const [pageWidth, setPageWidth] = useState(0);
+  const [pageHeight, setPageHeight] = useState(0);
+  const pageScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    setTempSelected(selectedLots);
-  }, [isOpen, selectedLots]);
+    if (isOpen) {
+      setTempSelected(selectedLots);
+      setTempHiddenRouteIds(hiddenRouteIds);
+      setActiveTab('parking');
+      pageScrollRef.current?.scrollTo({ x: 0, animated: false });
+    }
+  }, [isOpen, selectedLots, hiddenRouteIds]);
 
   const styles = useMemo(() => getStyles(colors, spacing, typography), [colors, spacing, typography]);
 
@@ -66,35 +81,58 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
 
   const allLots = [...generalLots, ...employeeLots];
 
-  const toggleLot = (lotId: string) => {    
+  const toggleLot = (lotId: string) => {
     setTempSelected(
-      // if selected, filter from incoming (+) array; otherwise add as is
-      prev => prev.includes(lotId)? 
-        // both return respective array
-        prev.filter(id => id !== lotId) : [...prev, lotId]
-    );    
+      prev => prev.includes(lotId)
+        ? prev.filter(id => id !== lotId)
+        : [...prev, lotId]
+    );
+  };
+
+  const toggleRoute = (routeId: string) => {
+    setTempHiddenRouteIds(
+      prev => prev.includes(routeId)
+        ? prev.filter(id => id !== routeId)
+        : [...prev, routeId]
+    );
   };
 
   const handleClose = () => {
     setTempSelected(selectedLots);
+    setTempHiddenRouteIds(hiddenRouteIds);
     onClose();
   };
 
   const handleApply = () => {
-    // pass local state to parent
     onApplyFilter(tempSelected);
+    onApplyTransitFilter(tempHiddenRouteIds);
     onClose();
   };
 
-  const handleToggleAll = () => { // toggle between Select or Clear All
-    if (tempSelected.length === 0) {
-      // Select all
-      setTempSelected(allLots.map(lot => lot.id));
+  const handleToggleAll = () => {
+    if (activeTab === 'parking') {
+      setTempSelected(tempSelected.length === 0 ? allLots.map(l => l.id) : []);
     } else {
-      // Clear all
-      setTempSelected([]);
+      setTempHiddenRouteIds(tempHiddenRouteIds.length === 0 ? routes.map(r => r.id) : []);
     }
   };
+
+  const handleTabPress = (tab: 'parking' | 'transit') => {
+    setActiveTab(tab);
+    pageScrollRef.current?.scrollTo({
+      x: tab === 'transit' ? pageWidth : 0,
+      animated: true,
+    });
+  };
+
+  const handlePageWrapperLayout = (e: LayoutChangeEvent) => {
+    setPageWidth(e.nativeEvent.layout.width);
+    setPageHeight(e.nativeEvent.layout.height);
+  };
+
+  const toggleAllLabel = activeTab === 'parking'
+    ? (tempSelected.length === 0 ? 'Select All' : 'Clear All')
+    : (tempHiddenRouteIds.length === 0 ? 'Hide All' : 'Show All');
 
   return (
     <Modal
@@ -103,96 +141,160 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
       onRequestClose={handleClose}
     >
       <View style={styles.backdrop}>
-        {/* Backdrop touchable (dismiss modal) */}
         <Pressable style={styles.backdropPress} onPress={handleClose} />
-        
-        {/* Modal */}
+
         <View style={styles.modal}>
-          {/* Content */}
-          <ScrollView style={styles.content}>
-            {/* General Lot Section */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>General Lot</Text>
-                {/* Close (X) Button*/}
-                <TouchableOpacity 
-                  onPress={handleClose}
-                  style={styles.closeButton}
-                  accessibilityLabel="Close filter modal"
-                  accessibilityRole="button"
+          {/* Tab bar + close button */}
+          <View style={styles.tabBar}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'parking' && styles.tabActive]}
+              onPress={() => handleTabPress('parking')}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === 'parking' }}
+            >
+              <Text style={[styles.tabText, activeTab === 'parking' && styles.tabTextActive]}>
+                Parking
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'transit' && styles.tabActive]}
+              onPress={() => handleTabPress('transit')}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === 'transit' }}
+            >
+              <Text style={[styles.tabText, activeTab === 'transit' && styles.tabTextActive]}>
+                Transit
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeButton}
+              accessibilityLabel="Close filter modal"
+              accessibilityRole="button"
+            >
+              <Text style={styles.closeIcon}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Swipeable page area */}
+          <View style={styles.pageWrapper} onLayout={handlePageWrapperLayout}>
+            {pageWidth > 0 && pageHeight > 0 && (
+              <ScrollView
+                ref={pageScrollRef}
+                horizontal
+                pagingEnabled
+                bounces={false}
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={(e) => {
+                  const idx = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
+                  setActiveTab(idx === 0 ? 'parking' : 'transit');
+                }}
+              >
+                {/* Parking page */}
+                <ScrollView
+                  style={{ width: pageWidth, height: pageHeight }}
+                  contentContainerStyle={styles.pageContent}
+                  showsVerticalScrollIndicator={false}
                 >
-                  <Text style={styles.closeIcon}>✕</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.grid}>
-                {generalLots.map((lot) => (
-                  <TouchableOpacity
-                    key={lot.id}
-                    onPress={() => toggleLot(lot.id)}
-                    style={styles.lotButton}
-                    accessibilityLabel={`${tempSelected.includes(lot.id) ? 'Deselect' : 'Select'} general parking lot ${lot.label}`}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: tempSelected.includes(lot.id) }}
-                  >
-                    <View style={[
-                        styles.checkbox,
-                        tempSelected.includes(lot.id) && styles.checkboxSelected]}>
-                      {/* short-circuit rendering */}
-                      {tempSelected.includes(lot.id) && (<Text style={styles.checkmark}>✓</Text>)}
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>General Lot</Text>
+                    <View style={styles.grid}>
+                      {generalLots.map((lot) => (
+                        <TouchableOpacity
+                          key={lot.id}
+                          onPress={() => toggleLot(lot.id)}
+                          style={styles.lotButton}
+                          accessibilityLabel={`${tempSelected.includes(lot.id) ? 'Deselect' : 'Select'} general parking lot ${lot.label}`}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: tempSelected.includes(lot.id) }}
+                        >
+                          <View style={[styles.checkbox, tempSelected.includes(lot.id) && styles.checkboxSelected]}>
+                            {tempSelected.includes(lot.id) && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                          <Text style={styles.lotLabel}>{lot.label}</Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
-                    
-                    <Text style={styles.lotLabel}>{lot.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+                  </View>
 
-            {/* Divider */}
-            <View style={styles.divider} />
+                  <View style={styles.divider} />
 
-            {/* Employee Lot Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitleEmployee}>Employee Lot</Text>
-              <View style={styles.grid}>
-                {employeeLots.map((lot) => (
-                  <TouchableOpacity
-                    key={lot.id}
-                    onPress={() => toggleLot(lot.id)}
-                    style={styles.lotButton}
-                    accessibilityLabel={`${tempSelected.includes(lot.id) ? 'Deselect' : 'Select'} employee parking lot ${lot.label}`}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: tempSelected.includes(lot.id) }}
-                  >
-                    <View style={[
-                      styles.checkbox,
-                      tempSelected.includes(lot.id) && styles.checkboxSelected]}>
-                      {tempSelected.includes(lot.id) && (<Text style={styles.checkmark}>✓</Text>)}
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Employee Lot</Text>
+                    <View style={styles.grid}>
+                      {employeeLots.map((lot) => (
+                        <TouchableOpacity
+                          key={lot.id}
+                          onPress={() => toggleLot(lot.id)}
+                          style={styles.lotButton}
+                          accessibilityLabel={`${tempSelected.includes(lot.id) ? 'Deselect' : 'Select'} employee parking lot ${lot.label}`}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: tempSelected.includes(lot.id) }}
+                        >
+                          <View style={[styles.checkbox, tempSelected.includes(lot.id) && styles.checkboxSelected]}>
+                            {tempSelected.includes(lot.id) && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                          <Text style={styles.lotLabel}>{lot.label}</Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
-                    <Text style={styles.lotLabel}>{lot.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </ScrollView>
+                  </View>
+                </ScrollView>
+
+                {/* Transit page */}
+                <ScrollView
+                  style={{ width: pageWidth, height: pageHeight }}
+                  contentContainerStyle={styles.pageContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Shuttle Routes</Text>
+                    {routes.length === 0 ? (
+                      <Text style={styles.emptyRoutes}>No routes available.</Text>
+                    ) : (
+                      routes.map((route) => {
+                        const isVisible = !tempHiddenRouteIds.includes(route.id);
+                        return (
+                          <TouchableOpacity
+                            key={route.id}
+                            onPress={() => toggleRoute(route.id)}
+                            style={styles.routeRow}
+                            accessibilityRole="checkbox"
+                            accessibilityState={{ checked: isVisible }}
+                            accessibilityLabel={`${isVisible ? 'Hide' : 'Show'} ${route.name} route`}
+                          >
+                            <View style={[styles.checkbox, isVisible && styles.checkboxSelected]}>
+                              {isVisible && <Text style={styles.checkmark}>✓</Text>}
+                            </View>
+                            <View style={[styles.routeBadge, { backgroundColor: route.color }]}>
+                              <Text style={styles.routeBadgeText}>{route.shortName}</Text>
+                            </View>
+                            <Text style={styles.routeLabel}>{route.name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </View>
+                </ScrollView>
+              </ScrollView>
+            )}
+          </View>
 
           {/* Footer */}
           <View style={styles.footer}>
-            {/* Select/Clear All Button */}
             <TouchableOpacity
               onPress={handleToggleAll}
               style={styles.clearButton}
-              accessibilityLabel={tempSelected.length === 0 ? 'Select all parking lots' : 'Clear all selected parking lots'}
+              accessibilityLabel={toggleAllLabel}
               accessibilityRole="button"
             >
-              <Text style={styles.clearButtonText}>
-                {tempSelected.length === 0 ? 'Select All' : 'Clear All'}
-              </Text>
+              <Text style={styles.clearButtonText}>{toggleAllLabel}</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               onPress={handleApply}
               style={styles.applyButton}
-              accessibilityLabel="Apply selected parking lot filters"
+              accessibilityLabel="Apply filters"
               accessibilityRole="button"
             >
               <Text style={styles.applyButtonText}>Apply Filter</Text>
@@ -204,10 +306,9 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter }:
   );
 }
 
-// Filter Modal Specific Style
 const getStyles = (
-  colors: ThemeColors, 
-  spacing: typeof SPACING, 
+  colors: ThemeColors,
+  spacing: typeof SPACING,
   typography: typeof TYPOGRAPHY
 ) => StyleSheet.create({
   backdrop: {
@@ -229,10 +330,50 @@ const getStyles = (
     borderRadius: spacing.xl,
     width: '100%',
     maxWidth: 448,
-    maxHeight: '85%',
+    height: '80%',
     overflow: 'hidden',
   },
-  content: {
+  tabBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderGray,
+    paddingHorizontal: spacing.xxl,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    marginBottom: -1,
+  },
+  tabActive: {
+    borderBottomColor: colors.primary,
+  },
+  tabText: {
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.mediumGray,
+  },
+  tabTextActive: {
+    color: colors.primary,
+    fontFamily: typography.fontFamily.semibold,
+  },
+  closeButton: {
+    padding: spacing.sm,
+    borderRadius: spacing.md,
+    marginLeft: spacing.sm,
+  },
+  closeIcon: {
+    color: colors.mediumGray,
+    fontSize: spacing.xxl,
+    fontFamily: typography.fontFamily.regular,
+  },
+  pageWrapper: {
+    flex: 1,
+  },
+  pageContent: {
     paddingHorizontal: spacing.xxl,
     paddingTop: 20,
     paddingBottom: spacing.xl,
@@ -240,31 +381,11 @@ const getStyles = (
   section: {
     marginBottom: spacing.xxl,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xl,
-  },
   sectionTitle: {
     color: colors.textPrimary,
     fontSize: typography.fontSize.xl,
     fontFamily: typography.fontFamily.medium,
-  },
-  sectionTitleEmployee: {
-    color: colors.mediumGray,
-    fontSize: typography.fontSize.xl,
     marginBottom: spacing.xl,
-    fontFamily: typography.fontFamily.medium,
-  },
-  closeButton: {
-    padding: spacing.sm,
-    borderRadius: spacing.md,
-  },
-  closeIcon: {
-    color: colors.mediumGray,
-    fontSize: spacing.xxl,
-    fontFamily: typography.fontFamily.regular,
   },
   grid: {
     flexDirection: 'row',
@@ -276,6 +397,34 @@ const getStyles = (
     alignItems: 'center',
     gap: spacing.md,
     width: '30%',
+  },
+  routeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  routeBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routeBadgeText: {
+    color: '#ffffff',
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+  },
+  routeLabel: {
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.md,
+    flex: 1,
+  },
+  emptyRoutes: {
+    color: colors.mediumGray,
+    fontSize: typography.fontSize.md,
+    fontStyle: 'italic',
   },
   checkbox: {
     width: 28,

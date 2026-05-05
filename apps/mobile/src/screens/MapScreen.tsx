@@ -208,6 +208,7 @@ const MapScreen: React.FC = () => {
 
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
+  const [hiddenRouteIds, setHiddenRouteIds] = useState<string[]>([]);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
   const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
@@ -277,9 +278,19 @@ const MapScreen: React.FC = () => {
   }, [refreshFavorites]);
 
   // Filter parking lots based on selected filter
-  const filteredParkingLots = selectedLots.length > 0 
+  const filteredParkingLots = selectedLots.length > 0
     ? lots.filter(lot => selectedLots.includes(lot.lot_id))
     : lots;
+
+  const filteredRoutes = hiddenRouteIds.length > 0
+    ? routes?.filter(r => !hiddenRouteIds.includes(r.id))
+    : routes;
+  const filteredStops = hiddenRouteIds.length > 0
+    ? stops?.filter(s => !hiddenRouteIds.includes(s.routeId))
+    : stops;
+  const filteredShuttles = hiddenRouteIds.length > 0
+    ? shuttles?.filter(s => !hiddenRouteIds.includes(s.routeId))
+    : shuttles;
 
   // Intial map display centered around CSULB
   const initialRegion = {
@@ -337,7 +348,7 @@ const MapScreen: React.FC = () => {
           })}
           
           {/* Draw route paths — static, no isFocused guard to avoid unmount on nav transitions */}
-          {routes?.map((route) => (
+          {filteredRoutes?.map((route) => (
             <Polyline
               key={route.id}
               coordinates={route.coordinates}
@@ -348,7 +359,7 @@ const MapScreen: React.FC = () => {
           ))}
 
           {/* Draw stops — static, no isFocused guard to avoid unmount on nav transitions */}
-          {stops?.map((stop) => (
+          {filteredStops?.map((stop) => (
             <Marker
               key={stop.id}
               coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
@@ -358,15 +369,13 @@ const MapScreen: React.FC = () => {
               accessible={true}
               accessibilityRole="button"
               accessibilityLabel={`Shuttle stop: ${stop.name}`}
-              tracksViewChanges={false} // Locks the snapshot so MapKit doesn't constantly re-render
+              tracksViewChanges={false}
             >
-              {/* Custom Stop Circle */}
               <View
                 style={[
                   styles.stopCircle,
                   {
                     backgroundColor: stop.color,
-                    // dynamically apply a gray border for dark mode, white for light mode
                     borderColor: colors.white,
                   }
                 ]}
@@ -375,7 +384,7 @@ const MapScreen: React.FC = () => {
           ))}
 
           {/* Draw live shuttles */}
-          {isFocused && shuttles?.map((shuttle) => (
+          {isFocused && filteredShuttles?.map((shuttle) => (
             <ShuttleMarker
               key={shuttle.id}
               shuttle={shuttle}
@@ -401,6 +410,9 @@ const MapScreen: React.FC = () => {
         onClose={handleFilterClose}
         selectedLots={selectedLots}
         onApplyFilter={handleApplyFilter}
+        routes={routes ?? []}
+        hiddenRouteIds={hiddenRouteIds}
+        onApplyTransitFilter={setHiddenRouteIds}
       />
 
       {/* Combined Favorites & Recommendations Modal */}
