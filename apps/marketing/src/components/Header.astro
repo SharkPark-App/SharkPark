@@ -15,13 +15,38 @@ const normalize = (p: string) => {
 const pathname = normalize(Astro.url.pathname);
 ---
 <header class="sticky top-0 z-50 w-full border-b border-[var(--color-border)] bg-white/85 backdrop-blur">
-  <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-    <a href="/" class="flex items-center gap-2 text-[var(--color-ink)]" aria-label={`${SITE.name} home`}>
+  <div class="relative mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
+    <a href="/" class="flex items-center gap-2 rounded-md text-[var(--color-ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-600)] focus-visible:ring-offset-2" aria-label={`${SITE.name} home`}>
       <img src="/favicon.svg" alt="" aria-hidden="true" width="32" height="32" class="h-8 w-8 rounded-lg" />
       <span class="text-lg font-semibold tracking-tight">{SITE.name}</span>
     </a>
-    <nav aria-label="Primary">
-      <ul class="flex items-center gap-6 text-sm font-medium text-[var(--color-ink-soft)]">
+
+    {/* Mobile menu toggle — hidden on md+ where the inline nav is shown. */}
+    <button
+      type="button"
+      id="nav-toggle"
+      class="inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-600)] focus-visible:ring-offset-2 md:hidden"
+      aria-controls="primary-nav"
+      aria-expanded="false"
+      aria-label="Open navigation menu"
+    >
+      <svg id="nav-icon-open" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="4" y1="6" x2="20" y2="6"></line>
+        <line x1="4" y1="12" x2="20" y2="12"></line>
+        <line x1="4" y1="18" x2="20" y2="18"></line>
+      </svg>
+      <svg id="nav-icon-close" class="hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+        <line x1="6" y1="18" x2="18" y2="6"></line>
+      </svg>
+    </button>
+
+    <nav
+      id="primary-nav"
+      aria-label="Primary"
+      class="hidden md:block absolute md:static top-full left-0 right-0 z-50 md:top-auto bg-white md:bg-transparent shadow-lg md:shadow-none"
+    >
+      <ul class="flex flex-col md:flex-row md:items-center gap-1 md:gap-6 p-2 md:p-0 text-sm font-medium text-[var(--color-ink-soft)]">
         {NAV_LINKS.map((l) => {
           const isCurrent = pathname === normalize(l.href);
           return (
@@ -29,7 +54,7 @@ const pathname = normalize(Astro.url.pathname);
               <a
                 href={l.href}
                 aria-current={isCurrent ? 'page' : undefined}
-                class={`hover:text-[var(--color-brand-600)] ${isCurrent ? 'text-[var(--color-brand-700)] underline underline-offset-4' : ''}`}
+                class={`block rounded-md px-4 py-3 md:p-0 hover:bg-[var(--color-surface-soft)] md:hover:bg-transparent hover:text-[var(--color-brand-600)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-600)] focus-visible:ring-offset-2 ${isCurrent ? 'text-[var(--color-brand-700)] underline underline-offset-4' : ''}`}
               >{l.label}</a>
             </li>
           );
@@ -38,3 +63,71 @@ const pathname = normalize(Astro.url.pathname);
     </nav>
   </div>
 </header>
+
+<script>
+  // Mobile nav disclosure pattern with focus management, Escape, and click-outside.
+  const btn = document.getElementById('nav-toggle');
+  const nav = document.getElementById('primary-nav');
+  const iconOpen = document.getElementById('nav-icon-open');
+  const iconClose = document.getElementById('nav-icon-close');
+
+  if (btn && nav && iconOpen && iconClose) {
+    const isDesktop = () => window.matchMedia('(min-width: 768px)').matches;
+    const firstLink = () => nav.querySelector<HTMLAnchorElement>('a');
+
+    const setOpen = (open: boolean, opts: { focusFirst?: boolean; restoreFocus?: boolean } = {}) => {
+      btn.setAttribute('aria-expanded', String(open));
+      btn.setAttribute('aria-label', open ? 'Close navigation menu' : 'Open navigation menu');
+      nav.classList.toggle('hidden', !open);
+      iconOpen.classList.toggle('hidden', open);
+      iconClose.classList.toggle('hidden', !open);
+      if (open && opts.focusFirst) firstLink()?.focus();
+      if (!open && opts.restoreFocus) btn.focus();
+    };
+
+    btn.addEventListener('click', () => {
+      const open = btn.getAttribute('aria-expanded') === 'true';
+      setOpen(!open, { focusFirst: !open });
+    });
+
+    // Close on tap/click outside the header (mobile only).
+    document.addEventListener('pointerdown', (e) => {
+      if (isDesktop() || btn.getAttribute('aria-expanded') !== 'true') return;
+      const header = btn.closest('header');
+      if (header && !header.contains(e.target as Node)) setOpen(false);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && btn.getAttribute('aria-expanded') === 'true') {
+        e.preventDefault();
+        setOpen(false, { restoreFocus: true });
+      }
+    });
+
+    // Close if focus moves outside the header (covers Tab-out without trapping,
+    // which is the lighter-weight pattern recommended for non-modal disclosures).
+    document.addEventListener('focusin', (e) => {
+      if (!isDesktop() && btn.getAttribute('aria-expanded') === 'true') {
+        const header = btn.closest('header');
+        if (header && !header.contains(e.target as Node)) setOpen(false);
+      }
+    });
+
+    // Reset state when crossing the md breakpoint so `hidden` doesn't strand
+    // the desktop nav after resizing from mobile.
+    const mql = window.matchMedia('(min-width: 768px)');
+    const sync = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches) {
+        nav.classList.remove('hidden');
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-label', 'Open navigation menu');
+        iconOpen.classList.remove('hidden');
+        iconClose.classList.add('hidden');
+      } else if (btn.getAttribute('aria-expanded') !== 'true') {
+        nav.classList.add('hidden');
+      }
+    };
+    mql.addEventListener('change', sync);
+    sync(mql);
+  }
+</script>
