@@ -291,13 +291,14 @@ describe('ShuttleTrackerService', () => {
       ];
     });
 
-    it('should correctly parse string, number, and ignore "no vehicles" ETAs', async () => {
+    it('should correctly parse string, number, etaR, and ignore "no vehicles"/"arrived" ETAs', async () => {
       const mockEtaPayload = {
         ETAs: {
           [stopId]: [
-            { routeId: 'route-1', eta: 'Arriving in 3 mins', bg: '#000', busName: 'Bus A', theStop: {} }, // Match cached route
-            { routeId: 'route-2', eta: 10, busName: 'Bus B', theStop: { routeName: 'Blue', shortName: 'BL' } }, // No cached route match
-            { routeId: 'route-3', eta: 'no vehicles', busName: 'Bus C', theStop: {} }, // Should be skipped
+            { routeId: 'route-1', eta: 'Arriving in 3 mins', etaR: '3', bg: '#000', busName: 'Bus A', theStop: {} }, // etaR preferred
+            { routeId: 'route-2', eta: 10, busName: 'Bus B', theStop: { routeName: 'Blue', shortName: 'BL' } },      // numeric eta fallback
+            { routeId: 'route-3', eta: 'no vehicles', busName: 'Bus C', theStop: {} },                               // skipped
+            { routeId: 'route-4', eta: 'arrived', busName: 'Bus D', theStop: { routeName: 'Green', shortName: 'G' } }, // skipped — bus is at stop, not upcoming
           ],
         },
       };
@@ -315,15 +316,15 @@ describe('ShuttleTrackerService', () => {
       expect(arrivals[0]).toMatchObject({
         routeId: 'route-1',
         routeName: 'Matched Red Route', // Pulled from cache
-        abbreviation: 'MRR',            // Pulled from cache
-        color: '#AA0000',             // Pulled from cache
-        etaMinutes: 3,                  // Parsed from string
+        abbreviation: 'MRR',
+        color: '#AA0000',
+        etaMinutes: 3, // Parsed from etaR
       });
 
       expect(arrivals[1]).toMatchObject({
         routeId: 'route-2',
-        routeName: 'Blue',              // Fallback to payload
-        etaMinutes: 10,                 // Number parsed
+        routeName: 'Blue', // Fallback to payload
+        etaMinutes: 10,
       });
     });
 

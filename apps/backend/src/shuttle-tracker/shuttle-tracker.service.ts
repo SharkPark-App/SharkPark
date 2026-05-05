@@ -428,16 +428,21 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
 
       const arrivals: RouteArrival[] = [];
       for (const arrival of validArrivals) {
-        if (arrival.eta === 'no vehicles') continue;
+        // Skip sentinels — "no vehicles" means no active buses, "arrived" means
+        // the bus is currently at the stop (not an upcoming arrival)
+        if (arrival.eta === 'no vehicles' || arrival.eta === 'arrived') continue;
 
         let etaVal: number | null = null;
 
-        if (typeof arrival.eta === 'string') {
-          // Find first sequence of digits
-          const match = arrival.eta.match(/\d+/);
-          if (match) etaVal = parseInt(match[0], 10);
+        if (arrival.etaR !== undefined && arrival.etaR !== null) {
+          // etaR is a clean numeric string (e.g. "7", "0") — prefer it over parsing eta
+          const parsed = parseInt(arrival.etaR, 10);
+          if (!isNaN(parsed)) etaVal = parsed;
         } else if (typeof arrival.eta === 'number') {
           etaVal = arrival.eta;
+        } else if (typeof arrival.eta === 'string') {
+          const match = arrival.eta.match(/\d+/);
+          if (match) etaVal = parseInt(match[0], 10);
         }
 
         if (etaVal === null || !arrival.routeId) continue;
