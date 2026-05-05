@@ -145,14 +145,33 @@ export class ReliabilityService {
     };
   }
 
-  // High = good (absence of reports). Reporter count is deduped per user at the query layer.
+  // User reports are a NEGATIVE-only signal: their PRESENCE is evidence of
+  // disagreement with the live count, but their ABSENCE proves nothing —
+  // most users never submit reports, and silence is the default state.
+  // Treating "0 reports" as 1.0 ("everyone agrees") inflates the overall
+  // reliability score by up to `weight` points across every lot at every
+  // moment, which is exactly the bug we hit: lots showing 100% on this
+  // factor at 6am when no humans were even on campus to file a report.
+  //
+  // Mirror the historical-accuracy pattern: when we have no signal, return
+  // a neutral 0.5 so the factor neither props the score up nor drags it
+  // down. Once at least one report arrives, switch to the penalty curve.
   private computeUserReportsFactor(
     reporterCount: number,
     weight: number,
     target: number,
   ): FactorScore {
+    if (reporterCount <= 0) {
+      return {
+        name: 'User Reports',
+        rawValue: 0,
+        normalizedValue: 0.5,
+        weight,
+        weightedScore: 0.5 * weight,
+      };
+    }
     const safeTarget = target > 0 ? target : 1;
-    const penalty = Math.min(1, Math.max(0, reporterCount) / safeTarget);
+    const penalty = Math.min(1, reporterCount / safeTarget);
     const normalizedValue = 1 - penalty;
     return {
       name: 'User Reports',

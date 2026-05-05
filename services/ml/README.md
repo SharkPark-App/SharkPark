@@ -177,8 +177,11 @@ Promotion criteria:
 ```bash
 uv run python -m scripts.promote_short_term --run-id <mlflow-run-id>
 
-# Later, when deploying to Lambda:
+# Also publish artifacts to Cloudflare R2 (required before the prediction job can load this version):
 uv run python -m scripts.promote_short_term --run-id <mlflow-run-id> --export-s3
+
+# Re-publish an already-registered version without re-promoting:
+uv run python -m scripts.promote_short_term --upload-only <version>
 ```
 
 **Long-term:**
@@ -303,17 +306,17 @@ At launch with no historical data, the system transitions through three phases. 
 
 | Concern | Local | Deployed |
 |---------|-------|----------|
-| What runs inference | Manual script | Lambda (scheduled) |
-| Trigger | Manual | EventBridge (every 15 min short-term, daily long-term) |
-| Model loaded from | `mlruns/` | S3 |
+| What runs inference | Manual script | Fly cron VM (scheduled) |
+| Trigger | Manual | Cron (every 15 min short-term, daily long-term) |
+| Model loaded from | `mlruns/` | Cloudflare R2 (via `production.json` pointer) |
 | Model tracking | MLflow (local) | MLflow (local) |
 | Training data source | PostgreSQL (Docker) | Aurora PostgreSQL Serverless v2 |
 | Training data archive | Local files | S3 (Parquet, partitioned by date) |
 | Prediction output | PostgreSQL (Docker) | Aurora PostgreSQL Serverless v2 |
 
-The prediction logic (`src/models/`, `src/features/`) stays the same—only the entrypoint changes. Later add `lambda_handler.py` that reuses the same code.
+The prediction logic (`src/models/`, `src/features/`) stays the same—only the entrypoint changes.
 
-**Retraining:** Weekly retrain job (manual script for now, Lambda later). Candidate model compared against production; promoted only if it meets promotion criteria.
+**Retraining:** Weekly retrain job (manual script for now, scheduled later). Candidate model compared against production; promoted only if it meets promotion criteria.
 ## Linting & Formatting
 
 [Ruff](https://docs.astral.sh/ruff/) for both linting and formatting.
@@ -352,13 +355,12 @@ uv run pytest tests/ --cov=src --cov=scripts --cov-report=term-missing
 ```
 
 ## Notes
-- Retraining: Weekly (manual for now, Lambda later)
+- Retraining: Weekly (manual for now, scheduled later)
 - Lot metadata pulled from PostgreSQL
-- Models stored locally in `mlruns/` during development
+- Models stored locally in `mlruns/` during development; promoted versions also published to Cloudflare R2 via `--export-s3` (see [.env.example](.env.example) for required R2 credentials).
 - Database: PostgreSQL 16 (Docker) locally, Aurora PostgreSQL Serverless v2 in production — managed by Prisma ORM
-- **Run ID handoff**: The workflow is sequential 
-    -  `train` outputs an MLflow run ID, which you manually pass to `evaluate`, then to `promote`. 
-    - This will be automated when Lambda + EventBridge is set up (train → evaluate → promote chained automatically).
-- S3 not used yet — only needed when deploying inference to Lambda.
+- **Run ID handoff**: The workflow is sequential
+    -  `train` outputs an MLflow run ID, which you manually pass to `evaluate`, then to `promote` (if applicable).
+    - This will be automated once training runs on a schedule (train → evaluate → promote chained automatically).
 - ML training queries run as native SQL (JOINs with `lots`, `academic_calendar`, `campus_events` tables)
-- XGBoost model must be <50MB for Lambda deployment (typical: ~5-15MB)
+- Each promoted version uploads ~4 MB to R2 (the four artifact files combined); no special size constraints for the Fly cron VM that loads them.

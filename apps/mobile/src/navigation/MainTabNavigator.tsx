@@ -4,6 +4,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { HomeScreen as LongTerm, MapScreen, ProfileScreen, ShortTermForecastScreen, LocationPermissionScreen } from '../screens';
+// Dev-only debug screen. The require() is wrapped so Metro tree-shakes it
+// out of release bundles when __DEV__ is false.
+const GeofenceDebugScreen = __DEV__
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  ? (require('../screens/dev/GeofenceDebugScreen').default as React.ComponentType)
+  : null;
 import { Text } from '../components/CustomText';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
@@ -66,6 +72,13 @@ const MapStack: React.FC = () => {
       <Stack.Screen name="MapMain" component={MapScreen} />
       <Stack.Screen name="Short Term Forecast" component={ShortTermForecastScreen} />
       <Stack.Screen name="LocationPermission" component={LocationPermissionScreen} />
+      {__DEV__ && GeofenceDebugScreen && (
+        <Stack.Screen
+          name="GeofenceDebug"
+          component={GeofenceDebugScreen}
+          options={{ headerShown: true, title: 'Geofence Debug (dev)' }}
+        />
+      )}
     </Stack.Navigator>
   );
 };

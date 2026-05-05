@@ -7,5 +7,6 @@ export {
   ReliabilityMeter, 
   ReliabilityDot, 
   ReliabilityBar,
+  ReliabilityRow,
   type ReliabilityMeterProps,
 } from './ReliabilityMeter';

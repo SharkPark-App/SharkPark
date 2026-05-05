@@ -8,6 +8,17 @@ import {
   ReliabilityThresholds,
 } from './interfaces';
 
+/**
+ * Default penetration rate used when callers don't pass a live value.
+ * Matches MIN_PENETRATION_RATE in PenetrationEstimationService and represents
+ * the cold-start "we don't know yet" floor. The snapshot writer in
+ * OccupancyEventsService passes the live per-lot effective rate computed by
+ * PenetrationEstimationService.estimateForAllLots(), so production scoring
+ * gets the dynamic value; only the standalone /reliability HTTP path falls
+ * back to this floor.
+ */
+const DEFAULT_COLD_START_PENETRATION_RATE = 0.01;
+
 @Injectable()
 export class ReliabilityComputationService {
   private readonly logger = new Logger(ReliabilityComputationService.name);
@@ -75,8 +86,9 @@ export class ReliabilityComputationService {
    * Batch variant of gatherReliabilityInput: runs four queries total. 
    */
   private async gatherReliabilityInputsBatch(
-    lots: Array<{ id: string; lot_id: string; penetration_rate: number }>,
+    lots: Array<{ id: string; lot_id: string }>,
     thresholds: ReliabilityThresholds = this.reliabilityService.getDefaultThresholds(),
+    effectivePenetrationRateByLotId?: Map<string, number>,
   ): Promise<Map<string, ReliabilityInput>> {
     const result = new Map<string, ReliabilityInput>();
     if (lots.length === 0) return result;
@@ -150,7 +162,11 @@ export class ReliabilityComputationService {
       result.set(
         lot.lot_id,
         this.assembleReliabilityInput(
-          lot,
+          {
+            penetrationRate:
+              effectivePenetrationRateByLotId?.get(lot.id) ??
+              DEFAULT_COLD_START_PENETRATION_RATE,
+          },
           eventsByLot.get(lot.id) ?? [],
           predictionsByLot.get(lot.id) ?? [],
           snapshotsByLot.get(lot.id) ?? [],
@@ -170,7 +186,7 @@ export class ReliabilityComputationService {
    * place — drift between the two paths becomes impossible.
    */
   private assembleReliabilityInput(
-    lot: { penetration_rate: number },
+    lot: { penetrationRate: number },
     events: Array<{ timestamp: Date; device_hash: string }>,
     predictions: Array<{ target_time: Date; predicted_occupancy: number }>,
     snapshots: Array<{ timestamp: Date; occupancy_rate: number }>,
@@ -201,7 +217,7 @@ export class ReliabilityComputationService {
     );
 
     return {
-      penetrationRate: lot.penetration_rate || 0,
+      penetrationRate: lot.penetrationRate || 0,
       minutesSinceLastEvent: Math.min(120, minutesSinceLastEvent),
       eventsInLastHour: recentEvents.length,
       uniqueDevicesInLastHour: uniqueDevices.size,
@@ -220,8 +236,9 @@ export class ReliabilityComputationService {
    * gatherReliabilityInputsBatch would produce for this lot.
    */
   async gatherReliabilityInput(
-    lot: { id: string; penetration_rate: number },
+    lot: { id: string },
     thresholds: ReliabilityThresholds = this.reliabilityService.getDefaultThresholds(),
+    effectivePenetrationRate: number = DEFAULT_COLD_START_PENETRATION_RATE,
   ): Promise<ReliabilityInput> {
     const now = new Date();
     const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
@@ -257,7 +274,7 @@ export class ReliabilityComputationService {
     ]);
 
     return this.assembleReliabilityInput(
-      lot,
+      { penetrationRate: effectivePenetrationRate },
       events,
       predictions,
       snapshots,

@@ -20,7 +20,6 @@ describe('ReliabilityComputationService', () => {
     lot_id: 'G1',
     lot_name: 'Lot G1',
     capacity: 100,
-    penetration_rate: 0.65,
     current_occupancy: 50,
   };
 
@@ -103,7 +102,7 @@ describe('ReliabilityComputationService', () => {
       expect(reliabilityService.computeReliability).toHaveBeenCalledWith(
         'G1',
         expect.objectContaining({
-          penetrationRate: 0.65,
+          penetrationRate: 0.01,
           eventsInLastHour: expect.any(Number),
           minutesSinceLastEvent: expect.any(Number),
           uniqueDevicesInLastHour: expect.any(Number),

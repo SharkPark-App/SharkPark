@@ -288,13 +288,14 @@ describe('ReliabilityService', () => {
           eventsInLastHour: 10, // 100% frequency
           uniqueDevicesInLastHour: 20, // 100% sample
           historicalAccuracy: 1.0, // 100% accuracy
-          uniqueReportersInWindow: 0, // 100% userReports
+          uniqueReportersInWindow: 0, // neutral 0.5 (absence of reports is no signal)
         };
 
         const result = service.computeReliability('lot-perfect', input, undefined, undefined, 'AUTHED');
 
-        // All factors at max = score of 100
-        expect(result.score).toBe(100);
+        // Five factors at max + userReports neutral (0.5 * weight 0.15 = 0.075)
+        // -> 1 * 0.85 + 0.5 * 0.15 = 0.925 -> 93 after rounding
+        expect(result.score).toBe(93);
         expect(result.confidence).toBe('HIGH');
       });
 
@@ -496,10 +497,10 @@ describe('ReliabilityService', () => {
       uniqueReportersInWindow: 0,
     };
 
-    it('gives full credit when no reporters', () => {
+    it('returns a neutral 0.5 when no reporters (absence is no signal)', () => {
       const result = service.computeReliability('lot-no-reports', baseHighInput);
       expect(result.factors.userReports.rawValue).toBe(0);
-      expect(result.factors.userReports.normalizedValue).toBe(1);
+      expect(result.factors.userReports.normalizedValue).toBe(0.5);
     });
 
     it('drops normalized value as distinct reporters approach the target', () => {
@@ -518,15 +519,16 @@ describe('ReliabilityService', () => {
       expect(result.factors.userReports.normalizedValue).toBe(0);
     });
 
-    it('moves a HIGH lot toward MEDIUM when reports accumulate', () => {
-      const clean = service.computeReliability('lot-clean', baseHighInput, undefined, undefined, 'AUTHED');
+    it('moves a HIGH lot lower when reports accumulate', () => {
+      const clean = service.computeReliability('lot-clean', baseHighInput);
       const reported = service.computeReliability('lot-reported', {
         ...baseHighInput,
         uniqueReportersInWindow: 5,
-      }, undefined, undefined, 'AUTHED');
-      // userReports weight 0.15 -> losing all of it shaves ~15 points off score
-      expect(clean.score - reported.score).toBeGreaterThanOrEqual(14);
-      expect(clean.score - reported.score).toBeLessThanOrEqual(16);
+      });
+      // userReports weight 0.15: clean=neutral 0.5 -> reported=0
+      // delta in factor = 0.5, weighted delta = 0.5 * 0.15 = 0.075 -> ~7-8 pts
+      expect(clean.score - reported.score).toBeGreaterThanOrEqual(6);
+      expect(clean.score - reported.score).toBeLessThanOrEqual(9);
     });
 
     it('uses report-aware copy at MEDIUM when user reports are the weakest factor', () => {

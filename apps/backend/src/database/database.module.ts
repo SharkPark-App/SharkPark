@@ -32,11 +32,17 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     const writeUrl = process.env.DATABASE_URL;
     const readUrl = process.env.DATABASE_URL_RO?.trim() || writeUrl;
 
+    // connectionTimeoutMillis 15s (was 5s) covers Neon's cold-compute
+    // wake-up window. When the serverless compute is suspended, the first
+    // pool.connect() can take 5-10s while Neon resumes; 5s caused
+    // "Connection terminated due to connection timeout" failures inside
+    // withAdvisoryLock for cron jobs that fired right when the compute
+    // happened to be cold.
     const pool = new pg.Pool({
       connectionString: writeUrl,
       max: isProduction ? 8 : 5,
       idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 5_000,
+      connectionTimeoutMillis: 15_000,
       ...(isProduction && { ssl: { rejectUnauthorized: true } }),
     });
 
@@ -54,11 +60,18 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
           connectionString: readUrl,
           max: isProduction ? 8 : 3,
           idleTimeoutMillis: 30_000,
-          connectionTimeoutMillis: 5_000,
+          connectionTimeoutMillis: 15_000,
           ...(isProduction && { ssl: { rejectUnauthorized: true } }),
         })
       : pool;
   }
+
+  // Nest can invoke onModuleDestroy more than once during shutdown when
+  // both the global shutdown hook and an explicit app.close() fire (and
+  // the same instance is provided to multiple modules in some test setups).
+  // pg.Pool throws "Called end on pool more than once" on the second call,
+  // which surfaces as a Sentry error during otherwise-clean shutdowns.
+  private destroyed = false;
 
   async onModuleInit() {
     await this.$connect();
@@ -68,6 +81,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleDestroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
     await this.$disconnect();
     await this.pool.end();
     if (this.hasDedicatedReader) {
