@@ -21,7 +21,7 @@ import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { deleteMyAccount, updateNotificationPreferences } from '../services/api/users';
+import { deleteMyAccount, getUserProfile, updateNotificationPreferences } from '../services/api/users';
 import type { NotificationPreferences } from '../services/api/users';
 
 const ProfileScreen: React.FC = () => {
@@ -63,6 +63,29 @@ const ProfileScreen: React.FC = () => {
       // Location permissions granted, background geofencing available
     }
   }, [isTracking]);
+
+  // Hydrate notification toggles from the backend on mount / when the
+  // signed-in user changes. Without this the toggles would always start at
+  // the hardcoded defaults above and silently misrepresent the server state
+  // until the user interacted with each one.
+  useEffect(() => {
+    let cancelled = false;
+    if (!userEmail || !isAuthenticated || isGuest) return;
+    (async () => {
+      const profile = await getUserProfile(userEmail);
+      if (cancelled || !profile?.notification_preferences) return;
+      const prefs = profile.notification_preferences;
+      setNotifPrefs((prev) => ({
+        favorites_filling: prefs.favorites_filling ?? prev.favorites_filling,
+        favorites_clearing: prefs.favorites_clearing ?? prev.favorites_clearing,
+        surge_alerts: prefs.surge_alerts ?? prev.surge_alerts,
+        event_alerts: prefs.event_alerts ?? prev.event_alerts,
+      }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userEmail, isAuthenticated, isGuest]);
 
   // Show geofencing status to user
   const getGeofencingStatusText = () => {
