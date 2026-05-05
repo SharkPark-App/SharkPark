@@ -10,9 +10,15 @@ import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 import type { MapRoute } from '../../types/transit';
 
+interface LotSummary {
+  lot_id: string;
+  lot_type: 'STUDENT' | 'EMPLOYEE';
+}
+
 interface LotFilterModalProps {
   isOpen: boolean;
   onClose: () => void;
+  lots: LotSummary[];
   selectedLots: string[];
   onApplyFilter: (selectedLots: string[]) => void;
   routes: MapRoute[];
@@ -20,15 +26,10 @@ interface LotFilterModalProps {
   onApplyTransitFilter: (hiddenRouteIds: string[]) => void;
 }
 
-interface LotOption {
-  id: string;
-  label: string;
-  category: 'general' | 'employee';
-}
-
-export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter, routes, hiddenRouteIds, onApplyTransitFilter }: LotFilterModalProps) {
+export function LotFilterModal({ isOpen, onClose, lots, selectedLots, onApplyFilter, routes, hiddenRouteIds, onApplyTransitFilter }: LotFilterModalProps) {
   const { colors, spacing, typography } = useTheme();
   const [activeTab, setActiveTab] = useState<'parking' | 'transit'>('parking');
+  const [scrolledTab, setScrolledTab] = useState<'parking' | 'transit'>('parking');
   const [tempSelected, setTempSelected] = useState<string[]>(selectedLots);
   const [tempHiddenRouteIds, setTempHiddenRouteIds] = useState<string[]>(hiddenRouteIds);
   const [pageWidth, setPageWidth] = useState(0);
@@ -39,47 +40,13 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter, r
     if (isOpen) {
       setTempSelected(selectedLots);
       setTempHiddenRouteIds(hiddenRouteIds);
-      setActiveTab('parking');
-      pageScrollRef.current?.scrollTo({ x: 0, animated: false });
     }
   }, [isOpen, selectedLots, hiddenRouteIds]);
 
   const styles = useMemo(() => getStyles(colors, spacing, typography), [colors, spacing, typography]);
 
-  const generalLots: LotOption[] = [
-    { id: 'G1', label: 'G1', category: 'general' },
-    { id: 'G2', label: 'G2', category: 'general' },
-    { id: 'G3', label: 'G3', category: 'general' },
-    { id: 'G4', label: 'G4', category: 'general' },
-    { id: 'G5', label: 'G5', category: 'general' },
-    { id: 'G6', label: 'G6', category: 'general' },
-    { id: 'G7', label: 'G7', category: 'general' },
-    { id: 'G8', label: 'G8', category: 'general' },
-    { id: 'G9', label: 'G9', category: 'general' },
-    { id: 'G10', label: 'G10', category: 'general' },
-    { id: 'G11', label: 'G11', category: 'general' },
-    { id: 'G12', label: 'G12', category: 'general' },
-    { id: 'G13', label: 'G13', category: 'general' },
-    { id: 'G14', label: 'G14', category: 'general' },
-    { id: 'PVN', label: 'Palo Verde N.', category: 'general' },
-    { id: 'PVS', label: 'Palo Verde S.', category: 'general' },
-    { id: 'PYR', label: 'Pyramid', category: 'general' },
-  ];
-  const employeeLots: LotOption[] = [
-    { id: 'E1', label: 'E1', category: 'employee' },
-    { id: 'E2', label: 'E2', category: 'employee' },
-    { id: 'E3', label: 'E3', category: 'employee' },
-    { id: 'E4', label: 'E4', category: 'employee' },
-    { id: 'E5', label: 'E5', category: 'employee' },
-    { id: 'E6', label: 'E6', category: 'employee' },
-    { id: 'E7', label: 'E7', category: 'employee' },
-    { id: 'E8', label: 'E8', category: 'employee' },
-    { id: 'E9', label: 'E9', category: 'employee' },
-    { id: 'E10', label: 'E10', category: 'employee' },
-    { id: 'E11', label: 'E11', category: 'employee' },
-  ];
-
-  const allLots = [...generalLots, ...employeeLots];
+  const generalLots = useMemo(() => lots.filter(l => l.lot_type === 'STUDENT'), [lots]);
+  const employeeLots = useMemo(() => lots.filter(l => l.lot_type === 'EMPLOYEE'), [lots]);
 
   const toggleLot = (lotId: string) => {
     setTempSelected(
@@ -111,7 +78,7 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter, r
 
   const handleToggleAll = () => {
     if (activeTab === 'parking') {
-      setTempSelected(tempSelected.length === 0 ? allLots.map(l => l.id) : []);
+      setTempSelected(tempSelected.length === 0 ? lots.map(l => l.lot_id) : []);
     } else {
       setTempHiddenRouteIds(tempHiddenRouteIds.length === 0 ? routes.map(r => r.id) : []);
     }
@@ -119,6 +86,8 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter, r
 
   const handleTabPress = (tab: 'parking' | 'transit') => {
     setActiveTab(tab);
+    // Don't update scrolledTab here — let onMomentumScrollEnd do it once the
+    // animation settles. Changing contentOffset mid-animation cancels it.
     pageScrollRef.current?.scrollTo({
       x: tab === 'transit' ? pageWidth : 0,
       animated: true,
@@ -185,9 +154,18 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter, r
                 pagingEnabled
                 bounces={false}
                 showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={16}
+                contentOffset={{ x: scrolledTab === 'transit' ? pageWidth : 0, y: 0 }}
+                onScroll={(e) => {
+                  const idx = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
+                  const tab = idx === 0 ? 'parking' : 'transit';
+                  if (tab !== activeTab) setActiveTab(tab);
+                }}
                 onMomentumScrollEnd={(e) => {
                   const idx = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
-                  setActiveTab(idx === 0 ? 'parking' : 'transit');
+                  const tab = idx === 0 ? 'parking' : 'transit';
+                  setActiveTab(tab);
+                  setScrolledTab(tab);
                 }}
               >
                 {/* Parking page */}
@@ -201,17 +179,17 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter, r
                     <View style={styles.grid}>
                       {generalLots.map((lot) => (
                         <TouchableOpacity
-                          key={lot.id}
-                          onPress={() => toggleLot(lot.id)}
+                          key={lot.lot_id}
+                          onPress={() => toggleLot(lot.lot_id)}
                           style={styles.lotButton}
-                          accessibilityLabel={`${tempSelected.includes(lot.id) ? 'Deselect' : 'Select'} general parking lot ${lot.label}`}
+                          accessibilityLabel={`${tempSelected.includes(lot.lot_id) ? 'Deselect' : 'Select'} general parking lot ${lot.lot_id}`}
                           accessibilityRole="checkbox"
-                          accessibilityState={{ checked: tempSelected.includes(lot.id) }}
+                          accessibilityState={{ checked: tempSelected.includes(lot.lot_id) }}
                         >
-                          <View style={[styles.checkbox, tempSelected.includes(lot.id) && styles.checkboxSelected]}>
-                            {tempSelected.includes(lot.id) && <Text style={styles.checkmark}>✓</Text>}
+                          <View style={[styles.checkbox, tempSelected.includes(lot.lot_id) && styles.checkboxSelected]}>
+                            {tempSelected.includes(lot.lot_id) && <Text style={styles.checkmark}>✓</Text>}
                           </View>
-                          <Text style={styles.lotLabel}>{lot.label}</Text>
+                          <Text style={styles.lotLabel}>{lot.lot_id}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -224,17 +202,17 @@ export function LotFilterModal({ isOpen, onClose, selectedLots, onApplyFilter, r
                     <View style={styles.grid}>
                       {employeeLots.map((lot) => (
                         <TouchableOpacity
-                          key={lot.id}
-                          onPress={() => toggleLot(lot.id)}
+                          key={lot.lot_id}
+                          onPress={() => toggleLot(lot.lot_id)}
                           style={styles.lotButton}
-                          accessibilityLabel={`${tempSelected.includes(lot.id) ? 'Deselect' : 'Select'} employee parking lot ${lot.label}`}
+                          accessibilityLabel={`${tempSelected.includes(lot.lot_id) ? 'Deselect' : 'Select'} employee parking lot ${lot.lot_id}`}
                           accessibilityRole="checkbox"
-                          accessibilityState={{ checked: tempSelected.includes(lot.id) }}
+                          accessibilityState={{ checked: tempSelected.includes(lot.lot_id) }}
                         >
-                          <View style={[styles.checkbox, tempSelected.includes(lot.id) && styles.checkboxSelected]}>
-                            {tempSelected.includes(lot.id) && <Text style={styles.checkmark}>✓</Text>}
+                          <View style={[styles.checkbox, tempSelected.includes(lot.lot_id) && styles.checkboxSelected]}>
+                            {tempSelected.includes(lot.lot_id) && <Text style={styles.checkmark}>✓</Text>}
                           </View>
-                          <Text style={styles.lotLabel}>{lot.label}</Text>
+                          <Text style={styles.lotLabel}>{lot.lot_id}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -352,13 +330,14 @@ const getStyles = (
     borderBottomColor: colors.primary,
   },
   tabText: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.fontSize.xl,
+    fontFamily: typography.fontFamily.bold,
     color: colors.mediumGray,
   },
   tabTextActive: {
+    fontSize: typography.fontSize.xl,
+    fontFamily: typography.fontFamily.bold,
     color: colors.primary,
-    fontFamily: typography.fontFamily.semibold,
   },
   closeButton: {
     padding: spacing.sm,

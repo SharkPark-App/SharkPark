@@ -24,6 +24,7 @@ import useFavorites from '../hooks/useFavorites';
 import { useTransitData } from '../hooks/useTransitData';
 import { useStopETAs } from '../hooks/useStopETAs';
 import { ShuttleMarker } from '../components/Map/ShuttleMarker';
+import { SegmentedCircle } from '../components/Map/SegmentedCircle';
 import { StopModal } from '../components/Modals/StopModal';
 import { ShuttleModal } from '../components/Modals/ShuttleModal';
 import type { MapStop } from '../types/transit';
@@ -286,8 +287,10 @@ const MapScreen: React.FC = () => {
     ? routes?.filter(r => !hiddenRouteIds.includes(r.id))
     : routes;
   const filteredStops = hiddenRouteIds.length > 0
-    ? stops?.filter(s => !hiddenRouteIds.includes(s.routeId))
+    ? stops?.filter(s => s.routeIds.some(id => !hiddenRouteIds.includes(id)))
     : stops;
+
+  const routeColorMap = new Map(routes?.map(r => [r.id, r.color]) ?? []);
   const filteredShuttles = hiddenRouteIds.length > 0
     ? shuttles?.filter(s => !hiddenRouteIds.includes(s.routeId))
     : shuttles;
@@ -371,14 +374,9 @@ const MapScreen: React.FC = () => {
               accessibilityLabel={`Shuttle stop: ${stop.name}`}
               tracksViewChanges={false}
             >
-              <View
-                style={[
-                  styles.stopCircle,
-                  {
-                    backgroundColor: stop.color,
-                    borderColor: colors.white,
-                  }
-                ]}
+              <SegmentedCircle
+                colors={stop.routeIds.map(id => routeColorMap.get(id) ?? stop.color)}
+                borderColor={colors.white}
               />
             </Marker>
           ))}
@@ -408,6 +406,7 @@ const MapScreen: React.FC = () => {
       <LotFilterModal
         isOpen={isFilterModalOpen}
         onClose={handleFilterClose}
+        lots={lots ?? []}
         selectedLots={selectedLots}
         onApplyFilter={handleApplyFilter}
         routes={routes ?? []}
