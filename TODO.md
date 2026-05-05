@@ -1,6 +1,6 @@
 # SharkPark — Pre-Launch TODO
 
-*Last updated 2026-05-04 (post-merge through #177 + direct-to-branch work on `refactor/nest-scheduler`: supercronic → NestJS scheduler refactor `c8e1fca`, sports-scraper polish + bulk events-summary endpoint cluster, mobile lot-detail/map/forecast polish, reliability-score absent-reports fix `83cff61`. PR #180 packages most of the events cluster for review.). This document tracks remaining work to App Store / Play Store submission. For day-to-day status, sections are organized per-owner with priority tiers.*
+*Last updated 2026-05-05 (post-merge of #151 MLflow R2 registry; previously #177 + direct-to-branch work on `refactor/nest-scheduler`: supercronic → NestJS scheduler refactor `c8e1fca`, sports-scraper polish + bulk events-summary endpoint cluster, mobile lot-detail/map/forecast polish, reliability-score absent-reports fix `83cff61`. PR #180 packages most of the events cluster for review.). This document tracks remaining work to App Store / Play Store submission. For day-to-day status, sections are organized per-owner with priority tiers.*
 
 ---
 
@@ -25,6 +25,7 @@
 **ML (Ly):**
 - PR #119 — Weather-aware short-term predictions (rule-based postprocess layer at `services/ml/src/postprocess/weather_adjustment.py`, with staleness gate)
 - PR #146 — **Reports → reliability score loop.** Wires `Report` rows into the weighted reliability formula in `apps/backend/src/reliability/reliability.service.ts`. Anonymous device 0.3-0.6, authed user 1.0, repeat-flagged user 0. (All current reports are authed via NOT-NULL `user_id` — anonymous tier is for future expansion.)
+- PR #151 — **MLflow → R2 model registry.** Promote scripts now upload `model.json`, `model_lower.json`, `model_upper.json`, `metadata.joblib` to R2 (`sharkpark-ml-exports/models/<name>/<version>/`) and write a `production.json` pointer LAST for atomic switchover. R2 upload is best-effort (warns + continues if creds missing or upload fails) so local MLflow registry stays the source of truth. Idempotent on re-promote (uses `_resolve_run_id` match), warns when re-pointing `@production` backwards. JSON uploads carry `Content-Type: application/json` for curl/browser debugging.
 
 **Backend (Zach):**
 - PR #121 — `POST /api/v1/reports` endpoint (DTO `{ lotId, type, message? }`, throttled 5/min/user, 401 for guests)
@@ -75,6 +76,48 @@ Ordered list of what's actively in flight to get SharkPark submitted. Don't reor
 **Step 6 — Build upload** — Xcode → Archive → Distribute → App Store Connect (blocked on Lawrence's QA pass).
 
 **Step 7 — Submit for review.**
+
+---
+
+# 🟡 Open PR review queue (2026-05-05)
+
+Cycle for every PR: (1) checkout branch, (2) review + leave inline comments, (3) implement fixes locally, (4) push, (5) wait for CI green, (6) squash-merge, (7) update this file. **Order is by priority, not PR number.**
+
+**ML (Ly / DottL):**
+- ✅ PR #151 — MLflow R2 registry *(merged 2026-05-05)*
+
+**Backend (Zach):**
+- 🔲 PR #163 — analytics endpoints
+- 🔲 PR #174 — tier throttling, user forecast, reliability
+- 🔲 PR #175 — min-version endpoint
+- 🔲 PR #178 — GDPR/CCPA data export endpoint
+
+**Mobile (Lawrence):**
+- 🔲 PR #160 — force-update screen on launch via GET /min-version *(blocks on #175)*
+- 🔲 PR #197 — wire push notifications to mobile *(blocks on Charles's `notification_logs`/`push_tokens` schema-drift fix — see below)*
+- 🔲 PR #179 — service-coverage audit (+34 tests for users, carBluetooth, contributor)
+
+**Mobile (Zach Padilla):**
+- 🔲 PR #193 — android RNG crash fix (explicit android dependency)
+
+**Marketing / infra (Charles):**
+- 🔲 PR #198 — responsive mobile nav + a11y polish (marketing site)
+- 🔲 PR #196 — always restart cron Machine; force-start in deploy workflow
+
+**Dependabot (batch — review for breaking changes, then merge in clusters):**
+- 🔲 PR #194 — npm minor-and-patch group (9 updates)
+- 🔲 PR #190 / #165 / #164 — astro 5.18.1 → 6.x (major; check marketing-site breaking changes)
+- 🔲 PR #189 — `@react-native-async-storage/async-storage` 2.2 → 3.0 (major; check API surface)
+- 🔲 PR #188 — typescript 5.9.3 → 6.0.3 (major; check workspace tsconfig compatibility)
+- 🔲 PR #186 — fastapi >=0.110.0 → >=0.136.1
+- 🔲 PR #185 — cuid2 >=2.0.0 → >=2.0.1
+- 🔲 PR #184 — pytest >=8.0.0 → >=9.0.3
+- 🔲 PR #183 — github-actions group (3 updates)
+- 🔲 PR #182 — pytest-cov >=5.0.0 → >=7.1.0
+- 🔲 PR #181 — pandas >=2.2.0 → >=3.0.2 (major; will likely break feature pipelines — verify ML test suite)
+- 🔲 PR #162 — uv group (2 updates)
+- 🔲 PR #156 — mako 1.3.10 → 1.3.11
+- 🔲 PR #155 — gitpython 3.1.46 → 3.1.47
 
 ---
 
