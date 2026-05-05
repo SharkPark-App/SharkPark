@@ -103,11 +103,15 @@ export class LotsController {
   @Header('Cache-Control', 'public, max-age=300, s-maxage=600')
   async getUtilization(@Query('range') range?: string) {
     const rangeDays = this.lotsService.parseRangeDays(range, 30, 90);
+    const until = new Date();
+    const since = new Date(until.getTime() - rangeDays * 24 * 60 * 60 * 1000);
     const data = await this.lotsService.getUtilization(rangeDays);
 
     return {
       success: true,
       range_days: rangeDays,
+      since: since.toISOString(),
+      until: until.toISOString(),
       count: data.length,
       data,
     };
@@ -206,12 +210,16 @@ export class LotsController {
     @Query('range') range?: string,
   ) {
     const rangeDays = this.lotsService.parseRangeDays(range, 7, 90);
+    const until = new Date();
+    const since = new Date(until.getTime() - rangeDays * 24 * 60 * 60 * 1000);
     const data = await this.lotsService.getTrends(id.toUpperCase(), rangeDays);
 
     return {
       success: true,
       lot_id: id.toUpperCase(),
       range_days: rangeDays,
+      since: since.toISOString(),
+      until: until.toISOString(),
       count: data.length,
       data,
     };

@@ -417,6 +417,10 @@ export class LotsService {
    * Returns hourly average occupancy for a single lot over the past N days.
    * Uses a raw GROUP BY date_trunc query since Prisma groupBy doesn't support
    * date truncation.
+   *
+   * Buckets are UTC: `date_trunc('hour', timestamp)` runs in the DB session
+   * timezone, and Postgres on Neon is configured to UTC. Clients should
+   * convert to local time for display.
    */
   async getTrends(lotId: string, rangeDays: number): Promise<TrendPoint[]> {
     try {

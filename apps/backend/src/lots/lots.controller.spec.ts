@@ -266,13 +266,18 @@ describe('LotsController', () => {
 
       const result = await controller.getLotTrends('g1');
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
         lot_id: 'G1',
         range_days: 7,
         count: 1,
         data: mockTrends,
       });
+      expect(typeof result.since).toBe('string');
+      expect(typeof result.until).toBe('string');
+      expect(new Date(result.until).getTime() - new Date(result.since).getTime()).toBe(
+        7 * 24 * 60 * 60 * 1000,
+      );
       expect(service.getTrends).toHaveBeenCalledWith('G1', 7);
     });
 
@@ -310,12 +315,17 @@ describe('LotsController', () => {
 
       const result = await controller.getUtilization();
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
         range_days: 30,
         count: 1,
         data: mockUtilization,
       });
+      expect(typeof result.since).toBe('string');
+      expect(typeof result.until).toBe('string');
+      expect(new Date(result.until).getTime() - new Date(result.since).getTime()).toBe(
+        30 * 24 * 60 * 60 * 1000,
+      );
       expect(service.getUtilization).toHaveBeenCalledWith(30);
     });
 
