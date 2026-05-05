@@ -1,19 +1,32 @@
 import { Controller, Get } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
+import { MinVersionService } from './min-version.service';
 
+/**
+ * GET /api/v1/min-version
+ *
+ * Returned envelope is unwrapped by the mobile `apiService` (PR #160), so the
+ * inner `data` shape MUST stay `{ minSupportedVersion: string }` — that is the
+ * field the force-update gate in `apps/mobile/App.tsx` reads. Do NOT change the
+ * shape without coordinating a mobile release; the mobile gate fail-opens on a
+ * parse miss, which would silently disable force-update for every user.
+ *
+ * Public + skip throttle: this endpoint is the very first request the app makes
+ * on launch (before auth), and a 429 here would block the user from entering
+ * the app at all.
+ */
 @Public()
-@Controller('min-version')
 @SkipThrottle()
+@Controller('min-version')
 export class MinVersionController {
+  constructor(private readonly minVersionService: MinVersionService) {}
+
   @Get()
-  getMinVersion() {
+  getMinVersion(): { success: true; data: { minSupportedVersion: string } } {
     return {
       success: true,
-      data: {
-        ios: { min: '1.0.0', current: '1.0.0' },
-        android: { min: '1.0.0', current: '1.0.0' },
-      },
+      data: { minSupportedVersion: this.minVersionService.getMinSupportedVersion() },
     };
   }
 }

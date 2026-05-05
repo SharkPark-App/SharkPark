@@ -1,26 +1,48 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MinVersionController } from './min-version.controller';
+import { MinVersionService } from './min-version.service';
 
 describe('MinVersionController', () => {
-  let controller: MinVersionController;
+  const ORIGINAL_ENV = process.env.MIN_SUPPORTED_APP_VERSION;
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [MinVersionController],
-    }).compile();
-
-    controller = module.get<MinVersionController>(MinVersionController);
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) {
+      delete process.env.MIN_SUPPORTED_APP_VERSION;
+    } else {
+      process.env.MIN_SUPPORTED_APP_VERSION = ORIGINAL_ENV;
+    }
   });
 
-  it('returns success with ios and android version info', () => {
-    const result = controller.getMinVersion();
+  async function build(): Promise<MinVersionController> {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      controllers: [MinVersionController],
+      providers: [MinVersionService],
+    }).compile();
+    return moduleRef.get(MinVersionController);
+  }
 
-    expect(result.success).toBe(true);
-    expect(result.data.ios).toEqual(
-      expect.objectContaining({ min: expect.any(String), current: expect.any(String) }),
-    );
-    expect(result.data.android).toEqual(
-      expect.objectContaining({ min: expect.any(String), current: expect.any(String) }),
-    );
+  it('returns the default version (1.0.0) when MIN_SUPPORTED_APP_VERSION is unset', async () => {
+    delete process.env.MIN_SUPPORTED_APP_VERSION;
+    const controller = await build();
+
+    expect(controller.getMinVersion()).toEqual({
+      success: true,
+      data: { minSupportedVersion: '1.0.0' },
+    });
+  });
+
+  it('returns the env-overridden version when MIN_SUPPORTED_APP_VERSION is set', async () => {
+    process.env.MIN_SUPPORTED_APP_VERSION = '1.4.2';
+    const controller = await build();
+
+    expect(controller.getMinVersion()).toEqual({
+      success: true,
+      data: { minSupportedVersion: '1.4.2' },
+    });
+  });
+
+  it('throws on a malformed MIN_SUPPORTED_APP_VERSION override (fails loud)', async () => {
+    process.env.MIN_SUPPORTED_APP_VERSION = 'v1.2'; // not MAJOR.MINOR.PATCH
+    await expect(build()).rejects.toThrow(/MIN_SUPPORTED_APP_VERSION/);
   });
 });
