@@ -53,6 +53,15 @@ export const useTransitData = () => {
     loadInitialShuttles();
   }, [loadInitialShuttles]);
 
+  // Prune out-of-service shuttles. The socket never sends a removal event —
+  // a bus that goes offline just stops broadcasting. Polling the REST endpoint
+  // every 60s keeps the list in sync: any shuttle absent from the response is
+  // dropped from state via the functional update in loadInitialShuttles.
+  useEffect(() => {
+    const interval = setInterval(loadInitialShuttles, 60_000);
+    return () => clearInterval(interval);
+  }, [loadInitialShuttles]);
+
   useEffect(() => {
     const socket = io(API_CONFIG.SOCKET_ORIGIN + '/shuttles', {
       transports: ['websocket'],

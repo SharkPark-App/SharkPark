@@ -5,6 +5,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { ThemeColors } from '../../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../../constants/theme';
 import { RouteArrival } from '../../types/transit';
+import { groupArrivals, formatEtas } from '../../utils/transitProximity';
 
 /**
  * Stop Modal that appears upon stop selection.
@@ -82,14 +83,13 @@ export const StopModal: React.FC<StopModalProps> = ({
                   <Text style={[styles.emptyText, { color: colors.darkGray }]}>No upcoming arrivals.</Text>
                 </View>
               ) : (
-                arrivals.map((arrival, index) => (
+                groupArrivals(arrivals).map((arrival) => (
                   <View
-                    key={`${arrival.routeId}-${index}`}
+                    key={arrival.routeId}
                     style={styles.arrivalRow}
                     accessible={true}
-                    accessibilityLabel={`Route ${arrival.routeName}. ${arrival.etaMinutes !== null ? `Arriving in ${arrival.etaMinutes} minutes` : 'No vehicles currently active'}.`}
+                    accessibilityLabel={`Route ${arrival.routeName}. ${formatEtas(arrival.etas)}.`}
                   >
-                    
                     {/* Badge and Route Name */}
                     <View style={styles.routeInfo}>
                       <View style={[styles.routeBadge, { backgroundColor: arrival.color }]} accessible={false}>
@@ -102,7 +102,7 @@ export const StopModal: React.FC<StopModalProps> = ({
 
                     {/* ETA */}
                     <Text style={[styles.etaText, { color: colors.textPrimary }]} accessible={false}>
-                      {arrival.etaMinutes !== null ? `${arrival.etaMinutes} min` : 'no vehicles'}
+                      {formatEtas(arrival.etas)}
                     </Text>
                   </View>
                 ))
@@ -164,6 +164,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   arrivalsContainer: {
+    minHeight: 100,
     maxHeight: 300,
   },
   arrivalsContent: {

@@ -28,7 +28,9 @@ import { EventBanner } from '../components/EventBanner';
 import { useEvents } from '../hooks/useEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
+import { NearbyTransitCard } from '../components/NearbyTransitCard';
 import { reportsApi, ReportUnauthorizedError, ReportThrottledError } from '../services/api/reports';
+import { useNearbyStopETAs } from '../hooks/useNearbyStopETAs';
 import type { MapStackScreenProps } from '../types/navigation';
 
 // Format a wall-clock timestamp into a short "X ago" relative string for the
@@ -71,6 +73,7 @@ export function ShortTermForecastScreen() {
   const { lot, forecast, loading, refreshing, lastUpdatedAt, error, refreshLot, bgLocationRequired, clearBgLocationRequired } = useLotData(lotId);
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
   const { events: lotEvents } = useEvents(lotId);
+  const nearbyStops = useNearbyStopETAs(lotId, lot?.center_lat, lot?.center_lng);
 
   // Live OS contributor state. Drives the lock UI directly so the badge /
   // forecast card flip the instant the user toggles permission — we don't
@@ -363,6 +366,9 @@ export function ShortTermForecastScreen() {
         ) : (
           <HourlyChart data={forecast}/>
         )}
+
+        {/* Nearby shuttle stop ETAs */}
+        <NearbyTransitCard nearbyStops={nearbyStops} colors={colors} />
 
         {/* Lot Amenities & Details */}
         <LotAmenities lot={lot} />

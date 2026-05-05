@@ -46,3 +46,11 @@ export interface RouteArrival {
   color: string;
   etaMinutes: number | null;
 }
+
+export interface GroupedArrival {
+  routeId: string;
+  routeName: string;
+  abbreviation: string;
+  color: string;
+  etas: (number | null)[];
+}
