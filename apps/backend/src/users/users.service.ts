@@ -6,6 +6,16 @@ import type { UserResponse, UserDataExport } from './interfaces/user.interface';
 import type { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 
 /**
+ * Returns the last 6 chars of a push token, prefixed with an ellipsis.
+ * Used by /me/data to disclose token existence without leaking a value
+ * that can be used to send unauthenticated push notifications.
+ */
+function maskToken(token: string): string {
+  if (token.length <= 6) return '\u2026' + token;
+  return '\u2026' + token.slice(-6);
+}
+
+/**
  * Service for user profile and favorites management.
  * Users are identified by their CSULB email address.
  */
@@ -303,25 +313,30 @@ export class UsersService {
    * the human-readable `lot_id` (e.g. "G1") rather than internal UUIDs.
    */
   async exportUserData(email: string): Promise<UserDataExport> {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-      include: {
-        favorites: { include: { lot: { select: { lot_id: true } } } },
-        push_tokens: { select: { token: true, platform: true, created_at: true } },
-        reports: { include: { lot: { select: { lot_id: true } } } },
-        notification_logs: { include: { lot: { select: { lot_id: true } } } },
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User ${email} not found`);
-    }
-
-    await this.prisma.auditEvent.create({
-      data: {
-        event_type: 'USER_DATA_EXPORTED',
-        actor_hash: this.hashEmail(email),
-      },
+    // Audit row + read live in the same interactive $transaction so a half-success
+    // (data returned but no audit row, or an audit row for a ghost user) is not
+    // possible. If the user lookup misses, the throw rolls back the audit write.
+    // Mirrors the durability guarantee deleteUser() gets from its $transaction.
+    const user = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.user.findUnique({
+        where: { email },
+        include: {
+          favorites: { include: { lot: { select: { lot_id: true } } } },
+          push_tokens: { select: { token: true, platform: true, created_at: true } },
+          reports: { include: { lot: { select: { lot_id: true } } } },
+          notification_logs: { include: { lot: { select: { lot_id: true } } } },
+        },
+      });
+      if (!found) {
+        throw new NotFoundException(`User ${email} not found`);
+      }
+      await tx.auditEvent.create({
+        data: {
+          event_type: 'USER_DATA_EXPORTED',
+          actor_hash: this.hashEmail(email),
+        },
+      });
+      return found;
     });
 
     return {
@@ -340,8 +355,14 @@ export class UsersService {
         lot_id: f.lot.lot_id,
         added_at: f.added_at,
       })),
+      // Push tokens are intentionally redacted: the raw FCM/APNs token can be
+      // used by anyone who holds it to send unauthenticated push notifications
+      // until the OS rotates it. Disclosing platform + last-6 + registered_at
+      // is sufficient to satisfy GDPR Art. 15 ("what we hold") without making
+      // the export file weaponizable if it leaks (e.g. via the user's cloud
+      // sync). Users can revoke any token by uninstalling or signing out.
       push_tokens: user.push_tokens.map((t) => ({
-        token: t.token,
+        token_preview: maskToken(t.token),
         platform: t.platform,
         registered_at: t.created_at,
       })),

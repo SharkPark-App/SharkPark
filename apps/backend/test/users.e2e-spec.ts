@@ -1,9 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, CanActivate, ExecutionContext } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AzureAdGuard } from '../src/auth/azure-ad.guard';
+import { TierThrottlerGuard } from '../src/common/guards/tier-throttler.guard';
 import { PrismaService } from '../src/database/database.module';
 import { bootstrapTestApp } from './utils/bootstrap';
 
@@ -46,6 +48,12 @@ describe('UsersController (e2e)', () => {
   let prisma: PrismaService;
 
   beforeAll(async () => {
+    // Disable throttler globally for this suite — /me/data is throttled to 3/hour
+    // in production, but the suite makes more than 3 calls. TierThrottlerGuard
+    // overrides canActivate, so patching ThrottlerGuard.prototype alone is not enough.
+    ThrottlerGuard.prototype.canActivate = () => Promise.resolve(true);
+    TierThrottlerGuard.prototype.canActivate = () => Promise.resolve(true);
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -268,9 +276,12 @@ describe('UsersController (e2e)', () => {
   });
 
   describe('/api/v1/users/me/data (GET)', () => {
+    // Fixed token so the masking assertion below is deterministic.
+    const FAKE_PUSH_TOKEN = 'fake-fcm-token-FOR-E2E-only-aB3xY9';
+
     beforeAll(async () => {
       const school = await prisma.school.findFirstOrThrow();
-      await prisma.user.upsert({
+      const user = await prisma.user.upsert({
         where: { email: ME_DATA_EMAIL },
         update: {},
         create: {
@@ -281,9 +292,20 @@ describe('UsersController (e2e)', () => {
           school: { connect: { id: school.id } },
         },
       });
+      // Register a push token so the masking branch is exercised.
+      await prisma.pushToken.upsert({
+        where: { token: FAKE_PUSH_TOKEN },
+        update: {},
+        create: {
+          user_id: user.id,
+          token: FAKE_PUSH_TOKEN,
+          platform: 'ios',
+        },
+      });
     });
 
     afterAll(async () => {
+      await prisma.pushToken.deleteMany({ where: { token: FAKE_PUSH_TOKEN } });
       await prisma.user.deleteMany({ where: { email: ME_DATA_EMAIL } });
     });
 
@@ -306,10 +328,25 @@ describe('UsersController (e2e)', () => {
         });
     });
 
-    it('should write a USER_DATA_EXPORTED audit row with a hashed actor (no PII)', async () => {
-      // Trigger export to ensure at least one audit row exists.
-      await request(app.getHttpServer()).get('/api/v1/users/me/data').expect(200);
+    it('should mask raw push tokens (no full FCM/APNs value in response)', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/users/me/data')
+        .expect(200)
+        .expect((res: Response) => {
+          const { data } = res.body;
+          expect(data.push_tokens.length).toBeGreaterThan(0);
+          for (const t of data.push_tokens) {
+            expect(t).not.toHaveProperty('token');
+            expect(typeof t.token_preview).toBe('string');
+            // Preview is "\u2026" + last 6 chars; must not contain the full raw token.
+            expect(t.token_preview.length).toBeLessThanOrEqual(7);
+          }
+          // Body as a whole must not leak the raw token anywhere.
+          expect(JSON.stringify(res.body)).not.toContain(FAKE_PUSH_TOKEN);
+        });
+    });
 
+    it('should write a USER_DATA_EXPORTED audit row with a hashed actor (no PII)', async () => {
       const audits = await prisma.auditEvent.findMany({
         where: { event_type: 'USER_DATA_EXPORTED' },
         orderBy: { created_at: 'desc' },

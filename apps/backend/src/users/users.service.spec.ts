@@ -393,14 +393,20 @@ describe('UsersService', () => {
     };
 
     it('should return all user data and write a USER_DATA_EXPORTED audit row', async () => {
+      // exportUserData uses an interactive $transaction(async tx => …); the mock
+      // invokes the callback with a tx that proxies to the same prisma mock so
+      // the inner findUnique / auditEvent.create assertions still apply.
       prisma.user.findUnique.mockResolvedValue(baseUser);
       prisma.auditEvent.create.mockResolvedValue({});
+      prisma.$transaction.mockImplementation((cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
 
       const result = await service.exportUserData('test@csulb.edu');
 
       expect(result.profile.email).toBe('test@csulb.edu');
       expect(result.favorites).toEqual([{ lot_id: 'G1', added_at: baseUser.favorites[0].added_at }]);
-      expect(result.push_tokens[0].token).toBe('ExponentPushToken[abc]');
+      // Raw token must NOT be returned; only the masked preview (last 6 chars).
+      expect(result.push_tokens[0]).not.toHaveProperty('token');
+      expect(result.push_tokens[0].token_preview).toBe('\u2026n[abc]');
       expect(result.push_tokens[0].registered_at).toEqual(baseUser.push_tokens[0].created_at);
       expect(result.reports[0]).toEqual({
         lot_id: 'G1',
@@ -422,6 +428,7 @@ describe('UsersService', () => {
     it('should not include raw email in the audit row', async () => {
       prisma.user.findUnique.mockResolvedValue(baseUser);
       prisma.auditEvent.create.mockResolvedValue({});
+      prisma.$transaction.mockImplementation((cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
 
       await service.exportUserData('test@csulb.edu');
 
@@ -429,8 +436,12 @@ describe('UsersService', () => {
       expect(JSON.stringify(call)).not.toContain('test@csulb.edu');
     });
 
-    it('should throw NotFoundException when user does not exist', async () => {
+    it('should throw NotFoundException and not write an audit row when user does not exist', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
+      // Interactive transaction propagates the throw and rolls back; mimic that
+      // by re-throwing whatever the callback throws so auditEvent.create is
+      // never reached inside the callback.
+      prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
 
       await expect(service.exportUserData('ghost@csulb.edu')).rejects.toThrow(NotFoundException);
       expect(prisma.auditEvent.create).not.toHaveBeenCalled();

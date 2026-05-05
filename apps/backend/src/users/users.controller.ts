@@ -12,6 +12,7 @@ import {
   ForbiddenException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { UsersService } from './users.service';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { ContributorGuard } from '../auth/contributor.guard';
@@ -63,8 +64,14 @@ export class UsersController {
    * USER_DATA_EXPORTED audit row with the same SHA-256(salt:email) actor
    * hash used for USER_DELETED, so an export is auditable without storing
    * reversible PII.
+   *
+   * Heavily throttled (3 / hour / IP) because the response is a multi-table
+   * dump and each call writes an audit row — neither should be hammerable.
+   * GDPR compliance does not require unlimited export attempts; ICO guidance
+   * permits refusing "manifestly unfounded or excessive" repeat requests.
    */
   @Get('me/data')
+  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
   @HttpCode(HttpStatus.OK)
   async getMyData(@Req() req: AuthenticatedRequest) {
     const email = req.user?.email;
