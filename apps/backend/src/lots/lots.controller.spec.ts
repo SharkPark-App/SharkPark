@@ -3,6 +3,7 @@ import { LotsController } from './lots.controller';
 import { LotsService } from './lots.service';
 import { ContributorGuard } from '../auth/contributor.guard';
 import { ContributorService } from '../auth/contributor.service';
+import { EventsService } from '../events/events.service';
 
 describe('LotsController', () => {
   let controller: LotsController;
@@ -32,9 +33,14 @@ describe('LotsController', () => {
     isContributor: jest.fn().mockResolvedValue(true),
   };
 
+  const mockEventsService = {
+    getEventsForLot: jest.fn(),
+  };
+
   beforeEach(async () => {
     mockContributorService.isContributor.mockClear();
     mockContributorService.isContributor.mockResolvedValue(true);
+    mockEventsService.getEventsForLot.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LotsController],
@@ -46,6 +52,10 @@ describe('LotsController', () => {
         {
           provide: ContributorService,
           useValue: mockContributorService,
+        },
+        {
+          provide: EventsService,
+          useValue: mockEventsService,
         },
       ],
     })
@@ -315,6 +325,43 @@ describe('LotsController', () => {
       await controller.getUtilization('14d');
 
       expect(service.getUtilization).toHaveBeenCalledWith(14);
+    });
+  });
+
+  describe('getNearbyEvents', () => {
+    it('defaults within_hours to 2 and uppercases the lot id', async () => {
+      mockEventsService.getEventsForLot.mockResolvedValue([]);
+
+      const result = await controller.getNearbyEvents('g7');
+
+      expect(mockEventsService.getEventsForLot).toHaveBeenCalledWith('G7', 2);
+      expect(result).toEqual({
+        success: true,
+        lot_id: 'G7',
+        within_hours: 2,
+        count: 0,
+        data: [],
+      });
+    });
+
+    it('passes a caller-supplied within_hours through to the service', async () => {
+      const events = [{ id: 'ev-1' }, { id: 'ev-2' }];
+      mockEventsService.getEventsForLot.mockResolvedValue(events);
+
+      const result = await controller.getNearbyEvents('G7', 24);
+
+      expect(mockEventsService.getEventsForLot).toHaveBeenCalledWith('G7', 24);
+      expect(result).toMatchObject({ within_hours: 24, count: 2, data: events });
+    });
+
+    it('rejects out-of-range within_hours values', async () => {
+      await expect(controller.getNearbyEvents('G7', 0)).rejects.toThrow(
+        /within_hours/,
+      );
+      await expect(controller.getNearbyEvents('G7', 200)).rejects.toThrow(
+        /within_hours/,
+      );
+      expect(mockEventsService.getEventsForLot).not.toHaveBeenCalled();
     });
   });
 });

@@ -19,10 +19,13 @@ model School {
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
-  lots             Lot[]
-  users            User[]
-  campus_events    CampusEvent[]
-  weather          Weather[]
+  lots              Lot[]
+  users             User[]
+  buildings         Building[]
+  campus_events     CampusEvent[]
+  weather           Weather[]
+  weather_forecasts WeatherForecast[]
+  lot_advisories    LotAdvisory[]
 
   @@map("schools")
 }
@@ -38,7 +41,6 @@ model Lot {
   capacity            Int
   current_occupancy   Int      @default(0)
   location_description String
-  building_proximity  String[]
   center_lat          Float
   center_lng          Float
   geofence_polygon    Json     // Array<{ lat: number; lng: number }>
@@ -52,15 +54,25 @@ model Lot {
   ev_charging_stations Int     @default(0)
   motorcycle_spaces   Int      @default(0)
   accessible_spaces   Int      @default(0)
+  /** Spaces dedicated to short-term/visitor parking (≤30 min metered or designated). */
+  short_term_parking_spaces Int @default(0)
+  /** Spaces designated for low-emission vehicles (signed but unenforced — count is informational). */
+  low_emission_spaces Int      @default(0)
+  /** Number of pay stations physically located in this lot. */
+  pay_stations        Int      @default(0)
   has_lighting        Boolean  @default(true)
   has_cameras         Boolean  @default(false)
   has_emergency_phone Boolean  @default(false)
   is_covered          Boolean  @default(false)
   is_paved            Boolean  @default(true)
+  /** True for multi-level parking structures (PVN/PVS/PYR at CSULB). */
+  is_structure        Boolean  @default(false)
+  /** True for surface lots with solar-panel canopies overhead (G6/G7/G8/E8 at CSULB). */
+  has_solar_canopy    Boolean  @default(false)
   levels              Int?
-  penetration_rate    Float    @default(0)
-  avg_turnover_minutes Float   @default(0)
-  confidence          ConfidenceLevel @default(LOW)
+  /// Quality grade of the static metadata (capacity, geofence, amenity counts, hours).
+  /// NOT a runtime/ML signal — see OccupancySnapshot.confidence for the live grade.
+  metadata_confidence ConfidenceLevel @default(LOW)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
@@ -72,6 +84,9 @@ model Lot {
   predictions_short   PredictionShortTerm[]
   predictions_long    PredictionLongTerm[]
   reports             Report[]
+  lot_buildings       LotBuilding[]
+  lot_advisories      LotAdvisory[]
+  notification_logs   NotificationLog[]
 
   @@unique([school_id, lot_id])
   @@index([lot_type], name: "idx_lots_type")
@@ -91,9 +106,11 @@ model User {
   last_login     DateTime?
   updated_at     DateTime @updatedAt
 
-  school         School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  favorites      UserFavorite[]
-  reports        Report[]
+  school             School             @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  favorites          UserFavorite[]
+  reports            Report[]
+  push_tokens        PushToken[]
+  notification_logs  NotificationLog[]
 
   @@index([school_id])
   @@map("users")
@@ -177,20 +194,81 @@ model DeviceState {
 
 // ─── Campus Context Tables ────────────────────────────────
 
+model Building {
+  id              String   @id @default(cuid())
+  school_id       String
+  name            String
+  alternate_names String[]
+  /// Approximate centerpoint (degrees, WGS84). Used to compute proximity to lots / events.
+  center_lat      Float
+  center_lng      Float
+  /// Optional outer-ring polygon (array of {lat,lng}) extracted from concept3d.
+  /// Null when no authoritative footprint is available (e.g. small offices, off-campus venues).
+  /// When present, used for point-to-edge proximity instead of haversine-to-centroid.
+  footprint_polygon Json?
+  /// Functional category — drives grouped display in lot info and other UIs.
+  category        BuildingCategory @default(OTHER)
+  created_at      DateTime @default(now())
+
+  school        School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  lot_buildings LotBuilding[]
+  campus_events CampusEvent[]
+
+  @@unique([school_id, name])
+  @@map("buildings")
+}
+
+model LotBuilding {
+  lot_id      String
+  building_id String
+
+  lot      Lot      @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  building Building @relation(fields: [building_id], references: [id], onDelete: Cascade)
+
+  @@id([lot_id, building_id])
+  @@map("lot_buildings")
+}
+
 model CampusEvent {
-  id                  String          @id @default(cuid())
-  school_id           String
-  event_name          String
-  event_type          CampusEventType
-  start_time          DateTime
-  end_time            DateTime
-  location            String
-  expected_attendance Int
-  created_at          DateTime        @default(now())
+  id          String   @id @default(cuid())
+  school_id   String
+  external_id String   @unique
+  event_name  String
+  location    String
+  description String?
+  event_url   String?
+  building_id String?
+  start_time  DateTime
+  // Optional: sports games scraped from Sidearm only have a published start
+  // time. The scraper leaves this null at create; refreshFinalScores backfills
+  // it with the wall-clock moment the box score was published when status
+  // flips SCHEDULED → FINAL. CampusLabs (academic / club) events always set a
+  // real end_time from the source feed.
+  end_time    DateTime?
+  created_at  DateTime @default(now())
 
-  school  School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  // ── Live sports state ────────────────────────────────────
+  // Populated by the sports scraper for LBSU home games. Null for
+  // non-sports CampusLabs events. `status` is the canonical lifecycle
+  // (SCHEDULED → LIVE → FINAL, plus POSTPONED/CANCELLED), derived from
+  // Sidearm's `gameState` integer. Scores are strings on the wire
+  // (Sidearm sends "16"/"" for not-yet-played) but normalised to ints
+  // here so mobile/UI doesn't have to parse.
+  status            SportsEventStatus?
+  home_score        Int?
+  away_score        Int?
+  result_status     SportsResultStatus? // W/L/T, populated when status=FINAL
+  status_updated_at DateTime?
 
-  @@index([school_id])
+  school            School            @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  building          Building?         @relation(fields: [building_id], references: [id], onDelete: SetNull)
+  notification_logs NotificationLog[]
+
+  @@index([building_id, start_time])
+  // Live-events lookup: scan only currently-LIVE rows quickly. Partial-style
+  // index via composite ordering — `status` first means a `WHERE status='LIVE'`
+  // probe walks a tight slice instead of the full table.
+  @@index([status, start_time])
   @@map("campus_events")
 }
 
@@ -212,6 +290,35 @@ model Weather {
 
   @@index([school_id, timestamp])
   @@map("weather")
+}
+
+/// Hourly forecast rows from NWS api.weather.gov, written by the
+/// `fetch-weather-forecast` cron every 6 hours. Each row represents one
+/// future hour for a given school. The cron itself self-prunes rows whose
+/// `target_time` is in the past before each upsert pass, so this table
+/// never grows beyond the active forecast window.
+model WeatherForecast {
+  id                        String   @id @default(cuid())
+  school_id                 String
+  /// Start of the 1-hour window this forecast applies to (UTC).
+  target_time               DateTime
+  temperature_f             Float
+  /// Stored as a 0-1 rate (NWS returns 0-100 percent; normalized on write).
+  precipitation_probability Float
+  /// Derived via short-forecast keyword + pop threshold; see deriveIsRaining.
+  is_raining                Boolean
+  wind_speed_mph            Float
+  /// Lower-cased short-forecast text from NWS (e.g. "light rain").
+  conditions                String
+  /// When this forecast was retrieved from NWS (used for staleness gating).
+  fetched_at                DateTime @default(now())
+
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+
+  /// One forecast row per (school, target_time). New cron run upserts.
+  /// (No separate @@index — the unique constraint above provides the index.)
+  @@unique([school_id, target_time])
+  @@map("weather_forecasts")
 }
 
 model Report {
@@ -265,6 +372,41 @@ model PredictionLongTerm {
   @@map("predictions_long_term")
 }
 
+// ─── Push Notifications ───────────────────────────────────
+
+model PushToken {
+  id         String   @id @default(cuid())
+  user_id    String
+  token      String   @unique
+  platform   String   // "ios" | "android"
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("push_tokens")
+}
+
+// Dedup log — prevents sending the same alert class to the same user twice.
+// lot_id is set for lot-level triggers (FAVORITES_FILLING, FAVORITES_CLEARING).
+// event_id is set for event triggers (EVENTS). Both are nullable with SetNull
+// so deleting a lot or event doesn't cascade-delete historical log rows.
+model NotificationLog {
+  id       String           @id @default(cuid())
+  user_id  String
+  type     NotificationType
+  lot_id   String?
+  event_id String?
+  sent_at  DateTime         @default(now())
+
+  user  User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lot   Lot?         @relation(fields: [lot_id], references: [id], onDelete: SetNull)
+  event CampusEvent? @relation(fields: [event_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, type, sent_at], name: "idx_notification_log_dedup")
+  @@map("notification_logs")
+}
+
 // ─── Audit log ────────────────────────────────────────────
 // Append-only event log for compliance-relevant actions (account deletion,
 // data export, etc.). actor_hash is SHA-256 of the email so the row carries
@@ -308,6 +450,43 @@ model ContributorPing {
   @@map("contributor_pings")
 }
 
+// ─── Lot advisories ───────────────────────────────────────
+// Operational notices that affect a specific lot — construction zones,
+// road closures, partial closures, etc. Sourced from the campus map
+// (concept3d) by the extract-lot-advisories.ts script. Each external
+// marker may produce multiple rows when one polygon overlaps several
+// lots. Rows are upserted on (school_id, source, source_marker_id,
+// lot_id) so re-running the extractor is idempotent. Stale markers
+// removed from the source must be marked is_active=false (handled by
+// the seeder when an existing row is no longer in the generated set).
+model LotAdvisory {
+  id                String           @id @default(cuid())
+  school_id         String
+  lot_id            String           // FK → Lot.id
+  title             String
+  description       String?
+  severity          AdvisorySeverity
+  source            AdvisorySource
+  source_cat_id     Int              // concept3d catId
+  source_marker_id  Int              // concept3d location.id
+  /** Reason this advisory was attached to this lot. */
+  match_reason      String           // "name_mention" | "polygon_overlap"
+  /** Advisory's own footprint polygon (Array<{lat,lng}>). */
+  polygon           Json
+  starts_at         DateTime?
+  ends_at           DateTime?
+  is_active         Boolean          @default(true)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+
+  school            School           @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  lot               Lot              @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+
+  @@unique([school_id, source, source_marker_id, lot_id], name: "uq_lot_advisory_source_lot")
+  @@index([lot_id, is_active], name: "idx_lot_advisory_lot_active")
+  @@map("lot_advisories")
+}
+
 // ─── Enums ────────────────────────────────────────────────
 
 enum LotType {
@@ -331,20 +510,70 @@ enum ConfidenceLevel {
   HIGH
 }
 
-enum CampusEventType {
-  ATHLETIC
-  ACADEMIC
-  PERFORMANCE
-  OTHER
-}
-
 enum ReportType {
   BLOCKAGE
   CRASH
   OTHER
 }
 
+enum AdvisorySeverity {
+  INFO      // general notice (e.g. "coming in 2026")
+  ADVISORY  // construction in/near lot, expect impact
+  CLOSURE   // lot or access road closed
+}
+
+enum AdvisorySource {
+  CONCEPT3D
+}
+
+enum BuildingCategory {
+  ACADEMIC        // classroom buildings, faculty offices, libraries
+  ADMINISTRATIVE  // admin offices, services, support facilities
+  HOUSING         // residence halls and on-campus housing (non-public)
+  RETAIL          // bookstore, cafes, convenience stores
+  ATHLETIC        // athletics venues, performance halls, recreation
+  OUTDOOR         // outdoor spaces (quads, fields not used as venues)
+  OTHER           // misc / uncategorised
+}
+
 enum AuditEventType {
   USER_DELETED
   USER_DATA_EXPORTED
+}
+
+enum NotificationType {
+  FAVORITES_FILLING  @map("favorites_filling")
+  FAVORITES_CLEARING @map("favorites_clearing")
+  SURGE              @map("surge")
+  EVENTS             @map("events")
+}
+
+/// Lifecycle of a sports CampusEvent. Mapped from Sidearm's top-level
+/// `status` flag and `result` payload at scrape time:
+///   "A" + no result            → SCHEDULED
+///   "O" + result.teamScore set → FINAL (result_status populated W/L/T)
+///   gameStateDisplay POSTPONED → POSTPONED
+///   gameStateDisplay CANCELLED → CANCELLED
+///   noplayText populated       → CANCELLED
+///
+/// LIVE is reserved but intentionally NEVER written: the Sidearm calendar
+/// API has no in-progress signal (`gameCenterEnabled` is always false and
+/// no third top-level status value exists, verified across April + May
+/// 2026 LBSU games). Per-sport live stats live on third-party sites and
+/// are out of scope for the calendar scraper.
+enum SportsEventStatus {
+  SCHEDULED
+  LIVE
+  FINAL
+  POSTPONED
+  CANCELLED
+}
+
+/// Outcome of a FINAL sports event from the LBSU perspective. Mapped from
+/// Sidearm's `result.status` ("W" / "L" / "T"). Only populated when
+/// `status = FINAL`.
+enum SportsResultStatus {
+  W
+  L
+  T
 }

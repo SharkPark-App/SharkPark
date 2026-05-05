@@ -46,7 +46,7 @@ export const PolygonGeofenceTest: React.FC = () => {
 
       // Set up geofence event listener
       const handleGeofenceEvent = (event: any) => {
-        const timestamp = new Date().toLocaleTimeString();
+        const timestamp = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
         const result = `${timestamp}: ${event.eventType} ${event.regionId}`;
         setCurrentGeofenceResults(prev => [...prev, result]);
 

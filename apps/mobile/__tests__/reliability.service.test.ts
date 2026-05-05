@@ -23,11 +23,12 @@ describe('ReliabilityApiService', () => {
           score: 85,
           confidence: 'HIGH',
           factors: {
-            penetrationRate: { value: 0.7, normalized: 0.93, weight: 0.35 },
-            dataFreshness: { value: 5, normalized: 0.96, weight: 0.25 },
-            eventFrequency: { value: 25, normalized: 0.83, weight: 0.2 },
-            sampleSize: { value: 15, normalized: 1.0, weight: 0.15 },
-            historicalAccuracy: { value: null, normalized: 0.5, weight: 0.05 },
+            penetrationRate: { value: 0.7, normalized: 0.93, weight: 0.3 },
+            dataFreshness: { value: 5, normalized: 0.96, weight: 0.21 },
+            eventFrequency: { value: 25, normalized: 0.83, weight: 0.17 },
+            sampleSize: { value: 15, normalized: 1.0, weight: 0.13 },
+            historicalAccuracy: { value: null, normalized: 0.5, weight: 0.04 },
+            userReports: { value: 0, normalized: 1.0, weight: 0.15 },
           },
           isColdStart: false,
           explanation: 'High confidence based on strong penetration rate',
@@ -94,11 +95,12 @@ describe('ReliabilityApiService', () => {
         success: true,
         data: {
           weights: {
-            penetrationRate: 0.35,
-            dataFreshness: 0.25,
-            eventFrequency: 0.2,
-            sampleSize: 0.15,
-            historicalAccuracy: 0.05,
+            penetrationRate: 0.3,
+            dataFreshness: 0.21,
+            eventFrequency: 0.17,
+            sampleSize: 0.13,
+            historicalAccuracy: 0.04,
+            userReports: 0.15,
           },
           thresholds: {
             highConfidence: 70,
@@ -107,6 +109,8 @@ describe('ReliabilityApiService', () => {
             freshnessWindowMinutes: 30,
             eventFrequencyTarget: 30,
             sampleSizeTarget: 10,
+            userReportsTarget: 5,
+            userReportsWindowMinutes: 60,
           },
         },
       };
@@ -118,7 +122,7 @@ describe('ReliabilityApiService', () => {
       expect(mockApiService.get).toHaveBeenCalledWith(
         '/reliability/config'
       );
-      expect(result.weights.penetrationRate).toBe(0.35);
+      expect(result.weights.penetrationRate).toBe(0.3);
       expect(result.thresholds.highConfidence).toBe(70);
     });
   });

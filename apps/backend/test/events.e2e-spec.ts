@@ -14,7 +14,6 @@ describe('EventsController (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    
     bootstrapTestApp(app);
     await app.init();
   });
@@ -23,44 +22,27 @@ describe('EventsController (e2e)', () => {
     await app.close();
   });
 
-  describe('/api/v1/events (GET)', () => {
-    it('should return all campus events', () => {
+  describe('GET /api/v1/events/for-lot/:lotId', () => {
+    it('should return 200 with an empty array for a lot with no nearby events', () => {
       return request(app.getHttpServer())
-        .get('/api/v1/events')
+        .get('/api/v1/events/for-lot/G1')
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
-          expect(res.body.count).toBeGreaterThan(0);
           expect(Array.isArray(res.body.data)).toBe(true);
-          
-          // Verify event structure
-          const event = res.body.data[0];
-          expect(event).toHaveProperty('id');
-          expect(event).toHaveProperty('event_name');
-          expect(event).toHaveProperty('event_type');
-          expect(event).toHaveProperty('location');
-          expect(event).toHaveProperty('start_time');
-          expect(event).toHaveProperty('end_time');
-          expect(event).toHaveProperty('expected_attendance');
+          expect(typeof res.body.count).toBe('number');
         });
     });
 
-    it('should filter events by type', () => {
+    it('should return 200 for an unknown lot (graceful empty)', () => {
       return request(app.getHttpServer())
-        .get('/api/v1/events?type=ATHLETIC')
+        .get('/api/v1/events/for-lot/UNKNOWN')
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);
-          res.body.data.forEach((event: { event_type: string }) => {
-            expect(event.event_type).toBe('ATHLETIC');
-          });
+          expect(res.body.data).toEqual([]);
+          expect(res.body.count).toBe(0);
         });
-    });
-
-    it('should return 400 for invalid event type', () => {
-      return request(app.getHttpServer())
-        .get('/api/v1/events?type=INVALID')
-        .expect(400);
     });
   });
 });

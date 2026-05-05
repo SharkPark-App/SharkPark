@@ -11,7 +11,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { useLotsList } from '../../hooks/useLotData';
-import { getOccupancyColor } from '../../utils/parkingUtils';
+import { getOccupancyColorGradient, getReadableTextColor } from '../../utils/parkingUtils';
 import { LockedOccupancyBadge } from '..';
 import { lotsApi, LotRecommendation, BackgroundLocationRequiredError } from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
@@ -190,7 +190,8 @@ export function RecommendationModal({
           // alternatives view below always has live data.
           const isLocked = lot.occupancy_rate == null;
           const pct = isLocked ? null : Math.round(lot.occupancy_rate! * 100);
-          const color = isLocked ? colors.neutralPin : getOccupancyColor(pct!);
+          const color = isLocked ? colors.neutralPin : getOccupancyColorGradient(pct!);
+          const badgeTextColor = isLocked ? colors.white : getReadableTextColor(color);
           return (
             <View key={lot.lot_id} style={styles.lotRow}>
               {/* Tap row → go to forecast */}
@@ -211,7 +212,7 @@ export function RecommendationModal({
                     />
                   ) : (
                     <View style={[styles.pctBadge, { backgroundColor: color }]}>
-                      <Text style={styles.pctBadgeText}>{`${pct}%`}</Text>
+                      <Text style={[styles.pctBadgeText, { color: badgeTextColor }]}>{`${pct}%`}</Text>
                     </View>
                   )}
                 </View>
@@ -294,7 +295,8 @@ export function RecommendationModal({
           // are always present here. `?? 0` keeps the type checker happy
           // without changing runtime behavior on the success path.
           const pct = Math.round((rec.occupancy_rate ?? 0) * 100);
-          const color = getOccupancyColor(pct);
+          const color = getOccupancyColorGradient(pct);
+          const badgeTextColor = getReadableTextColor(color);
           return (
             <TouchableOpacity
               key={rec.lot_id}
@@ -308,7 +310,7 @@ export function RecommendationModal({
                 <View style={styles.lotHeader}>
                   <Text style={styles.lotName}>{rec.lot_name}</Text>
                   <View style={[styles.pctBadge, { backgroundColor: color }]}>
-                    <Text style={styles.pctBadgeText}>{pct}%</Text>
+                    <Text style={[styles.pctBadgeText, { color: badgeTextColor }]}>{pct}%</Text>
                   </View>
                 </View>
                 <Text style={styles.occupancyText}>

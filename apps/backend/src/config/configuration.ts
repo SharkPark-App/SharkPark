@@ -20,10 +20,23 @@ export const privacyConfig = registerAs('privacy', () => ({
   deviceHashSalt: process.env.DEVICE_HASH_SALT || '',
 }));
 
+// NWS api.weather.gov is keyless but requires a descriptive User-Agent so
+// they can contact heavy users. Default identifies the app and a contact
+// address; production should override via WEATHER_USER_AGENT.
 export const weatherConfig = registerAs('weather', () => ({
-  openWeatherApiKey: process.env.OPENWEATHER_API_KEY || '',
+  userAgent:
+    process.env.WEATHER_USER_AGENT || 'SharkPark/1.0 (ops@sharkpark.app)',
   latitude: parseFloat(process.env.WEATHER_LAT || '33.7838'),
   longitude: parseFloat(process.env.WEATHER_LON || '-118.1134'),
+}));
+
+// Firebase service-account fields.
+// If any of these are absent the NotificationsService logs a warning and
+// disables push sending; the app still starts normally.
+export const notificationsConfig = registerAs('notifications', () => ({
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || '',
+  firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL || '',
+  firebasePrivateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
 }));
 
 /**

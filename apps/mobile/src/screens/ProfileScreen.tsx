@@ -327,6 +327,18 @@ const ProfileScreen: React.FC = () => {
 
         {/* Development Test Button */}
         {__DEV__ && GeofencingTestButton && <GeofencingTestButton />}
+        {__DEV__ && (
+          <TouchableOpacity
+            style={[styles.deleteAccountButton, { backgroundColor: colors.lightGray, borderColor: colors.borderGray }]}
+            onPress={() => navigation.navigate('Map', { screen: 'GeofenceDebug' })}
+            accessibilityLabel="Open geofence debug screen"
+          >
+            <Icon name="map-outline" size={18} color={colors.textPrimary} />
+            <Text style={[styles.deleteAccountText, { color: colors.textPrimary }]}>
+              Geofence Debug (dev)
+            </Text>
+          </TouchableOpacity>
+        )}
         
         </ScrollView>
       </SafeAreaView>

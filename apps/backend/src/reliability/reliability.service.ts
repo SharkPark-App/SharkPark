@@ -20,11 +20,12 @@ export class ReliabilityService {
   private readonly logger = new Logger(ReliabilityService.name);
 
   private readonly defaultWeights: ReliabilityWeights = {
-    penetrationRate: 0.35,
-    dataFreshness: 0.25,
-    eventFrequency: 0.2,
-    sampleSize: 0.15,
-    historicalAccuracy: 0.05,
+    penetrationRate: 0.3,
+    dataFreshness: 0.21,
+    eventFrequency: 0.17,
+    sampleSize: 0.13,
+    historicalAccuracy: 0.04,
+    userReports: 0.15,
   };
 
   private readonly defaultThresholds: ReliabilityThresholds = {
@@ -34,6 +35,8 @@ export class ReliabilityService {
     freshnessWindowMinutes: 60,
     eventFrequencyTarget: 10,
     sampleSizeTarget: 20,
+    userReportsTarget: 5,
+    userReportsWindowMinutes: 60,
   };
 
   computeReliability(
@@ -59,7 +62,8 @@ export class ReliabilityService {
         factors.dataFreshness.weightedScore +
         factors.eventFrequency.weightedScore +
         factors.sampleSize.weightedScore +
-        factors.historicalAccuracy.weightedScore) * 100,
+        factors.historicalAccuracy.weightedScore +
+        factors.userReports.weightedScore) * 100,
     );
 
     const confidence = this.getConfidenceLevel(score, thresholds);
@@ -115,6 +119,48 @@ export class ReliabilityService {
         input.historicalAccuracy,
         weights.historicalAccuracy,
       ),
+      userReports: this.computeUserReportsFactor(
+        input.uniqueReportersInWindow ?? 0,
+        weights.userReports,
+        thresholds.userReportsTarget,
+      ),
+    };
+  }
+
+  // User reports are a NEGATIVE-only signal: their PRESENCE is evidence of
+  // disagreement with the live count, but their ABSENCE proves nothing —
+  // most users never submit reports, and silence is the default state.
+  // Treating "0 reports" as 1.0 ("everyone agrees") inflates the overall
+  // reliability score by up to `weight` points across every lot at every
+  // moment, which is exactly the bug we hit: lots showing 100% on this
+  // factor at 6am when no humans were even on campus to file a report.
+  //
+  // Mirror the historical-accuracy pattern: when we have no signal, return
+  // a neutral 0.5 so the factor neither props the score up nor drags it
+  // down. Once at least one report arrives, switch to the penalty curve.
+  private computeUserReportsFactor(
+    reporterCount: number,
+    weight: number,
+    target: number,
+  ): FactorScore {
+    if (reporterCount <= 0) {
+      return {
+        name: 'User Reports',
+        rawValue: 0,
+        normalizedValue: 0.5,
+        weight,
+        weightedScore: 0.5 * weight,
+      };
+    }
+    const safeTarget = target > 0 ? target : 1;
+    const penalty = Math.min(1, reporterCount / safeTarget);
+    const normalizedValue = 1 - penalty;
+    return {
+      name: 'User Reports',
+      rawValue: reporterCount,
+      normalizedValue,
+      weight,
+      weightedScore: normalizedValue * weight,
     };
   }
 
@@ -173,11 +219,19 @@ export class ReliabilityService {
       factors.dataFreshness,
       factors.eventFrequency,
       factors.sampleSize,
+      factors.userReports,
     ];
 
     const weakestFactor = factorArray.reduce((min, f) =>
       f.normalizedValue < min.normalizedValue ? f : min,
     );
+
+
+    if (weakestFactor === factors.userReports && confidence !== 'HIGH') {
+      return confidence === 'MEDIUM'
+        ? 'Moderate confidence. Recent user reports suggest the live count may not match conditions on the ground.'
+        : 'Low confidence due to recent user reports. Use estimates with caution.';
+    }
 
     switch (confidence) {
       case 'HIGH':

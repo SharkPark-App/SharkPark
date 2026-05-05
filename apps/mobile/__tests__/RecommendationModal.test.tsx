@@ -84,6 +84,7 @@ const findPressableAncestor = (node: ReactTestRenderer.ReactTestInstance) => {
 
 /** Minimal ParkingLotResponse fixture */
 const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotResponse => ({
+  id: 'cltest000000000001',
   lot_id: 'G1',
   lot_name: 'Lot G1',
   display_name: 'Lot G1',
@@ -92,7 +93,7 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   capacity: 200,
   current_occupancy: 100,
   location_description: '',
-  building_proximity: [],
+  buildings: [],
   center_lat: 0,
   center_lng: 0,
   geofence_polygon: [],
@@ -105,14 +106,16 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   ev_charging_stations: 0,
   motorcycle_spaces: 0,
   accessible_spaces: 0,
+  short_term_parking_spaces: 0,
+  low_emission_spaces: 0,
+  pay_stations: 0,
   has_lighting: true,
   has_cameras: true,
   has_emergency_phone: true,
   is_covered: false,
   is_paved: true,
-  penetration_rate: 0.1,
-  avg_turnover_minutes: 120,
-  confidence: 'HIGH',
+  has_solar_canopy: false,
+  metadata_confidence: 'HIGH',
   timestamp: new Date().toISOString(),
   available: 100,
   occupancy_rate: 0.5,
@@ -121,6 +124,7 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   estimated_available: 100,
   raw_occupancy: 100,
   effective_penetration_rate: 1,
+  advisories: [],
   ...overrides,
 });
 

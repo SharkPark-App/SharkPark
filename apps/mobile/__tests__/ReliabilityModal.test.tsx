@@ -55,10 +55,11 @@ const mockReliability = {
   lotId: 'G6',
   factors: {
     penetrationRate: { ...mockFactor, normalizedValue: 0.8, weight: 0.3 },
-    dataFreshness: { ...mockFactor, normalizedValue: 0.9, weight: 0.25 },
+    dataFreshness: { ...mockFactor, normalizedValue: 0.9, weight: 0.21 },
     eventFrequency: mockFactor,
     sampleSize: mockFactor,
     historicalAccuracy: mockFactor,
+    userReports: { ...mockFactor, normalizedValue: 1.0, weight: 0.15 },
   },
 };
 

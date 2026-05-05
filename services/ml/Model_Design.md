@@ -542,13 +542,13 @@ Models must beat these naive baselines to be considered useful:
 - AWS Lambda + EventBridge
 
 **Model & artifact storage:**
-- MLflow (model registry, experiment tracking, artifact management)
-- S3 (MLflow artifact backend, training data archives)
+- MLflow (model registry, experiment tracking; runs locally)
+- Cloudflare R2 (promoted model artifacts read by the inference job)
 ---
 ### Retraining Triggers
 
 **Scheduled:**
-- Weekly retrain job (manual script for now, Lambda later)
+- Weekly retrain job (manual script for now, scheduled later)
 - Always runs, compares candidate against current production model
 
 **Drift-based (future):**
@@ -573,12 +573,9 @@ All horizons use a flat < 0.15 target. The long-term model is calendar-only (no 
 1. Train candidate model
 2. Evaluate candidate vs current production model
 3. If candidate wins → register in MLflow
+4. Optionally `promote --export-s3` to publish artifacts to R2 (required before the scheduled prediction job can load this version)
 
-**Workflow (later):**
-1. Same as above
-2. Export to S3 → Lambda pulls new model on next invoke
-
-**Rollback:** Revert to previous MLflow version (local) or re-export previous version to S3 (later).
+**Rollback:**(planned) Repoint `production.json` in R2 at a previously-published version (immutable versioned folders make this a pointer flip, no re-upload). MLflow's `@production` alias will be flipped in the same operation.
 -----
 
 ### Recommendation: Lambda + EventBridge
@@ -606,13 +603,13 @@ For MVP, Lambda + EventBridge is recommended because:
 | S3 archive export     | Daily          | Training data backup to S3                     |
 
 ### Current vs Future
-> **Note:** "Now" reflects local development before shared team infrastructure is set up.
-**Development Phases:** MLflow runs locally during development, storing experiments and artifacts in `./mlruns`. Once shared infrastructure is set up, production models get exported to S3 for Lambda to pull — MLflow stays local for experiment tracking.
+> **Note:** "Now" reflects local development before the scheduled prediction job is deployed.
+**Development Phases:** MLflow runs locally during development, storing experiments and run artifacts in `./mlruns`. Promoted models are also published to Cloudflare R2 (via `promote --export-s3`) so the scheduled prediction job — running on a Fly cron VM — can load them without an MLflow dependency. MLflow stays local for experiment tracking and the registry.
 
-| Concern                 | Now                           | Later                         |
-|-------------------------|-------------------------------|-------------------------------|
-| Model storage           | MLflow (local artifacts)      | S3                            |
-| Model tracking/registry | MLflow (local tracking)       | MLflow (local tracking)       |
-| Training data archive   | Local files                   | S3                            |
-| Inference trigger       | Manual script                 | EventBridge + Lambda          |
-| Training trigger        | Manual script                 | Scheduled or manual           |
+| Concern                 | Now                                                  | Later                              |
+|-------------------------|------------------------------------------------------|------------------------------------|
+| Model storage           | MLflow (local) + Cloudflare R2 (promoted versions)   | Same                               |
+| Model tracking/registry | MLflow (local)                                       | MLflow (local)                     |
+| Training data archive   | Local files                                          | S3 / R2 (Parquet, partitioned)     |
+| Inference trigger       | Manual script                                        | Fly cron (scheduled)               |
+| Training trigger        | Manual script                                        | Scheduled or manual                |
