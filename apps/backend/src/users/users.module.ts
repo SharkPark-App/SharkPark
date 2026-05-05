@@ -1,15 +1,15 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
-import { ContributorService } from '../auth/contributor.service';
-import { ContributorGuard } from '../auth/contributor.guard';
+import { AuthModule } from '../auth/auth.module';
 
-// ContributorService and ContributorGuard are registered here directly (not via
-// AuthModule) to avoid the circular dependency AuthModule → UsersModule.
-// ContributorService only needs PrismaService, which is globally provided.
+// AuthModule exports ContributorGuard (used by GET /users/me/forecast).
+// AuthModule also imports UsersModule (for UsersService) so we use forwardRef
+// on both sides to break the circular import without duplicating providers.
 @Module({
+  imports: [forwardRef(() => AuthModule)],
   controllers: [UsersController],
-  providers: [UsersService, ContributorService, ContributorGuard],
+  providers: [UsersService],
   exports: [UsersService],
 })
 export class UsersModule {}

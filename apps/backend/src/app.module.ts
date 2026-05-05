@@ -66,19 +66,30 @@ const isProduction = process.env.NODE_ENV === 'production';
       },
     }),
     DatabaseModule,
-    // Tier-aware throttler buckets (selected by TierThrottlerGuard via x-app-mode):
-    //   tier-public      — unauthenticated / no contributor ping: 60 req/min
-    //   tier-contributor — device with fresh contributor ping:    300 req/min
-    //   tier-authed      — Azure AD bearer token present:         600 req/min
+    // Throttler buckets — selected and metered by TierThrottlerGuard:
+    //   default          — global burst floor (20/10s) keyed per device or IP.
+    //                      Always runs unless @SkipThrottle() is set. Per-route
+    //                      @Throttle({ default: ... }) overrides are honoured
+    //                      (e.g. POST /reports = 5/min, POST /occupancy-events
+    //                      = 30/min, contributor enroll = 10/min).
+    //   read             — opt-in hot-read bucket (600/min). Only enforced when
+    //                      a route declares @Throttle({ read: ... }), e.g.
+    //                      LotsController.
+    //   tier-public      — server-derived: no auth, no contributor ping
+    //                      (120 req/min)
+    //   tier-contributor — server-derived: fresh ContributorPing (600 req/min)
+    //   tier-authed      — server-derived: Authorization: Bearer present
+    //                      (1200 req/min)
     //
-    // `read` is a named bucket kept for hot read endpoints that declare an
-    // explicit @Throttle({ read: {...} }) override (e.g. LotsController).
-    // Those routes bypass the tier buckets and use their own limit directly.
+    // The active tier bucket is chosen by TierThrottlerGuard from server-side
+    // signals — the `x-app-mode` header is intentionally NOT trusted (would
+    // let any caller claim the highest budget by spoofing one header).
     ThrottlerModule.forRoot([
-      { name: 'tier-public', ttl: 60_000, limit: 60 },
-      { name: 'tier-contributor', ttl: 60_000, limit: 300 },
-      { name: 'tier-authed', ttl: 60_000, limit: 600 },
+      { name: 'default', ttl: 10_000, limit: 20 },
       { name: 'read', ttl: 60_000, limit: 600 },
+      { name: 'tier-public', ttl: 60_000, limit: 120 },
+      { name: 'tier-contributor', ttl: 60_000, limit: 600 },
+      { name: 'tier-authed', ttl: 60_000, limit: 1200 },
     ]),
     LotsModule,
     UsersModule,

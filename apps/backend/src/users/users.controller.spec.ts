@@ -182,9 +182,10 @@ describe('UsersController', () => {
             predictions: [
               {
                 target_time: '2026-05-03T01:00:00.000Z',
-                predicted_occupancy: 150,
-                confidence_lower: 120,
-                confidence_upper: 180,
+                // predicted_occupancy is a rate in [0, 1] per PR #133
+                predicted_occupancy: 0.75,
+                confidence_lower: 0.6,
+                confidence_upper: 0.9,
                 model_version: 'v1',
               },
             ],

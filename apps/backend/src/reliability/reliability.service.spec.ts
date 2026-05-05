@@ -645,4 +645,50 @@ describe('ReliabilityService', () => {
       expect(result.score).toBeLessThanOrEqual(100);
     });
   });
+
+  describe('source weighting', () => {
+    const goodInput: ReliabilityInput = {
+      penetrationRate: 0.6, // above default target=0.5 → ANONYMOUS multiplier saturates at 0.6
+      minutesSinceLastEvent: 0,
+      eventsInLastHour: 10,
+      uniqueDevicesInLastHour: 20,
+      historicalAccuracy: 1.0,
+      uniqueReportersInWindow: 0,
+    };
+
+    it('defaults to AUTHED (1.0 multiplier) so existing callers preserve their score', () => {
+      const explicit = service.computeReliability('lot-a', goodInput, undefined, undefined, 'AUTHED');
+      const defaulted = service.computeReliability('lot-a', goodInput);
+      expect(defaulted.score).toBe(explicit.score);
+      expect(defaulted.score).toBeGreaterThan(0);
+    });
+
+    it('zeroes the score for FLAGGED sources regardless of factor strength', () => {
+      const result = service.computeReliability('lot-bad', goodInput, undefined, undefined, 'FLAGGED');
+      expect(result.score).toBe(0);
+      expect(result.confidence).toBe('LOW');
+    });
+
+    it('scales ANONYMOUS sources to 0.6× of authed when penetration is at/above target', () => {
+      const authed = service.computeReliability('lot-x', goodInput, undefined, undefined, 'AUTHED');
+      const anon = service.computeReliability('lot-x', goodInput, undefined, undefined, 'ANONYMOUS');
+      // 0.3 + 0.3 * min(1, 0.6/0.5) = 0.6 (saturated)
+      expect(anon.score).toBe(Math.round(authed.score * 0.6));
+    });
+
+    it('scales ANONYMOUS sources to 0.3× of authed when penetration is zero', () => {
+      const lowPen = { ...goodInput, penetrationRate: 0 };
+      const authed = service.computeReliability('lot-y', lowPen, undefined, undefined, 'AUTHED');
+      const anon = service.computeReliability('lot-y', lowPen, undefined, undefined, 'ANONYMOUS');
+      // 0.3 + 0.3 * 0 = 0.3
+      expect(anon.score).toBe(Math.round(authed.score * 0.3));
+    });
+
+    it('forwards sourceType through computeReliabilitySummary', () => {
+      const flagged = service.computeReliabilitySummary('lot-z', goodInput, 'FLAGGED');
+      expect(flagged.score).toBe(0);
+      const authed = service.computeReliabilitySummary('lot-z', goodInput, 'AUTHED');
+      expect(authed.score).toBeGreaterThan(0);
+    });
+  });
 });

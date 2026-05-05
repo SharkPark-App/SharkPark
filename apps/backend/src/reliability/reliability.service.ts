@@ -46,7 +46,10 @@ export class ReliabilityService {
     input: ReliabilityInput,
     weights: ReliabilityWeights = this.defaultWeights,
     thresholds: ReliabilityThresholds = this.defaultThresholds,
-    sourceType: SourceType = 'ANONYMOUS',
+    // Defaults to AUTHED (1.0 multiplier) so existing call sites that don't yet
+    // track per-event source attribution preserve their score. Opt callers in to
+    // ANONYMOUS / FLAGGED weighting as source tracking is wired through.
+    sourceType: SourceType = 'AUTHED',
   ): ReliabilityScore {
     // Clone + normalize weights to avoid mutating the default object
     const w = { ...weights };
@@ -89,7 +92,7 @@ export class ReliabilityService {
   computeReliabilitySummary(
     lotId: string,
     input: ReliabilityInput,
-    sourceType: SourceType = 'ANONYMOUS',
+    sourceType: SourceType = 'AUTHED',
   ): ReliabilityScoreSummary {
     const { score, confidence, isColdStart, computedAt } = this.computeReliability(
       lotId,
