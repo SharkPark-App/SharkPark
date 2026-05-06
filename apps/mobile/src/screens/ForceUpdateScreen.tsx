@@ -30,6 +30,7 @@ const STORE_URLS = {
  */
 export const ForceUpdateScreen: React.FC = () => {
   const storeUrl = Platform.OS === 'ios' ? STORE_URLS.ios : STORE_URLS.android;
+  const storeLabel = Platform.OS === 'ios' ? 'Update on App Store' : 'Update on Play Store';
 
   const handleUpdate = () => {
     void Linking.openURL(storeUrl);
@@ -39,20 +40,31 @@ export const ForceUpdateScreen: React.FC = () => {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.logoContainer}>
-          <Image source={logo} style={styles.logoImage} resizeMode="contain" />
+          <Image
+            source={logo}
+            style={styles.logoImage}
+            resizeMode="contain"
+            accessibilityLabel="SharkPark logo"
+            accessibilityRole="image"
+          />
         </View>
 
-        <Text style={styles.title}>Update Required</Text>
+        <Text style={styles.title} accessibilityRole="header">Update Required</Text>
 
         <Text style={styles.body}>
           A newer version of SharkPark is required to continue. Please update
           the app to access the latest parking data and features.
         </Text>
 
-        <TouchableOpacity style={styles.button} onPress={handleUpdate} activeOpacity={0.85}>
-          <Text style={styles.buttonText}>
-            {Platform.OS === 'ios' ? 'Update on App Store' : 'Update on Play Store'}
-          </Text>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handleUpdate}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={storeLabel}
+          accessibilityHint="Opens the store listing to download the latest version"
+        >
+          <Text style={styles.buttonText}>{storeLabel}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

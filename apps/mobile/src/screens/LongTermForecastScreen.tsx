@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../components';
 import { Text } from '../components/CustomText';
 import { useTheme } from '../context/ThemeContext';
@@ -33,6 +34,7 @@ function getNext7Days(): Date[] {
 
 const LongTermForecastScreen: React.FC = () => {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const { lots } = useLotsList();
   const sortedLots = useMemo(
@@ -96,7 +98,11 @@ const LongTermForecastScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       <Header />
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + SPACING.xxl }}
+      >
         {/* Lot Selection */}
         <View style={styles.lotPickerContainer}>
           <TouchableOpacity
