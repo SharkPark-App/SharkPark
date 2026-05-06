@@ -1,5 +1,9 @@
 name: ML CI
 
+# Principle of least privilege for the GITHUB_TOKEN.
+permissions:
+  contents: read
+
 # Lint + unit tests for services/ml.
 #
 # Why a dedicated workflow (instead of folding into the main `ci.yml`)?
@@ -62,9 +66,11 @@ jobs:
           cache-dependency-glob: 'services/ml/uv.lock'
 
       # `--frozen` enforces the lockfile (PR fails if uv.lock is stale).
-      # Include `--dev` because we need pytest + ruff, which are dev-only.
+      # `--extra dev` pulls the dev optional-dependencies group (pytest,
+      # ruff). Note: `--dev` is the PEP 735 [dependency-groups] flag and
+      # would NOT install our [project.optional-dependencies].dev entries.
       - name: Install ML package + dev tools (locked)
-        run: uv sync --frozen --dev
+        run: uv sync --frozen --extra dev
 
       - name: Lint (ruff)
         run: uv run ruff check src scripts tests

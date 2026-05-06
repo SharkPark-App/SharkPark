@@ -89,16 +89,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import Iterable, Optional
+from typing import Optional
 
-import psycopg2
 import requests
 from bs4 import BeautifulSoup
 from cuid2 import cuid_wrapper

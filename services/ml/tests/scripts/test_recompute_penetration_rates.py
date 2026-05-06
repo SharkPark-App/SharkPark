@@ -14,7 +14,6 @@ import pytest
 
 from scripts.recompute_penetration_rates import (
     EWMA_ALPHA,
-    BucketKey,
     ExistingState,
     _apply_ewma,
     _resolve_yesterday_window,

@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import math
 import random
-from datetime import date, datetime, timezone
+from datetime import date
 from unittest.mock import MagicMock
 
-import numpy as np
 import pytest
 
 from src.data import synthetic_v2 as sv2

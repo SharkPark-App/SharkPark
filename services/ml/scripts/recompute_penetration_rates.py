@@ -54,8 +54,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
-import psycopg2
-from psycopg2.extras import execute_values
 
 from src.data.db import get_connection
 

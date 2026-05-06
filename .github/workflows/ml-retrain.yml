@@ -1,5 +1,10 @@
 name: ML Retrain
 
+# Principle of least privilege for the GITHUB_TOKEN — only checkout needs
+# read access; this workflow does not push, comment, or write releases.
+permissions:
+  contents: read
+
 # Why GitHub Actions instead of the backend cron VM?
 #   - Training is a CPU/RAM-heavy batch (XGBoost on 90+ days of snapshots).
 #     The runner gets 7GB RAM dedicated; the prod cron VM has 1GB shared

@@ -1,5 +1,9 @@
 name: Generate Synthetic V2
 
+# Principle of least privilege for the GITHUB_TOKEN.
+permissions:
+  contents: read
+
 # Manual, on-demand regeneration of the catalog-driven synthetic
 # occupancy training set (D4). Run this when:
 #   - A new term's CSULB catalog has been ingested (D2 ran for that term).

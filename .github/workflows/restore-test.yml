@@ -1,5 +1,9 @@
 name: Restore Test (P7.78)
 
+# Principle of least privilege for the GITHUB_TOKEN.
+permissions:
+  contents: read
+
 # Validates the entire backup → restore loop works end-to-end. This is the
 # automated version of the monthly drill in docs/runbooks/runbook.md.
 #
