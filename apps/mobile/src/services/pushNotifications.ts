@@ -14,12 +14,24 @@
  * App.tsx level (they depend on the navigation ref).
  */
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging, {
   FirebaseMessagingTypes,
 } from '@react-native-firebase/messaging';
 import { registerPushToken, unregisterPushToken } from './api/notifications';
 
 export type PushMessage = FirebaseMessagingTypes.RemoteMessage;
+
+/**
+ * Storage key written by `PermissionGateScreen` (see `useOnboarding`).
+ * Its presence means the user has already been given an explicit chance to
+ * grant or decline notifications during the onboarding flow — re-prompting
+ * from `initPushNotifications` would surface a second OS dialog on Android
+ * (or wear out the user on iOS for permission-related re-asks in future
+ * SDK behavior changes), so we suppress when this flag is set and the OS
+ * status is anything other than already-authorized.
+ */
+const PERMISSION_GATE_KEY = '@SharkPark:permissionGateShown';
 
 /**
  * Request notification permission from the OS.
@@ -37,13 +49,49 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 /**
+ * Read the OS notification authorization status WITHOUT prompting.
+ * Returns true if currently AUTHORIZED or PROVISIONAL.
+ */
+async function hasNotificationPermission(): Promise<boolean> {
+  const authStatus = await messaging().hasPermission();
+  return (
+    authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+    authStatus === messaging.AuthorizationStatus.PROVISIONAL
+  );
+}
+
+/**
  * Fetch the current FCM token, register it with the backend, and subscribe
  * to token-refresh events.  Returns an unsubscribe function — call it on
  * sign-out so stale listeners don't keep re-registering after logout.
  */
 export async function initPushNotifications(): Promise<() => void> {
   try {
-    const granted = await requestNotificationPermission();
+    // Prefer the non-prompting status read so we don't surface a second OS
+    // dialog when PermissionGateScreen has already asked.
+    let granted = await hasNotificationPermission();
+
+    if (!granted) {
+      // Suppress the prompt if the user has already made an explicit choice
+      // at the onboarding gate. Without this guard, an Android user who
+      // tapped "Not now" would still see the OS dialog right after sign-in.
+      const gateShown = await AsyncStorage.getItem(PERMISSION_GATE_KEY).catch(
+        () => null,
+      );
+      if (gateShown !== null) {
+        if (__DEV__) {
+          console.warn(
+            '[Push] Permission gate already shown; not re-prompting after sign-in',
+          );
+        }
+        return () => {};
+      }
+
+      // Gate hasn't fired (e.g. returning user from before the gate shipped,
+      // or AsyncStorage was wiped) — fall back to prompting now.
+      granted = await requestNotificationPermission();
+    }
+
     if (!granted) {
       if (__DEV__) console.warn('[Push] Notification permission denied');
       return () => {};
