@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
@@ -222,12 +222,35 @@ const MapScreen: React.FC = () => {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
   const [hiddenRouteIds, setHiddenRouteIds] = useState<string[]>([]);
+  // Gate map content rendering on AsyncStorage hydration so the persisted
+  // filter snaps in before the user sees an unfiltered flash.
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.multiGet(['filter:selectedLots', 'filter:hiddenRouteIds']).then(([lots, routes]) => {
-      if (lots[1]) setSelectedLots(JSON.parse(lots[1]));
-      if (routes[1]) setHiddenRouteIds(JSON.parse(routes[1]));
-    }).catch(() => {});
+    AsyncStorage.multiGet(['filter:selectedLots', 'filter:hiddenRouteIds'])
+      .then(([lots, routes]) => {
+        // Parse each entry independently — a single corrupted key shouldn't
+        // wipe the other persisted filter.
+        if (lots[1]) {
+          try {
+            const parsed = JSON.parse(lots[1]);
+            if (Array.isArray(parsed)) setSelectedLots(parsed);
+          } catch {
+            // Corrupted entry — drop it so a subsequent setItem rewrites cleanly.
+            AsyncStorage.removeItem('filter:selectedLots').catch(() => {});
+          }
+        }
+        if (routes[1]) {
+          try {
+            const parsed = JSON.parse(routes[1]);
+            if (Array.isArray(parsed)) setHiddenRouteIds(parsed);
+          } catch {
+            AsyncStorage.removeItem('filter:hiddenRouteIds').catch(() => {});
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setFiltersHydrated(true));
   }, []);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
   const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
@@ -290,7 +313,16 @@ const MapScreen: React.FC = () => {
   const handleRegionChangeComplete = useCallback(async () => {
     if (!mapRef.current) return;
     const camera = await mapRef.current.getCamera();
-    setMapBearing(camera.heading ?? 0);
+    const next = camera.heading ?? 0;
+    // Only push state if the bearing meaningfully changed — sub-1° deltas
+    // re-render every ShuttleMarker (each runs the heading subtraction)
+    // for no perceptible visual benefit. ~1° is the smallest rotation a
+    // user can intentionally produce in a two-finger gesture.
+    setMapBearing((prev) => {
+      const delta = Math.abs(next - prev);
+      const wrapped = Math.min(delta, 360 - delta);
+      return wrapped >= 1 ? next : prev;
+    });
   }, []);
 
   const openRecommendationModal = useCallback(() => {
@@ -310,7 +342,10 @@ const MapScreen: React.FC = () => {
     ? stops?.filter(s => s.routeIds.some(id => !hiddenRouteIds.includes(id)))
     : stops;
 
-  const routeColorMap = new Map(routes?.map(r => [r.id, r.color]) ?? []);
+  const routeColorMap = useMemo(
+    () => new Map(routes?.map((r) => [r.id, r.color]) ?? []),
+    [routes],
+  );
   const filteredShuttles = hiddenRouteIds.length > 0
     ? shuttles?.filter(s => !hiddenRouteIds.includes(s.routeId))
     : shuttles;
@@ -342,7 +377,7 @@ const MapScreen: React.FC = () => {
           userInterfaceStyle={isDark ? 'dark' : 'light'}
           onRegionChangeComplete={handleRegionChangeComplete}
         >
-          {filteredParkingLots?.map((lot) => {
+          {filtersHydrated && filteredParkingLots?.map((lot) => {
             // Force remount of the Marker whenever the visual state changes
             // (live → redacted on contributor revoke, color band change on
             // poll, or null → number on grant). Apple Maps' Marker caches
@@ -374,7 +409,7 @@ const MapScreen: React.FC = () => {
           })}
           
           {/* Draw route paths — static, no isFocused guard to avoid unmount on nav transitions */}
-          {filteredRoutes?.map((route) => (
+          {filtersHydrated && filteredRoutes?.map((route) => (
             <Polyline
               key={route.id}
               coordinates={route.coordinates}
@@ -385,7 +420,7 @@ const MapScreen: React.FC = () => {
           ))}
 
           {/* Draw stops — static, no isFocused guard to avoid unmount on nav transitions */}
-          {filteredStops?.map((stop) => (
+          {filtersHydrated && filteredStops?.map((stop) => (
             <Marker
               key={stop.id}
               coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
@@ -405,7 +440,7 @@ const MapScreen: React.FC = () => {
           ))}
 
           {/* Draw live shuttles */}
-          {isFocused && filteredShuttles?.map((shuttle) => (
+          {filtersHydrated && isFocused && filteredShuttles?.map((shuttle) => (
             <ShuttleMarker
               key={shuttle.id}
               shuttle={shuttle}

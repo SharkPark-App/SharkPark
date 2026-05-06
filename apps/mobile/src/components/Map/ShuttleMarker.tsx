@@ -38,8 +38,12 @@ export const ShuttleMarker: React.FC<ShuttleMarkerProps> = ({ shuttle, colors, m
   ).current;
 
   useEffect(() => {
+    // `toValue` is required by the AnimatedRegion.timing TS signature but
+    // ignored at runtime when explicit lat/lng/latitudeDelta/longitudeDelta
+    // are passed (the native side interpolates each axis individually).
+    // Don't "clean up" by removing it — TS will reject the call.
     coordinate.timing({
-      toValue: 0, // unused at runtime — AnimatedRegion uses the explicit lat/lng below
+      toValue: 0,
       latitude: shuttle.latitude,
       longitude: shuttle.longitude,
       latitudeDelta: 0,

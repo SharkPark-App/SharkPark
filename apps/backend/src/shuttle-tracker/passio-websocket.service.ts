@@ -139,13 +139,21 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   private flushBatch() {
     const updates = [...this.pendingUpdates.values()];
     this.shuttleService.applyLiveUpdates(updates);
-    this.shuttleGateway.broadcastShuttles(updates as unknown as Record<string, unknown>[]);
+    this.shuttleGateway.broadcastShuttles(updates);
     this.pendingUpdates.clear();
     this.batchTimer = null;
   }
 
+  /**
+   * Filters out keep-alive / control frames before validation. PassioGO's
+   * current protocol keys position frames by `busId`, but older deployments
+   * have been observed sending the same payload keyed only by `latitude` /
+   * `longitude`. Accept either so a protocol bump doesn't silently mute the
+   * live feed; downstream DTO validation drops anything genuinely malformed.
+   */
   private hasActiveShuttles(data: Record<string, unknown>): boolean {
-    return data !== null && typeof data === 'object' && 'busId' in data;
+    if (data === null || typeof data !== 'object') return false;
+    return 'busId' in data || ('latitude' in data && 'longitude' in data);
   }
 
   private scheduleReconnect() {

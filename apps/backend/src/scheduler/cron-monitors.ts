@@ -44,7 +44,9 @@ export const CRON_MONITORS = {
   'fetch-transit': {
     schedule: '0 6 * * *',
     checkinMargin: 30,
-    maxRuntime: 60,
+    // ~3 sequential PassioGO! HTTP fetches; 10 min is generous headroom
+    // while still letting Sentry catch a hung job.
+    maxRuntime: 10,
   },
   'cleanup-device-states': {
     schedule: '0 3 * * *',

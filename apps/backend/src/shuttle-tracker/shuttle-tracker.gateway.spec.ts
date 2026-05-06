@@ -96,8 +96,8 @@ describe('ShuttleTrackerGateway', () => {
     it('should emit the shuttle_update event to all connected clients', () => {
       // Mock data
       const mockShuttles = [
-        { id: '101', latitude: 33.78, longitude: -118.11, heading: 90 },
-        { id: '102', latitude: 33.79, longitude: -118.12, heading: 180 },
+        { id: '101', latitude: 33.78, longitude: -118.11, heading: 90, paxLoad: 5 },
+        { id: '102', latitude: 33.79, longitude: -118.12, heading: 180, paxLoad: 12 },
       ];
 
       gateway.broadcastShuttles(mockShuttles);

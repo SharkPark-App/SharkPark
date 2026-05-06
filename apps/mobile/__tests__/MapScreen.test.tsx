@@ -232,9 +232,9 @@ describe('MapScreen', () => {
       expect(json).toContain('header-logo');
     });
 
-    it('renders parking lot markers correctly', () => {
+    it('renders parking lot markers correctly', async () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
+      await ReactTestRenderer.act(async () => {
         tree = ReactTestRenderer.create(<MapScreen />);
       });
       const json = JSON.stringify(tree!.toJSON());
@@ -244,9 +244,9 @@ describe('MapScreen', () => {
   });
 
   describe('transit mapping', () => {
-    it('renders transit routes, stops, and shuttles', () => {
+    it('renders transit routes, stops, and shuttles', async () => {
       let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
+      await ReactTestRenderer.act(async () => {
         tree = ReactTestRenderer.create(<MapScreen />);
       });
       

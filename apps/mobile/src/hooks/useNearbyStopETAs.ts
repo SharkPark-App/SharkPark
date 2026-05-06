@@ -41,6 +41,10 @@ export function useNearbyStopETAs(
     }
 
     let isMounted = true;
+    // Per-effect cancellation: when nearbyKey changes mid-poll (user pans /
+    // lot changes) we mark the in-flight fetch cancelled so its late
+    // resolution can't pollute etaMap with stops from a previous lot.
+    let cancelled = false;
 
     const fetchAll = async (showLoading: boolean) => {
       if (showLoading) {
@@ -50,11 +54,11 @@ export function useNearbyStopETAs(
         nearby.map(async (stop) => {
           try {
             const arrivals = await TransitService.getStopETAs(stop.id);
-            if (isMounted) {
+            if (isMounted && !cancelled) {
               setEtaMap((prev) => ({ ...prev, [stop.id]: { arrivals, isLoading: false } }));
             }
           } catch {
-            if (isMounted) {
+            if (isMounted && !cancelled) {
               setEtaMap((prev) => ({ ...prev, [stop.id]: { arrivals: [], isLoading: false } }));
             }
           }
@@ -65,6 +69,7 @@ export function useNearbyStopETAs(
     fetchAll(true);
     const interval = setInterval(() => fetchAll(false), 15_000);
     return () => {
+      cancelled = true;
       isMounted = false;
       clearInterval(interval);
     };

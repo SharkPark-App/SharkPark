@@ -203,7 +203,14 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
     for (const [id, ts] of this.lastSeen)
       if (ts < cutoff) this.lastSeen.delete(id);
     const pruned = before - this.latestShuttles.length;
-    if (pruned > 0) this.logger.log(`Pruned ${pruned} stale shuttle(s)`);
+    if (pruned > 0) {
+      this.logger.log(`Pruned ${pruned} stale shuttle(s)`);
+      // Persist the pruned list so a Fly app restart doesn't reload the
+      // stale buses from Redis and re-display them for the next 2 min.
+      void this.redis
+        .set(REDIS_KEYS.SHUTTLES, this.latestShuttles, SHUTTLES_TTL_S)
+        .catch((err) => this.logger.error('Failed to persist pruned shuttle list to Redis', err));
+    }
   }
 
   /**

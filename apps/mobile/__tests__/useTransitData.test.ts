@@ -115,7 +115,7 @@ describe('useTransitData hook', () => {
     });
   });
 
-  it('suppresses unknown shuttles — socket updates for unknown IDs are dropped silently', async () => {
+  it('triggers a debounced metadata refetch when the socket reports an unknown shuttle ID', async () => {
     mockTransitService.getRoutesAndStops.mockResolvedValueOnce({ routes: [], stops: [] });
     mockTransitService.getLiveShuttles.mockResolvedValueOnce(mockShuttles as any);
 
@@ -125,22 +125,83 @@ describe('useTransitData hook', () => {
       expect(result.current.shuttles).toHaveLength(1);
     });
 
-    // Socket update for an ID not in the static snapshot
-    const phantomUpdate = [{
-      id: 'sh999',
-      latitude: 50.0,
-      longitude: -50.0,
-      heading: 90,
-      paxLoad: 7,
-    }];
+    // Now switch to fake timers so we can deterministically advance the
+    // debounce. The initial load above already settled under real timers.
+    jest.useFakeTimers();
+    try {
+      // Backfill response: includes the previously-unknown bus
+      const phantomMeta = {
+        id: 'sh999',
+        busName: 'Shuttle 999',
+        color: '#0000ff',
+        routeId: 'r1',
+        route: 'Route One',
+        latitude: 50.0,
+        longitude: -50.0,
+        heading: 90,
+        paxLoad: 7,
+        capacity: 30,
+      };
+      mockTransitService.getLiveShuttles.mockResolvedValueOnce([
+        ...(mockShuttles as any),
+        phantomMeta,
+      ]);
 
-    act(() => {
-      socketHandlers['shuttle_update'](phantomUpdate);
+      const phantomUpdate = [{
+        id: 'sh999',
+        latitude: 50.0,
+        longitude: -50.0,
+        heading: 90,
+        paxLoad: 7,
+      }];
+
+      act(() => {
+        socketHandlers['shuttle_update'](phantomUpdate);
+      });
+
+      // Until the debounce fires, the unknown bus is suppressed.
+      expect(result.current.shuttles).toHaveLength(1);
+      expect(mockTransitService.getLiveShuttles).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1500);
+      });
+
+      expect(mockTransitService.getLiveShuttles).toHaveBeenCalledTimes(2);
+      expect(result.current.shuttles).toHaveLength(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('coalesces a burst of unknown-shuttle frames into a single refetch', async () => {
+    mockTransitService.getRoutesAndStops.mockResolvedValueOnce({ routes: [], stops: [] });
+    mockTransitService.getLiveShuttles.mockResolvedValueOnce(mockShuttles as any);
+
+    renderHook(() => useTransitData());
+    await waitFor(() => {
+      expect(mockTransitService.getLiveShuttles).toHaveBeenCalledTimes(1);
     });
 
-    // Unknown shuttle is NOT added — it stays hidden until static metadata includes it
-    expect(result.current.shuttles).toHaveLength(1);
-    expect(mockTransitService.getLiveShuttles).toHaveBeenCalledTimes(1);
+    jest.useFakeTimers();
+    try {
+      mockTransitService.getLiveShuttles.mockResolvedValue(mockShuttles as any);
+
+      act(() => {
+        socketHandlers['shuttle_update']([{ id: 'a', latitude: 0, longitude: 0, heading: 0, paxLoad: 0 }]);
+        socketHandlers['shuttle_update']([{ id: 'b', latitude: 0, longitude: 0, heading: 0, paxLoad: 0 }]);
+        socketHandlers['shuttle_update']([{ id: 'c', latitude: 0, longitude: 0, heading: 0, paxLoad: 0 }]);
+      });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1500);
+      });
+
+      // Initial load + one coalesced refetch — not three.
+      expect(mockTransitService.getLiveShuttles).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('logs a warning on socket connect_error', () => {
