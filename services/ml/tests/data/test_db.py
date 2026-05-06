@@ -140,7 +140,7 @@ class TestWritePredictions:
 
     @patch("src.data.db.execute_values")
     @patch("src.data.db.get_connection")
-    def test_deletes_before_insert(
+    def test_does_not_delete_existing_predictions(
         self,
         mock_get_conn,
         mock_exec_values,
@@ -154,11 +154,11 @@ class TestWritePredictions:
 
         write_short_term_predictions(sample_predictions)
 
-        # First call should be the SELECT (via get_lot_id_map)
-        # Second call should be the DELETE
-        calls = cursor.execute.call_args_list
-        delete_call = calls[1]
-        assert "DELETE FROM predictions_short_term" in delete_call[0][0]
+        for call in cursor.execute.call_args_list:
+            sql = call[0][0]
+            assert "DELETE" not in sql.upper(), (
+                f"Writer must not issue DELETE; got: {sql}"
+            )
 
     @patch("src.data.db.execute_values")
     @patch("src.data.db.get_connection")
