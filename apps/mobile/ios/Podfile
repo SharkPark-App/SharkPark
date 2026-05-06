@@ -65,7 +65,8 @@ target 'mobile' do
     # "redefinition of module 'FirebaseCore'" for pods that already ship module
     # maps via :modular_headers => true. Disabling it on the Pods project,
     # all pod targets, AND the main app project fixes the cascade.
-    [installer.pods_project, installer.aggregate_targets.first&.user_project].compact.each do |proj|
+    user_projects = installer.aggregate_targets.map(&:user_project).compact.uniq
+    [installer.pods_project, *user_projects].each do |proj|
       proj.build_configurations.each do |cfg|
         cfg.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
       end
