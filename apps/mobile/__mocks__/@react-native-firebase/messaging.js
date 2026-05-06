@@ -13,6 +13,7 @@ const AuthorizationStatus = {
 
 const mockMessaging = {
   requestPermission: jest.fn().mockResolvedValue(AuthorizationStatus.AUTHORIZED),
+  hasPermission: jest.fn().mockResolvedValue(AuthorizationStatus.AUTHORIZED),
   registerDeviceForRemoteMessages: jest.fn().mockResolvedValue(undefined),
   getToken: jest.fn().mockResolvedValue('mock-fcm-token'),
   onTokenRefresh: jest.fn().mockReturnValue(() => {}),

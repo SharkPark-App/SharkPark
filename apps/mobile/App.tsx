@@ -18,7 +18,12 @@ import { MainTabNavigator } from './src/navigation';
 import { linkingConfig } from './src/navigation/linking';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
-import { LoginScreen, OnboardingScreen, ForceUpdateScreen } from './src/screens';
+import {
+  LoginScreen,
+  OnboardingScreen,
+  PermissionGateScreen,
+  ForceUpdateScreen,
+} from './src/screens';
 import { EnhancedGeofencingProvider } from './src/context/EnhancedGeofencingProvider';
 import { useOnboarding } from './src/hooks/useOnboarding';
 import {
@@ -113,7 +118,13 @@ function useForceUpdate() {
 function AppContent() {
   const { isDark, colors } = useTheme();
   const { isAuthenticated, isGuest, isLoading: authLoading } = useAuth();
-  const { isLoading: onboardingLoading, needsOnboarding, completeOnboarding } = useOnboarding();
+  const {
+    isLoading: onboardingLoading,
+    needsOnboarding,
+    completeOnboarding,
+    needsPermissionGate,
+    completePermissionGate,
+  } = useOnboarding();
   const { updateRequired, checked: versionChecked } = useForceUpdate();
 
   if (__DEV__) {
@@ -213,6 +224,17 @@ function AppContent() {
       <SafeAreaProvider>
         <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
         <OnboardingScreen onComplete={completeOnboarding} />
+      </SafeAreaProvider>
+    );
+  }
+
+  // One-time permission gate: shown immediately after onboarding completes.
+  // Prompts for notification permission before the user reaches login.
+  if (needsPermissionGate) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+        <PermissionGateScreen onDone={completePermissionGate} />
       </SafeAreaProvider>
     );
   }

@@ -94,6 +94,16 @@ jobs:
           pnpm --filter @sharkpark/backend db:seed:prod
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
+        with:
+          # Pin flyctl: `setup-flyctl@master` with no version installs an
+          # older default whose `flyctl machine list` rejects `-j/--json`,
+          # which broke the post-deploy `Ensure cron Machine started` step
+          # in PR #196 (workflow run 25405252314, exit 5: "unknown flag:
+          # --json"). 0.4.47 supports `-j/--json` on `machine list`. Note
+          # `machine status` never accepted `--json` (only
+          # `-d/--display-config` for config-only output) — we therefore
+          # read state directly from the `machine list -j` output.
+          version: 0.4.47
 
       # ─── Sentry release tagging (P10.94) ────────────────────────────────
       # Build backend locally to produce dist/ + .js.map files, then create
@@ -146,17 +156,26 @@ jobs:
         # bring it back up — the scheduler stays silently down. Force-start
         # any cron Machine that isn't already running. Idempotent: starting
         # an already-started Machine is a no-op.
+        #
+        # `flyctl machine status` does NOT accept `-j/--json` (only
+        # `-d/--display-config` which prints config, not state). Earlier
+        # versions silently ignored the unknown flag; flyctl 0.4.47 errors
+        # with "unknown flag: --json" and aborts the step. The objects
+        # returned by `machine list -j` already include `.state`, so we read
+        # both id and state from a single list call and skip per-machine
+        # status lookups entirely.
         run: |
           set -euo pipefail
-          mapfile -t cron_ids < <(flyctl machine list \
+          mapfile -t entries < <(flyctl machine list \
             --config apps/backend/fly.toml \
-            --json | jq -r '.[] | select(.config.metadata.fly_process_group == "cron") | .id')
-          if [ ${#cron_ids[@]} -eq 0 ]; then
+            -j | jq -r '.[] | select(.config.metadata.fly_process_group == "cron") | "\(.id) \(.state)"')
+          if [ ${#entries[@]} -eq 0 ]; then
             echo "::warning::No cron Machines found; skipping start."
             exit 0
           fi
-          for id in "${cron_ids[@]}"; do
-            state=$(flyctl machine status "$id" --config apps/backend/fly.toml --json | jq -r '.state')
+          for entry in "${entries[@]}"; do
+            id="${entry%% *}"
+            state="${entry#* }"
             echo "cron Machine $id state=$state"
             if [ "$state" != "started" ]; then
               echo "Starting cron Machine $id..."
