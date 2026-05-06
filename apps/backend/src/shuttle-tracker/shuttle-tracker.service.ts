@@ -14,7 +14,8 @@ const REDIS_KEYS = {
 
 // Routes and stops change at most daily; 25 h gives the cron a full cycle + buffer
 const ROUTES_STOPS_TTL_S = 25 * 60 * 60;
-// Shuttle metadata refreshed hourly by cron; 25 h TTL keeps the key alive across restarts
+// Shuttle metadata refreshed daily by cron (see CRON_MONITORS['fetch-transit']);
+// 25 h TTL keeps the key alive across restarts between cron runs
 const SHUTTLES_TTL_S = 25 * 60 * 60;
 // ETAs are in whole-minute granularity; short cache deduplicates concurrent requests
 // without showing meaningfully stale data
@@ -131,23 +132,50 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
    * Merges a batch of live WS position frames into in-memory shuttle state.
    * Tracks last-seen timestamps for stale-bus pruning, and triggers a
    * one-off metadata fetch when an unknown bus ID is encountered.
+   *
+   * Unknown buses are inserted as placeholders (with empty metadata) so
+   * their first WS position is preserved and surfaced via GET /transit/shuttles
+   * before fetchShuttles() completes — without this the bus would be
+   * invisible to clients for up to ~60 s (the mobile metadata poll cadence).
+   * The placeholder is overwritten with full metadata once fetchShuttles
+   * resolves; live position is preserved across that overwrite.
    */
   applyLiveUpdates(updates: ShuttleLiveUpdate[]) {
+    if (updates.length === 0) return;
     const now = Date.now();
-    const knownIds = new Set(this.latestShuttles.map(s => s.id));
-    let hasUnknown = false;
 
-    for (const u of updates) {
-      this.lastSeen.set(u.id, now);
-      if (!knownIds.has(u.id)) hasUnknown = true;
-    }
+    // Index updates by id once — avoids O(N×M) linear scans inside .map below
+    const updateById = new Map(updates.map(u => [u.id, u]));
 
+    // Patch existing shuttles in place
     this.latestShuttles = this.latestShuttles.map(shuttle => {
-      const u = updates.find(u => u.id === shuttle.id);
+      const u = updateById.get(shuttle.id);
       if (!u) return shuttle;
       return { ...shuttle, latitude: u.latitude, longitude: u.longitude,
                heading: u.heading, paxLoad: u.paxLoad };
     });
+
+    // Insert placeholders for buses we've never seen + record last-seen
+    const knownIds = new Set(this.latestShuttles.map(s => s.id));
+    let hasUnknown = false;
+    for (const u of updates) {
+      this.lastSeen.set(u.id, now);
+      if (!knownIds.has(u.id)) {
+        hasUnknown = true;
+        this.latestShuttles.push({
+          id: u.id,
+          busName: 'Shuttle',
+          color: '',
+          routeId: '',
+          route: '',
+          latitude: u.latitude,
+          longitude: u.longitude,
+          heading: u.heading,
+          paxLoad: u.paxLoad,
+          capacity: 0,
+        });
+      }
+    }
 
     if (hasUnknown && !this.metadataFetchPending) {
       this.metadataFetchPending = true;
@@ -299,7 +327,7 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
   /**
    * Fetches the current active bus list from PassioGO! and merges metadata
    * into in-memory state, preserving any live positions already tracked via WS.
-   * Called by the hourly cron as a metadata refresh and on-demand when the WS
+   * Called by the daily cron as a metadata refresh and on-demand when the WS
    * sees an unknown bus ID.
    */
   async fetchShuttles() {
@@ -321,6 +349,19 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
 
       // One shuttle with ID -1 indicates that none are active (empty array shouldn't occur, but check regardless)
       if (shuttlesData['-1'] || Object.keys(shuttlesData).length === 0) {
+        // PassioGO!'s REST and WS feeds occasionally disagree (REST reports
+        // "no buses" while WS is actively delivering frames). If we are
+        // currently receiving WS activity, trust the live feed and skip the
+        // wipe — otherwise we'd churn buses out → unknown ID arrives next
+        // frame → triggers another on-demand fetchShuttles → loop until the
+        // REST/WS desync resolves (and hammer PassioGO! in the meantime).
+        const now = Date.now();
+        const recentWsActivity = Array.from(this.lastSeen.values())
+          .some((ts) => now - ts < STALE_TTL_MS);
+        if (recentWsActivity) {
+          this.logger.warn('PassioGO! REST reports no active buses but WS is live; preserving in-memory shuttle state');
+          return;
+        }
         this.latestShuttles = [];
         this.lastSeen.clear();
         await this.redis.set(REDIS_KEYS.SHUTTLES, [], SHUTTLES_TTL_S);
