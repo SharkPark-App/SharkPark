@@ -2418,7 +2418,7 @@ PODS:
     - Sentry/Core (= 9.12.0)
   - Sentry/Core (9.12.0)
   - TSBackgroundFetch (4.1.1)
-  - TSLocationManager (4.1.6):
+  - TSLocationManager (4.1.7):
     - TSBackgroundFetch (~> 4.1.0)
   - Yoga (0.0.0)
 
@@ -2827,7 +2827,7 @@ SPEC CHECKSUMS:
   RNWorklets: 533b896a04be761c26ec519014a6ccd0fac03781
   Sentry: 19f0f2f9d0d51f2234e270962e7c060bef1bd05c
   TSBackgroundFetch: 18918b6449a1e3f01eb0f5b44d6d79ce6160a5a5
-  TSLocationManager: 7dd12e7e98191abc74327a017560c4eced17a83d
+  TSLocationManager: 0c1b8ed109ae05ea4247def2992b3e4e3f49f839
   Yoga: 04bb4bfeb02c0000b940c1e6e89e856cd8de5a71
 
 PODFILE CHECKSUM: ad06fdefe0bd661bc99e2b9a8fb4fd1793feed8b

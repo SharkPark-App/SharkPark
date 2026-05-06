@@ -356,7 +356,6 @@ describe('LotsController (e2e)', () => {
         .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
-          const eligible = new Set(['STUDENT', 'EMPLOYEE']);
           res.body.data.forEach((rec: { lot_type: string }) => {
             expect(eligible.has(rec.lot_type as 'STUDENT' | 'EMPLOYEE')).toBe(true);
           });
