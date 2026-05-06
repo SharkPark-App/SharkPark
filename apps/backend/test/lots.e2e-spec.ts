@@ -5,6 +5,7 @@ import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/database.module';
 import { hashDeviceId } from '../src/occupancy-events/utils/privacy.util';
+import { studentEligibleLotTypes } from '../src/lots/csulb-eligibility';
 import { bootstrapTestApp } from './utils/bootstrap';
 
 describe('LotsController (e2e)', () => {
@@ -344,14 +345,19 @@ describe('LotsController (e2e)', () => {
         });
     });
 
-    it('should only return lots of the same type as the source', () => {
+    it('should only return lots the source-lot user is currently eligible to park in', () => {
+      // G1 is a STUDENT lot. The eligible candidate set depends on time-of-day:
+      // STUDENT-only during business hours, STUDENT+EMPLOYEE after 17:30 PT
+      // weekdays / all weekend (see csulb-eligibility.ts). Use the same helper
+      // the service uses so the assertion stays in sync with production rules.
+      const eligible = studentEligibleLotTypes(new Date(), 'America/Los_Angeles');
       return request(app.getHttpServer())
         .get('/api/v1/lots/G1/recommendations')
         .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
           res.body.data.forEach((rec: { lot_type: string }) => {
-            expect(rec.lot_type).toBe('STUDENT');
+            expect(eligible.has(rec.lot_type as 'STUDENT' | 'EMPLOYEE')).toBe(true);
           });
         });
     });
