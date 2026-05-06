@@ -79,31 +79,50 @@ target 'mobile' do
       aggregate_target.user_project.save
     end
 
-    # React Native (new architecture) historically wrote its own clang
-    # modulemaps for Firebase pods to
-    # DerivedData/.../GeneratedModuleMaps-iphonesimulator/ and injected them
-    # into the Swift compile via `-Xcc -fmodule-map-file=`. Combined with
-    # CocoaPods' own xcconfig-injected modulemap (from `:modular_headers =>
-    # true`) and the SPM-vendored Firebase, clang would see the same module
-    # declared multiple times and fail with:
+    # React Native (new architecture) writes its own clang modulemaps for
+    # Firebase pods to DerivedData/.../GeneratedModuleMaps-iphonesimulator/
+    # and injects them into the Swift compile via `-Xcc -fmodule-map-file=`.
+    # Because we also opt FirebaseCore / FirebaseInstallations into
+    # `:modular_headers => true` (required so cocoapods will integrate
+    # FirebaseCoreInternal + GoogleUtilities), CocoaPods writes a *second*
+    # modulemap to Pods/Headers/Public/<Name>/<Name>.modulemap and the
+    # generated user-target xcconfig adds it to the same compile via another
+    # `-Xcc -fmodule-map-file=`. clang then sees the same module declared
+    # twice and fails:
     #
     #   error: redefinition of module 'FirebaseCore'
     #   error: redefinition of module 'FirebaseInstallations'
     #
-    # which cascaded into "could not build module Foundation" → bridging
+    # which cascades into "could not build module Foundation" → bridging
     # header PCH failure → exit 65.
     #
-    # Two earlier mitigations tried to strip the CocoaPods xcconfig entries,
-    # but the underlying duplication source was the SPM `firebase-ios-sdk`
-    # reference inside the .xcodeproj. That has been removed (see commit
-    # 0691bd9 — "fix(ios): remove duplicate firebase-ios-sdk SPM reference"),
-    # so the only remaining FirebaseCore modulemap is the one CocoaPods
-    # writes, and stripping it leaves Swift with no way to resolve
-    # `import FirebaseCore` (RN's GeneratedModuleMaps-iphonesimulator path
-    # is no longer used in this configuration).
-    #
-    # Therefore: do NOT strip `-Xcc -fmodule-map-file=` entries here. If the
-    # redefinition error returns, investigate which build phase is
-    # re-introducing a duplicate modulemap rather than blindly stripping.
+    # Fix: leave the CocoaPods modulemaps on disk (they're needed so that
+    # `@import FirebaseCore;` inside FirebaseInstallations still resolves
+    # via normal modulemap discovery), but strip the explicit
+    #   -Xcc -fmodule-map-file=${PODS_ROOT}/Headers/Public/<Name>/<Name>.modulemap
+    # entries from the user xcconfigs so they aren't force-injected a second
+    # time alongside the Generated-modulemap injection.
+    duplicate_module_names = %w[FirebaseCore FirebaseInstallations]
+    pods_xcconfig_glob = File.join(__dir__, 'Pods/Target Support Files/Pods-*/Pods-*.xcconfig')
+    Dir.glob(pods_xcconfig_glob).each do |xcconfig_path|
+      original = File.read(xcconfig_path)
+      patched = original.dup
+      duplicate_module_names.each do |mod|
+        # CocoaPods writes each entry as:
+        #   -Xcc -fmodule-map-file="${PODS_ROOT}/Headers/Public/<Mod>/<Mod>.modulemap"
+        # The path is *quoted*, so the regex MUST consume the surrounding
+        # double-quotes (and any leading whitespace) — otherwise stripping
+        # leaves a dangling `"` that fuses the next flag's value into this
+        # one, producing nonsense paths like
+        #   '.../FBLPromises/PromisesObjC.modulemap -Xcc -fmodule-map-file=.../FirebaseCoreExtension.modulemap'
+        # and the build fails with "module map file ... not found".
+        pattern = /\s*-Xcc\s+-fmodule-map-file=("?)[^"\s]*Headers\/Public\/#{Regexp.escape(mod)}\/#{Regexp.escape(mod)}\.modulemap\1/
+        patched.gsub!(pattern, '')
+      end
+      next if patched == original
+      Pod::UI.puts "Stripping duplicate -fmodule-map-file= from #{File.basename(xcconfig_path)}".yellow
+      File.write(xcconfig_path, patched)
+    end
+    # ----------------------------
   end
 end
