@@ -108,15 +108,9 @@ target 'mobile' do
       original = File.read(xcconfig_path)
       patched = original.dup
       duplicate_module_names.each do |mod|
-        # CocoaPods writes each entry as:
-        #   -Xcc -fmodule-map-file="${PODS_ROOT}/Headers/Public/<Mod>/<Mod>.modulemap"
-        # The path is *quoted*, so the regex MUST consume the surrounding
-        # double-quotes (and any leading whitespace) — otherwise stripping
-        # leaves a dangling `"` that fuses the next flag's value into this
-        # one, producing nonsense paths like
-        #   '.../FBLPromises/PromisesObjC.modulemap -Xcc -fmodule-map-file=.../FirebaseCoreExtension.modulemap'
-        # and the build fails with "module map file ... not found".
-        pattern = /\s*-Xcc\s+-fmodule-map-file=("?)[^"\s]*Headers\/Public\/#{Regexp.escape(mod)}\/#{Regexp.escape(mod)}\.modulemap\1/
+        # Match `-Xcc -fmodule-map-file=<...>/Headers/Public/<Mod>/<Mod>.modulemap`
+        # with optional surrounding whitespace; `${PODS_ROOT}` or absolute path.
+        pattern = /\s*-Xcc\s+-fmodule-map-file=[^\s]*Headers\/Public\/#{Regexp.escape(mod)}\/#{Regexp.escape(mod)}\.modulemap/
         patched.gsub!(pattern, '')
       end
       next if patched == original
