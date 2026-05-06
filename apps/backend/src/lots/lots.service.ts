@@ -656,15 +656,22 @@ export class LotsService {
     const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
     if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
 
-    const now = new Date();
+    // Grab predictions from the latest batch only. Filtering by predicted_at
+    // (rather than target_time) avoids UTC-vs-campus-day boundary issues —
+    // a single campus day's predictions span two UTC days (14:00Z..04:00Z+1
+    // for 7 AM..9 PM PT), so a UTC-day filter on target_time would clip the
+    // late-evening bars.
+    const recentCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+    // Append-only table — dedupe to freshest prediction per target_time.
     const [predictions, weather] = await Promise.all([
       this.prisma.predictionShortTerm.findMany({
         where: {
           lot_id: lot.id,
-          target_time: { gte: now },
+          predicted_at: { gte: recentCutoff },
         },
-        orderBy: { target_time: 'asc' },
+        distinct: ['target_time'],
+        orderBy: [{ target_time: 'asc' }, { predicted_at: 'desc' }],
         take: 20,
       }),
       this.weatherService.getCurrent(),
@@ -713,12 +720,18 @@ export class LotsService {
     const now = new Date();
     const endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
+    // Append-only table — dedupe to freshest prediction per (target_date, target_hour).
     const predictions = await this.prisma.predictionLongTerm.findMany({
       where: {
         lot_id: lot.id,
         target_date: { gte: now, lte: endDate },
       },
-      orderBy: [{ target_date: 'asc' }, { target_hour: 'asc' }],
+      distinct: ['target_date', 'target_hour'],
+      orderBy: [
+        { target_date: 'asc' },
+        { target_hour: 'asc' },
+        { predicted_at: 'desc' },
+      ],
     });
 
     // If ML predictions exist, return them

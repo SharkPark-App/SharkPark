@@ -350,7 +350,7 @@ model PredictionShortTerm {
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
-  @@index([lot_id, target_time], name: "idx_pred_short")
+  @@index([lot_id, target_time, predicted_at(sort: Desc)], name: "idx_pred_short")
   @@map("predictions_short_term")
 }
 
@@ -367,7 +367,7 @@ model PredictionLongTerm {
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
-  @@index([lot_id, target_date, target_hour], name: "idx_pred_long")
+  @@index([lot_id, target_date, target_hour, predicted_at(sort: Desc)], name: "idx_pred_long")
   @@map("predictions_long_term")
 }
 
