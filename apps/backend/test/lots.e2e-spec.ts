@@ -344,14 +344,18 @@ describe('LotsController (e2e)', () => {
         });
     });
 
-    it('should only return lots of the same type as the source', () => {
+    it('should only return lots eligible for the source lot type', () => {
+      // Students may park in employee lots after 17:30 on weekdays and all day
+      // on weekends (csulb-eligibility.ts), so EMPLOYEE lots can appear in
+      // recommendations depending on when this runs.
       return request(app.getHttpServer())
         .get('/api/v1/lots/G1/recommendations')
         .set('x-device-id', contributorDeviceId)
         .expect(200)
         .expect((res: Response) => {
+          const eligible = new Set(['STUDENT', 'EMPLOYEE']);
           res.body.data.forEach((rec: { lot_type: string }) => {
-            expect(rec.lot_type).toBe('STUDENT');
+            expect(eligible.has(rec.lot_type)).toBe(true);
           });
         });
     });
