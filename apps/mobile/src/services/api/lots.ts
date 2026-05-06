@@ -368,13 +368,12 @@ class LotsApiService {
           const predictions = response.data.predictions;
           if (predictions && predictions.length > 0) {
             return predictions.map((p) => {
-              const hour = new Date(p.target_time).getHours();
               const occupancyPercent = Math.round(p.predicted_occupancy * 100);
               const lower = Math.round(p.confidence_lower * 100);
               const upper = Math.round(p.confidence_upper * 100);
 
               return {
-                time: hour.toString(),
+                time: p.target_time,
                 occupancy: Math.min(100, Math.max(0, occupancyPercent)),
                 lowerBound: Math.min(100, Math.max(0, lower)),
                 upperBound: Math.min(100, Math.max(0, upper)),
