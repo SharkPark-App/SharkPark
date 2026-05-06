@@ -47,21 +47,27 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
             directionsMode: 'car',
           });
 
-          // Apple Maps resolves `q=<lot name>` to the nearest named landmark (e.g. the campus)
-          // instead of navigating to the exact coordinates. Override the open() function for
-          // apple-maps to use `daddr=lat,lon` only — no text query parameter.
+          // Apple Maps with `daddr=` + `q=<name>` resolves the name via text
+          // search and ignores the coordinates (e.g. "Parking Lot G7" → the
+          // campus). Override the open() function so apple-maps uses
+          // `ll=lat,lon&q=<name>&dirflg=d` instead, which anchors the pin to
+          // the exact coordinates and uses the name only as a display label.
           const apps = (result as unknown as MapApp[]).map((app) => {
             if (app.id === 'apple-maps') {
               return {
                 ...app,
                 open: async () => {
-                  // Apple Maps with `daddr=` + `q=<name>` resolves the name via text search
-                  // and ignores the coordinates. Using `ll=lat,lon&q=<name>` anchors the pin
-                  // to the exact coordinates and uses the name only as a display label.
-                  // `dirflg=d` still opens driving directions to that pinned location.
                   const encodedTitle = encodeURIComponent(title);
                   const url = `maps://?ll=${lat},${lon}&q=${encodedTitle}&dirflg=d`;
-                  await Linking.openURL(url);
+                  try {
+                    await Linking.openURL(url);
+                  } catch (err) {
+                    console.error('Failed to open Apple Maps:', err);
+                    Alert.alert(
+                      'Could not open Apple Maps',
+                      'Please try a different navigation app.',
+                    );
+                  }
                 },
               };
             }
