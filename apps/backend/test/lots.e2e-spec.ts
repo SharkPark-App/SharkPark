@@ -345,11 +345,11 @@ describe('LotsController (e2e)', () => {
         });
     });
 
-    it('should only return lots the source-lot user is currently eligible to park in', () => {
-      // G1 is a STUDENT lot. The eligible candidate set depends on time-of-day:
-      // STUDENT-only during business hours, STUDENT+EMPLOYEE after 17:30 PT
-      // weekdays / all weekend (see csulb-eligibility.ts). Use the same helper
-      // the service uses so the assertion stays in sync with production rules.
+    it('should only return lots eligible for the source lot type', () => {
+      // G1 is a STUDENT lot. Per csulb-eligibility, students may also park in
+      // EMPLOYEE lots after 17:30 weekdays and any time on weekends, so the
+      // eligible set is time-of-day dependent. Compute it the same way the
+      // service does so this assertion is not flaky across CI run times.
       const eligible = studentEligibleLotTypes(new Date(), 'America/Los_Angeles');
       return request(app.getHttpServer())
         .get('/api/v1/lots/G1/recommendations')
