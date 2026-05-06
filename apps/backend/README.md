@@ -13,7 +13,7 @@ container start by the entry-point file:
 | Process | Entry | Fly process group | Purpose |
 |---------|-------|-------------------|---------|
 | HTTP API | [`src/main.ts`](src/main.ts) | `app` | Serves `/api/v1/*` REST + the `/shuttles` socket.io namespace. |
-| Cron / scheduler | [`src/scheduler-main.ts`](src/scheduler-main.ts) | `cron` | Boots a Nest standalone application context (no HTTP listener) that owns all 18 `@nestjs/schedule` jobs. Sentry Cron check-ins + Postgres advisory locks per job. |
+| Cron / scheduler | [`src/scheduler-main.ts`](src/scheduler-main.ts) | `cron` | Boots a Nest standalone application context (no HTTP listener) that owns all 29 `@nestjs/schedule` jobs. Sentry Cron check-ins + Postgres advisory locks per job. |
 
 Both processes share the same module graph, Prisma client, Redis client, and
 Sentry SDK — the difference is only what's mounted at boot.
@@ -63,7 +63,7 @@ src/
 ├── redis/            # Global ioredis cache module
 ├── reliability/      # 5-factor weighted reliability scoring
 ├── reports/          # User-submitted lot status reports
-├── scheduler/        # Standalone cron app + 18 @nestjs/schedule jobs
+├── scheduler/        # Standalone cron app + 29 @nestjs/schedule jobs
 ├── shuttle-tracker/  # PassioGO WS client + /shuttles socket.io gateway
 ├── users/            # Profiles, favorites, notification prefs, account deletion
 ├── weather/          # NWS api.weather.gov client + /weather/impact

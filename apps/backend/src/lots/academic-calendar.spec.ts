@@ -332,13 +332,31 @@ describe('Academic Calendar', () => {
       expect(result[1]).toBe('break');
     });
 
-    it('returns "regular" for intersession even on week 1', () => {
+    it('returns "winter_session" for a winter intersession class day', () => {
       const year = generateAcademicYear(2025);
       const cs = year.winter.classesStart;
       const result = getWeekOfSemester(
         d(cs.getUTCFullYear(), cs.getUTCMonth() + 1, cs.getUTCDate()),
       );
-      expect(result[1]).toBe('regular');
+      expect(result[1]).toBe('winter_session');
+    });
+
+    it('returns "summer_session" for a summer intersession class day', () => {
+      const year = generateAcademicYear(2025);
+      const cs = year.summer.classesStart;
+      const result = getWeekOfSemester(
+        d(cs.getUTCFullYear(), cs.getUTCMonth() + 1, cs.getUTCDate()),
+      );
+      expect(result[1]).toBe('summer_session');
+    });
+
+    it('returns "summer_session" for a may intersession class day', () => {
+      const year = generateAcademicYear(2025);
+      const cs = year.mayIntersession.classesStart;
+      const result = getWeekOfSemester(
+        d(cs.getUTCFullYear(), cs.getUTCMonth() + 1, cs.getUTCDate()),
+      );
+      expect(result[1]).toBe('summer_session');
     });
   });
 

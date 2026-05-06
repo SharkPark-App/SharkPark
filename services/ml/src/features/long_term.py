@@ -279,7 +279,11 @@ def prepare_training_features(
     df = add_day_encoding(df)
 
     # Carry weight-related metadata columns through if present
-    _weight_cols = [c for c in ("_source", "is_cold_start") if c in df.columns]
+    _weight_cols = [
+        c
+        for c in ("_source", "is_cold_start", "generator_version", "sample_weight")
+        if c in df.columns
+    ]
 
     keep_cols = [
         "lot_id",

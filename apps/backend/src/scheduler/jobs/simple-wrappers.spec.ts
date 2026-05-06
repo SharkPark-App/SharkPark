@@ -34,21 +34,47 @@ function makeLogger() {
 }
 
 describe('SnapshotJob', () => {
-  it('delegates to occupancyEvents.createSnapshots', async () => {
+  it('delegates to occupancyEvents.createSnapshots and runs the consensus tick', async () => {
     const runner = makeRunner();
     const occupancyEvents = {
       createSnapshots: jest
         .fn()
         .mockResolvedValue({ count: 7, timestamp: '2026-05-04T00:00:00Z' }),
     };
+    const consensus = {
+      processLiveTick: jest.fn().mockResolvedValue({ written: 5, skipped: 2 }),
+    };
     const job = new SnapshotJob(
       runner as never,
       occupancyEvents as never,
+      consensus as never,
       makeLogger(),
     );
 
     await job.handle();
     expect(runner.run).toHaveBeenCalledWith('snapshot', expect.any(Function));
+    expect(occupancyEvents.createSnapshots).toHaveBeenCalledTimes(1);
+    expect(consensus.processLiveTick).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when the consensus tick fails', async () => {
+    const runner = makeRunner();
+    const occupancyEvents = {
+      createSnapshots: jest
+        .fn()
+        .mockResolvedValue({ count: 1, timestamp: '2026-05-04T00:00:00Z' }),
+    };
+    const consensus = {
+      processLiveTick: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const job = new SnapshotJob(
+      runner as never,
+      occupancyEvents as never,
+      consensus as never,
+      makeLogger(),
+    );
+
+    await expect(job.handle()).resolves.toBeUndefined();
     expect(occupancyEvents.createSnapshots).toHaveBeenCalledTimes(1);
   });
 });

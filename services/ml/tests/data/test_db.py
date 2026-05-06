@@ -407,3 +407,130 @@ class TestLoadRealSnapshots:
 
         call_args = mock_read_sql.call_args
         assert call_args[1]["params"] is None
+
+
+# =============================================================================
+# Tests — load_synthetic_v2_snapshots (D5)
+# =============================================================================
+
+
+from src.data.db import load_synthetic_v2_snapshots  # noqa: E402
+
+
+class TestLoadSyntheticV2Snapshots:
+    @patch("src.data.db.pd.read_sql")
+    @patch("src.data.db.get_lot_id_map")
+    @patch("src.data.db.get_engine")
+    def test_derives_full_schema_from_v2_rows(
+        self, mock_get_engine, mock_lot_map, mock_read_sql
+    ):
+        sa_conn = MagicMock()
+        sa_conn.execute.return_value.first.return_value = ("school_cuid",)
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=sa_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_get_engine.return_value = mock_engine
+        mock_lot_map.return_value = {"G1": "lot_cuid_g1"}
+
+        # Mid-spring 2026 timestamp (regular session, campus open).
+        mock_read_sql.return_value = pd.DataFrame(
+            {
+                "lot_cuid": ["lot_cuid_g1", "lot_cuid_g1"],
+                "timestamp": pd.to_datetime(
+                    ["2026-02-15T10:00:00Z", "2026-02-15T10:15:00Z"]
+                ),
+                "occupancy": [40, 60],
+                "occupancy_rate": [0.4, 0.6],
+                "sample_weight": [1.0, 0.5],
+                "term": ["Spring_2026", "Spring_2026"],
+                "generator_version": ["v2", "v2"],
+                "total_spaces": [100, 100],
+            }
+        )
+
+        df = load_synthetic_v2_snapshots(
+            school_short_name="CSULB", term="Spring_2026"
+        )
+
+        assert list(df["lot_id"]) == ["G1", "G1"]
+        assert list(df["available"]) == [60, 40]
+        assert (df["confidence"] == "HIGH").all()
+        assert (df["is_cold_start"] == False).all()  # noqa: E712
+        assert (df["_source"] == "synthetic").all()
+        assert (df["generator_version"] == "v2").all()
+        assert list(df["sample_weight"]) == [1.0, 0.5]
+        assert (df["semester"] == "Spring_2026").all()
+        # academic_period / week_of_semester / is_campus_open populated.
+        assert df["academic_period"].notna().all()
+        assert df["week_of_semester"].notna().all()
+        assert df["is_campus_open"].dtype == bool
+
+    @patch("src.data.db.pd.read_sql")
+    @patch("src.data.db.get_lot_id_map")
+    @patch("src.data.db.get_engine")
+    def test_returns_empty_when_no_rows(
+        self, mock_get_engine, mock_lot_map, mock_read_sql
+    ):
+        sa_conn = MagicMock()
+        sa_conn.execute.return_value.first.return_value = ("school_cuid",)
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=sa_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_get_engine.return_value = mock_engine
+        mock_lot_map.return_value = {}
+        mock_read_sql.return_value = pd.DataFrame()
+
+        df = load_synthetic_v2_snapshots(school_short_name="CSULB", term="Spring_2026")
+        assert df.empty
+
+    @patch("src.data.db.get_engine")
+    def test_unknown_school_short_name_raises(self, mock_get_engine):
+        sa_conn = MagicMock()
+        sa_conn.execute.return_value.first.return_value = None  # not found
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=sa_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_get_engine.return_value = mock_engine
+
+        with pytest.raises(RuntimeError, match="not found"):
+            load_synthetic_v2_snapshots(school_short_name="NOPE")
+
+    def test_invalid_date_raises(self):
+        with pytest.raises(ValueError, match="Invalid start_date"):
+            load_synthetic_v2_snapshots(start_date="not-a-date")
+
+    def test_inverted_range_raises(self):
+        with pytest.raises(ValueError, match="must be before"):
+            load_synthetic_v2_snapshots(
+                start_date="2026-02-10", end_date="2026-02-01"
+            )
+
+    @patch("src.data.db.pd.read_sql")
+    @patch("src.data.db.get_lot_id_map")
+    @patch("src.data.db.get_engine")
+    def test_unknown_lot_cuid_raises(
+        self, mock_get_engine, mock_lot_map, mock_read_sql
+    ):
+        sa_conn = MagicMock()
+        sa_conn.execute.return_value.first.return_value = ("school_cuid",)
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=sa_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_get_engine.return_value = mock_engine
+        mock_lot_map.return_value = {"G1": "lot_cuid_g1"}  # missing G2
+
+        mock_read_sql.return_value = pd.DataFrame(
+            {
+                "lot_cuid": ["lot_cuid_g2"],  # unknown
+                "timestamp": pd.to_datetime(["2026-02-15T10:00:00Z"]),
+                "occupancy": [40],
+                "occupancy_rate": [0.4],
+                "sample_weight": [1.0],
+                "term": ["Spring_2026"],
+                "generator_version": ["v2"],
+                "total_spaces": [100],
+            }
+        )
+
+        with pytest.raises(RuntimeError, match="unknown lot IDs"):
+            load_synthetic_v2_snapshots(school_short_name="CSULB")

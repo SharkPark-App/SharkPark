@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/database.module';
+import { fetchJsonWithRetry } from '../common/http/fetch-json';
 
 interface RawCampusLabsEvent {
   id: string;
@@ -152,15 +153,15 @@ export class EventsScraperService {
 
     let skip = 0;
 
+    const userAgent =
+      process.env.WEATHER_USER_AGENT || 'SharkPark/1.0 (ops@sharkpark.app)';
+
     while (true) {
       const url = `${base}?endsAfter=${encodeURIComponent(endsAfter)}&status=Approved&take=100&skip=${skip}`;
-      const res = await fetch(url);
-
-      if (!res.ok) {
-        throw new Error(`CampusLabs fetch failed: ${res.status} ${res.statusText}`);
-      }
-
-      const data = (await res.json()) as { value?: RawCampusLabsEvent[] };
+      const data = await fetchJsonWithRetry<{ value?: RawCampusLabsEvent[] }>(
+        url,
+        { userAgent },
+      );
       const page = data.value ?? [];
 
       for (const e of page) {

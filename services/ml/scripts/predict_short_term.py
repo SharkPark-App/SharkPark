@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,7 @@ from src.config import (
 from src.features.short_term import prepare_inference_features
 from src.models.short_term import ShortTermModel
 from src.postprocess.weather_adjustment import apply_weather_adjustment
+from src.postprocess.low_activity_scaling import apply_low_activity_scaling
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +94,61 @@ def predict(
         logger.info("No prediction hours remaining for today. Exiting.")
         return pd.DataFrame()
 
+    # Attach per-target-hour weather forecast (E3). The inference feature
+    # builder fills weather columns from the latest snapshot's joined weather
+    # row; here we override per-row using the NWS forecast for each
+    # `target_hour` so the model sees what conditions will be at the time it's
+    # predicting for, not just the current observation. Falls back to current
+    # weather when no forecast row exists for that hour.
+    if not data_path:
+        from src.data.db import (
+            fetch_weather_forecast_map,
+            get_school_id_for_lots,
+        )
+
+        try:
+            school_id = get_school_id_for_lots(lot_ids)
+            forecast_map = fetch_weather_forecast_map(school_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not load weather forecast (%s); using latest observation only.",
+                exc,
+            )
+            forecast_map = {}
+
+        if forecast_map:
+            weather_cols = (
+                "temperature_f",
+                "precipitation_probability",
+                "wind_speed_mph",
+                "is_raining",
+                "weather_severity",
+            )
+            for col in weather_cols:
+                if col not in features.columns:
+                    features[col] = (
+                        np.nan if col != "weather_severity" else "NO_WEATHER_DATA"
+                    )
+            for col in weather_cols:
+                forecast_vals = features["target_hour"].map(
+                    lambda h, c=col: forecast_map.get(int(h), {}).get(c)
+                )
+                # Only override rows where a forecast exists for that hour;
+                # leave the latest-observation value otherwise.
+                mask = forecast_vals.notna()
+                if mask.any():
+                    features.loc[mask, col] = forecast_vals[mask]
+            logger.info(
+                "Attached forecast weather for %d/%d rows (%d hours covered).",
+                int(
+                    features["target_hour"]
+                    .map(lambda h: int(h) in forecast_map)
+                    .sum()
+                ),
+                len(features),
+                len(forecast_map),
+            )
+
     # Generate predictions with quantile confidence intervals
     preds, preds_lower, preds_upper = model.predict_quantiles(features)
 
@@ -127,6 +184,28 @@ def predict(
         prediction_time=prediction_time,
     )
 
+    # Low-activity session cap (winter / summer / break). Pull the
+    # per-row target date from the freshly-built predictions DataFrame
+    # so a forecast that crosses midnight still picks up the correct
+    # academic period for each row.
+    pred_target_dates = pd.to_datetime(predictions["target_time"]).dt.date.tolist()
+    capped_med, capped_lo, capped_hi, low_activity_reasons = apply_low_activity_scaling(
+        predictions["predicted_occupancy"].to_numpy(),
+        predictions["confidence_lower"].to_numpy(),
+        predictions["confidence_upper"].to_numpy(),
+        pred_target_dates,
+    )
+    predictions["predicted_occupancy"] = capped_med
+    predictions["confidence_lower"] = capped_lo
+    predictions["confidence_upper"] = capped_hi
+    low_activity_counts = Counter(low_activity_reasons)
+    if any(r != "NORMAL" for r in low_activity_reasons):
+        logger.info(
+            "Low-activity scaling: %s (rows=%d)",
+            ", ".join(f"{k}={v}" for k, v in sorted(low_activity_counts.items())),
+            len(predictions),
+        )
+
     # Write to database (default)
     from src.data.db import write_short_term_predictions
 
@@ -147,6 +226,23 @@ def predict(
         "Predicted occupancy range: %s - %s",
         predictions["predicted_occupancy"].min(),
         predictions["predicted_occupancy"].max(),
+    )
+
+    # Machine-readable marker consumed by apps/backend's cron runner so
+    # /admin/ml-status can show the model version + row count for the most
+    # recent ticks. Plain `print` (NOT logger) so the format is stable
+    # regardless of logging config; backend looks for the literal
+    # `ML_RESULT:` prefix and JSON-parses the rest of the line.
+    print(
+        "ML_RESULT: "
+        + json.dumps(
+            {
+                "horizon": "short_term",
+                "model_version": model_version,
+                "predictions_written": int(n),
+                "lots": int(predictions["lot_id"].nunique()),
+            }
+        )
     )
 
     return predictions

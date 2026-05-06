@@ -22,6 +22,14 @@ dependencies = [
     "botocore>=1.43.0",
     "mlflow>=3.11.1",
     "python-dotenv>=1.2.2",
+    # D2 CSULB schedule scraper — public HTML only, no auth.
+    "requests>=2.32.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.2.0",
+    # F-tier admin dashboard: rendered headless (Agg backend) by
+    # scripts/validate_synthetic_v2.py to produce the synthetic-vs-real
+    # overlay PNG embedded in /api/admin/ml-status/dashboard.
+    "matplotlib>=3.8.0",
 ]
 
 [project.optional-dependencies]

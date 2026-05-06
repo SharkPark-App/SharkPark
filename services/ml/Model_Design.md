@@ -230,6 +230,18 @@ Week-ahead predictions answer "what will parking look like next Thursday at 10am
 
 Synthetic data includes a `source: "synthetic"` column that is **generator-only** — real Aurora snapshots do not have this column. When synthetic and real parquets are concatenated at training time, real rows will have `NaN` in the `source` column. This enables sample weighting to downweight synthetic data as real data accumulates (e.g., `{"synthetic": 0.3, "real": 1.0}`).
 
+As of D5, training rows are classified into four tiers and weighted independently of row count (each tier's *total* contribution to XGBoost ∝ its tier weight): `real_clean` (real, non cold-start), `real_cold` (real, cold-start), `synthetic_v2` (catalog-driven, with per-row `sample_weight` mean-normalized within tier), and `synthetic_v1` (legacy heuristic generator). Per-lot decay `1 / (1 + n_real_for_lot / 100)` shrinks synthetic influence on lots that have accumulated real coverage, so well-instrumented lots converge toward real-only fitting without us having to drop synthetic globally. Spec ratios for the v2 launch are `--real-weight 10 --synthetic-v2-weight 1 --synthetic-weight 0.1`.
+
+### Synthetic v2 — Privacy & Compliance
+
+Synthetic v2 (`services/ml/src/data/synthetic_v2.py`) is built from CSULB's **public** Schedule of Classes and the public Lecture Room Allocation tables. We deliberately do **not** scrape any auth-required source (Ad Astra reports, CS-Link, PeopleSoft) — see the docstring in [services/ml/scripts/ingest_csulb_catalog.py](services/ml/scripts/ingest_csulb_catalog.py) for the explicit list of "what we will not touch and why."
+
+- **No PII.** The catalog ingest stores subject/course/section/room/instructor-name strings (instructor name is the same string the public HTML page already exposes) and never associates a section with a student. The synthetic generator emits aggregate per-lot/per-tick occupancy counts only — there is no per-device, per-driver, or per-student row at any stage of the pipeline.
+- **Aggregate enrollment only.** Per-section enrollment is never observed; it's *estimated* through a tiered fallback (override → online → room capacity → building profile → course-type default). The chosen tier is recorded in `course_meetings.enrollment_source` and surfaced through `/admin/ml-status` so the operator can see how much of synthetic-v2's signal is real-room vs. heuristic.
+- **No tracking carryover.** Synthetic v2 rows write to `synthetic_observations` with `_source = "synthetic"`, `generator_version = "v2"`, and a per-row `sample_weight`. They never enter `occupancy_snapshots`, `consensus_observations`, or any other table that mixes with real contributor data, so the downstream feature pipeline can always partition real vs synthetic by `_source`.
+- **Reproducibility.** Each generation pinned to `(school, term, generator_version)`; reruns are idempotent on the unique key. The MLflow run that consumes them logs `synthetic_v2_school`, `synthetic_v2_term`, `synthetic_v1_rows`, `synthetic_v2_rows`, `real_weight`, and `synthetic_v2_weight`, so any historical model can be traced back to the exact synthetic snapshot it was trained on.
+- **Operator controls.** `section_enrollment_overrides` lets an operator with PeopleSoft access correct an estimate without code changes; the override-tier value is preserved across catalog rescrapes. There is no public endpoint for either `course_meetings` or `synthetic_observations`.
+
 ### Transition to Real Data
 
 | Phase       | Source     | Notes                                              |
@@ -603,13 +615,14 @@ For MVP, Lambda + EventBridge is recommended because:
 | S3 archive export     | Daily          | Training data backup to S3                     |
 
 ### Current vs Future
-> **Note:** "Now" reflects local development before the scheduled prediction job is deployed.
-**Development Phases:** MLflow runs locally during development, storing experiments and run artifacts in `./mlruns`. Promoted models are also published to Cloudflare R2 (via `promote --export-s3`) so the scheduled prediction job — running on a Fly cron VM — can load them without an MLflow dependency. MLflow stays local for experiment tracking and the registry.
+> **Note:** "Now" reflects local development; "Later" reflects the deployed hybrid topology.
 
-| Concern                 | Now                                                  | Later                              |
-|-------------------------|------------------------------------------------------|------------------------------------|
-| Model storage           | MLflow (local) + Cloudflare R2 (promoted versions)   | Same                               |
-| Model tracking/registry | MLflow (local)                                       | MLflow (local)                     |
-| Training data archive   | Local files                                          | S3 / R2 (Parquet, partitioned)     |
-| Inference trigger       | Manual script                                        | Fly cron (scheduled)               |
-| Training trigger        | Manual script                                        | Scheduled or manual                |
+**Development Phases:** Local development uses the default MLflow file store (`./mlruns`) — no extra setup needed. In production, MLflow's backend store points at a dedicated Neon Postgres database (`MLFLOW_TRACKING_URI=postgresql+psycopg2://...`) and its artifact store points at Cloudflare R2 (`MLFLOW_ARTIFACT_LOCATION=s3://sharkpark-ml-exports/mlflow-artifacts`). Both runtimes — the GitHub Actions training workflow and the backend Fly cron VM (which spawns Python inference scripts) — import `src/utils/mlflow_setup.py` so they share one source of configuration. Promoted models are still mirrored to R2 via `promote --export-s3` for the inference path that loads from R2 directly (no MLflow registry round-trip needed).
+
+| Concern                 | Now                                                  | Later                                                                  |
+|-------------------------|------------------------------------------------------|------------------------------------------------------------------------|
+| Model storage           | MLflow file store + Cloudflare R2 (promoted)         | MLflow Postgres + R2 artifact store                                    |
+| Model tracking/registry | MLflow (local file store)                            | MLflow (Neon Postgres backend, shared by training + inference)         |
+| Training data archive   | Local files                                          | R2 (Parquet, partitioned)                                              |
+| Inference trigger       | Manual script                                        | Backend NestJS `@Cron` → Python child process (Fly cron VM)            |
+| Training trigger        | Manual script                                        | GitHub Actions scheduled workflow (`ml-retrain.yml`)                   |

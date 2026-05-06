@@ -16,6 +16,7 @@ import sys
 
 from src.config import LONG_TERM_MODEL_NAME, LONG_TERM_HORIZON_DAYS
 from src.utils.mlflow_utils import promote_model, upload_model_to_r2
+from src.utils.promotion_guard import evaluate_promotion_candidate
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,12 @@ if __name__ == "__main__":
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--run-id", help="MLflow run ID of the model to promote")
+    group.add_argument(
+        "--run-id",
+        "--candidate-run-id",
+        dest="run_id",
+        help="MLflow run ID of the model to promote",
+    )
     group.add_argument(
         "--upload-only",
         metavar="VERSION",
@@ -69,11 +75,30 @@ if __name__ == "__main__":
         action="store_true",
         help="Publish artifacts to R2 in addition to local MLflow registration",
     )
+    parser.add_argument(
+        "--auto-only",
+        action="store_true",
+        help=(
+            "Only promote if promotion_guard.evaluate_promotion_candidate() "
+            "returns promote=True. No-op (exit 0) otherwise. Used by the "
+            "ml-retrain GitHub Actions workflow."
+        ),
+    )
     args = parser.parse_args()
 
     if args.upload_only:
         upload_model_to_r2(LONG_TERM_MODEL_NAME, args.upload_only)
         sys.exit(0)
+
+    if args.auto_only:
+        decision = evaluate_promotion_candidate(args.run_id, LONG_TERM_MODEL_NAME)
+        logger.info("Promotion guard: %s", decision.reason)
+        if not decision.promote:
+            logger.info(
+                "Skipping promotion. Candidate run %s remains in MLflow as a non-production version.",
+                args.run_id,
+            )
+            sys.exit(0)
 
     version = promote(args.run_id, args.export_s3)
     if version is None:
