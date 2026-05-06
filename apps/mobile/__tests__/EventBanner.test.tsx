@@ -107,6 +107,68 @@ describe('EventBanner', () => {
     );
     expect(chevrons.length).toBe(0);
   });
+
+  it('renders a start \u2013 end time range when endDate is provided', () => {
+    const tree = render([
+      makeEvent({
+        date: new Date(2026, 2, 29, 14, 0, 0),
+        endDate: new Date(2026, 2, 29, 16, 30, 0),
+      }),
+    ]);
+    const texts = collectTexts(tree.root);
+    // en-US default in Jest; device locale takes over at runtime.
+    expect(hasText(texts, '2:00 PM \u2013 4:30 PM')).toBe(true);
+  });
+
+  it('renders only the start time when endDate is omitted', () => {
+    const tree = render([
+      makeEvent({
+        date: new Date(2026, 2, 29, 14, 0, 0),
+        endDate: undefined,
+      }),
+    ]);
+    const texts = collectTexts(tree.root);
+    expect(hasText(texts, '2:00 PM')).toBe(true);
+    expect(hasText(texts, '\u2013')).toBe(false);
+  });
+
+  // The Sidearm calendar API exposes no in-progress signal, so we never
+  // render a LIVE pill — the SportsEventStatus.LIVE enum value exists in
+  // the schema but is intentionally never written by the scraper. These
+  // tests cover the FINAL flip and the SCHEDULED / non-sports no-op cases.
+  describe('final sports score', () => {
+    it('renders a FINAL pill with the result indicator when status is FINAL', () => {
+      const tree = render([
+        makeEvent({
+          status: 'FINAL',
+          homeScore: 88,
+          awayScore: 75,
+          resultStatus: 'W',
+        }),
+      ]);
+      const texts = collectTexts(tree.root);
+      expect(hasText(texts, 'FINAL')).toBe(true);
+      expect(hasText(texts, '88\u201375 (W)')).toBe(true);
+    });
+
+    it('does not render the sports row for SCHEDULED events', () => {
+      const tree = render([
+        makeEvent({
+          status: 'SCHEDULED',
+          homeScore: null,
+          awayScore: null,
+        }),
+      ]);
+      const texts = collectTexts(tree.root);
+      expect(hasText(texts, 'FINAL')).toBe(false);
+    });
+
+    it('does not render the sports row when status is null (non-sports event)', () => {
+      const tree = render([makeEvent({ status: null })]);
+      const texts = collectTexts(tree.root);
+      expect(hasText(texts, 'FINAL')).toBe(false);
+    });
+  });
 });
 
 describe('EventBanner -- accessibility', () => {

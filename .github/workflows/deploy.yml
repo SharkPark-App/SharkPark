@@ -67,6 +67,32 @@ jobs:
           echo "Migrating against pooled endpoint: ${DATABASE_URL%%@*}@***"
           pnpm db:deploy
 
+      # Seed reference data (school + 28 lots + buildings + geofences +
+      # advisories) AFTER migrations succeed. seed-prod.ts is fully idempotent:
+      # pure upsert, never deletes rows, and intentionally excludes
+      # current_occupancy from the update payload so live state is preserved.
+      # Running this every deploy keeps the DB in sync with lot-data.ts +
+      # the *.generated.ts polygons whenever they change in source control.
+      # Required: NEON_DATABASE_URL (same secret used above). Missing secret =
+      # failed deploy, by design.
+      - name: Seed production reference data
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          DATABASE_URL=$(node -e '
+            const u = new URL(process.env.NEON_DATABASE_URL);
+            if (!u.hostname.includes("-pooler.")) {
+              u.hostname = u.hostname.replace(/^(ep-[^.]+)\./, "$1-pooler.");
+            }
+            u.searchParams.set("pgbouncer", "true");
+            u.searchParams.set("connection_limit", "1");
+            u.searchParams.set("connect_timeout", "60");
+            console.log(u.toString());
+          ')
+          export DATABASE_URL
+          echo "Seeding against pooled endpoint: ${DATABASE_URL%%@*}@***"
+          pnpm --filter @sharkpark/backend db:seed:prod
+
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       # ─── Sentry release tagging (P10.94) ────────────────────────────────
@@ -112,3 +138,28 @@ jobs:
 
       - name: Deploy
         run: flyctl deploy --remote-only --config apps/backend/fly.toml --dockerfile apps/backend/Dockerfile
+
+      - name: Ensure cron Machine started
+        # Rolling deploys preserve each Machine's prior desired state. If the
+        # cron Machine previously crash-looped past Fly's retry budget and
+        # ended up Stopped (see PR #192/#195), shipping a new image will NOT
+        # bring it back up — the scheduler stays silently down. Force-start
+        # any cron Machine that isn't already running. Idempotent: starting
+        # an already-started Machine is a no-op.
+        run: |
+          set -euo pipefail
+          mapfile -t cron_ids < <(flyctl machine list \
+            --config apps/backend/fly.toml \
+            --json | jq -r '.[] | select(.config.metadata.fly_process_group == "cron") | .id')
+          if [ ${#cron_ids[@]} -eq 0 ]; then
+            echo "::warning::No cron Machines found; skipping start."
+            exit 0
+          fi
+          for id in "${cron_ids[@]}"; do
+            state=$(flyctl machine status "$id" --config apps/backend/fly.toml --json | jq -r '.state')
+            echo "cron Machine $id state=$state"
+            if [ "$state" != "started" ]; then
+              echo "Starting cron Machine $id..."
+              flyctl machine start "$id" --config apps/backend/fly.toml
+            fi
+          done

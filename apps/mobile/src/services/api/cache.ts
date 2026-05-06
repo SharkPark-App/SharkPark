@@ -45,6 +45,26 @@ interface CacheOptions {
 
 class CacheService {
   /**
+   * In-flight fetcher promises, keyed by cache key. When two callers race on
+   * the same key (e.g. a screen's focus effect + AppState 'active' resume
+   * both firing on the same tick, or two screens mounting near-simultaneously
+   * for the same data), both miss the cache (neither has written yet) and
+   * would otherwise both invoke `fetcher()` — paying 2× HTTP round trips
+   * for byte-identical responses.
+   *
+   * Coalescing happens at the fetcher boundary: the first caller's fetcher
+   * promise is stored here, every concurrent caller awaits the same promise,
+   * and the entry is evicted in `finally` so the next post-settle call fires
+   * a fresh request. The cache write still happens inside the fetcher path,
+   * so subsequent in-TTL callers hit the AsyncStorage cache normally.
+   *
+   * Keyed by raw cache key (not by `forceRefresh`): two concurrent callers
+   * on the same key — even if one is `forceRefresh` and the other isn't —
+   * should share the in-flight response because it is, by definition, fresh.
+   */
+  private inFlightFetches = new Map<string, Promise<unknown>>();
+
+  /**
    * Get a value from cache.
    * Returns the cached data if fresh, stale data if offline/allowed, or null if missing/expired.
    */
@@ -185,8 +205,16 @@ class CacheService {
     // If online, try fetching fresh data
     if (isOnline) {
       try {
-        const freshData = await fetcher();
-        await this.set(key, freshData, options);
+        // The set() is part of the coalesced work so that N concurrent
+        // callers don't each fire a redundant AsyncStorage write of the
+        // same payload. TTL is taken from the first caller's options —
+        // for a given cache key, callers should be passing the same TTL
+        // (the TTL is a property of the data, not the call site).
+        const freshData = await this.coalescedFetch(key, async () => {
+          const data = await fetcher();
+          await this.set(key, data, options);
+          return data;
+        });
         return { data: freshData, source: 'network', isStale: false };
       } catch (error) {
         // Network error — fall back to stale cache if available. Even on
@@ -211,6 +239,27 @@ class CacheService {
 
     // No cache, no network
     throw new Error(`No cached data available for "${key}" and device is offline`);
+  }
+
+  /**
+   * Share an in-flight fetcher promise across concurrent callers for the
+   * same key. The first caller's promise is stored, every subsequent
+   * caller awaits the same promise, and the entry is evicted on settle
+   * (success OR failure) so the next post-resolution call fires fresh.
+   *
+   * Failure eviction is critical: if a fetcher throws and the entry stayed
+   * cached, every subsequent caller would re-await the rejected promise
+   * forever and never get a chance to retry.
+   */
+  private coalescedFetch<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+    const existing = this.inFlightFetches.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+
+    const promise = fetcher().finally(() => {
+      this.inFlightFetches.delete(key);
+    });
+    this.inFlightFetches.set(key, promise);
+    return promise;
   }
 
   /**

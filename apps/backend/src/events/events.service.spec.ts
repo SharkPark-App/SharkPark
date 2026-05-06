@@ -1,17 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { EventsService } from './events.service';
+import { BadRequestException } from '@nestjs/common';
+import {
+  EventsService,
+  DEFAULT_EVENTS_WINDOW_HOURS,
+  MAX_EVENTS_WINDOW_HOURS,
+} from './events.service';
 import { PrismaService } from '../database/database.module';
 
 describe('EventsService', () => {
   let service: EventsService;
   let prisma: {
-    lot: { findFirst: jest.Mock };
+    lot: { findFirst: jest.Mock; findMany: jest.Mock };
     campusEvent: { findMany: jest.Mock; deleteMany: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
-      lot: { findFirst: jest.fn() },
+      lot: { findFirst: jest.fn(), findMany: jest.fn() },
       campusEvent: { findMany: jest.fn(), deleteMany: jest.fn() },
     };
 
@@ -83,6 +88,51 @@ describe('EventsService', () => {
         expect.objectContaining({ where: { lot_id: 'G1' } }),
       );
     });
+
+    it('uses the default 7-day window when within_hours is omitted', async () => {
+      prisma.lot.findFirst.mockResolvedValue({
+        lot_buildings: [{ building_id: 'bldg-1' }],
+      });
+      prisma.campusEvent.findMany.mockResolvedValue([]);
+
+      await service.getEventsForLot('G1');
+
+      const call = prisma.campusEvent.findMany.mock.calls[0][0];
+      const start = call.where.start_time.lte as Date;
+      const end = (call.where.OR as Array<{ end_time?: { gte?: Date } | null }>)
+        .find(c => c.end_time && 'gte' in c.end_time)!.end_time!.gte as Date;
+      const hours = (start.getTime() - end.getTime()) / (60 * 60 * 1000);
+      expect(hours).toBeCloseTo(DEFAULT_EVENTS_WINDOW_HOURS, 0);
+    });
+
+    it('honors a caller-supplied within_hours window', async () => {
+      prisma.lot.findFirst.mockResolvedValue({
+        lot_buildings: [{ building_id: 'bldg-1' }],
+      });
+      prisma.campusEvent.findMany.mockResolvedValue([]);
+
+      await service.getEventsForLot('G1', 4);
+
+      const call = prisma.campusEvent.findMany.mock.calls[0][0];
+      const start = call.where.start_time.lte as Date;
+      const end = (call.where.OR as Array<{ end_time?: { gte?: Date } | null }>)
+        .find(c => c.end_time && 'gte' in c.end_time)!.end_time!.gte as Date;
+      const hours = (start.getTime() - end.getTime()) / (60 * 60 * 1000);
+      expect(hours).toBeCloseTo(4, 0);
+    });
+
+    it('rejects out-of-range within_hours', async () => {
+      await expect(service.getEventsForLot('G1', 0)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(
+        service.getEventsForLot('G1', MAX_EVENTS_WINDOW_HOURS + 1),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.getEventsForLot('G1', NaN)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.lot.findFirst).not.toHaveBeenCalled();
+    });
   });
 
   describe('pruneOldEvents', () => {
@@ -94,7 +144,12 @@ describe('EventsService', () => {
 
       const expectedCutoff = new Date('2026-02-03T00:00:00Z');
       expect(prisma.campusEvent.deleteMany).toHaveBeenCalledWith({
-        where: { end_time: { lt: expectedCutoff } },
+        where: {
+          OR: [
+            { end_time: { lt: expectedCutoff } },
+            { AND: [{ end_time: null }, { start_time: { lt: expectedCutoff } }] },
+          ],
+        },
       });
       expect(result).toEqual({ events_deleted: 7, cutoff: expectedCutoff });
     });

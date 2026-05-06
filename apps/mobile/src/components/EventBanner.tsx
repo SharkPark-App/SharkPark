@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, TouchableOpacity, Linking, useWindowDimensions, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, TouchableOpacity, Linking, useWindowDimensions, View } from 'react-native';
 import { Text } from './CustomText';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
 import type { Event } from '../types/ui';
 import type { ViewabilityConfig, ViewToken } from 'react-native';
+import { formatTimeRange } from '../utils/formatTime';
 
 interface EventBannerProps {
   events: Event[];
@@ -16,6 +17,27 @@ const HORIZONTAL_PADDING = SPACING.lg;
 const VIEWABILITY_CONFIG: ViewabilityConfig = {
   itemVisiblePercentThreshold: 50,
 };
+
+/**
+ * Build a single accessibility label for the FINAL row so VoiceOver
+ * announces "Final, score 16 to 4, win" rather than reading the pill and
+ * the digits as separate, ambiguous tokens.
+ *
+ * We only render this row for FINAL events — the schema's `LIVE` enum
+ * value is intentionally never written because the Sidearm calendar API
+ * has no in-progress signal.
+ */
+function sportsAccessibilityLabel(event: Event): string {
+  const home = event.homeScore;
+  const away = event.awayScore;
+  if (home == null && away == null) return 'Final';
+  const score = `score ${home ?? 'unknown'} to ${away ?? 'unknown'}`;
+  if (event.resultStatus) {
+    const result = event.resultStatus === 'W' ? 'win' : event.resultStatus === 'L' ? 'loss' : 'tie';
+    return `Final, ${score}, ${result}`;
+  }
+  return `Final, ${score}`;
+}
 
 export function EventBanner({ events }: EventBannerProps) {
   const { colors } = useTheme();
@@ -40,8 +62,41 @@ export function EventBanner({ events }: EventBannerProps) {
 
   if (events.length === 0) return null;
 
+  const headerLabel =
+    events.length === 1
+      ? 'Nearby event'
+      : `Nearby events (${events.length})`;
+
   return (
     <View style={styles.outer}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() =>
+            Alert.alert(
+              'Nearby events',
+              'These events are happening near this parking lot and may impact availability.',
+            )
+          }
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="About nearby events"
+          accessibilityHint="Explains why these events are shown"
+          style={styles.headerIcon}
+        >
+          <Icon
+            name="information-circle-outline"
+            size={TYPOGRAPHY.fontSize.lg}
+            color={colors.warningText}
+          />
+        </TouchableOpacity>
+        <Text
+          style={styles.headerTitle}
+          accessibilityRole="header"
+          accessibilityLabel={headerLabel}
+        >
+          {headerLabel}
+        </Text>
+      </View>
       <FlatList
         data={events}
         keyExtractor={item => item.id}
@@ -57,7 +112,7 @@ export function EventBanner({ events }: EventBannerProps) {
             accessibilityRole="link"
             accessibilityLabel={[
               event.name,
-              event.date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+              formatTimeRange(event.date, event.endDate),
               event.location,
               event.description,
             ].filter(Boolean).join(', ')}
@@ -73,17 +128,49 @@ export function EventBanner({ events }: EventBannerProps) {
               />
             </View>
             <View style={styles.content}>
-              <Text style={styles.name}>{event.name}</Text>
-              <Text style={styles.details}>
-                {event.date.toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                })}{' '}
-                • {event.location}
+              <Text style={styles.name} numberOfLines={2}>
+                {event.name}
               </Text>
+              {event.status === 'FINAL' && (
+                <View style={styles.sportsRow} accessible={true} accessibilityLabel={sportsAccessibilityLabel(event)}>
+                  <View
+                    style={[styles.statusPill, styles.statusPillFinal]}
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    <Text style={styles.statusPillText}>FINAL</Text>
+                  </View>
+                  {(event.homeScore != null || event.awayScore != null) && (
+                    <Text style={styles.scoreText} importantForAccessibility="no-hide-descendants">
+                      {`${event.homeScore ?? '–'}–${event.awayScore ?? '–'}`}
+                      {event.resultStatus ? ` (${event.resultStatus})` : ''}
+                    </Text>
+                  )}
+                </View>
+              )}
+              <View style={styles.metaRow} accessible={false} importantForAccessibility="no-hide-descendants">
+                <Icon
+                  name="time-outline"
+                  size={TYPOGRAPHY.fontSize.sm}
+                  color={colors.warningTextSecondary}
+                  style={styles.metaIcon}
+                />
+                <Text style={styles.metaText}>
+                  {formatTimeRange(event.date, event.endDate)}
+                </Text>
+              </View>
+              <View style={styles.metaRow} accessible={false} importantForAccessibility="no-hide-descendants">
+                <Icon
+                  name="location-outline"
+                  size={TYPOGRAPHY.fontSize.sm}
+                  color={colors.warningTextSecondary}
+                  style={styles.metaIcon}
+                />
+                <Text style={styles.metaText} numberOfLines={2} ellipsizeMode="tail">
+                  {event.location}
+                </Text>
+              </View>
               {event.description && (
-                <Text style={styles.description} numberOfLines={2}>
+                <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
                   {event.description}
                 </Text>
               )}
@@ -116,38 +203,91 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.sm,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  headerIcon: {
+    padding: 2,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: colors.warningText,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
   card: {
     backgroundColor: colors.warningLight,
     borderLeftWidth: 4,
     borderLeftColor: colors.warningBorder,
     borderRadius: SPACING.md,
-    padding: SPACING.lg,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
+    alignItems: 'flex-start',
+    gap: SPACING.md,
     ...SHADOWS.cardSubtle,
   },
   icon: {
     marginTop: 2,
-    marginRight: 5,
   },
   content: {
     flex: 1,
-    paddingRight: SPACING.md,
+    paddingRight: SPACING.sm,
   },
   name: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.md,
     color: colors.warningText,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    marginBottom: SPACING.xs,
   },
-  details: {
-    fontSize: TYPOGRAPHY.fontSize.xxs2,
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  metaIcon: {
+    marginRight: SPACING.xs,
+  },
+  metaText: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     color: colors.warningTextSecondary,
   },
   description: {
-    fontSize: TYPOGRAPHY.fontSize.xxs2,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     color: colors.warningTextSecondary,
-    marginTop: 2,
+    marginTop: SPACING.xs,
+    fontStyle: 'italic',
+  },
+  sportsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+    gap: SPACING.sm,
+  },
+  statusPill: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: SPACING.xs,
+  },
+  statusPillFinal: {
+    backgroundColor: colors.warningBorder,
+  },
+  statusPillText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: '#ffffff',
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    letterSpacing: 0.5,
+  },
+  scoreText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: colors.warningText,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
   chevron: {
     alignSelf: 'center',

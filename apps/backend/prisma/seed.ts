@@ -40,35 +40,35 @@ const prisma = new PrismaClient({ adapter });
 const testUsers = [
   {
     email: 'charles.milton@csulb.edu', user_type: UserType.STUDENT,
-    first_name: 'Charles', last_name: 'Milton', phone: '+15625551234',
+    first_name: 'Charles', last_name: 'Milton',
     created_at: new Date('2025-09-01'),
     notification_preferences: { favorites_filling: true, favorites_clearing: true, surge_alerts: true, event_alerts: true },
     favorites: ['G1', 'G7', 'G4'],
   },
   {
     email: 'lawrence.degoma@csulb.edu', user_type: UserType.STUDENT,
-    first_name: 'Lawrence', last_name: 'Degoma', phone: '+15625551235',
+    first_name: 'Lawrence', last_name: 'Degoma',
     created_at: new Date('2025-09-01'),
     notification_preferences: { favorites_filling: true, favorites_clearing: false, surge_alerts: true, event_alerts: true },
     favorites: ['G2', 'G9'],
   },
   {
     email: 'ly.nguyen@csulb.edu', user_type: UserType.EMPLOYEE,
-    first_name: 'Ly', last_name: 'Nguyen', phone: '+15625551236',
+    first_name: 'Ly', last_name: 'Nguyen',
     created_at: new Date('2025-09-05'),
     notification_preferences: { favorites_filling: true, favorites_clearing: true, surge_alerts: false, event_alerts: true },
     favorites: ['E1', 'E3', 'G4'],
   },
   {
     email: 'zachary.padilla@csulb.edu', user_type: UserType.STUDENT,
-    first_name: 'Zachary', last_name: 'Padilla', phone: '+15625551237',
+    first_name: 'Zachary', last_name: 'Padilla',
     created_at: new Date('2025-09-02'),
     notification_preferences: { favorites_filling: true, favorites_clearing: true, surge_alerts: true, event_alerts: false },
     favorites: ['G7', 'G8', 'E2'],
   },
   {
     email: 'charles.m2@csulb.edu', user_type: UserType.EMPLOYEE,
-    first_name: 'Charles', last_name: 'Milton', phone: '+15625551238',
+    first_name: 'Charles', last_name: 'Milton',
     created_at: new Date('2025-09-10'),
     notification_preferences: { favorites_filling: false, favorites_clearing: false, surge_alerts: true, event_alerts: true },
     favorites: ['E3', 'E5', 'G14'],
@@ -94,6 +94,7 @@ const campusEvents = [
     event_name: "Men's Basketball — Home Game",
     description: 'Come cheer on the 49ers as they take on our rivals in an exciting home game at the Walter Pyramid! Free entry for students with valid ID. Go Beach!',
     location: 'Walter Pyramid',
+    event_url: 'https://longbeachstate.com/sports/mbball/schedule',
     start_time: daysFromNow(0, 19),
     end_time: daysFromNow(0, 21),
   },
@@ -101,6 +102,7 @@ const campusEvents = [
     external_id: 'seed-spring-commencement',
     event_name: 'Spring Commencement',
     location: 'Walter Pyramid',
+    event_url: 'https://www.csulb.edu/commencement',
     start_time: daysFromNow(2, 9),
     end_time: daysFromNow(2, 18),
   },
@@ -109,6 +111,7 @@ const campusEvents = [
     event_name: 'Spring Career Fair',
     description: 'Connect with potential employers and explore career opportunities at our annual Spring Career Fair!',
     location: 'USU Ballroom',
+    event_url: 'https://www.csulb.edu/careers',
     start_time: daysFromNow(4, 10),
     end_time: daysFromNow(4, 16),
   },
@@ -116,6 +119,7 @@ const campusEvents = [
     external_id: 'seed-concert',
     event_name: 'Spring Concert Series',
     location: 'University Theatre',
+    event_url: 'https://web.csulb.edu/colleges/cota/calendar',
     start_time: daysFromNow(6, 19),
     end_time: daysFromNow(6, 21),
   },
@@ -249,7 +253,12 @@ async function main() {
     const geofence = LOT_GEOFENCES[lot.lot_id];
     if (!geofence) continue;
     const nearbyNames = deriveLotBuildings(
-      { ...lot, center_lat: geofence.centroid.lat, center_lng: geofence.centroid.lng },
+      {
+        ...lot,
+        center_lat: geofence.centroid.lat,
+        center_lng: geofence.centroid.lng,
+        polygon: geofence.polygon,
+      },
       buildingsWithFootprints,
     );
     for (const proximity of nearbyNames) {
@@ -300,7 +309,6 @@ async function main() {
         first_name: user.first_name,
         last_name: user.last_name,
         user_type: user.user_type,
-        phone: user.phone,
         notification_preferences: user.notification_preferences,
         created_at: user.created_at,
         last_login: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
@@ -343,6 +351,7 @@ async function main() {
         event_name: event.event_name,
         description: event.description,
         location: event.location,
+        event_url: event.event_url,
         start_time: event.start_time,
         end_time: event.end_time,
         building_id: buildingId,

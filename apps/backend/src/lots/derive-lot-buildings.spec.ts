@@ -115,6 +115,37 @@ describe('deriveLotBuildings', () => {
   it('exports a sane default radius', () => {
     expect(DEFAULT_LOT_BUILDING_RADIUS_M).toBe(250);
   });
+
+  it('uses lot polygon edge (not centroid) when provided', () => {
+    // A long lot stretched ~400 m north–south. Its centroid sits at ~33.7838,
+    // but its north edge reaches ~33.78735. A building 50 m north of that
+    // edge (~33.78780) is ~440 m from the centroid but only ~50 m from the
+    // lot's nearest edge — must be matched.
+    const longLot = {
+      center_lat: 33.7838,
+      center_lng: -118.1141,
+      polygon: [
+        { lat: 33.78025, lng: -118.11430 },
+        { lat: 33.78025, lng: -118.11390 },
+        { lat: 33.78735, lng: -118.11390 },
+        { lat: 33.78735, lng: -118.11430 },
+      ],
+    };
+    const venue: BuildingPoint[] = [
+      { name: 'North Venue', lat: 33.78780, lng: -118.11410 },
+    ];
+
+    // Without polygon → centroid distance ~440 m → not matched.
+    const centroidOnly = deriveLotBuildings(
+      { center_lat: longLot.center_lat, center_lng: longLot.center_lng },
+      venue,
+    );
+    expect(centroidOnly).toEqual([]);
+
+    // With polygon → edge distance ~50 m → matched.
+    const polygonAware = deriveLotBuildings(longLot, venue);
+    expect(polygonAware).toEqual(['North Venue']);
+  });
 });
 
 describe('polygonToPolygonMeters', () => {
@@ -206,5 +237,55 @@ describe('polygonToPolygonMeters', () => {
 
   it('returns +Infinity when degenerate polygons have no fallback centroids', () => {
     expect(polygonToPolygonMeters([], [])).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('returns +Infinity when only side A is valid but B has no fallback centroid', () => {
+    const lotA = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.001 },
+      { lat: 0.001, lng: 0.001 },
+      { lat: 0.001, lng: 0 },
+    ];
+    expect(polygonToPolygonMeters(lotA, [])).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('returns +Infinity when only side B is valid but A has no fallback centroid', () => {
+    const lotB = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.001 },
+      { lat: 0.001, lng: 0.001 },
+      { lat: 0.001, lng: 0 },
+    ];
+    expect(polygonToPolygonMeters([], lotB)).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe('pointToPolygonMeters degenerate inputs', () => {
+  it('returns +Infinity for an empty polygon', () => {
+    expect(pointToPolygonMeters({ lat: 0, lng: 0 }, [])).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('falls back to haversine against the only vertex when polygon has < 3 vertices', () => {
+    const point = { lat: 0, lng: 0 };
+    const vertex = { lat: 0, lng: 0.001 };
+    const d = pointToPolygonMeters(point, [vertex]);
+    expect(d).toBeCloseTo(haversineMeters(point, vertex), 6);
+  });
+
+  it('handles a polygon with two consecutive identical vertices (zero-length segment)', () => {
+    // Triggers the lenSq===0 branch in the internal pointToSegmentMeters helper:
+    // when two adjacent polygon vertices are identical, that "edge" collapses
+    // to a point and we must fall back to point-to-point distance instead of
+    // dividing by zero.
+    const point = { lat: 0, lng: 0 };
+    const polygon = [
+      { lat: 0.001, lng: 0.001 },
+      { lat: 0.001, lng: 0.001 }, // duplicate of previous
+      { lat: 0.001, lng: 0.002 },
+      { lat: 0.002, lng: 0.001 },
+    ];
+    const d = pointToPolygonMeters(point, polygon);
+    expect(Number.isFinite(d)).toBe(true);
+    expect(d).toBeGreaterThan(0);
   });
 });

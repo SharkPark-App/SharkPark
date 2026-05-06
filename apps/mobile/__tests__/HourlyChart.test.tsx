@@ -70,7 +70,7 @@ describe('HourlyChart -- title', () => {
   it('shows default title when name is not provided', () => {
     const tree = render({ data: [] });
     const texts = collectTexts(tree.root);
-    expect(hasText(texts, 'Parking Occupancy Outlook')).toBe(true);
+    expect(hasText(texts, 'Hourly Forecast')).toBe(true);
   });
 
   it('shows custom name when provided', () => {

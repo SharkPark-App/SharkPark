@@ -17,6 +17,11 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        // Firebase / FCM — reads `android/app/google-services.json`
+        // and generates the values resource consumed by the Firebase SDK.
+        // Pinned to a stable release; bump in lockstep with @react-native-firebase
+        // upgrades (the docs site lists the matching plugin version).
+        classpath("com.google.gms:google-services:4.4.2")
     }
 }
 

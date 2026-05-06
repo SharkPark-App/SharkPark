@@ -65,6 +65,11 @@ body {
   transform: translateY(-150%);
   transition: transform 0.15s ease;
 }
+@media (prefers-reduced-motion: reduce) {
+  .skip-link {
+    transition: none;
+  }
+}
 .skip-link:focus {
   transform: translateY(0);
 }

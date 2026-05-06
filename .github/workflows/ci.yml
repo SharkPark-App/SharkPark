@@ -11,6 +11,14 @@ jobs:
     env:
       SKIP_LOCAL_INFRA: "1"
       DATABASE_URL: "postgresql://sharkpark:sharkpark@localhost:5432/sharkpark?schema=public"
+      # AZURE_CLIENT_ID and AZURE_TENANT_ID are intentionally omitted here.
+      # azure.strategy.ts has real development fallback values that are used
+      # when these vars are absent; overriding them with dummy UUIDs would
+      # point the JWKS endpoint at a non-existent tenant and break auth.
+      # Passport still returns 401 for unauthenticated requests without ever
+      # contacting Microsoft (short-circuits at the missing Bearer token step).
+      DEVICE_HASH_SALT: "ci-test-salt"
+      DEVICE_EVENT_SECRET: "ci-test-secret"
     
     services:
       postgres:

@@ -69,16 +69,6 @@ RUN apt-get update \
  && apt-get purge -y --auto-remove gnupg \
  && rm -rf /var/lib/apt/lists/*
 
-# supercronic — runs the cron process group on Fly. Static binary, ~7MB.
-# Pinned by sha1 (project publishes sha1, not sha256). Bump version + checksum
-# together when upgrading: https://github.com/aptible/supercronic/releases
-ARG SUPERCRONIC_VERSION=v0.2.45
-ARG SUPERCRONIC_SHA1=e894b193bea75a5ee644e700c59e30eedc804cf7
-RUN curl -fsSLo /usr/local/bin/supercronic \
-      "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-amd64" \
- && echo "${SUPERCRONIC_SHA1}  /usr/local/bin/supercronic" | sha1sum -c - \
- && chmod +x /usr/local/bin/supercronic
-
 # Python 3.11 + venv for the ML package. The cron process group invokes
 # services/ml/scripts/predict_short_term.py and predict_long_term.py via
 # child_process.spawn from predict-all-lots.ts (and similarly for the
@@ -121,7 +111,6 @@ COPY --from=prod-deps --chown=nodejs:nodejs /repo/packages ./packages
 # Copy build output + Prisma client + schema (needed at runtime for adapter)
 COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/dist ./apps/backend/dist
 COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/prisma ./apps/backend/prisma
-COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/cron ./apps/backend/cron
 COPY --from=build --chown=nodejs:nodejs /repo/apps/backend/package.json ./apps/backend/package.json
 # prisma.config.ts is required at runtime by `prisma migrate deploy` (Prisma 7+).
 # It reads DATABASE_URL from env and exposes it as datasource.url.
