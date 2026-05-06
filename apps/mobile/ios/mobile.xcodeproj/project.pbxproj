@@ -14,7 +14,6 @@
 		4EC621C5AA78415D9F4F563F /* Inter-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 870DFBDF32FA42C181C05B52 /* Inter-Regular.ttf */; };
 		6B58D14F33664403999355FB /* Inter-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5748CDB7AA6947018E4DBE10 /* Inter-SemiBold.ttf */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
-		81A422202FA47A2D004C53DF /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 81A4221F2FA47A2D004C53DF /* FirebaseMessaging */; };
 		81A422252FA70C78004C53DF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 81A422242FA70C78004C53DF /* GoogleService-Info.plist */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		BE967F942B1C4A3A87CCDA24 /* CarBluetoothModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 084D61FD6E89423095EF2227 /* CarBluetoothModuleBridge.m */; };
@@ -47,7 +46,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				81A422202FA47A2D004C53DF /* FirebaseMessaging in Frameworks */,
 				0C80B921A6F3F58F76C31292 /* libPods-mobile.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -175,9 +173,6 @@
 				Base,
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
-			packageReferences = (
-				81A4221E2FA47A2D004C53DF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
-			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -536,25 +531,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		81A4221E2FA47A2D004C53DF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 12.12.1;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		81A4221F2FA47A2D004C53DF /* FirebaseMessaging */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 81A4221E2FA47A2D004C53DF /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseMessaging;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
 }
