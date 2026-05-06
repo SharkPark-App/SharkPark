@@ -107,11 +107,6 @@ export function ShortTermForecastScreen() {
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
 
   const handleReportSubmit = async (report: import('../components/Modals/ReportModal').IncidentReport) => {
-    if (isGuest || !isAuthenticated) {
-      setIsReportModalOpen(false);
-      Alert.alert('Sign in required', 'Please sign in to submit a report.');
-      return;
-    }
     if (!lot?.id) throw new Error('Lot data unavailable. Please try again.');
     try {
       await reportsApi.create({
@@ -394,7 +389,13 @@ export function ShortTermForecastScreen() {
       {/* Report Button */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setIsReportModalOpen(true)}
+        onPress={() => {
+          if (isGuest || !isAuthenticated) {
+            Alert.alert('Sign in required', 'Please sign in to submit a report.');
+            return;
+          }
+          setIsReportModalOpen(true);
+        }}
         activeOpacity={0.8}
         accessibilityRole="button"
         accessibilityLabel="Report an incident"
