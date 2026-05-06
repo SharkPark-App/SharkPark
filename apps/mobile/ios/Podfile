@@ -78,6 +78,36 @@ target 'mobile' do
       end
       aggregate_target.user_project.save
     end
+
+    # React Native (new architecture) writes its own clang modulemaps for
+    # Firebase pods to DerivedData/.../GeneratedModuleMaps-iphonesimulator/
+    # and injects them into the Swift compile via `-Xcc -fmodule-map-file=`.
+    # Because we also opt FirebaseCore / FirebaseInstallations into
+    # `:modular_headers => true` (required so cocoapods will integrate
+    # FirebaseCoreInternal + GoogleUtilities), CocoaPods writes a *second*
+    # modulemap to Pods/Headers/Public/<Name>/<Name>.modulemap and the
+    # generated user-target xcconfig adds it to the same compile via another
+    # `-Xcc -fmodule-map-file=`. clang then sees the same module declared
+    # twice and fails:
+    #
+    #   error: redefinition of module 'FirebaseCore'
+    #   error: redefinition of module 'FirebaseInstallations'
+    #
+    # which cascades into "could not build module Foundation" → bridging
+    # header PCH failure → exit 65. The Generated version is authoritative
+    # (it correctly declares the FirebaseCoreInternal dependency surfaced by
+    # FIRHeartbeatLogger.m), so delete the duplicate CocoaPods copies.
+    duplicate_modulemaps = %w[
+      Pods/Headers/Public/FirebaseCore/FirebaseCore.modulemap
+      Pods/Headers/Public/FirebaseInstallations/FirebaseInstallations.modulemap
+    ]
+    duplicate_modulemaps.each do |relpath|
+      path = File.join(__dir__, relpath)
+      if File.exist?(path)
+        Pod::UI.puts "Removing duplicate modulemap: #{relpath}".yellow
+        File.delete(path)
+      end
+    end
     # ----------------------------
   end
 end
