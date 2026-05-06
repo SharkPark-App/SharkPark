@@ -10,7 +10,6 @@ import {
 import { Text } from '../components/CustomText';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { Header, ReliabilityRow, LockedOccupancyBadge, LockedForecastCard, UnlockCTAButton } from '../components';
 import { useTheme } from '../context/ThemeContext';
@@ -401,7 +400,7 @@ export function ShortTermForecastScreen() {
         accessibilityLabel="Report an incident"
         importantForAccessibility="yes"
       >
-        <MaterialIcon
+        <Icon
           name="warning"
           size={TYPOGRAPHY.fontSize.xxxxl}
           color={COLORS.white}
