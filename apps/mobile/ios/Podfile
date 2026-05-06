@@ -8,6 +8,12 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# Pin Firebase SDK version to match react-native-firebase@24.0.0 expectations.
+# Without this, CocoaPods 1.16.x SPM resolver independently picks up a newer
+# Firebase version (e.g. 12.13.0) while CocoaPods itself stays on 12.10.0,
+# causing 'invalid custom path FirebaseSharedSwift/Sources' at build time.
+$FirebaseSDKVersion = '12.10.0'
+
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
@@ -51,6 +57,40 @@ target 'mobile' do
         target.build_configurations.each do |config|
           config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
         end
+      end
+    end
+
+    # Xcode 26 introduced "Explicitly Built Modules" which generates its own
+    # module maps for every pod regardless of DEFINES_MODULE, causing
+    # "redefinition of module 'FirebaseCore'" for pods that already ship module
+    # maps via :modular_headers => true. Disabling it on the Pods project,
+    # all pod targets, AND the main app project fixes the cascade.
+    [installer.pods_project, installer.aggregate_targets.first&.user_project].compact.each do |proj|
+      proj.build_configurations.each do |cfg|
+        cfg.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+      end
+      proj.targets.each do |target|
+        target.build_configurations.each do |cfg|
+          cfg.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+        end
+      end
+      proj.save
+    end
+
+    # Belt-and-suspenders: also keep DEFINES_MODULE off for Firebase pods that
+    # already supply their own module maps via :modular_headers above.
+    firebase_pods_with_own_modulemaps = %w[
+      FirebaseCore
+      FirebaseCoreInternal
+      FirebaseCoreExtension
+      FirebaseInstallations
+      FirebaseMessaging
+      GoogleUtilities
+    ]
+    installer.pods_project.targets.each do |target|
+      next unless firebase_pods_with_own_modulemaps.include?(target.name)
+      target.build_configurations.each do |cfg|
+        cfg.build_settings['DEFINES_MODULE'] = 'NO'
       end
     end
     # ----------------------------

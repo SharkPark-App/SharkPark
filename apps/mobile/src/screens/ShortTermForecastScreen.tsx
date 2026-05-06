@@ -110,7 +110,7 @@ export function ShortTermForecastScreen() {
   const handleReportSubmit = async (report: import('../components/Modals/ReportModal').IncidentReport) => {
     if (isGuest || !isAuthenticated) {
       setIsReportModalOpen(false);
-      navigation.navigate('Profile' as never);
+      Alert.alert('Sign in required', 'Please sign in to submit a report.');
       return;
     }
     if (!lot?.id) throw new Error('Lot data unavailable. Please try again.');
@@ -120,10 +120,11 @@ export function ShortTermForecastScreen() {
         type: report.type,
         message: report.message || undefined,
       });
+      setIsReportModalOpen(false);
     } catch (err) {
       if (err instanceof ReportUnauthorizedError) {
         setIsReportModalOpen(false);
-        navigation.navigate('Profile' as never);
+        Alert.alert('Sign in required', 'Please sign in to submit a report.');
         return;
       }
       if (err instanceof ReportThrottledError) {
