@@ -10,7 +10,7 @@ import type { MapShuttle } from '../../types/transit';
 // Matches the PassioGO GPS update cadence so the marker appears to glide
 // continuously rather than jump. If updates arrive faster, the tween is
 // interrupted and restarted from wherever the marker currently sits.
-const MOVE_DURATION_MS = 10000;
+const MOVE_DURATION_MS = 8500;
 
 interface ShuttleMarkerProps {
   shuttle: MapShuttle;
