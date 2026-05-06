@@ -11,6 +11,10 @@ import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { TYPOGRAPHY } from '../../constants/theme';
 import type { ReportType } from '../../services/api/reports';
 
+// Mirrors REPORT_MESSAGE_MAX_LENGTH in
+// apps/backend/src/reports/dto/create-report.dto.ts. Keep in sync.
+const REPORT_MESSAGE_MAX_LENGTH = 500;
+
 interface ReportModalProps {
   /** Human-readable lot display name shown in the modal subtitle (e.g. "G2"). */
   lotDisplayName: string;
@@ -173,12 +177,13 @@ export function ReportModal({ lotDisplayName, isOpen, onClose, onSubmit }: Repor
                   placeholderTextColor={colors.darkGray}
                   multiline
                   numberOfLines={4}
+                  maxLength={REPORT_MESSAGE_MAX_LENGTH}
                   textAlignVertical="top"
                   style={styles.textArea}
                 />
                 <Text style={styles.helperText}>
                   {selectedType === 'other' 
-                    ? 'Please provide details about the incident'
+                    ? `Please provide details about the incident (${message.length}/${REPORT_MESSAGE_MAX_LENGTH})`
                     : 'Optional: Add any additional information'
                   }
                 </Text>

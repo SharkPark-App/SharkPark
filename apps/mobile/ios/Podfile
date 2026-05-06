@@ -20,6 +20,17 @@ target 'mobile' do
   # Required for react-native-app-auth with bridgeless mode
   pod 'AppAuth', :modular_headers => true
 
+  # @react-native-firebase/* uses Swift internally; the underlying GoogleUtilities
+  # pod ships without module maps, so cocoapods refuses to integrate it as a
+  # static library unless we opt these targets into modular headers explicitly.
+  # Without this, `pod install` fails with:
+  #   "The Swift pod `FirebaseCoreInternal` depends upon `GoogleUtilities`,
+  #    which does not define modules."
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseInstallations', :modular_headers => true
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.

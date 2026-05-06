@@ -31,9 +31,11 @@ describe('NotificationsService', () => {
       count: jest.Mock;
       create: jest.Mock;
       findMany: jest.Mock;
+      deleteMany: jest.Mock;
     };
     user: {
       findUniqueOrThrow: jest.Mock;
+      findUnique: jest.Mock;
     };
   };
 
@@ -54,9 +56,11 @@ describe('NotificationsService', () => {
         count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       user: {
         findUniqueOrThrow: jest.fn(),
+        findUnique: jest.fn(),
       },
     };
 
@@ -136,6 +140,42 @@ describe('NotificationsService', () => {
       expect(prisma.pushToken.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ create: expect.objectContaining({ user_id: 'user-cuid' }) }),
       );
+    });
+  });
+
+  // ─── unregisterPushTokenByEmail ────────────────────────────────────────
+
+  describe('unregisterPushTokenByEmail', () => {
+    it('deletes the token scoped to the resolved user id', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-cuid' });
+      prisma.pushToken.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.unregisterPushTokenByEmail('student@csulb.edu', 'fcm-abc123');
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'student@csulb.edu' },
+        select: { id: true },
+      });
+      expect(prisma.pushToken.deleteMany).toHaveBeenCalledWith({
+        where: { token: 'fcm-abc123', user_id: 'user-cuid' },
+      });
+    });
+
+    it('silently no-ops if the user does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await service.unregisterPushTokenByEmail('ghost@csulb.edu', 'fcm-abc123');
+
+      expect(prisma.pushToken.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent when the token does not exist (deleteMany returns count: 0)', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-cuid' });
+      prisma.pushToken.deleteMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.unregisterPushTokenByEmail('student@csulb.edu', 'missing-token'),
+      ).resolves.toBeUndefined();
     });
   });
 
@@ -389,6 +429,26 @@ describe('NotificationsService', () => {
       expect(prisma.notificationLog.create).toHaveBeenCalledWith({
         data: { user_id: 'user-cuid', type: NotificationType.SURGE, lot_id: null, event_id: null },
       });
+    });
+  });
+
+  describe('pruneOldLogs', () => {
+    it('deletes notification log rows older than the cutoff', async () => {
+      prisma.notificationLog.deleteMany.mockResolvedValue({ count: 42 });
+
+      const result = await service.pruneOldLogs(90);
+
+      expect(prisma.notificationLog.deleteMany).toHaveBeenCalledTimes(1);
+      const call = prisma.notificationLog.deleteMany.mock.calls[0][0];
+      expect(call.where.sent_at.lt).toBeInstanceOf(Date);
+      expect(result.logs_deleted).toBe(42);
+      expect(result.cutoff).toMatch(/T/);
+    });
+
+    it('throws on retentionDays < 1', async () => {
+      await expect(service.pruneOldLogs(0)).rejects.toThrow(
+        'pruneOldLogs: retentionDays must be >= 1',
+      );
     });
   });
 });

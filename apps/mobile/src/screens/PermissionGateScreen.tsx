@@ -25,25 +25,27 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { Text } from '../components/CustomText';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { requestNotificationPermission as requestFcmPermission } from '../services/pushNotifications';
 
 // ─── permission helper ────────────────────────────────────────────────────────
 
 async function requestNotificationPermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
-    if (Platform.Version >= 33) {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-      );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
+    // Android < 13: notifications are granted at install time, so the OS
+    // never prompts. Returning true keeps the UI consistent with reality.
+    if (typeof Platform.Version === 'number' && Platform.Version < 33) {
+      return true;
     }
-    return true; // Android < 13 granted at install time
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+    );
+    return result === PermissionsAndroid.RESULTS.GRANTED;
   }
 
-  // iOS — delegate to Firebase Messaging when available
-  // iOS — @react-native-firebase/messaging not installed on this branch.
-  // The real permission prompt fires from AuthContext once the push-notifications
-  // branch merges. Return false so the "enable in Settings" copy is shown.
-  return false;
+  // iOS — delegate to Firebase Messaging (single source of truth, matches
+  // the post-sign-in init path in services/pushNotifications.ts so the OS
+  // dialog is only ever presented once).
+  return requestFcmPermission();
 }
 
 // ─── types ────────────────────────────────────────────────────────────────────

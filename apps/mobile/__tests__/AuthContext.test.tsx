@@ -17,6 +17,17 @@ jest.mock('../src/auth/AzureAuth', () => ({
   saveAuth: jest.fn(),
 }));
 
+jest.mock('../src/services/pushNotifications', () => ({
+  initPushNotifications: jest.fn().mockResolvedValue(() => {}),
+  unregisterCurrentPushToken: jest.fn().mockResolvedValue(undefined),
+}));
+
+import { logoutFromAzure } from '../src/auth/AzureAuth';
+import {
+  initPushNotifications,
+  unregisterCurrentPushToken,
+} from '../src/services/pushNotifications';
+
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <AuthProvider>{children}</AuthProvider>
 );
@@ -91,5 +102,42 @@ describe('AuthContext — guest-mode hydration', () => {
     // Flag should have been removed opportunistically
     const stored = await AsyncStorage.getItem('@SharkPark:isGuest');
     expect(stored).toBeNull();
+  });
+});
+
+describe('AuthContext — logout push token cleanup', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    jest.clearAllMocks();
+    (initPushNotifications as jest.Mock).mockResolvedValue(() => {});
+    (unregisterCurrentPushToken as jest.Mock).mockResolvedValue(undefined);
+    (logoutFromAzure as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it('calls unregisterCurrentPushToken BEFORE logoutFromAzure so the bearer is still available', async () => {
+    (loadAuth as jest.Mock).mockResolvedValueOnce({
+      accessToken: 'AT',
+      idToken: 'ID',
+      email: 'a@b.com',
+      name: 'A',
+    });
+
+    const callOrder: string[] = [];
+    (unregisterCurrentPushToken as jest.Mock).mockImplementationOnce(async () => {
+      callOrder.push('unregister');
+    });
+    (logoutFromAzure as jest.Mock).mockImplementationOnce(async () => {
+      callOrder.push('azureLogout');
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+    await act(async () => {
+      await result.current.logout();
+    });
+
+    expect(callOrder).toEqual(['unregister', 'azureLogout']);
+    expect(result.current.isAuthenticated).toBe(false);
   });
 });

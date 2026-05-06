@@ -1,0 +1,12 @@
+-- Drop the unused `phone` column on `users`.
+--
+-- The column has existed since the initial schema but is not collected by
+-- any sign-in flow, not surfaced in any DTO, and not referenced by any
+-- mobile screen. Per the privacy data inventory, leaving an unused PII
+-- column on the table is a data-minimization violation (GDPR Art. 5(1)(c))
+-- and would force us to add a "Phone Number" entry under App Store
+-- Privacy → Contact Info if the column is ever populated. Drop it.
+--
+-- Safe operation: the column is nullable, has no FK, no index, and is not
+-- referenced by application code after this migration.
+ALTER TABLE "users" DROP COLUMN "phone";
