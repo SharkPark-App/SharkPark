@@ -15,8 +15,9 @@ Usage:
 
 import argparse
 import logging
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import mlflow
 import numpy as np
@@ -27,6 +28,8 @@ from src.config import (
     LONG_TERM_MODEL_NAME,
     LONG_TERM_BASELINE_WEEKS,
 )
+
+CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
 from src.features.long_term import compute_baseline, prepare_inference_features
 from src.models.long_term import LongTermModel
 
@@ -78,7 +81,7 @@ def predict(
 
     lot_ids = df["lot_id"].unique().tolist()
 
-    today = date.today()
+    today = datetime.now(CAMPUS_TZ).date()
     target_dates = [today + timedelta(days=d) for d in range(1, days_ahead + 1)]
     logger.info(
         "Building inference features for %d lots x %d days x 15 hours...",

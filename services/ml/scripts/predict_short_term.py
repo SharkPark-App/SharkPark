@@ -18,6 +18,7 @@ import argparse
 import logging
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import mlflow
 import numpy as np
@@ -30,6 +31,10 @@ from src.config import (
     OPERATING_START_HOUR,
     WEATHER_ADJUSTMENT_ENABLED,
 )
+
+CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
+UTC = ZoneInfo("UTC")
+
 from src.features.short_term import prepare_inference_features
 from src.models.short_term import ShortTermModel
 from src.postprocess.weather_adjustment import apply_weather_adjustment
@@ -78,12 +83,14 @@ def predict(
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
     lot_ids = df["lot_id"].unique().tolist()
+    # Anchor "now" in campus tz explicitly — datetime.now() depends on the host's
+    # TZ env, which is correct on Fly today but silently wrong on a UTC host.
     if start_of_day:
-        prediction_time = datetime.now().replace(
+        prediction_time = datetime.now(CAMPUS_TZ).replace(
             hour=OPERATING_START_HOUR - 1, minute=0, second=0, microsecond=0
         )
     else:
-        prediction_time = datetime.now()
+        prediction_time = datetime.now(CAMPUS_TZ)
 
     logger.info("Building inference features for %s lots...", len(lot_ids))
     features = prepare_inference_features(df, lot_ids, prediction_time)
@@ -213,16 +220,27 @@ def _build_prediction_df(
     Stores occupancy rates [0, 1] directly. Confidence bounds come from
     quantile regression (10th/90th percentile).
     """
-    base_time = prediction_time.replace(minute=0, second=0, microsecond=0)
-    target_times = pd.to_datetime(
+    # Persist as UTC — backend writes via Prisma store naive UTC in
+    # TIMESTAMP WITHOUT TIME ZONE columns (verified: snapshots, weather).
+    # Writing PT here mis-aligns prediction rows from the rest of the schema.
+    base_time = prediction_time.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    target_times_local = pd.to_datetime(
         features["target_hour"].astype(int), unit="h", origin=base_time.replace(hour=0)
     )
+    target_times_utc = (
+        target_times_local.dt.tz_localize(
+            CAMPUS_TZ, ambiguous="NaT", nonexistent="shift_forward"
+        )
+        .dt.tz_convert(UTC)
+        .dt.tz_localize(None)
+    )
+    predicted_at_utc = prediction_time.astimezone(UTC).replace(tzinfo=None)
 
     return pd.DataFrame(
         {
             "lot_id": features["lot_id"],
-            "predicted_at": prediction_time.isoformat(),
-            "target_time": target_times.dt.strftime("%Y-%m-%dT%H:%M:%S"),
+            "predicted_at": predicted_at_utc.isoformat(),
+            "target_time": target_times_utc.dt.strftime("%Y-%m-%dT%H:%M:%S"),
             "predicted_occupancy": preds,
             "confidence_lower": preds_lower,
             "confidence_upper": preds_upper,
