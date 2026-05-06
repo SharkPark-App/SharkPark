@@ -1,0 +1,145 @@
+name: Manual DB Backup
+
+# Operator-triggered Postgres backup → R2. Mirrors the daily `backup-db`
+# cron in `apps/backend/src/scheduler/jobs/backup-db.job.ts` so we have a
+# CI-resident path to seal gaps when the cron Machine has been unavailable
+# (see incident 2026-05-03→05: scheduler crash-looped past Fly's retry
+# budget on PR #192's WeatherFetch DI bug, leaving 3 missing daily dumps).
+#
+# Schedule: workflow_dispatch only. The cron path remains the system of
+# record for daily backups; this workflow is for operator recovery and
+# ad-hoc snapshots before risky migrations.
+#
+# Default key:  daily/YYYY-MM-DD.dump.gz   (matches cron job naming)
+# Override:     supply `key_prefix` and/or `key_date` inputs.
+#
+# Required GH secrets:
+#   NEON_DATABASE_URL         Neon connection URL (we strip the `-pooler.`
+#                             segment so pg_dump runs against the direct
+#                             endpoint — transaction-mode pooling breaks
+#                             pg_dump's session-level locks)
+#   R2_ACCOUNT_ID
+#   R2_ACCESS_KEY_ID
+#   R2_SECRET_ACCESS_KEY
+#   R2_BACKUPS_BUCKET
+
+on:
+  workflow_dispatch:
+    inputs:
+      key_prefix:
+        description: 'R2 key prefix (e.g. "daily" or "manual")'
+        required: false
+        default: 'daily'
+        type: string
+      key_date:
+        description: 'Override date in key (YYYY-MM-DD); defaults to today UTC'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  backup:
+    name: pg_dump → gzip → R2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # postgresql-client-17 — pg_dump must be ≥ Neon's PG version (17).
+      # Ubuntu 24.04 ships PG16 by default, so add the PGDG repo. Same
+      # install block as restore-test.yml; kept inline rather than DRYed
+      # into a composite action because we only have two callers.
+      - name: Install postgresql-client-17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          pg_dump --version
+
+      - name: Compute target key
+        id: key
+        run: |
+          set -euo pipefail
+          date_part="${{ inputs.key_date }}"
+          if [ -z "$date_part" ]; then
+            date_part="$(date -u +%Y-%m-%d)"
+          fi
+          prefix="${{ inputs.key_prefix }}"
+          key="${prefix}/${date_part}.dump.gz"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "Target: r2://${{ secrets.R2_BACKUPS_BUCKET }}/$key"
+
+      - name: Resolve direct Neon URL
+        id: dburl
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          # Strip the `-pooler.` segment if present so pg_dump talks to
+          # the direct endpoint (pgbouncer transaction-mode mangles the
+          # session-level locks pg_dump relies on). Mirrors the inverse
+          # of the deploy.yml URL massage. Output goes through GITHUB_ENV
+          # masked since the URL contains the password.
+          DIRECT_URL=$(node -e '
+            const u = new URL(process.env.NEON_DATABASE_URL);
+            u.hostname = u.hostname.replace(/^(ep-[^.]+)-pooler\./, "$1.");
+            u.searchParams.delete("pgbouncer");
+            u.searchParams.delete("connection_limit");
+            console.log(u.toString());
+          ')
+          echo "::add-mask::$DIRECT_URL"
+          echo "DIRECT_URL=$DIRECT_URL" >> "$GITHUB_ENV"
+          echo "Resolved direct endpoint: ${DIRECT_URL%%@*}@***"
+
+      - name: pg_dump → gzip → R2 (streaming)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BACKUPS_BUCKET }}
+          KEY: ${{ steps.key.outputs.key }}
+        run: |
+          set -euo pipefail
+          # `set -o pipefail` (already set) propagates pg_dump exit code
+          # through the gzip → aws s3 cp pipeline, so a pg_dump failure
+          # mid-stream fails the workflow rather than silently uploading
+          # a truncated dump. ContentEncoding mirrors backup-db.job.ts so
+          # restore-test and pg_restore behave identically across paths.
+          pg_dump \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            --compress=0 \
+            "$DIRECT_URL" \
+          | gzip -6 \
+          | aws s3 cp - "s3://${R2_BUCKET}/${KEY}" \
+              --endpoint-url "$R2_ENDPOINT" \
+              --content-type application/octet-stream \
+              --content-encoding gzip \
+              --expected-size $((50 * 1024 * 1024 * 1024))
+
+      - name: Verify upload
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BACKUPS_BUCKET }}
+          KEY: ${{ steps.key.outputs.key }}
+        run: |
+          set -euo pipefail
+          aws s3api head-object \
+            --endpoint-url "$R2_ENDPOINT" \
+            --bucket "$R2_BUCKET" \
+            --key "$KEY" \
+            --query '{size: ContentLength, etag: ETag, modified: LastModified}' \
+            --output table

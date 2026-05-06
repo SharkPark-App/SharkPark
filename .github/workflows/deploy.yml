@@ -94,6 +94,14 @@ jobs:
           pnpm --filter @sharkpark/backend db:seed:prod
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
+        with:
+          # Pin flyctl: `setup-flyctl@master` with no version installs an
+          # older default whose `flyctl machine list` rejects `--json`,
+          # which broke the post-deploy `Ensure cron Machine started` step
+          # in PR #196 (workflow run 25405252314, exit 5: "unknown flag:
+          # --json"). 0.4.47 matches local dev and supports both `-j` and
+          # `--json` on every `machine` subcommand.
+          version: 0.4.47
 
       # ─── Sentry release tagging (P10.94) ────────────────────────────────
       # Build backend locally to produce dist/ + .js.map files, then create
@@ -150,13 +158,13 @@ jobs:
           set -euo pipefail
           mapfile -t cron_ids < <(flyctl machine list \
             --config apps/backend/fly.toml \
-            --json | jq -r '.[] | select(.config.metadata.fly_process_group == "cron") | .id')
+            -j | jq -r '.[] | select(.config.metadata.fly_process_group == "cron") | .id')
           if [ ${#cron_ids[@]} -eq 0 ]; then
             echo "::warning::No cron Machines found; skipping start."
             exit 0
           fi
           for id in "${cron_ids[@]}"; do
-            state=$(flyctl machine status "$id" --config apps/backend/fly.toml --json | jq -r '.state')
+            state=$(flyctl machine status "$id" --config apps/backend/fly.toml -j | jq -r '.state')
             echo "cron Machine $id state=$state"
             if [ "$state" != "started" ]; then
               echo "Starting cron Machine $id..."
