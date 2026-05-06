@@ -8,10 +8,16 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
-# Pin Firebase SDK version to match react-native-firebase@24.0.0 expectations.
-# Without this, CocoaPods 1.16.x SPM resolver independently picks up a newer
+# Pin Firebase SDK version to match @react-native-firebase/app@24.x expectations.
+# Without this, CocoaPods 1.16.x's SPM resolver independently picks up a newer
 # Firebase version (e.g. 12.13.0) while CocoaPods itself stays on 12.10.0,
 # causing 'invalid custom path FirebaseSharedSwift/Sources' at build time.
+#
+# BUMP CONTRACT: when upgrading @react-native-firebase/* major versions, update
+# this pin to match the Firebase iOS SDK version listed in that release's
+# `ios/firebase_sdk_version.rb` (or the package's RNFBVersions table). Leaving
+# this stale on a major bump will silently downgrade Firebase below what the
+# JS layer expects and break runtime initialization.
 $FirebaseSDKVersion = '12.10.0'
 
 linkage = ENV['USE_FRAMEWORKS']
