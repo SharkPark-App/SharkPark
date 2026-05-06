@@ -52,6 +52,31 @@ target 'mobile' do
           config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
         end
       end
+
+      # Xcode 16 enables "explicit modules" by default, which auto-generates
+      # a clang modulemap per pod under
+      # DerivedData/.../GeneratedModuleMaps-iphonesimulator/<Name>.modulemap.
+      # For pods opted into `:modular_headers => true` (FirebaseCore,
+      # FirebaseInstallations, etc.) CocoaPods *also* writes a modulemap to
+      # Pods/Headers/Public/<Name>/<Name>.modulemap, and clang sees both →
+      # "redefinition of module 'FirebaseCore'" → cascading "could not build
+      # module Foundation" → Swift bridging-header PCH fails. Disable the
+      # explicit-modules build path until upstream resolves the clash.
+      target.build_configurations.each do |config|
+        config.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+        config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
+      end
+    end
+
+    # Same flags on the umbrella Pods.xcodeproj-level configurations.
+    installer.aggregate_targets.each do |aggregate_target|
+      aggregate_target.user_project.native_targets.each do |target|
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+          config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
+        end
+      end
+      aggregate_target.user_project.save
     end
     # ----------------------------
   end
