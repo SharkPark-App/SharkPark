@@ -5,6 +5,7 @@ import type { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/database.module';
 import { hashDeviceId } from '../src/occupancy-events/utils/privacy.util';
+import { studentEligibleLotTypes } from '../src/lots/csulb-eligibility';
 import { bootstrapTestApp } from './utils/bootstrap';
 
 describe('LotsController (e2e)', () => {
@@ -345,9 +346,11 @@ describe('LotsController (e2e)', () => {
     });
 
     it('should only return lots eligible for the source lot type', () => {
-      // Students may park in employee lots after 17:30 on weekdays and all day
-      // on weekends (csulb-eligibility.ts), so EMPLOYEE lots can appear in
-      // recommendations depending on when this runs.
+      // G1 is a STUDENT lot. Per csulb-eligibility, students may also park in
+      // EMPLOYEE lots after 17:30 weekdays and any time on weekends, so the
+      // eligible set is time-of-day dependent. Compute it the same way the
+      // service does so this assertion is not flaky across CI run times.
+      const eligible = studentEligibleLotTypes(new Date(), 'America/Los_Angeles');
       return request(app.getHttpServer())
         .get('/api/v1/lots/G1/recommendations')
         .set('x-device-id', contributorDeviceId)
@@ -355,7 +358,7 @@ describe('LotsController (e2e)', () => {
         .expect((res: Response) => {
           const eligible = new Set(['STUDENT', 'EMPLOYEE']);
           res.body.data.forEach((rec: { lot_type: string }) => {
-            expect(eligible.has(rec.lot_type)).toBe(true);
+            expect(eligible.has(rec.lot_type as 'STUDENT' | 'EMPLOYEE')).toBe(true);
           });
         });
     });

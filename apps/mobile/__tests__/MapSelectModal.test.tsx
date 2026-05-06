@@ -9,6 +9,7 @@
  */
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
+import { Linking } from 'react-native';
 import { MapSelectModal } from '../src/components/Modals/MapSelectModal';
 import { getApps } from 'react-native-map-link';
 
@@ -155,6 +156,8 @@ describe('MapSelectModal', () => {
 
   describe('interactions', () => {
     it('calls open() on the selected app and triggers close animation', async () => {
+      const openURLSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+
       let tree: ReactTestRenderer.ReactTestRenderer;
       await ReactTestRenderer.act(async () => {
         tree = ReactTestRenderer.create(<MapSelectModal {...defaultProps} />);
@@ -168,7 +171,11 @@ describe('MapSelectModal', () => {
         await touchable!.props.onPress();
       });
 
-      expect(mockAppOpen1).toHaveBeenCalledTimes(1);
+      // Apple Maps open() is overridden to use Linking.openURL with coordinate-anchored URL
+      expect(openURLSpy).toHaveBeenCalledTimes(1);
+      expect(openURLSpy).toHaveBeenCalledWith(
+        `maps://?ll=${defaultProps.lat},${defaultProps.lon}&q=${encodeURIComponent(defaultProps.title)}&dirflg=d`
+      );
       expect(mockAppOpen2).not.toHaveBeenCalled();
 
       // Animation completion
@@ -177,6 +184,7 @@ describe('MapSelectModal', () => {
       });
 
       expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
+      openURLSpy.mockRestore();
     });
 
     it('calls onClose when the close icon is pressed', async () => {

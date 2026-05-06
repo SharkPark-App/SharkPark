@@ -59,6 +59,7 @@
 	<false/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<string>maps</string>
 		<string>comgooglemaps</string>
 		<string>citymapper</string>
 		<string>uber</string>

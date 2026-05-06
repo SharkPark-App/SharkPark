@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Modal, View, Pressable, StyleSheet, FlatList,
-  TouchableOpacity, Animated, Dimensions, Platform
+  TouchableOpacity, Animated, Dimensions, Platform,
+  Linking, Alert,
 } from 'react-native';
 import { Text } from '../CustomText';
 import { getApps } from 'react-native-map-link';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
-import { Alert } from 'react-native';
 
 interface MapApp {
   id: string;
@@ -46,7 +46,35 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
             googleForceLatLon: true, // Forces the use of lat/lon instead of address for Google Maps
             directionsMode: 'car',
           });
-          setAvailableApps(result as unknown as MapApp[]);
+
+          // Apple Maps with `daddr=` + `q=<name>` resolves the name via text
+          // search and ignores the coordinates (e.g. "Parking Lot G7" → the
+          // campus). Override the open() function so apple-maps uses
+          // `ll=lat,lon&q=<name>&dirflg=d` instead, which anchors the pin to
+          // the exact coordinates and uses the name only as a display label.
+          const apps = (result as unknown as MapApp[]).map((app) => {
+            if (app.id === 'apple-maps') {
+              return {
+                ...app,
+                open: async () => {
+                  const encodedTitle = encodeURIComponent(title);
+                  const url = `maps://?ll=${lat},${lon}&q=${encodedTitle}&dirflg=d`;
+                  try {
+                    await Linking.openURL(url);
+                  } catch (err) {
+                    console.error('Failed to open Apple Maps:', err);
+                    Alert.alert(
+                      'Could not open Apple Maps',
+                      'Please try a different navigation app.',
+                    );
+                  }
+                },
+              };
+            }
+            return app;
+          });
+
+          setAvailableApps(apps);
         } catch (error) {
           console.error("Failed to fetch map apps:", error);
         }
