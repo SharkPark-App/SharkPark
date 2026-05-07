@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from uuid import uuid4
 from urllib.parse import urlparse
 
 import boto3
@@ -62,14 +63,31 @@ def _check_artifact_bucket() -> str | None:
             f"MLFLOW_ARTIFACT_LOCATION must be an s3:// URI, got {location!r}",
         )
     bucket = parsed.netloc
+    prefix = parsed.path.strip("/")
     endpoint = os.environ.get("MLFLOW_S3_ENDPOINT_URL")
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
         region_name=os.environ.get("AWS_DEFAULT_REGION", "auto"),
     )
-    s3.head_bucket(Bucket=bucket)
-    return f"s3://{bucket}"
+
+    # R2 S3 tokens commonly grant object-level read/write on selected buckets.
+    # Probe the exact operations MLflow artifact logging needs instead of a
+    # bucket-level HeadBucket call, which can fail for object-scoped tokens.
+    marker_prefix = f"{prefix}/_bootstrap" if prefix else "_bootstrap"
+    marker_key = f"{marker_prefix}/mlflow-bootstrap-{uuid4().hex}.txt"
+    s3.put_object(
+        Bucket=bucket,
+        Key=marker_key,
+        Body=b"sharkpark mlflow bootstrap\n",
+        ContentType="text/plain",
+    )
+    try:
+        s3.head_object(Bucket=bucket, Key=marker_key)
+    finally:
+        s3.delete_object(Bucket=bucket, Key=marker_key)
+
+    return f"s3://{bucket}/{prefix}" if prefix else f"s3://{bucket}"
 
 
 def main() -> int:
