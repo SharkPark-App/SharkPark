@@ -32,9 +32,11 @@ backend store and artifact root.
   read+write on the bucket. We deliberately reuse the AWS_* names because the
   ``boto3`` client MLflow uses internally only reads those.
 
-If ``R2_*`` env vars are set (e.g. carried over from earlier dev), this module
-mirrors them into the ``AWS_*``/``MLFLOW_S3_ENDPOINT_URL`` variables MLflow
-expects, so a single source of truth in ``.env`` works for both code paths.
+If ``ML_R2_*`` env vars are set, this module mirrors them into the
+``AWS_*``/``MLFLOW_S3_ENDPOINT_URL`` variables MLflow expects. Legacy ``R2_*``
+names are still accepted as a local-dev fallback, but production should use
+``ML_R2_ACCESS_KEY_ID`` and ``ML_R2_SECRET_ACCESS_KEY`` so backup credentials
+can stay isolated.
 """
 
 from __future__ import annotations
@@ -53,22 +55,25 @@ _CONFIGURED = False
 
 
 def _mirror_r2_to_aws_env() -> None:
-    """Mirror R2_* env vars to the AWS_*/MLFLOW_S3_* names boto3 expects.
+    """Mirror ML_R2_* env vars to the AWS_*/MLFLOW_S3_* names boto3 expects.
 
     No-op for any name that is already explicitly set, so explicit AWS_* values
-    always win. This lets a single ``.env`` with R2_* vars work for both the
-    legacy ``upload_model_to_r2`` path (which reads R2_*) and MLflow's S3
-    artifact client (which reads AWS_*).
+    always win. Legacy R2_* names are accepted after ML_R2_* to avoid breaking
+    existing local .env files during the credential split.
     """
     pairs = (
-        ("R2_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"),
-        ("R2_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"),
-        ("R2_ENDPOINT_URL", "MLFLOW_S3_ENDPOINT_URL"),
+        (("ML_R2_ACCESS_KEY_ID", "R2_ACCESS_KEY_ID"), "AWS_ACCESS_KEY_ID"),
+        (("ML_R2_SECRET_ACCESS_KEY", "R2_SECRET_ACCESS_KEY"), "AWS_SECRET_ACCESS_KEY"),
+        (("ML_R2_ENDPOINT_URL", "R2_ENDPOINT_URL"), "MLFLOW_S3_ENDPOINT_URL"),
     )
-    for src, dst in pairs:
-        src_val = os.environ.get(src)
-        if src_val and not os.environ.get(dst):
-            os.environ[dst] = src_val
+    for sources, dst in pairs:
+        if os.environ.get(dst):
+            continue
+        for src in sources:
+            src_val = os.environ.get(src)
+            if src_val:
+                os.environ[dst] = src_val
+                break
 
     # boto3 also requires a region; R2 ignores it but the SDK refuses to sign
     # without one. ``auto`` is the conventional value for R2.

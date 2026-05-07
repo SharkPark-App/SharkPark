@@ -21,8 +21,8 @@ import { BackupDbJob } from './backup-db.job';
 const REQUIRED_ENV = {
   DIRECT_URL: 'postgres://u:p@host/db',
   R2_ACCOUNT_ID: 'acct',
-  R2_ACCESS_KEY_ID: 'ak',
-  R2_SECRET_ACCESS_KEY: 'sk',
+  BACKUP_R2_ACCESS_KEY_ID: 'ak',
+  BACKUP_R2_SECRET_ACCESS_KEY: 'sk',
   R2_BACKUPS_BUCKET: 'bucket',
 };
 
