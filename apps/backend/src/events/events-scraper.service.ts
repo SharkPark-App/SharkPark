@@ -78,7 +78,8 @@ export class EventsScraperService {
   private static readonly VIRTUAL_LOCATION = /\b(zoom|virtual|online|remote|tba|tbd)\b/i;
 
   private static isVirtualLocation(location: string): boolean {
-    return !location || EventsScraperService.VIRTUAL_LOCATION.test(location);
+    const normalized = location.trim();
+    return !normalized || EventsScraperService.VIRTUAL_LOCATION.test(normalized);
   }
 
   private findBuilding(location: string, buildings: BuildingRef[]): BuildingRef | null {
@@ -122,14 +123,22 @@ export class EventsScraperService {
     const rawEvents = await this.fetchAllEvents(subdomain);
     const physicalEvents = rawEvents.filter(e => !EventsScraperService.isVirtualLocation(e.location));
 
-    const matched = physicalEvents.flatMap(event => {
+    const matched: (typeof physicalEvents[number] & { building_id: string })[] = [];
+    const unmatchedLocs = new Set<string>();
+    let skipped = 0;
+
+    for (const event of physicalEvents) {
       const building = this.findBuilding(event.location, buildings);
-      return building ? [{ ...event, building_id: building.id }] : [];
-    });
+      if (building) {
+        matched.push({ ...event, building_id: building.id });
+      } else {
+        skipped += 1;
+        unmatchedLocs.add(event.location);
+      }
+    }
 
     // Log unique unmatched locations to potentially add to building.alternate_names
-    const skipped = physicalEvents.filter(e => !this.findBuilding(e.location, buildings));
-    const uniqueLocs = [...new Set(skipped.map(e => e.location))].sort();
+    const uniqueLocs = [...unmatchedLocs].sort();
     uniqueLocs.forEach(loc => this.logger.warn(`UNMATCHED: ${JSON.stringify(loc)}`));
 
     await Promise.all(
@@ -160,7 +169,7 @@ export class EventsScraperService {
       ),
     );
 
-    return { upserted: matched.length, skipped: rawEvents.length - matched.length };
+    return { upserted: matched.length, skipped };
   }
 
   private async fetchAllEvents(subdomain: string) {

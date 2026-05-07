@@ -29,6 +29,8 @@ describe('EventsScraperService', () => {
   let service: EventsScraperService;
   let prisma: MockPrisma;
   let fetchMock: jest.SpyInstance;
+  let logSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
 
   const setBuildings = (buildings: ReturnType<typeof building>[]) => {
     prisma.building.findMany.mockResolvedValue(buildings);
@@ -62,6 +64,8 @@ describe('EventsScraperService', () => {
       ok: true,
       json: () => Promise.resolve({ value: [] }),
     } as Response);
+    logSpy = jest.spyOn((service as unknown as { logger: { log: (...args: unknown[]) => void } }).logger, 'log');
+    warnSpy = jest.spyOn((service as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger, 'warn');
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -69,6 +73,7 @@ describe('EventsScraperService', () => {
   describe('virtual location filtering', () => {
     it.each([
       ['empty string', ''],
+      ['whitespace only', '   '],
       ['Zoom', 'Zoom'],
       ['Zoom Meeting', 'Zoom Meeting'],
       ['Virtual', 'Virtual'],
@@ -83,6 +88,21 @@ describe('EventsScraperService', () => {
       await service.scrapeAll();
 
       expect(prisma.campusEvent.upsert).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('UNMATCHED:'));
+    });
+
+    it('does not count virtual events as skipped no-match events', async () => {
+      setBuildings([building('b1', 'Library')]);
+      setEvents([
+        rawEvent('evt-1', 'Zoom Meeting'),
+        rawEvent('evt-2', 'Unknown Offsite Venue'),
+        rawEvent('evt-3', 'Library, Room 101'),
+      ]);
+
+      await service.scrapeAll();
+
+      expect(prisma.campusEvent.upsert).toHaveBeenCalledTimes(1);
+      expect(logSpy).toHaveBeenCalledWith('[CSULB] 1 events upserted, 1 skipped (no campus building match)');
     });
   });
 
