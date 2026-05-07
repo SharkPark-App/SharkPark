@@ -100,6 +100,7 @@ const InteractiveLot: React.FC<{
           fillColor={hexWithAlpha(occupancyColor, 0.35)}
           tappable
           onPress={() => onPress(lot)}
+          accessible={false}
         />
         <Marker
           coordinate={center}
@@ -117,7 +118,7 @@ const InteractiveLot: React.FC<{
             ]}
           >
             <Text
-              style={[styles.lotText, { color: colors.white }]}
+              style={[styles.lotText, { color: labelColor }]}
               adjustsFontSizeToFit={true}
               numberOfLines={isSingleWord ? 1 : 2}
               accessible={false}
@@ -136,6 +137,9 @@ const InteractiveLot: React.FC<{
       coordinate={{ latitude: lot.center_lat, longitude: lot.center_lng }}
       onPress={() => onPress(lot)}
       tracksViewChanges={true}
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel={a11yLabel}
     >
       <View
         style={[
@@ -146,8 +150,7 @@ const InteractiveLot: React.FC<{
             shadowColor: colors.shadowDark,
           }
         ]}
-        accessibilityRole="button"
-        accessibilityLabel={a11yLabel}
+        accessible={false}
       >
         <Text
           style={[styles.lotText, { color: labelColor }]}
