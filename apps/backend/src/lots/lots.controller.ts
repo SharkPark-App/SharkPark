@@ -234,7 +234,7 @@ export class LotsController {
 
     return {
       success: true,
-      ...predictions,
+      data: predictions,
     };
   }
 
@@ -251,7 +251,7 @@ export class LotsController {
 
     return {
       success: true,
-      ...predictions,
+      data: predictions,
     };
   }
 

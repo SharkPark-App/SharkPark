@@ -38,10 +38,26 @@ export function HourlyChart({data, name}: HourlyChartProps) {
   const chartWidth = measuredWidth - 20;
   const barWidth = Math.floor((chartWidth - barSpacing * barCount - initialSpacing) / barCount);
 
-  /** Extracts the hour from an ISO 8601 timestamp*/
+  /** Returns the hour-of-day (0–23) for an ISO 8601 instant, rendered in the
+   *  chart's display timezone. Returns -1 if the string can't be parsed. */
+  const hourFmt = React.useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        // Hardcoded display tz: SharkPark is CSULB-only today. Data is UTC;
+        // we just always render in PT. If we add a non-PT campus, plumb
+        // lot.timezone through here instead.
+        timeZone: 'America/Los_Angeles',
+        hour: 'numeric',
+        hour12: false,
+      }),
+    [],
+  );
   const parseHour = (time: string): number => {
     const date = new Date(time);
-    return isNaN(date.getTime()) ? -1 : date.getHours();
+    if (isNaN(date.getTime())) return -1;
+  // Some engines format midnight as "24"; coerce to 0..23.
+    const h = parseInt(hourFmt.format(date), 10);
+    return Number.isFinite(h) ? h % 24 : -1;
   };
 
   /** Converts an ISO 8601 timestamp to a label (e.g. "5p", "12a") */
@@ -54,7 +70,7 @@ export function HourlyChart({data, name}: HourlyChartProps) {
     return `${h - 12}p`;
   };
 
-  const currentHour = new Date().getHours(); // stays fresh via 15-min prediction refresh cycle
+  const currentHour = parseHour(new Date().toISOString()); // stays fresh via 15-min prediction refresh cycle
   const currentIndex = data.findIndex(
     item => parseHour(item.time) === currentHour,
   );

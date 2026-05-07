@@ -115,7 +115,12 @@ export class ReliabilityComputationService {
       }),
       this.prisma.predictionShortTerm.findMany({
         where: { lot_id: { in: lotIds }, target_time: { gte: sevenDaysAgo, lte: now } },
-        orderBy: { target_time: 'asc' },
+        distinct: ['lot_id', 'target_time'],
+        orderBy: [
+          { lot_id: 'asc' },
+          { target_time: 'asc' },
+          { predicted_at: 'desc' },
+        ],
       }),
       this.prisma.occupancySnapshot.findMany({
         where: {
@@ -259,7 +264,8 @@ export class ReliabilityComputationService {
       }),
       this.prisma.predictionShortTerm.findMany({
         where: { lot_id: lot.id, target_time: { gte: sevenDaysAgo, lte: now } },
-        orderBy: { target_time: 'asc' },
+        distinct: ['target_time'],
+        orderBy: [{ target_time: 'asc' }, { predicted_at: 'desc' }],
       }),
       this.prisma.occupancySnapshot.findMany({
         where: {
