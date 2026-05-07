@@ -39,14 +39,19 @@ __all__ = [
 
 
 def _get_db_url() -> str:
-    """Return the database URL, stripped of PgBouncer-specific options psycopg2 rejects."""
-    url = os.environ.get("DATABASE_URL", DATABASE_URL)
+    """Return a DB URL compatible with psycopg2/SQLAlchemy on Fly/Neon."""
+    # Prefer DIRECT_URL when present because it omits pooled-only query params.
+    url = os.environ.get("DIRECT_URL") or os.environ.get("DATABASE_URL", DATABASE_URL)
     if not url:
-        raise RuntimeError("DATABASE_URL environment variable is required but not set.")
-    # Neon pooled URLs include ?pgbouncer=true which psycopg2 doesn't understand.
+        raise RuntimeError(
+            "DATABASE_URL environment variable is required but not set."
+        )
+    # Neon pooled URLs can include options psycopg2 rejects.
+    # Keep other params (e.g. sslmode), but remove unsupported pool-only keys.
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     params.pop("pgbouncer", None)
+    params.pop("connection_limit", None)
     cleaned = parsed._replace(query=urlencode(params, doseq=True))
     return urlunparse(cleaned)
 
