@@ -36,8 +36,8 @@ def trained_run_id(data_parquet):
 @pytest.fixture()
 def r2_env(monkeypatch):
     monkeypatch.setenv("R2_ENDPOINT_URL", "https://fake.r2.cloudflarestorage.com")
-    monkeypatch.setenv("R2_ACCESS_KEY_ID", "test-key")
-    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "test-secret")
+    monkeypatch.setenv("ML_R2_ACCESS_KEY_ID", "test-key")
+    monkeypatch.setenv("ML_R2_SECRET_ACCESS_KEY", "test-secret")
     monkeypatch.setenv("R2_BUCKET", "test-bucket")
 
 
@@ -110,7 +110,13 @@ class TestR2Upload:
     ):
         """Missing R2 credentials log a warning but mlflow promotion still succeeds."""
         # Ensure no R2 env vars are set
-        for var in ("R2_ENDPOINT_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
+        for var in (
+            "R2_ENDPOINT_URL",
+            "ML_R2_ACCESS_KEY_ID",
+            "ML_R2_SECRET_ACCESS_KEY",
+            "R2_ACCESS_KEY_ID",
+            "R2_SECRET_ACCESS_KEY",
+        ):
             monkeypatch.delenv(var, raising=False)
 
         with caplog.at_level(logging.WARNING):

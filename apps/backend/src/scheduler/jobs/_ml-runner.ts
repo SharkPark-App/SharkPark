@@ -52,7 +52,7 @@ export function spawnPythonModule(
   return new Promise((resolve, reject) => {
     const child = spawn(ML_PYTHON, ['-u', '-m', moduleName, ...args], {
       cwd: ML_WORKDIR,
-      // Inherit parent env (DATABASE_URL, MLFLOW_*, R2_*, AWS_*) so
+      // Inherit parent env (DATABASE_URL, MLFLOW_*, ML_R2_*, AWS_*) so
       // mlflow_setup.configure_mlflow() picks up the prod tracking URI.
       env: { ...process.env, ...options.env },
       stdio: ['ignore', 'pipe', 'pipe'],
