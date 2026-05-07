@@ -20,6 +20,7 @@ import {
   View,
   StyleSheet,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   Dimensions,
   Platform,
@@ -105,37 +106,43 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
 
   const renderSlide = useCallback(({ item }: { item: Slide }) => (
     <View style={styles.slide}>
-      {item.emoji === null ? (
-        <Image
-          source={sharkParkLogo}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-      ) : (
-        <Text style={styles.emoji}>{item.emoji}</Text>
-      )}
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.body}>{item.body}</Text>
-      {item.bullets ? (
-        <View style={styles.bulletList}>
-          {item.bullets.map((point) => (
-            <View key={point.text} style={styles.bulletRow}>
-              <Icon
-                name={point.icon}
-                size={18}
-                color={point.icon.startsWith('checkmark') ? '#10b981' : COLORS.mediumGray}
-                style={styles.bulletIcon}
-              />
-              <Text style={styles.bulletText}>{point.text}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-      {item.note ? (
-        <View style={styles.noteBox}>
-          <Text style={styles.noteText}>{item.note}</Text>
-        </View>
-      ) : null}
+      <ScrollView
+        contentContainerStyle={styles.slideContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {item.emoji === null ? (
+          <Image
+            source={sharkParkLogo}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        ) : (
+          <Text style={styles.emoji}>{item.emoji}</Text>
+        )}
+        <Text style={styles.title}>{item.title}</Text>
+        <Text style={styles.body}>{item.body}</Text>
+        {item.bullets ? (
+          <View style={styles.bulletList}>
+            {item.bullets.map((point) => (
+              <View key={point.text} style={styles.bulletRow}>
+                <Icon
+                  name={point.icon}
+                  size={18}
+                  color={point.icon.startsWith('checkmark') ? '#10b981' : COLORS.mediumGray}
+                  style={styles.bulletIcon}
+                />
+                <Text style={styles.bulletText}>{point.text}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {item.note ? (
+          <View style={styles.noteBox}>
+            <Text style={styles.noteText}>{item.note}</Text>
+          </View>
+        ) : null}
+      </ScrollView>
     </View>
   ), []);
 
@@ -219,9 +226,13 @@ const styles = StyleSheet.create({
   slide: {
     width: SCREEN_WIDTH,
     flex: 1,
+  },
+  slideContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: SPACING.xxxl,
+    paddingVertical: SPACING.xl,
   },
   emoji: {
     fontSize: 72,
