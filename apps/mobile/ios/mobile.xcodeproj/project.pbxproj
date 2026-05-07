@@ -19,6 +19,8 @@
 		BE967F942B1C4A3A87CCDA24 /* CarBluetoothModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 084D61FD6E89423095EF2227 /* CarBluetoothModuleBridge.m */; };
 		C8FA6CE1548E46FFAD330F8F /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2F2C92CB4B7C4D1695DFD989 /* Inter-Medium.ttf */; };
 		E5062972636EBDB094C75882 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		9151924713B14FECA309C911 /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4D5B5B8AB06F4260805E431B /* BootSplash.storyboard */; };
+		C85747B93CCA46CF83D79BC1 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5B1F2B3EC4C94E2A87730EED /* Colors.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +41,8 @@
 		870DFBDF32FA42C181C05B52 /* Inter-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Regular.ttf"; path = "../assets/fonts/Inter-Regular.ttf"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F7A675A988BC4C3A90ABE19A /* CarBluetoothModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CarBluetoothModule.swift; path = mobile/CarBluetoothModule.swift; sourceTree = "<group>"; };
+		4D5B5B8AB06F4260805E431B /* BootSplash.storyboard */ = {isa = PBXFileReference; name = "BootSplash.storyboard"; path = "mobile/BootSplash.storyboard"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		5B1F2B3EC4C94E2A87730EED /* Colors.xcassets */ = {isa = PBXFileReference; name = "Colors.xcassets"; path = "mobile/Colors.xcassets"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = folder.assetcatalog; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +68,8 @@
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
 				81A422242FA70C78004C53DF /* GoogleService-Info.plist */,
+				4D5B5B8AB06F4260805E431B /* BootSplash.storyboard */,
+				5B1F2B3EC4C94E2A87730EED /* Colors.xcassets */,
 			);
 			name = mobile;
 			sourceTree = "<group>";
@@ -196,6 +202,8 @@
 				C8FA6CE1548E46FFAD330F8F /* Inter-Medium.ttf in Resources */,
 				4EC621C5AA78415D9F4F563F /* Inter-Regular.ttf in Resources */,
 				6B58D14F33664403999355FB /* Inter-SemiBold.ttf in Resources */,
+				9151924713B14FECA309C911 /* BootSplash.storyboard in Resources */,
+				C85747B93CCA46CF83D79BC1 /* Colors.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
