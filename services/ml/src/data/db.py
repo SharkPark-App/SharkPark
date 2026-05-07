@@ -9,6 +9,7 @@ import os
 import re
 from datetime import date
 from typing import Optional
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 import pandas as pd
 import psycopg2
@@ -38,11 +39,16 @@ __all__ = [
 
 
 def _get_db_url() -> str:
-    """Return the database URL, raise if not configured."""
+    """Return the database URL, stripped of PgBouncer-specific options psycopg2 rejects."""
     url = os.environ.get("DATABASE_URL", DATABASE_URL)
     if not url:
         raise RuntimeError("DATABASE_URL environment variable is required but not set.")
-    return url
+    # Neon pooled URLs include ?pgbouncer=true which psycopg2 doesn't understand.
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params.pop("pgbouncer", None)
+    cleaned = parsed._replace(query=urlencode(params, doseq=True))
+    return urlunparse(cleaned)
 
 
 def _normalize_catalog_term(term: Optional[str]) -> Optional[str]:
