@@ -1,17 +1,6 @@
 ---
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { SITE } from '../consts';
-
-// Optional hero preview video. Drop an MP4 (and optionally a WebM) into
-// `public/` and the hero phone will autoplay it on loop, muted + inline.
-// If neither file exists at build time we fall back to the static placeholder.
-const publicDir = fileURLToPath(new URL('../../public/', import.meta.url));
-const hasHeroMp4 = existsSync(`${publicDir}hero-preview.mp4`);
-const hasHeroWebm = existsSync(`${publicDir}hero-preview.webm`);
-const hasHeroPoster = existsSync(`${publicDir}hero-preview.jpg`);
-const hasHeroVideo = hasHeroMp4 || hasHeroWebm;
 
 // Inline Lucide-style icons. Single-color stroke icons that inherit `currentColor`
 // so they pick up the brand amber automatically. Sized via class on the wrapper.
@@ -147,34 +136,18 @@ const steps = [
         </p>
       </div>
 
-      <!-- Phone mockup: autoplays /hero-preview.{mp4,webm} when present, otherwise placeholder. -->
+      <!-- Phone mockup screenshot -->
       <div class="flex justify-center md:justify-end">
         <div class="relative">
-          <div class="h-[520px] w-[260px] overflow-hidden rounded-[44px] border-[10px] border-[var(--color-ink)] bg-[var(--color-surface-soft)] shadow-2xl">
-            <div class="h-[calc(100%-1rem)] m-2 overflow-hidden rounded-[34px] bg-gradient-to-br from-[var(--color-brand-100)] to-white">
-              {hasHeroVideo ? (
-                <video
-                  class="h-full w-full object-cover"
-                  autoplay
-                  muted
-                  loop
-                  playsinline
-                  preload="metadata"
-                  poster={hasHeroPoster ? '/hero-preview.jpg' : undefined}
-                  aria-label={`${SITE.name} app preview`}
-                >
-                  {hasHeroWebm && <source src="/hero-preview.webm" type="video/webm" />}
-                  {hasHeroMp4 && <source src="/hero-preview.mp4" type="video/mp4" />}
-                </video>
-              ) : (
-                <div class="grid h-full w-full place-items-center px-6 text-center">
-                  <div>
-                    <div class="text-5xl">🦈</div>
-                    <p class="mt-3 text-base font-semibold text-[var(--color-ink)]">SharkPark map</p>
-                    <p class="mt-1 text-xs text-[var(--color-muted)]">App preview coming soon</p>
-                  </div>
-                </div>
-              )}
+          <div class="w-[82-vw] max-w-[340px] aspect-[769/1620] overflow-hidden rounded-[44px] border-[10px] border-[var(--color-ink)] bg-[var(--color-surface-soft)] shadow-2xl">
+            <div class="h-full w-full overflow-hidden rounded-[34px]">
+              <img
+                src="/images/sharkpark-app.png"
+                alt="SharkPark mobile app map screen showing live lot occupancy and shuttle routes around CSULB"
+                class="h-full w-full object-contain"
+                loading="eager"
+                decoding="async"
+              />
             </div>
           </div>
         </div>

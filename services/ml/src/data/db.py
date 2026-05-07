@@ -52,6 +52,10 @@ def _get_db_url() -> str:
     params = parse_qs(parsed.query, keep_blank_values=True)
     params.pop("pgbouncer", None)
     params.pop("connection_limit", None)
+    sslmode = (params.get("sslmode", [""])[0] or "").strip().lower()
+    if sslmode in {"verify-ca", "verify-full"} and "sslrootcert" not in params:
+        # Containers may not have ~/.postgresql/root.crt; use system trust store.
+        params["sslrootcert"] = ["system"]
     cleaned = parsed._replace(query=urlencode(params, doseq=True))
     return urlunparse(cleaned)
 
