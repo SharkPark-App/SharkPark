@@ -52,7 +52,6 @@ def _get_db_url() -> str:
     params = parse_qs(parsed.query, keep_blank_values=True)
     params.pop("pgbouncer", None)
     params.pop("connection_limit", None)
-    params.pop("channel_binding", None)
     sslmode = (params.get("sslmode", [""])[0] or "").strip().lower()
     if sslmode in {"verify-ca", "verify-full"}:
         # The container's libpq CA bundle may not trust Neon's cert chain.
