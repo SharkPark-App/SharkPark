@@ -19,6 +19,10 @@ interface BuildingRef {
 
 const DESCRIPTION_MAX_CHARS = 115;
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<[^>]*>/g, ' ')
@@ -71,18 +75,39 @@ export class EventsScraperService {
     }
   }
 
+  private static readonly VIRTUAL_LOCATION = /\b(zoom|virtual|online|remote|tba|tbd)\b/i;
+
+  private static isVirtualLocation(location: string): boolean {
+    const normalized = location.trim();
+    return !normalized || EventsScraperService.VIRTUAL_LOCATION.test(normalized);
+  }
+
   private findBuilding(location: string, buildings: BuildingRef[]): BuildingRef | null {
     const loc = location.toLowerCase();
 
-    // Check for exact matches first, to avoid false positives from acronyms in alternate_names
-    for (const b of buildings) {
-      if (loc.includes(b.name.toLowerCase())) return b;
+    // Pass 1: full-name regex match, longest name first so a more-specific
+    // name (e.g. "Student Union Annex") wins over a prefix ("Student Union").
+    const byNameLen = [...buildings].sort((a, b) => b.name.length - a.name.length);
+    for (const b of byNameLen) {
+      const escaped = escapeRegex(b.name);
+      const pattern = new RegExp(`(?<!\\w)${escaped}(?!\\w)`, 'i');
+      if (pattern.test(loc)) return b;
     }
-    for (const b of buildings) {
-      for (const alt of b.alternate_names) {
-        if (loc.includes(alt.toLowerCase())) return b;
-      }
+
+    // Pass 2: alternate-name regex match, longest alt first for the same reason.
+    const alts = buildings
+      .flatMap(b => b.alternate_names.map(alt => ({ building: b, alt })))
+      .sort((a, b) => b.alt.length - a.alt.length);
+
+    for (const { building, alt } of alts) {
+      if (!alt) continue;
+      const escaped = escapeRegex(alt);
+      // use a negative lookahead instead of an explicit allowlist
+      // so punctuation like "SA," and "SA." also match.
+      const pattern = new RegExp(`(?<!\\w)${escaped}(?!\\w)`, 'i');
+      if (pattern.test(loc)) return building;
     }
+
     return null;
   }
 
@@ -96,15 +121,24 @@ export class EventsScraperService {
     });
 
     const rawEvents = await this.fetchAllEvents(subdomain);
+    const physicalEvents = rawEvents.filter(e => !EventsScraperService.isVirtualLocation(e.location));
 
-    const matched = rawEvents.flatMap(event => {
+    const matched: (typeof physicalEvents[number] & { building_id: string })[] = [];
+    const unmatchedLocs = new Set<string>();
+    let skipped = 0;
+
+    for (const event of physicalEvents) {
       const building = this.findBuilding(event.location, buildings);
-      return building ? [{ ...event, building_id: building.id }] : [];
-    });
+      if (building) {
+        matched.push({ ...event, building_id: building.id });
+      } else {
+        skipped += 1;
+        unmatchedLocs.add(event.location);
+      }
+    }
 
     // Log unique unmatched locations to potentially add to building.alternate_names
-    const skipped = rawEvents.filter(e => !this.findBuilding(e.location, buildings));
-    const uniqueLocs = [...new Set(skipped.map(e => e.location))].sort();
+    const uniqueLocs = [...unmatchedLocs].sort();
     uniqueLocs.forEach(loc => this.logger.warn(`UNMATCHED: ${JSON.stringify(loc)}`));
 
     await Promise.all(
@@ -135,7 +169,7 @@ export class EventsScraperService {
       ),
     );
 
-    return { upserted: matched.length, skipped: rawEvents.length - matched.length };
+    return { upserted: matched.length, skipped };
   }
 
   private async fetchAllEvents(subdomain: string) {
