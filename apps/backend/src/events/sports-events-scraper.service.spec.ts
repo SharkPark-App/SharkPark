@@ -281,14 +281,16 @@ describe('SportsEventsScraperService', () => {
   });
 
   it('throws when the Sidearm endpoint returns a non-OK response', async () => {
-    fetchMock.mockResolvedValueOnce({
+    // The shared fetchJsonWithRetry helper retries 5xx responses 3x with
+    // exponential backoff, so all three attempts must return 500.
+    fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
       statusText: 'Server Error',
       json: () => Promise.resolve([]),
     } as unknown as Response);
 
-    await expect(service.scrapeAll()).rejects.toThrow(/Sidearm sports calendar fetch failed/);
+    await expect(service.scrapeAll()).rejects.toThrow(/HTTP 500 Server Error/);
   });
 
   it('skips schools with no row in the database', async () => {

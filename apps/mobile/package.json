@@ -28,6 +28,7 @@
     "react-native": "0.85.2",
     "react-native-app-auth": "^8.1.0",
     "react-native-background-geolocation": "^5.1.1",
+    "react-native-bootsplash": "^6.3.12",
     "react-native-device-info": "^15.0.2",
     "react-native-gesture-handler": "^2.31.1",
     "react-native-get-random-values": "^2.0.0",

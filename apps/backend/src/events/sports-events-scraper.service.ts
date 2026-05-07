@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SportsEventStatus, SportsResultStatus } from '@prisma/client';
 import { PrismaService } from '../database/database.module';
+import { fetchJsonWithRetry } from '../common/http/fetch-json';
 
 /**
  * Sport `shortname` (as returned by the longbeachstate.com calendar API)
@@ -610,6 +611,8 @@ export class SportsEventsScraperService {
     const base = `https://${subdomain}.com/api/v2/calendar/events`;
     const now = new Date();
     const events: RawSidearmEvent[] = [];
+    const userAgent =
+      process.env.WEATHER_USER_AGENT || 'SharkPark/1.0 (ops@sharkpark.app)';
 
     for (let i = 0; i < FETCH_WINDOW_MONTHS; i++) {
       const month = new Date(now.getFullYear(), now.getMonth() + i, 1);
@@ -617,14 +620,7 @@ export class SportsEventsScraperService {
       const monthStr = String(month.getMonth() + 1).padStart(2, '0');
       const url = `${base}?date=${year}-${monthStr}`;
 
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(
-          `Sidearm sports calendar fetch failed: ${res.status} ${res.statusText} (${url})`,
-        );
-      }
-
-      const days = (await res.json()) as RawSidearmDay[];
+      const days = await fetchJsonWithRetry<RawSidearmDay[]>(url, { userAgent });
       for (const day of days) {
         for (const e of day.events) events.push(e);
       }
@@ -642,15 +638,10 @@ export class SportsEventsScraperService {
     const year = now.getFullYear();
     const monthStr = String(now.getMonth() + 1).padStart(2, '0');
     const url = `https://${subdomain}.com/api/v2/calendar/events?date=${year}-${monthStr}`;
+    const userAgent =
+      process.env.WEATHER_USER_AGENT || 'SharkPark/1.0 (ops@sharkpark.app)';
 
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(
-        `Sidearm sports calendar fetch failed: ${res.status} ${res.statusText} (${url})`,
-      );
-    }
-
-    const days = (await res.json()) as RawSidearmDay[];
+    const days = await fetchJsonWithRetry<RawSidearmDay[]>(url, { userAgent });
     const events: RawSidearmEvent[] = [];
     for (const day of days) {
       for (const e of day.events) events.push(e);

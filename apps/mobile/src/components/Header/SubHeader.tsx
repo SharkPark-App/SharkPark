@@ -13,10 +13,15 @@ export function SubHeader({ title, onBack, backgroundColor = COLORS.primary }: S
   return (
     <View style={[styles.header, { backgroundColor }]}>
       <View style={styles.headerContent}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.title} accessibilityRole="header">{title}</Text>
       </View>
     </View>
   );

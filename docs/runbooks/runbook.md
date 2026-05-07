@@ -75,7 +75,7 @@ flyctl ssh console -a sharkpark-api -C "node -e 'console.log(process.env.SENTRY_
 
 Process group memory: app=512MB, cron=512MB. The cron process is a single
 long-lived Nest application context (`node dist/scheduler-main.js`) that owns
-all 18 scheduled jobs via `@nestjs/schedule` decorators — see
+all 29 scheduled jobs via `@nestjs/schedule` decorators — see
 [apps/backend/src/scheduler/](../../apps/backend/src/scheduler/). Steady RSS
 ≈ 230–260 MB; 512 MB gives headroom for `pg_dump` spikes during the nightly
 backup job.

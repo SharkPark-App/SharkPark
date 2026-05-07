@@ -136,7 +136,7 @@ describe('ShuttleTrackerService', () => {
       expect(stops[0]).toMatchObject({
         id: 'stop-1',
         name: 'Main Station',
-        routeId: 'route-1',
+        routeIds: ['route-1'],
       });
 
       expect(mockRedis.set).toHaveBeenCalledWith('transit:routes', routes, expect.any(Number));
@@ -162,7 +162,7 @@ describe('ShuttleTrackerService', () => {
       await service.fetchRoutesAndStops();
 
       expect(service.getCurrentStops()).toHaveLength(0);
-      expect(loggerWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Dropping malformed stop data'));
+      expect(loggerWarnSpy).toHaveBeenCalledWith(expect.stringContaining('malformed stop'));
     });
 
     it('should log an error if the HTTP request fails', async () => {
@@ -256,7 +256,7 @@ describe('ShuttleTrackerService', () => {
       await service.fetchShuttles();
 
       expect(service.getCurrentShuttles()).toHaveLength(0);
-      expect(loggerWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Dropping malformed shuttle data'));
+      expect(loggerWarnSpy).toHaveBeenCalledWith(expect.stringContaining('malformed shuttle'));
     });
 
     it('should log an error if the shuttle request fails', async () => {
@@ -291,13 +291,14 @@ describe('ShuttleTrackerService', () => {
       ];
     });
 
-    it('should correctly parse string, number, and ignore "no vehicles" ETAs', async () => {
+    it('should correctly parse string, number, etaR, and ignore "no vehicles"/"arrived" ETAs', async () => {
       const mockEtaPayload = {
         ETAs: {
           [stopId]: [
-            { routeId: 'route-1', eta: 'Arriving in 3 mins', bg: '#000' }, // Match cached route
-            { routeId: 'route-2', eta: 10, theStop: { routeName: 'Blue', shortName: 'BL' } }, // No cached route match
-            { routeId: 'route-3', eta: 'no vehicles' }, // Should be skipped
+            { routeId: 'route-1', eta: 'Arriving in 3 mins', etaR: '3', bg: '#000', busName: 'Bus A', theStop: {} }, // etaR preferred
+            { routeId: 'route-2', eta: 10, busName: 'Bus B', theStop: { routeName: 'Blue', shortName: 'BL' } },      // numeric eta fallback
+            { routeId: 'route-3', eta: 'no vehicles', busName: 'Bus C', theStop: {} },                               // skipped
+            { routeId: 'route-4', eta: 'arrived', busName: 'Bus D', theStop: { routeName: 'Green', shortName: 'G' } }, // skipped — bus is at stop, not upcoming
           ],
         },
       };
@@ -315,15 +316,15 @@ describe('ShuttleTrackerService', () => {
       expect(arrivals[0]).toMatchObject({
         routeId: 'route-1',
         routeName: 'Matched Red Route', // Pulled from cache
-        abbreviation: 'MRR',            // Pulled from cache
-        color: '#AA0000',             // Pulled from cache
-        etaMinutes: 3,                  // Parsed from string
+        abbreviation: 'MRR',
+        color: '#AA0000',
+        etaMinutes: 3, // Parsed from etaR
       });
 
       expect(arrivals[1]).toMatchObject({
         routeId: 'route-2',
-        routeName: 'Blue',              // Fallback to payload
-        etaMinutes: 10,                 // Number parsed
+        routeName: 'Blue', // Fallback to payload
+        etaMinutes: 10,
       });
     });
 

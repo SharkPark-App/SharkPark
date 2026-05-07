@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Text } from './CustomText';
 import { useTheme } from '../context/ThemeContext';
 import { SPACING, TYPOGRAPHY, SHADOWS } from '../constants/theme';
@@ -15,7 +15,6 @@ import { UnlockCTAButton } from './UnlockCTAButton';
  * fake bars give the screen visual weight so the locked state doesn't
  * collapse into an empty stripe of whitespace.
  */
-const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_HORIZONTAL_MARGIN = SPACING.lg;
 const CARD_INNER_PADDING = SPACING.lg;
 const BAR_COUNT = 12;
@@ -29,13 +28,14 @@ interface Props {
 
 export const LockedForecastCard: React.FC<Props> = ({ onUnlockPress }) => {
   const { colors } = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
 
   const barWidth = useMemo(() => {
-    const usable = SCREEN_WIDTH - CARD_HORIZONTAL_MARGIN * 2 - CARD_INNER_PADDING * 2;
+    const usable = screenWidth - CARD_HORIZONTAL_MARGIN * 2 - CARD_INNER_PADDING * 2;
     // gap between bars
     const totalGap = (BAR_COUNT - 1) * SPACING.xs;
     return Math.max(8, (usable - totalGap) / BAR_COUNT);
-  }, []);
+  }, [screenWidth]);
 
   return (
     <View style={[styles.card, { backgroundColor: colors.white }]}>

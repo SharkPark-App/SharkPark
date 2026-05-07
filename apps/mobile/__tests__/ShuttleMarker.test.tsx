@@ -18,8 +18,15 @@ import { createRenderer } from './testUtils';
 jest.mock('react-native-maps', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { View } = require('react-native');
+  const MockMarker = (props: any) => <View testID="marker" {...props}>{props.children}</View>;
+  MockMarker.Animated = (props: any) => <View testID="animated-marker" {...props}>{props.children}</View>;
+  class AnimatedRegion {
+    constructor(coords: Record<string, unknown>) { Object.assign(this, coords); }
+    timing() { return { start: jest.fn() }; }
+  }
   return {
-    Marker: (props: any) => <View testID="marker" {...props}>{props.children}</View>,
+    Marker: MockMarker,
+    AnimatedRegion,
   };
 });
 
@@ -59,11 +66,11 @@ describe('ShuttleMarker', () => {
     const renderer = renderMarker({ shuttle: baseShuttle, colors: mockColors });
     
     // Find the Marker component
-    const marker = renderer.root.findByProps({ testID: 'marker' });
+    const marker = renderer.root.findByProps({ testID: 'animated-marker' });
     
-    expect(marker.props.coordinate).toEqual({
+    expect(marker.props.coordinate).toMatchObject({
       latitude: 33.78,
-      longitude: -118.11
+      longitude: -118.11,
     });
   });
 
@@ -73,7 +80,7 @@ describe('ShuttleMarker', () => {
       
       // The container is the first (and only) view inside the Marker,
       // holding the arrow and circle.
-      const marker = renderer.root.findByProps({ testID: 'marker' });
+      const marker = renderer.root.findByProps({ testID: 'animated-marker' });
       const containerView = Array.isArray(marker.props.children)
         ? marker.props.children[0]
         : marker.props.children;
@@ -138,7 +145,7 @@ describe('ShuttleMarker', () => {
     it('sets the correct accessibility label for screen readers', () => {
       const renderer = renderMarker({ shuttle: baseShuttle, colors: mockColors });
       
-      const marker = renderer.root.findByProps({ testID: 'marker' });
+      const marker = renderer.root.findByProps({ testID: 'animated-marker' });
       
       expect(marker.props.accessibilityLabel).toBe(
         'Shuttle: Beach City on route All Campus Express'

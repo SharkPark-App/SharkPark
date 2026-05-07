@@ -94,6 +94,9 @@ class LongTermModel(BaseXGBoostModel):
         synthetic_weight: float = 1.0,
         cold_start_weight: float = 1.0,
         hyperparams: dict | None = None,
+        *,
+        real_weight: float = 1.0,
+        synthetic_v2_weight: float = 1.0,
     ) -> dict:
         """
         Train the long-term model on snapshot data.
@@ -107,10 +110,15 @@ class LongTermModel(BaseXGBoostModel):
                 occupancy_rate, confidence, semester, academic_period,
                 week_of_semester, is_campus_open, is_cold_start (bool),
                 _source ("synthetic"/"real").
-            synthetic_weight: Sample weight for synthetic rows (0.0-1.0).
-            cold_start_weight: Sample weight for real cold-start rows (0.0-1.0).
+            synthetic_weight: Tier weight for synthetic v1 (legacy parquet)
+                rows. Spec default at the script layer is ``0.1``.
+            cold_start_weight: Tier weight for real cold-start rows.
             hyperparams: Optional dict of XGBoost hyperparameters. Merged with
                 DEFAULT_HYPERPARAMS (caller values take precedence).
+            real_weight: Tier weight for real established rows. Spec default
+                at the script layer is ``10.0``.
+            synthetic_v2_weight: Tier weight for catalog-driven synthetic v2
+                rows (``generator_version=='v2'``). Spec default ``1.0``.
 
         Returns:
             Dict with train_size, test_size, split_date, feature_columns,
@@ -127,7 +135,10 @@ class LongTermModel(BaseXGBoostModel):
 
         has_source = "_source" in df.columns
         use_weights = has_source and (
-            synthetic_weight != 1.0 or cold_start_weight != 1.0
+            synthetic_weight != 1.0
+            or cold_start_weight != 1.0
+            or real_weight != 1.0
+            or synthetic_v2_weight != 1.0
         )
 
         # Split train/test according to split date
@@ -147,10 +158,14 @@ class LongTermModel(BaseXGBoostModel):
         if train_features.empty:
             raise ValueError("No training features after split — need more data.")
 
-        # Build volume-normalized sample weights from _source / is_cold_start
+        # Build volume-normalized sample weights (4 tiers + per-lot decay).
         if use_weights:
             sample_weight = self._build_sample_weights(
-                train_features, synthetic_weight, cold_start_weight
+                train_features,
+                synthetic_weight,
+                cold_start_weight,
+                real_weight=real_weight,
+                synthetic_v2_weight=synthetic_v2_weight,
             )
         else:
             sample_weight = None

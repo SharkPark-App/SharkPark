@@ -142,13 +142,22 @@ export function PermissionGateScreen({ onDone }: PermissionGateScreenProps) {
 
       {stage === 'intro' && (
         <View style={styles.footer}>
-          <TouchableOpacity style={styles.allowButton} onPress={handleAllow} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.allowButton}
+            onPress={handleAllow}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Allow notifications"
+            accessibilityHint="Grants permission to receive parking alerts"
+          >
             <Text style={styles.allowText}>Allow Notifications</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.skipButton}
             onPress={onDone}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Not now, skip notifications"
           >
             <Text style={styles.skipText}>Not now</Text>
           </TouchableOpacity>

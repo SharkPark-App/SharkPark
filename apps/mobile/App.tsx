@@ -5,6 +5,7 @@
 
 import React, { useEffect } from 'react';
 import { StatusBar, Alert } from 'react-native';
+import BootSplash from 'react-native-bootsplash';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   NavigationContainer,
@@ -126,6 +127,14 @@ function AppContent() {
     completePermissionGate,
   } = useOnboarding();
   const { updateRequired, checked: versionChecked } = useForceUpdate();
+
+  // Hide the boot splash as soon as all async startup work has resolved.
+  // fade: true gives a 250 ms cross-fade so the transition isn't jarring.
+  useEffect(() => {
+    if (!authLoading && !onboardingLoading && versionChecked) {
+      void BootSplash.hide({ fade: true });
+    }
+  }, [authLoading, onboardingLoading, versionChecked]);
 
   if (__DEV__) {
     console.log(

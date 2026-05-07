@@ -13,7 +13,7 @@ container start by the entry-point file:
 | Process | Entry | Fly process group | Purpose |
 |---------|-------|-------------------|---------|
 | HTTP API | [`src/main.ts`](src/main.ts) | `app` | Serves `/api/v1/*` REST + the `/shuttles` socket.io namespace. |
-| Cron / scheduler | [`src/scheduler-main.ts`](src/scheduler-main.ts) | `cron` | Boots a Nest standalone application context (no HTTP listener) that owns all 18 `@nestjs/schedule` jobs. Sentry Cron check-ins + Postgres advisory locks per job. |
+| Cron / scheduler | [`src/scheduler-main.ts`](src/scheduler-main.ts) | `cron` | Boots a Nest standalone application context (no HTTP listener) that owns all 29 `@nestjs/schedule` jobs. Sentry Cron check-ins + Postgres advisory locks per job. |
 
 Both processes share the same module graph, Prisma client, Redis client, and
 Sentry SDK — the difference is only what's mounted at boot.
@@ -63,7 +63,7 @@ src/
 ├── redis/            # Global ioredis cache module
 ├── reliability/      # 5-factor weighted reliability scoring
 ├── reports/          # User-submitted lot status reports
-├── scheduler/        # Standalone cron app + 18 @nestjs/schedule jobs
+├── scheduler/        # Standalone cron app + 29 @nestjs/schedule jobs
 ├── shuttle-tracker/  # PassioGO WS client + /shuttles socket.io gateway
 ├── users/            # Profiles, favorites, notification prefs, account deletion
 ├── weather/          # NWS api.weather.gov client + /weather/impact
@@ -76,8 +76,10 @@ src/
 The canonical, fully-commented reference is [`.env.example`](.env.example).
 Required for production: `DATABASE_URL`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
 `DEVICE_HASH_SALT`, `DEVICE_EVENT_SECRET`, `WS_CONNECT_SECRET`, `REDIS_URL`,
-`CORS_ORIGINS`, plus the R2 credentials (`AWS_*` + `S3_ENDPOINT`) used by the
-backup and ML-export jobs. Sentry, Firebase, and weather overrides are
+`CORS_ORIGINS`, plus the backup R2 credentials (`R2_ACCOUNT_ID`,
+`BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`, `R2_BACKUPS_BUCKET`)
+and ML R2 credentials (`R2_ENDPOINT_URL`, `ML_R2_ACCESS_KEY_ID`,
+`ML_R2_SECRET_ACCESS_KEY`). Sentry, Firebase, and weather overrides are
 optional and degrade gracefully when unset (logged as warnings).
 
 ## Operations

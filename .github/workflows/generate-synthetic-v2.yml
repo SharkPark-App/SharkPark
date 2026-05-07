@@ -1,0 +1,124 @@
+name: Generate Synthetic V2
+
+# Principle of least privilege for the GITHUB_TOKEN.
+permissions:
+  contents: read
+
+# Manual, on-demand regeneration of the catalog-driven synthetic
+# occupancy training set (D4). Run this when:
+#   - A new term's CSULB catalog has been ingested (D2 ran for that term).
+#   - The proximity matrix has been rebuilt (D3 ran since the last gen).
+#   - The generator constants in services/ml/src/data/synthetic_v2.py
+#     have been retuned (e.g. COMMUTER_RATE/DRIVE_SHARE/ATTENDANCE_BASE).
+#
+# NOT on a schedule on purpose — synthetic data only changes when one
+# of the upstream inputs changes, and we'd rather pay one obvious 5-min
+# regen than hide a daily DB-write cost we don't need.
+#
+# After this completes, the next train_short_term / train_long_term
+# run will pick up the refreshed `synthetic_observations` rows
+# (generator_version='v2') automatically — no separate trigger needed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      school:
+        description: 'School short_name'
+        required: true
+        type: string
+        default: CSULB
+      term:
+        description: 'Term tag (matches course_meetings.term, e.g. Spring_2026)'
+        required: true
+        type: string
+      start_date:
+        description: 'Generation window start (YYYY-MM-DD, inclusive)'
+        required: true
+        type: string
+      end_date:
+        description: 'Generation window end (YYYY-MM-DD, inclusive)'
+        required: true
+        type: string
+      seed:
+        description: 'RNG seed (change only for sensitivity studies)'
+        required: false
+        type: string
+        default: '42'
+      truncate_existing:
+        description: 'DELETE prior (school, term, v2) rows before insert'
+        required: true
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Compute only; write nothing to the DB'
+        required: false
+        type: boolean
+        default: false
+
+# One generation per (school, term) at a time — concurrent writes to
+# the same partition would race on the upsert and waste compute.
+concurrency:
+  group: synthetic-v2-${{ inputs.school }}-${{ inputs.term }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: services/ml
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'services/ml/uv.lock'
+
+      - name: Install ML package (locked)
+        run: uv sync --frozen --no-dev
+
+      - name: Generate synthetic v2
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --school "${{ inputs.school }}"
+            --term "${{ inputs.term }}"
+            --start "${{ inputs.start_date }}"
+            --end "${{ inputs.end_date }}"
+            --seed "${{ inputs.seed }}"
+            --verbose
+          )
+          if [[ "${{ inputs.truncate_existing }}" == "true" ]]; then
+            ARGS+=(--truncate-existing)
+          fi
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            ARGS+=(--dry-run)
+          fi
+          uv run python -m scripts.generate_synthetic_v2 "${ARGS[@]}" | tee gen.log
+          # Surface the ML_RESULT line in the workflow summary.
+          ML_RESULT=$(grep -oE '^ML_RESULT: .*$' gen.log | tail -n1 || true)
+          if [[ -n "$ML_RESULT" ]]; then
+            echo "## Generation summary" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            echo "${ML_RESULT#ML_RESULT: }" | python -m json.tool >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-v2-log-${{ github.run_id }}
+          path: services/ml/gen.log
+          retention-days: 14

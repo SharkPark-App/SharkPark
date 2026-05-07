@@ -4,5 +4,5 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["prisma/*.ts", "prisma/scripts/*.ts"]
+  "include": ["prisma/*.ts", "prisma/scripts/*.ts", "src/scripts/*.ts"]
 }

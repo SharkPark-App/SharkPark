@@ -68,7 +68,7 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 | **Backend** | NestJS 11 (Node.js) | TypeScript-native framework with built-in support for modules, dependency injection, guards, pipes, and scheduled tasks. The modular architecture maps cleanly to our domain (lots, users, events, weather, reliability). Comes with first-class testing support. |
 | **ORM** | Prisma 7 | Type-safe database queries generated from a schema file (`prisma/schema.prisma`). Catches query errors at compile time instead of runtime, auto-generates migrations, and provides a visual data browser (`prisma studio`). Uses the `@prisma/adapter-pg` driver adapter for direct PostgreSQL connection pooling. |
 | **Database** | PostgreSQL 17 (local) / Neon PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events are linked to nearby lots for the in-app notification surface). We run standard PostgreSQL 17 in Docker for local development. In production we use Neon serverless Postgres (us-west-2): branchable, autoscaling, point-in-time recovery up to 7 days. The runtime always connects through Neon's pooled endpoint (`-pooler.`) with `pgbouncer=true` so we survive transaction-mode pooling. The only change between environments is the `DATABASE_URL` connection string. |
-| **Hosting** | Fly.io (sharkpark-api, region=lax) | Two-process model on a single Fly app: an `app` process running the HTTP NestJS API (autostop min=0) and a `cron` process running a standalone Nest application context (`scheduler-main.ts`) that owns all 18 `@nestjs/schedule` jobs. Sized at 512 MB each. Rolling deploys gated by `/api/v1/health/ready`. |
+| **Hosting** | Fly.io (sharkpark-api, region=lax) | Two-process model on a single Fly app: an `app` process running the HTTP NestJS API (autostop min=0) and a `cron` process running a standalone Nest application context (`scheduler-main.ts`) that owns all 29 `@nestjs/schedule` jobs. Sized at 512 MB each. Rolling deploys gated by `/api/v1/health/ready`. |
 | **Object storage** | MinIO (local) / Cloudflare R2 (production) | S3-compatible. Used for nightly `pg_dump` backups (35-day lifecycle) and future ML artifact exports. R2 has zero egress fees — ideal for bandwidth-heavy backup verification. |
 | **Observability** | Sentry (errors + Crons) + nestjs-pino logs | Sentry owns errors, performance, and cron monitor check-ins for every scheduled job. nestjs-pino emits structured JSON logs with the process tag (`app` vs `scheduler`) for log-drain filtering. |
 | **Security** | Helmet, Throttler, CORS, Passport JWT | Helmet sets security HTTP headers. The throttler rate-limits to 20 requests per 10 seconds per IP. CORS is locked down in production. Passport validates Azure AD JWTs against Microsoft's JWKS endpoint with automatic key rotation. |
@@ -117,7 +117,7 @@ The backend is organized into feature modules, each with its own controller, ser
 - **Reliability** — Real-time confidence scoring for each lot's occupancy estimate, computed from the five-factor weighted model described above.
 - **Weather** — Current conditions and 7-day forecast (NWS api.weather.gov), used as ML features and exposed via the `/weather/impact` endpoint.
 - **Shuttle Tracker** — Live shuttle tracking via a persistent PassioGO WebSocket connection. Routes, stops, and shuttle metadata are refreshed daily.
-- **Scheduler** — Standalone Nest application context (`src/scheduler-main.ts`) that owns all 18 `@nestjs/schedule` jobs (snapshots, weather, transit, backups, retention prune, push fan-out, etc.). Runs in its own Fly process group with Sentry Cron check-ins and Postgres advisory locks for safe concurrency.
+- **Scheduler** — Standalone Nest application context (`src/scheduler-main.ts`) that owns all 29 `@nestjs/schedule` jobs (snapshots, weather, transit, backups, retention prune, push fan-out, ML inference, drift checks, etc.). Runs in its own Fly process group with Sentry Cron check-ins and Postgres advisory locks for safe concurrency.
 - **Health** — `/api/v1/health/live` (process up) and `/api/v1/health/ready` (DB reachable) probes used by Fly's rolling-deploy health checks.
 - **Redis** — Global cache module. Provides shared state for shuttle data across multi-instance deployments.
 - **Database** — Global Prisma module with environment-aware connection pooling (pool size 5 locally, 20 in production, SSL required in production). Uses `@prisma/adapter-pg` for direct connection management.
@@ -438,7 +438,7 @@ SharkPark/
 │   │   │   ├── redis/            # Global ioredis cache module (shared shuttle state)
 │   │   │   ├── reliability/      # Multi-factor weighted reliability scoring
 │   │   │   ├── reports/          # User-submitted lot status reports
-│   │   │   ├── scheduler/        # Standalone cron process: 18 @nestjs/schedule jobs
+│   │   │   ├── scheduler/        # Standalone cron process: 29 @nestjs/schedule jobs
 │   │   │   ├── shuttle-tracker/  # Live shuttle tracking (PassioGO WS + socket.io gateway)
 │   │   │   ├── users/            # Profiles, favorites, notification preferences
 │   │   │   ├── weather/          # Weather data for demand correlation

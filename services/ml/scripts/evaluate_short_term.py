@@ -77,7 +77,9 @@ def evaluate(run_id: str, data_path: str | None = None) -> dict:
     test_raw = df[df["timestamp"] > split_date].copy()
 
     logger.info("Rebuilding test features (records after %s)...", split_date.date())
-    test_features = prepare_training_features(test_raw)
+    # Use min_confidence=None to match training behavior (training included all rows
+    # including LOW-confidence cold-start data, with weight-based downweighting instead)
+    test_features = prepare_training_features(test_raw, min_confidence=None)
 
     if test_features.empty:
         raise ValueError("No test features produced — check data and split date.")

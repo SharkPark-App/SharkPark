@@ -15,9 +15,11 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import mlflow
 import numpy as np
@@ -33,6 +35,10 @@ from src.config import (
 from src.features.short_term import prepare_inference_features
 from src.models.short_term import ShortTermModel
 from src.postprocess.weather_adjustment import apply_weather_adjustment
+from src.postprocess.low_activity_scaling import apply_low_activity_scaling
+
+CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
+UTC = ZoneInfo("UTC")
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +84,14 @@ def predict(
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
     lot_ids = df["lot_id"].unique().tolist()
+    # Anchor "now" in campus tz explicitly — datetime.now() depends on the host's
+    # TZ env, which is correct on Fly today but silently wrong on a UTC host.
     if start_of_day:
-        prediction_time = datetime.now().replace(
+        prediction_time = datetime.now(CAMPUS_TZ).replace(
             hour=OPERATING_START_HOUR - 1, minute=0, second=0, microsecond=0
         )
     else:
-        prediction_time = datetime.now()
+        prediction_time = datetime.now(CAMPUS_TZ)
 
     logger.info("Building inference features for %s lots...", len(lot_ids))
     features = prepare_inference_features(df, lot_ids, prediction_time)
@@ -91,6 +99,61 @@ def predict(
     if features.empty:
         logger.info("No prediction hours remaining for today. Exiting.")
         return pd.DataFrame()
+
+    # Attach per-target-hour weather forecast (E3). The inference feature
+    # builder fills weather columns from the latest snapshot's joined weather
+    # row; here we override per-row using the NWS forecast for each
+    # `target_hour` so the model sees what conditions will be at the time it's
+    # predicting for, not just the current observation. Falls back to current
+    # weather when no forecast row exists for that hour.
+    if not data_path:
+        from src.data.db import (
+            fetch_weather_forecast_map,
+            get_school_id_for_lots,
+        )
+
+        try:
+            school_id = get_school_id_for_lots(lot_ids)
+            forecast_map = fetch_weather_forecast_map(school_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not load weather forecast (%s); using latest observation only.",
+                exc,
+            )
+            forecast_map = {}
+
+        if forecast_map:
+            weather_cols = (
+                "temperature_f",
+                "precipitation_probability",
+                "wind_speed_mph",
+                "is_raining",
+                "weather_severity",
+            )
+            for col in weather_cols:
+                if col not in features.columns:
+                    features[col] = (
+                        np.nan if col != "weather_severity" else "NO_WEATHER_DATA"
+                    )
+            for col in weather_cols:
+                forecast_vals = features["target_hour"].map(
+                    lambda h, c=col: forecast_map.get(int(h), {}).get(c)
+                )
+                # Only override rows where a forecast exists for that hour;
+                # leave the latest-observation value otherwise.
+                mask = forecast_vals.notna()
+                if mask.any():
+                    features.loc[mask, col] = forecast_vals[mask]
+            logger.info(
+                "Attached forecast weather for %d/%d rows (%d hours covered).",
+                int(
+                    features["target_hour"]
+                    .map(lambda h: int(h) in forecast_map)
+                    .sum()
+                ),
+                len(features),
+                len(forecast_map),
+            )
 
     # Generate predictions with quantile confidence intervals
     preds, preds_lower, preds_upper = model.predict_quantiles(features)
@@ -127,6 +190,28 @@ def predict(
         prediction_time=prediction_time,
     )
 
+    # Low-activity session cap (winter / summer / break). Pull the
+    # per-row target date from the freshly-built predictions DataFrame
+    # so a forecast that crosses midnight still picks up the correct
+    # academic period for each row.
+    pred_target_dates = pd.to_datetime(predictions["target_time"]).dt.date.tolist()
+    capped_med, capped_lo, capped_hi, low_activity_reasons = apply_low_activity_scaling(
+        predictions["predicted_occupancy"].to_numpy(),
+        predictions["confidence_lower"].to_numpy(),
+        predictions["confidence_upper"].to_numpy(),
+        pred_target_dates,
+    )
+    predictions["predicted_occupancy"] = capped_med
+    predictions["confidence_lower"] = capped_lo
+    predictions["confidence_upper"] = capped_hi
+    low_activity_counts = Counter(low_activity_reasons)
+    if any(r != "NORMAL" for r in low_activity_reasons):
+        logger.info(
+            "Low-activity scaling: %s (rows=%d)",
+            ", ".join(f"{k}={v}" for k, v in sorted(low_activity_counts.items())),
+            len(predictions),
+        )
+
     # Write to database (default)
     from src.data.db import write_short_term_predictions
 
@@ -147,6 +232,23 @@ def predict(
         "Predicted occupancy range: %s - %s",
         predictions["predicted_occupancy"].min(),
         predictions["predicted_occupancy"].max(),
+    )
+
+    # Machine-readable marker consumed by apps/backend's cron runner so
+    # /admin/ml-status can show the model version + row count for the most
+    # recent ticks. Plain `print` (NOT logger) so the format is stable
+    # regardless of logging config; backend looks for the literal
+    # `ML_RESULT:` prefix and JSON-parses the rest of the line.
+    print(
+        "ML_RESULT: "
+        + json.dumps(
+            {
+                "horizon": "short_term",
+                "model_version": model_version,
+                "predictions_written": int(n),
+                "lots": int(predictions["lot_id"].nunique()),
+            }
+        )
     )
 
     return predictions
@@ -213,16 +315,27 @@ def _build_prediction_df(
     Stores occupancy rates [0, 1] directly. Confidence bounds come from
     quantile regression (10th/90th percentile).
     """
-    base_time = prediction_time.replace(minute=0, second=0, microsecond=0)
-    target_times = pd.to_datetime(
+    # Persist as UTC — backend writes via Prisma store naive UTC in
+    # TIMESTAMP WITHOUT TIME ZONE columns (verified: snapshots, weather).
+    # Writing PT here mis-aligns prediction rows from the rest of the schema.
+    base_time = prediction_time.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    target_times_local = pd.to_datetime(
         features["target_hour"].astype(int), unit="h", origin=base_time.replace(hour=0)
     )
+    target_times_utc = (
+        target_times_local.dt.tz_localize(
+            CAMPUS_TZ, ambiguous="NaT", nonexistent="shift_forward"
+        )
+        .dt.tz_convert(UTC)
+        .dt.tz_localize(None)
+    )
+    predicted_at_utc = prediction_time.astimezone(UTC).replace(tzinfo=None)
 
     return pd.DataFrame(
         {
             "lot_id": features["lot_id"],
-            "predicted_at": prediction_time.isoformat(),
-            "target_time": target_times.dt.strftime("%Y-%m-%dT%H:%M:%S"),
+            "predicted_at": predicted_at_utc.isoformat(),
+            "target_time": target_times_utc.dt.strftime("%Y-%m-%dT%H:%M:%S"),
             "predicted_occupancy": preds,
             "confidence_lower": preds_lower,
             "confidence_upper": preds_upper,

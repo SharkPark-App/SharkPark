@@ -1,6 +1,7 @@
 import { WebSocketGateway, WebSocketServer, OnGatewayInit, OnGatewayConnection } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import type { ShuttleLiveUpdate } from './interfaces/shuttle-tracker.interface';
 
 // Mirrors the HTTP CORS policy in main.ts: use CORS_ORIGINS env var in production,
 // allow all in dev (native apps never send Origin, so this only gates browser tabs).
@@ -50,7 +51,7 @@ export class ShuttleTrackerGateway implements OnGatewayInit, OnGatewayConnection
     }
   }
 
-  broadcastShuttles(shuttles: Record<string, unknown>[]) {
+  broadcastShuttles(shuttles: ShuttleLiveUpdate[]) {
     this.server.emit('shuttle_update', shuttles);
   }
 }

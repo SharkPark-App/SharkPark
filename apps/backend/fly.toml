@@ -8,8 +8,9 @@
 #          in-process timer. Replaces the old supercronic + per-script
 #          Nest bootstrap pattern, which OOM-cascaded the cron VM at
 #          the top of every 15-minute slot (5 children × ~180MB Nest
-#          boot > 1GB). Steady-state RSS ~250MB regardless of how many
-#          ticks fire concurrently, so cron VM is sized down to 512MB.
+#          boot > 1GB). Steady-state Node RSS ~250MB; cron VM is sized
+#          to 1GB to absorb transient ~700MB spikes from spawned
+#          Python ML predictors (predict-short-term, predict-long-term).
 #
 # Deploy from repo root: fly deploy --config apps/backend/fly.toml
 # Reference: https://fly.io/docs/reference/configuration/
@@ -100,12 +101,12 @@ primary_region = 'lax'
   # cannot OOM-cascade the way the old supercronic + per-script Nest
   # pattern did (5 × ~180MB > 1GB → exit 137 on survivors).
   #
-  # Heavy ML jobs (predict-all-lots, retrain-models) spawn Python in a
-  # CHILD process — their xgboost/pandas memory lives outside this VM's
-  # accounting once Fly schedules them on their own machine, but a single
-  # in-process child push can transiently spike to ~700MB. If/when those
-  # land back on this process group, bump back to 1024mb.
-  memory = '512mb'
+  # Heavy ML jobs (predict-short-term every 15 min, predict-long-term
+  # daily) spawn Python in a CHILD process via spawnPythonModule — a
+  # single XGBoost-backed predict call transiently spikes to ~700MB.
+  # The Node parent stays at ~250MB. 1GB gives ~50MB of headroom on
+  # the worst-case overlap (Node + one Python child) without paging.
+  memory = '1gb'
   processes = ['cron']
 
 # Restart policies. The `app` group keeps Fly's default (`on-failure`, 10
