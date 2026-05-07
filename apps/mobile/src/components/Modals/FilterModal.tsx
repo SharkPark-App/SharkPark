@@ -108,6 +108,7 @@ export function LotFilterModal({ isOpen, onClose, lots, selectedLots, onApplyFil
       visible={isOpen}
       transparent
       onRequestClose={handleClose}
+      accessibilityViewIsModal={true}
     >
       <View style={styles.backdrop}>
         <Pressable style={styles.backdropPress} onPress={handleClose} />

@@ -51,12 +51,19 @@ export const ShuttleModal: React.FC<ShuttleModalProps> = ({
   const { text: loadText, percent } = getPassengerLoadInfo(shuttle.paxLoad, shuttle.capacity);
 
   return (
-    <Modal visible={visible} transparent={true} animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onClose}
+      accessibilityViewIsModal={true}
+    >
       <TouchableOpacity
         style={styles.overlay}
         activeOpacity={1}
         onPress={onClose}
-        accessible={false}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss shuttle details"
       >
         <TouchableWithoutFeedback>
           <View style={[styles.card, { backgroundColor: colors.backgroundLight, shadowColor: colors.shadowDark }]}>
