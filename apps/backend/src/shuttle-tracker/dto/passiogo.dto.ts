@@ -122,6 +122,11 @@ export class PassioEtaDto {
   @IsDefined()
   eta!: string | number;
 
+  /** Numeric ETA in whole minutes as a string (e.g. "7", "0"). More reliable than parsing eta. */
+  @IsOptional()
+  @IsString()
+  etaR?: string;
+
   @IsString()
   routeId!: string;
 

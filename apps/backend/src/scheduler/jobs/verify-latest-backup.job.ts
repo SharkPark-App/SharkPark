@@ -33,13 +33,13 @@ export class VerifyLatestBackupJob {
   async handle(): Promise<void> {
     await this.runner.run(NAME, async () => {
       const accountId = process.env.R2_ACCOUNT_ID;
-      const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-      const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+      const accessKeyId = process.env.BACKUP_R2_ACCESS_KEY_ID;
+      const secretAccessKey = process.env.BACKUP_R2_SECRET_ACCESS_KEY;
       const bucket = process.env.R2_BACKUPS_BUCKET;
 
       if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
         throw new Error(
-          `${NAME}: missing R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, or R2_BACKUPS_BUCKET`,
+          `${NAME}: missing R2_ACCOUNT_ID, BACKUP_R2_ACCESS_KEY_ID, BACKUP_R2_SECRET_ACCESS_KEY, or R2_BACKUPS_BUCKET`,
         );
       }
 

@@ -40,19 +40,54 @@ jest.mock('react-native-gifted-charts', () => {
 // ────────────────────── Helpers ──────────────────────
 
 
-/** Build an ISO timestamp for today at the given hour */
+// HourlyChart formats hours in America/Los_Angeles regardless of host tz, so
+// these helpers must build / read hours in PT — otherwise tests fail on UTC CI.
+const CAMPUS_TZ = 'America/Los_Angeles';
+
+const ymdInTz = (d: Date) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: CAMPUS_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+
+const ptOffset = (d: Date): string => {
+  const part = new Intl.DateTimeFormat('en-US', {
+    timeZone: CAMPUS_TZ,
+    timeZoneName: 'shortOffset',
+  })
+    .formatToParts(d)
+    .find(p => p.type === 'timeZoneName')?.value;
+  const raw = (part ?? 'GMT-08:00').replace('GMT', '');
+  const m = /^([+-])(\d{1,2})(?::(\d{2}))?$/.exec(raw);
+  if (!m) return '-08:00';
+  return `${m[1]}${m[2].padStart(2, '0')}:${m[3] ?? '00'}`;
+};
+
 function isoAt(hour: number): string {
-  const d = new Date();
-  d.setHours(hour, 0, 0, 0);
-  return d.toISOString();
+  const now = new Date();
+  const ymd = ymdInTz(now);
+  const hh = String(hour).padStart(2, '0');
+  return new Date(`${ymd}T${hh}:00:00${ptOffset(now)}`).toISOString();
 }
 
-/** Data at the current hour - triggers the status tooltip */
+const ptHourNow = (): number =>
+  parseInt(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: CAMPUS_TZ,
+      hour: 'numeric',
+      hour12: false,
+    }).format(new Date()),
+    10,
+  ) % 24;
+
+/** Data at the current PT hour - triggers the status tooltip */
 function currentHourData(occupancy: number, extra: object = {}) {
-  return [{ time: isoAt(new Date().getHours()), occupancy, ...extra }];
+  return [{ time: isoAt(ptHourNow()), occupancy, ...extra }];
 }
 
-const nonCurrentHour = (new Date().getHours() + 12) % 24;
+const nonCurrentHour = (ptHourNow() + 12) % 24;
 
 const render = createRenderer(HourlyChart);
 
@@ -178,7 +213,7 @@ describe('HourlyChart -- bar accessibility', () => {
   });
 
   it('current hour bar label includes "current hour" label and value', () => {
-    const hour = new Date().getHours();
+    const hour = ptHourNow();
     const expectedTime = hour === 0 ? '12a' : hour < 12 ? `${hour}a` : hour === 12 ? '12p' : `${hour - 12}p`;
     const tree = render({ data: currentHourData(60) });
     const bar = tree.root.find(

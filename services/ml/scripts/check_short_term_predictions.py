@@ -1,6 +1,10 @@
 """
 Inspection tool for short-term predictions in the database.
 
+predictions_short_term is append-only; this script dedupes to the
+freshest `predicted_at` per (lot_id, target_time) so output reflects the
+current forecast, matching how the backend serves it.
+
 Usage (from services/ml/):
     python -m scripts.check_short_term_predictions
     python -m scripts.check_short_term_predictions --limit 20
@@ -66,11 +70,15 @@ def check_predictions(
 
             cur.execute(
                 f"""
-                SELECT lot_id, predicted_at, target_time,
-                       predicted_occupancy, confidence_lower, confidence_upper,
-                       model_version
-                FROM predictions_short_term
-                {where}
+                SELECT * FROM (
+                    SELECT DISTINCT ON (lot_id, target_time)
+                           lot_id, predicted_at, target_time,
+                           predicted_occupancy, confidence_lower, confidence_upper,
+                           model_version
+                    FROM predictions_short_term
+                    {where}
+                    ORDER BY lot_id, target_time, predicted_at DESC
+                ) latest
                 ORDER BY lot_id, target_time
                 LIMIT %s
             """,

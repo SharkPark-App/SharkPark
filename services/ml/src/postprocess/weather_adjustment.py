@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 import numpy as np
@@ -32,7 +32,9 @@ __all__ = [
     "WeatherSnapshot",
     "Severity",
     "classify_severity",
+    "classify_severity_from_fields",
     "apply_weather_adjustment",
+    "apply_weather_adjustment_long_term",
 ]
 
 
@@ -84,31 +86,74 @@ _HEAVY_RAIN_PROB = 0.7
 _EXTREME_HEAT_F = 100.0
 
 
+def classify_severity_from_fields(
+    *,
+    temperature_f: float | None,
+    wind_speed_mph: float | None,
+    conditions: str | None,
+    is_raining: bool | None,
+    precipitation_probability: float | None,
+) -> Severity:
+    """Field-level severity classifier shared by `classify_severity` and the
+    feature pipeline (which derives `weather_severity` per snapshot row).
+
+    Returns ``"NO_WEATHER_DATA"`` if any required input is None / NaN so callers
+    can distinguish "no data" from "NORMAL data" without surprise NaN math.
+    """
+    import math
+
+    def _missing(v) -> bool:
+        if v is None:
+            return True
+        if isinstance(v, float) and math.isnan(v):
+            return True
+        return False
+
+    if any(
+        _missing(v)
+        for v in (
+            temperature_f,
+            wind_speed_mph,
+            conditions,
+            is_raining,
+            precipitation_probability,
+        )
+    ):
+        return "NO_WEATHER_DATA"
+
+    cond = (conditions or "").lower()
+    if any(kw in cond for kw in _SEVERE_KEYWORDS):
+        return "SEVERE"
+    if float(wind_speed_mph) > _SEVERE_WIND_MPH:
+        return "SEVERE"
+    if any(kw in cond for kw in _SNOW_KEYWORDS):
+        return "SNOW"
+    if (
+        bool(is_raining)
+        and float(precipitation_probability) > _HEAVY_RAIN_PROB
+        and _HEAVY_KEYWORD in cond
+    ):
+        return "HEAVY_RAIN"
+    if bool(is_raining):
+        return "RAIN"
+    if float(temperature_f) > _EXTREME_HEAT_F:
+        return "EXTREME_HEAT"
+    return "NORMAL"
+
+
 def classify_severity(weather: WeatherSnapshot) -> Severity:
     """Classify a weather snapshot into a discrete severity bucket.
 
     Order matters — checks run from most-severe to least-severe so that
     a thunderstorm with rain classifies as SEVERE, not RAIN.
     """
-    conditions = (weather.conditions or "").lower()
-
-    if any(kw in conditions for kw in _SEVERE_KEYWORDS):
-        return "SEVERE"
-    if weather.wind_speed_mph > _SEVERE_WIND_MPH:
-        return "SEVERE"
-    if any(kw in conditions for kw in _SNOW_KEYWORDS):
-        return "SNOW"
-    if (
-        weather.is_raining
-        and weather.precipitation_probability > _HEAVY_RAIN_PROB
-        and _HEAVY_KEYWORD in conditions
-    ):
-        return "HEAVY_RAIN"
-    if weather.is_raining:
-        return "RAIN"
-    if weather.temperature_f > _EXTREME_HEAT_F:
-        return "EXTREME_HEAT"
-    return "NORMAL"
+    return classify_severity_from_fields(
+        temperature_f=weather.temperature_f,
+        wind_speed_mph=weather.wind_speed_mph,
+        conditions=weather.conditions,
+        is_raining=weather.is_raining,
+        precipitation_probability=weather.precipitation_probability,
+    )
 
 
 def _cells_for(severity: Severity):
@@ -122,14 +167,18 @@ def _cells_for(severity: Severity):
     band visibly widens during bad weather. Recalibrate post-launch against
     real (weather, occupancy) data.
     """
+    # As of E4, RAIN and HEAVY_RAIN are no-ops here — the short-term model
+    # ingests `temperature_f`, `precipitation_probability`, `wind_speed_mph`,
+    # `is_raining` directly and learns rain effects from data. This adjustment
+    # layer is now a *safety clamp* for severe / extreme conditions that ERM
+    # training systematically under-samples (thunderstorms, snow, > 100°F).
     if severity == "SEVERE":
         return (0.50, 0.70, "SEVERE_REDUCTION"), (0.50, 0.70, "SEVERE_REDUCTION")
     if severity == "SNOW":
         return (0.75, 0.85, "SNOW_REDUCTION"), (0.75, 0.85, "SNOW_REDUCTION")
-    if severity == "HEAVY_RAIN":
-        return (1.05, 1.0, "HEAVY_RAIN_COMMUTE_BUMP"), (0.97, 1.0, "HEAVY_RAIN_DAMPEN")
-    if severity == "RAIN":
-        return (1.02, 1.0, "RAIN_COMMUTE_BUMP"), (1.0, 1.0, "NORMAL")
+    if severity == "EXTREME_HEAT":
+        return (0.90, 0.85, "EXTREME_HEAT_DAMPEN"), (0.90, 0.85, "EXTREME_HEAT_DAMPEN")
+    # NORMAL, RAIN, HEAVY_RAIN, NO_WEATHER_DATA — model handles these.
     return (1.0, 1.0, severity), (1.0, 1.0, severity)
 
 
@@ -190,6 +239,96 @@ def apply_weather_adjustment(
     lower_out = np.clip(lower_out, 0.0, 1.0)
     upper_out = np.clip(upper_out, 0.0, 1.0)
 
+    lower_out = np.minimum(lower_out, median_out)
+    upper_out = np.maximum(upper_out, median_out)
+
+    return median_out, lower_out, upper_out, reasons
+
+
+def apply_weather_adjustment_long_term(
+    median: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    target_dates,
+    target_hours,
+    forecast_grid: dict,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
+    """Per-row weather adjustment for long-term predictions.
+
+    Long-term inference spans up to 7 days, so each prediction row has its
+    own ``(target_date, target_hour)`` slot. This function looks up each
+    row in ``forecast_grid`` (the output of
+    :func:`src.data.db.fetch_long_term_weather_forecast`), classifies the
+    severity for that hour, and applies the same SEVERE / SNOW /
+    EXTREME_HEAT clamps as :func:`apply_weather_adjustment`.
+
+    Rows with no matching forecast row are tagged ``"NO_WEATHER_DATA"`` and
+    pass through unchanged \u2014 this matches the short-term contract where a
+    missing observation is treated as a no-op rather than an error.
+
+    Args:
+        median: Predicted occupancy rates (0-1) from the model.
+        lower: 10th-percentile bounds from quantile regression.
+        upper: 90th-percentile bounds from quantile regression.
+        target_dates: Per-row target date (length matches arrays).
+        target_hours: Per-row target hour (0-23, length matches arrays).
+        forecast_grid: ``(date, hour) -> forecast`` map. Empty dict means
+            no forecast data available, function returns inputs unchanged
+            with a single ``NO_WEATHER_DATA`` reason per row.
+
+    Returns:
+        ``(adjusted_median, adjusted_lower, adjusted_upper, reasons)``.
+        Output arrays are clipped to [0, 1] and preserve the
+        ``lower \u2264 median \u2264 upper`` invariant.
+    """
+    n = len(median)
+    target_dates = list(target_dates)
+    target_hours = list(target_hours)
+    if not (len(lower) == len(upper) == len(target_dates) == len(target_hours) == n):
+        raise ValueError(
+            "apply_weather_adjustment_long_term: array length mismatch"
+        )
+
+    if not forecast_grid:
+        return median, lower, upper, ["NO_WEATHER_DATA"] * n
+
+    median_out = median.astype(float).copy()
+    lower_out = lower.astype(float).copy()
+    upper_out = upper.astype(float).copy()
+    reasons: list[str] = []
+
+    for i in range(n):
+        hour = int(target_hours[i])
+        # ``target_dates[i]`` may be a ``date``, ``datetime``, ``pd.Timestamp``,
+        # or numpy datetime64 \u2014 normalize to ``date`` for grid lookup.
+        d = target_dates[i]
+        if isinstance(d, datetime):
+            d = d.date()
+        elif hasattr(d, "to_pydatetime"):
+            d = d.to_pydatetime().date()
+        elif not isinstance(d, date):
+            d = pd.Timestamp(d).date()
+
+        forecast = forecast_grid.get((d, hour))
+        if forecast is None:
+            reasons.append("NO_WEATHER_DATA")
+            continue
+
+        severity: Severity = forecast.get("weather_severity") or "NORMAL"
+        commute_cell, offpeak_cell = _cells_for(severity)
+        is_commute = hour in _COMMUTE_HOURS
+        mult, floor_factor, reason = commute_cell if is_commute else offpeak_cell
+
+        if mult != 1.0:
+            median_out[i] *= mult
+        if floor_factor < 1.0:
+            candidate = median_out[i] * floor_factor
+            lower_out[i] = min(lower_out[i], candidate)
+        reasons.append(reason)
+
+    median_out = np.clip(median_out, 0.0, 1.0)
+    lower_out = np.clip(lower_out, 0.0, 1.0)
+    upper_out = np.clip(upper_out, 0.0, 1.0)
     lower_out = np.minimum(lower_out, median_out)
     upper_out = np.maximum(upper_out, median_out)
 

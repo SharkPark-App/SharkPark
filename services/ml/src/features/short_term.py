@@ -116,7 +116,22 @@ def prepare_training_features(
 
     # Vectorised cross-join: expand each snapshot to all future prediction hours
     # Carry through weight-related metadata columns if present
-    _weight_cols = [c for c in ("_source", "is_cold_start") if c in df.columns]
+    _weight_cols = [
+        c
+        for c in ("_source", "is_cold_start", "generator_version", "sample_weight")
+        if c in df.columns
+    ]
+    _weather_cols = [
+        c
+        for c in (
+            "temperature_f",
+            "precipitation_probability",
+            "wind_speed_mph",
+            "is_raining",
+            "weather_severity",
+        )
+        if c in df.columns
+    ]
     feature_cols = [
         "lot_id",
         "hour",
@@ -132,7 +147,7 @@ def prepare_training_features(
         "occupancy_rate_lag_4",
         "momentum",
         "date",
-    ] + _weight_cols
+    ] + _weight_cols + _weather_cols
     hours_df = pd.DataFrame({"target_hour": PREDICTION_HOURS})
     expanded = df[feature_cols].merge(hours_df, how="cross")
 
@@ -255,6 +270,15 @@ def prepare_inference_features(
     ]
     if "is_cold_start" in latest.columns:
         feature_cols.append("is_cold_start")
+    for col in (
+        "temperature_f",
+        "precipitation_probability",
+        "wind_speed_mph",
+        "is_raining",
+        "weather_severity",
+    ):
+        if col in latest.columns:
+            feature_cols.append(col)
 
     hours_df = pd.DataFrame({"target_hour": remaining_hours})
     result = latest[feature_cols].merge(hours_df, how="cross")

@@ -1,0 +1,6 @@
+# Holds artifacts produced by ML scripts (e.g. synthetic_overlay.png from
+# `services/ml/scripts/validate_synthetic_v2.py`). Streamed by
+# `MlStatusController#syntheticOverlay` at GET /api/admin/ml-status/synthetic-overlay.png.
+#
+# Generated files are not checked in; this .gitkeep just preserves the
+# directory so the controller's stat() check has a stable parent at boot.

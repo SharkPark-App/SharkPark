@@ -40,7 +40,7 @@ Production architecture: **Fly.io** (compute) + **Neon** (Postgres) + **Cloudfla
                   │  Azure AD JWT            │  │ process: cron        ││
                   │  (CSULB SSO)             │  │ src/scheduler-main.ts││
                   ▼                          │  │ shared-cpu-1x 512MB  ││
-        ┌────────────────────┐               │  │ 18 @nestjs/schedule  ││
+        ┌────────────────────┐               │  │ 29 @nestjs/schedule  ││
         │  Microsoft Entra   │               │  │ jobs (always-on)     ││
         │  (free, CSULB)     │               │  └──────────────────────┘│
         └────────────────────┘               └──────┬───────────────────┘
@@ -75,7 +75,7 @@ with our CSULB userbase and within a few ms of Neon's `us-west-2`):
 | Process | Entry | VM | Scaling | Purpose |
 |---------|-------|----|---------|---------|
 | `app` | [`src/main.ts`](../apps/backend/src/main.ts) | `shared-cpu-1x` 512 MB | `min_machines_running = 1`, autostop on the second machine | NestJS HTTP API at `/api/v1/*`, socket.io at `/shuttles`. |
-| `cron` | [`src/scheduler-main.ts`](../apps/backend/src/scheduler-main.ts) | `shared-cpu-1x` 512 MB | always-on (1 machine) | Single Nest standalone application context whose `ScheduleModule` registers all 18 `@Cron(...)` job classes as in-process timers. |
+| `cron` | [`src/scheduler-main.ts`](../apps/backend/src/scheduler-main.ts) | `shared-cpu-1x` 512 MB | always-on (1 machine) | Single Nest standalone application context whose `ScheduleModule` registers all 29 `@Cron(...)` job classes as in-process timers. |
 
 Why one always-warm app machine: cold starts measured at ~10s TTFB (Fly boot +
 Node + Nest module graph + Prisma → Neon cold connect); a 10s loading state is
@@ -96,9 +96,12 @@ and [`apps/backend/fly.toml`](../apps/backend/fly.toml) for the full machine
 spec.
 
 The runtime image also bundles **Python 3.11** + a `uv`-managed venv at
-`/opt/venv` so the ML jobs (`predict-all-lots`, `retrain-models`) can shell out
-to `services/ml/` scripts directly from the cron process — no separate ML
-runtime to operate.
+`/opt/venv` so the ML jobs (`predict-short-term`, `predict-long-term`,
+`recompute-penetration-rates`, `ingest-csulb-catalog`,
+`ingest-room-capacities`, `build-proximity-matrix`) can shell out to
+`services/ml/` scripts directly from the cron process — no separate ML
+runtime to operate. Retraining itself runs in GitHub Actions
+(`.github/workflows/ml-retrain.yml`), not in the backend cron.
 
 ---
 
@@ -196,7 +199,7 @@ per-user-rate-limited.
 |---------|------|-------|
 | Backend errors + perf | Sentry (`@sentry/nestjs`) | Releases tagged from CI; sourcemaps uploaded by the deploy workflow (fails loud if `SENTRY_AUTH_TOKEN` unset). |
 | Mobile errors + perf | Sentry (`@sentry/react-native`) | JS-side init via `react-native-dotenv`. Native sourcemap upload is a known gap. |
-| Cron job liveness | Sentry Crons | All 18 jobs check in via the registry in [`apps/backend/src/scheduler/cron-monitors.ts`](../apps/backend/src/scheduler/cron-monitors.ts); a unit test asserts the registry stays in lockstep with the actual `@Cron(...)` decorators. |
+| Cron job liveness | Sentry Crons | All 29 jobs check in via the registry in [`apps/backend/src/scheduler/cron-monitors.ts`](../apps/backend/src/scheduler/cron-monitors.ts); a unit test asserts the registry stays in lockstep with the actual `@Cron(...)` decorators. |
 | External uptime | Better Stack | External blackbox probe on `/api/v1/health/ready`; powers `status.sharkpark.app`. |
 | Logs | pino → Fly log shipper → console | No log aggregator — `flyctl logs` and Sentry breadcrumbs cover the on-call surface today. |
 

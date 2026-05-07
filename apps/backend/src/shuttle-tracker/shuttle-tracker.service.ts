@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
-import type { MapStop, MapRoute, MapShuttle, RouteArrival } from './interfaces/shuttle-tracker.interface';
+import type { MapStop, MapRoute, MapShuttle, RouteArrival, ShuttleLiveUpdate } from './interfaces/shuttle-tracker.interface';
 import { PassioRouteDto, PassioShuttleDto, PassioStopDto, PassioEtaDto } from './dto/passiogo.dto';
 import { RedisService } from '../redis/redis.service';
 
@@ -9,14 +9,23 @@ const REDIS_KEYS = {
   ROUTES: 'transit:routes',
   STOPS: 'transit:stops',
   SHUTTLES: 'transit:shuttles',
+  ETA_PREFIX: 'transit:etas:', // prefix — append stopId to form the full key
 } as const;
 
 // Routes and stops change at most daily; 25 h gives the cron a full cycle + buffer
 const ROUTES_STOPS_TTL_S = 25 * 60 * 60;
-// Shuttle list (static metadata, not live positions) is also refreshed daily
+// Shuttle metadata refreshed daily by cron (see CRON_MONITORS['fetch-transit']);
+// 25 h TTL keeps the key alive across restarts between cron runs
 const SHUTTLES_TTL_S = 25 * 60 * 60;
+// ETAs are in whole-minute granularity; short cache deduplicates concurrent requests
+// without showing meaningfully stale data
+const ETA_TTL_S = 5;
 // How often the app process re-syncs from Redis to pick up cron writes
 const REDIS_SYNC_INTERVAL_MS = 2 * 60 * 1000;
+// How often stale (offline) buses are pruned from in-memory state
+const PRUNE_INTERVAL_MS = 30_000;
+// Matches PassioGO!'s own 2-minute silence window before dropping a bus
+const STALE_TTL_MS = 2 * 60 * 1000;
 
 /** Service for shuttle tracking - live route, stop, and shuttle updates */
 @Injectable()
@@ -26,6 +35,12 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
   private currentStops: MapStop[] = [];
   private readonly logger = new Logger(ShuttleTrackerService.name);
   private syncInterval: ReturnType<typeof setInterval> | null = null;
+  private pruneInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Tracks the last WS frame timestamp per bus ID for stale-bus pruning
+  private readonly lastSeen = new Map<string, number>();
+  // Prevents concurrent on-demand metadata fetches
+  private metadataFetchPending = false;
 
   constructor(private readonly redis: RedisService) {}
 
@@ -52,10 +67,12 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
 
     if (cachedShuttles) {
       this.latestShuttles = cachedShuttles;
+      const now = Date.now();
+      for (const s of this.latestShuttles) this.lastSeen.set(s.id, now);
       this.logger.log(`Loaded ${cachedShuttles.length} shuttles from Redis`);
     } else {
       void this.fetchShuttles().catch((err) =>
-        this.logger.error('Initial shuttle fetch failed; will retry on next cron tick', err),
+        this.logger.error('Initial shuttle fetch failed; data will load on first WS frame', err),
       );
     }
 
@@ -64,6 +81,8 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
     this.syncInterval = setInterval(() => {
       void this.syncFromRedis();
     }, REDIS_SYNC_INTERVAL_MS);
+
+    this.pruneInterval = setInterval(() => this.pruneStaleShuttles(), PRUNE_INTERVAL_MS);
   }
 
   onModuleDestroy() {
@@ -71,22 +90,128 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
+    if (this.pruneInterval) {
+      clearInterval(this.pruneInterval);
+      this.pruneInterval = null;
+    }
   }
 
   private async syncFromRedis(): Promise<void> {
-    const [routes, stops, shuttles] = await Promise.all([
-      this.redis.get<MapRoute[]>(REDIS_KEYS.ROUTES),
-      this.redis.get<MapStop[]>(REDIS_KEYS.STOPS),
-      this.redis.get<MapShuttle[]>(REDIS_KEYS.SHUTTLES),
-    ]);
-    if (routes) this.currentRoutes = routes;
-    if (stops) this.currentStops = stops;
-    if (shuttles) this.latestShuttles = shuttles;
+    try {
+      const [routes, stops, shuttles] = await Promise.all([
+        this.redis.get<MapRoute[]>(REDIS_KEYS.ROUTES),
+        this.redis.get<MapStop[]>(REDIS_KEYS.STOPS),
+        this.redis.get<MapShuttle[]>(REDIS_KEYS.SHUTTLES),
+      ]);
+      if (routes) this.currentRoutes = routes;
+      if (stops) this.currentStops = stops;
+      if (shuttles) {
+        // Preserve live WS positions — Redis holds a metadata snapshot, not
+        // current coords. Same merge logic as fetchShuttles().
+        const livePositions = new Map(
+          this.latestShuttles.map(s => [s.id, {
+            latitude: s.latitude, longitude: s.longitude,
+            heading: s.heading, paxLoad: s.paxLoad,
+          }]),
+        );
+        this.latestShuttles = shuttles.map(s => {
+          const live = livePositions.get(s.id);
+          return live ? { ...s, ...live } : s;
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to sync transit data from Redis', error);
+    }
   }
 
   getCurrentShuttles() { return this.latestShuttles; }
   getCurrentRoutes() { return this.currentRoutes; }
   getCurrentStops() { return this.currentStops; }
+
+  /**
+   * Merges a batch of live WS position frames into in-memory shuttle state.
+   * Tracks last-seen timestamps for stale-bus pruning, and triggers a
+   * one-off metadata fetch when an unknown bus ID is encountered.
+   *
+   * Unknown buses are inserted as placeholders (with empty metadata) so
+   * their first WS position is preserved and surfaced via GET /transit/shuttles
+   * before fetchShuttles() completes — without this the bus would be
+   * invisible to clients for up to ~60 s (the mobile metadata poll cadence).
+   * The placeholder is overwritten with full metadata once fetchShuttles
+   * resolves; live position is preserved across that overwrite.
+   */
+  applyLiveUpdates(updates: ShuttleLiveUpdate[]) {
+    if (updates.length === 0) return;
+    const now = Date.now();
+
+    // Index updates by id once — avoids O(N×M) linear scans inside .map below
+    const updateById = new Map(updates.map(u => [u.id, u]));
+
+    // Patch existing shuttles in place
+    this.latestShuttles = this.latestShuttles.map(shuttle => {
+      const u = updateById.get(shuttle.id);
+      if (!u) return shuttle;
+      return { ...shuttle, latitude: u.latitude, longitude: u.longitude,
+               heading: u.heading, paxLoad: u.paxLoad };
+    });
+
+    // Insert placeholders for buses we've never seen + record last-seen
+    const knownIds = new Set(this.latestShuttles.map(s => s.id));
+    let hasUnknown = false;
+    for (const u of updates) {
+      this.lastSeen.set(u.id, now);
+      if (!knownIds.has(u.id)) {
+        hasUnknown = true;
+        this.latestShuttles.push({
+          id: u.id,
+          busName: 'Shuttle',
+          color: '',
+          routeId: '',
+          route: '',
+          latitude: u.latitude,
+          longitude: u.longitude,
+          heading: u.heading,
+          paxLoad: u.paxLoad,
+          capacity: 0,
+        });
+      }
+    }
+
+    if (hasUnknown && !this.metadataFetchPending) {
+      this.metadataFetchPending = true;
+      void this.fetchShuttles().finally(() => { this.metadataFetchPending = false; });
+    }
+  }
+
+  /**
+   * Resets all lastSeen timestamps to now. Called on PassioGO! WS disconnect
+   * so buses are not prematurely pruned during the reconnect backoff window
+   * (up to 5 min). Buses that were already offline before the disconnect will
+   * naturally fail to send frames after reconnect and be pruned 2 min later.
+   */
+  refreshAllLastSeen() {
+    const now = Date.now();
+    for (const id of this.lastSeen.keys()) this.lastSeen.set(id, now);
+  }
+
+  private pruneStaleShuttles() {
+    const cutoff = Date.now() - STALE_TTL_MS;
+    const before = this.latestShuttles.length;
+    this.latestShuttles = this.latestShuttles.filter(
+      s => (this.lastSeen.get(s.id) ?? 0) >= cutoff,
+    );
+    for (const [id, ts] of this.lastSeen)
+      if (ts < cutoff) this.lastSeen.delete(id);
+    const pruned = before - this.latestShuttles.length;
+    if (pruned > 0) {
+      this.logger.log(`Pruned ${pruned} stale shuttle(s)`);
+      // Persist the pruned list so a Fly app restart doesn't reload the
+      // stale buses from Redis and re-display them for the next 2 min.
+      void this.redis
+        .set(REDIS_KEYS.SHUTTLES, this.latestShuttles, SHUTTLES_TTL_S)
+        .catch((err) => this.logger.error('Failed to persist pruned shuttle list to Redis', err));
+    }
+  }
 
   /**
    * Retrieves both routes & stops, as they should be updated at the same rate
@@ -112,22 +237,43 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       const rawRoutes = (await routesResponse.json()) as unknown[];
       const rawMapData = (await stopsResponse.json()) as {
         stops?: Record<string, unknown>;
+        routes?: Record<string, unknown[]>;
         routePoints?: Record<string, { lat: string; lng: string }[]>;
       };
+
+      // Build stopId → routeIds[] from the routes field, which is the
+      // authoritative source for multi-route stop membership. The stops dict
+      // only carries one routeId (the "primary" assignment), so cross-
+      // referencing here is the only way to capture shared stops correctly.
+      const stopRouteIds = new Map<string, string[]>();
+      for (const [routeId, routeData] of Object.entries(rawMapData.routes || {})) {
+        if (!Array.isArray(routeData)) continue;
+        for (let i = 2; i < routeData.length; i++) {
+          const entry = routeData[i];
+          if (!Array.isArray(entry) || entry.length < 2) continue;
+          const stopId = String(entry[1]);
+          const existing = stopRouteIds.get(stopId) ?? [];
+          if (!existing.includes(routeId)) {
+            stopRouteIds.set(stopId, [...existing, routeId]);
+          }
+        }
+      }
 
       /** Transform/validate stops */
       const rawStopsArray = Object.values(rawMapData.stops || {});
       const stopInstances = plainToInstance(PassioStopDto, rawStopsArray);
       const validStops: PassioStopDto[] = [];
 
+      let droppedStops = 0;
       for (const stop of stopInstances) {
         try {
           await validateOrReject(stop);
           validStops.push(stop);
         } catch {
-          this.logger.warn(`Dropping malformed stop data from PassioGO! (Stop ID: ${stop.stopId || 'unknown'})`);
+          droppedStops++;
         }
       }
+      if (droppedStops > 0) this.logger.warn(`Dropped ${droppedStops} malformed stop(s) from PassioGO!`);
 
       // Map stops to interface
       this.currentStops = validStops.map((stop) => ({
@@ -135,22 +281,24 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
         name: stop.name,
         latitude: stop.latitude,
         longitude: stop.longitude,
-        routeId: stop.routeId,
-        color: stop.color || '#ffffff', // Should be provided, but just in case
+        routeIds: stopRouteIds.get(stop.stopId) ?? ([stop.routeId].filter(Boolean) as string[]),
+        color: stop.color || '#ffffff',
       }));
 
       /** Transform/validate routes */
       const routeInstances = plainToInstance(PassioRouteDto, rawRoutes);
       const validRoutes: PassioRouteDto[] = [];
 
+      let droppedRoutes = 0;
       for (const route of routeInstances) {
         try {
           await validateOrReject(route);
           validRoutes.push(route);
         } catch {
-          this.logger.warn(`Invalid route data received from PassioGO! (ID: ${route.myid || 'unknown'})`);
+          droppedRoutes++;
         }
       }
+      if (droppedRoutes > 0) this.logger.warn(`Dropped ${droppedRoutes} malformed route(s) from PassioGO!`);
 
       // Map routes to interface
       this.currentRoutes = validRoutes.map((routeData) => {
@@ -184,9 +332,10 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Retrieves initial data for all active shuttles per cron tick.
-   * Provides static data (e.g. color, busName) that isn't & does not need to be provided by the WS gateway.
-   * Instantiates shuttles for immediate frontend access (user doesn't have to wait for WS gateway).
+   * Fetches the current active bus list from PassioGO! and merges metadata
+   * into in-memory state, preserving any live positions already tracked via WS.
+   * Called by the daily cron as a metadata refresh and on-demand when the WS
+   * sees an unknown bus ID.
    */
   async fetchShuttles() {
     try {
@@ -207,7 +356,21 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
 
       // One shuttle with ID -1 indicates that none are active (empty array shouldn't occur, but check regardless)
       if (shuttlesData['-1'] || Object.keys(shuttlesData).length === 0) {
+        // PassioGO!'s REST and WS feeds occasionally disagree (REST reports
+        // "no buses" while WS is actively delivering frames). If we are
+        // currently receiving WS activity, trust the live feed and skip the
+        // wipe — otherwise we'd churn buses out → unknown ID arrives next
+        // frame → triggers another on-demand fetchShuttles → loop until the
+        // REST/WS desync resolves (and hammer PassioGO! in the meantime).
+        const now = Date.now();
+        const recentWsActivity = Array.from(this.lastSeen.values())
+          .some((ts) => now - ts < STALE_TTL_MS);
+        if (recentWsActivity) {
+          this.logger.warn('PassioGO! REST reports no active buses but WS is live; preserving in-memory shuttle state');
+          return;
+        }
         this.latestShuttles = [];
+        this.lastSeen.clear();
         await this.redis.set(REDIS_KEYS.SHUTTLES, [], SHUTTLES_TTL_S);
         return;
       }
@@ -219,29 +382,50 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       const shuttleInstances = plainToInstance(PassioShuttleDto, flatShuttles);
       const validShuttles: PassioShuttleDto[] = [];
 
+      let droppedShuttles = 0;
       for (const shuttle of shuttleInstances) {
         try {
           await validateOrReject(shuttle);
           validShuttles.push(shuttle);
         } catch {
-          // Drop shuttle if malformed
-          this.logger.warn(`Dropping malformed shuttle data from PassioGO! (Bus ID: ${shuttle.busId || 'unknown'})`);
+          droppedShuttles++;
         }
       }
+      if (droppedShuttles > 0) this.logger.warn(`Dropped ${droppedShuttles} malformed shuttle(s) from PassioGO!`);
 
-      // Map shuttles to interface
-      this.latestShuttles = validShuttles.map((shuttle) => ({
-        id: shuttle.busId.toString(),
-        busName: shuttle.busName,
-        color: shuttle.color,
-        routeId: shuttle.routeId,
-        route: shuttle.route,
-        latitude: parseFloat(shuttle.latitude),
-        longitude: parseFloat(shuttle.longitude),
-        heading: typeof shuttle.calculatedCourse === 'string' ? parseFloat(shuttle.calculatedCourse) : (shuttle.calculatedCourse || 0),
-        paxLoad: shuttle.paxLoad || 0,
-        capacity: shuttle.totalCap || 0,
-      }));
+      // Preserve live positions already tracked via WS — the REST snapshot has
+      // stale coords but authoritative metadata (busName, color, route, capacity)
+      const livePositions = new Map(
+        this.latestShuttles.map(s => [s.id, {
+          latitude: s.latitude, longitude: s.longitude,
+          heading: s.heading, paxLoad: s.paxLoad,
+        }]),
+      );
+
+      this.latestShuttles = validShuttles.map((shuttle) => {
+        const mapped: MapShuttle = {
+          id: shuttle.busId.toString(),
+          busName: shuttle.busName,
+          color: shuttle.color,
+          routeId: shuttle.routeId,
+          route: shuttle.route,
+          latitude: parseFloat(shuttle.latitude),
+          longitude: parseFloat(shuttle.longitude),
+          heading: typeof shuttle.calculatedCourse === 'string'
+            ? parseFloat(shuttle.calculatedCourse)
+            : (shuttle.calculatedCourse || 0),
+          paxLoad: shuttle.paxLoad || 0,
+          capacity: shuttle.totalCap || 0,
+        };
+        const live = livePositions.get(mapped.id);
+        return live ? { ...mapped, ...live } : mapped;
+      });
+
+      // Seed lastSeen for buses not yet seen via WS (gives them the 2-min grace window)
+      const now = Date.now();
+      for (const s of this.latestShuttles) {
+        if (!this.lastSeen.has(s.id)) this.lastSeen.set(s.id, now);
+      }
 
       await this.redis.set(REDIS_KEYS.SHUTTLES, this.latestShuttles, SHUTTLES_TTL_S);
     } catch (error) {
@@ -253,6 +437,10 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
    * Retrieve shuttle ETAs
    */
   async getStopETAs(stopId: string): Promise<RouteArrival[]> {
+    const cacheKey = `${REDIS_KEYS.ETA_PREFIX}${stopId}`;
+    const cached = await this.redis.get<RouteArrival[]>(cacheKey);
+    if (cached) return cached;
+
     try {
       const etaResponse = await fetch(`https://passiogo.com/mapGetData.php?eta=1&stopIds=${stopId}`, {
         method: 'POST',
@@ -269,22 +457,40 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
       };
 
       const etasDict = rawJson.ETAs || {};
-      const stopArrivals = etasDict[stopId];
+      const rawArrivals = etasDict[stopId];
 
-      if (!stopArrivals || !Array.isArray(stopArrivals)) return [];
+      if (!rawArrivals || !Array.isArray(rawArrivals)) return [];
+
+      const arrivalInstances = plainToInstance(PassioEtaDto, rawArrivals);
+      const validArrivals: PassioEtaDto[] = [];
+      let droppedEtas = 0;
+      for (const instance of arrivalInstances) {
+        try {
+          await validateOrReject(instance);
+          validArrivals.push(instance);
+        } catch {
+          droppedEtas++;
+        }
+      }
+      if (droppedEtas > 0) this.logger.warn(`Dropped ${droppedEtas} malformed ETA frame(s) from PassioGO! (stop ${stopId})`);
+
       const arrivals: RouteArrival[] = [];
-
-      for (const arrival of stopArrivals) {
-        if (arrival.eta === 'no vehicles') continue;
+      for (const arrival of validArrivals) {
+        // Skip sentinels — "no vehicles" means no active buses, "arrived" means
+        // the bus is currently at the stop (not an upcoming arrival)
+        if (arrival.eta === 'no vehicles' || arrival.eta === 'arrived') continue;
 
         let etaVal: number | null = null;
 
-        if (typeof arrival.eta === 'string') {
-          // Find first sequence of digits
-          const match = arrival.eta.match(/\d+/);
-          if (match) etaVal = parseInt(match[0], 10);
+        if (arrival.etaR !== undefined && arrival.etaR !== null) {
+          // etaR is a clean numeric string (e.g. "7", "0") — prefer it over parsing eta
+          const parsed = parseInt(arrival.etaR, 10);
+          if (!isNaN(parsed)) etaVal = parsed;
         } else if (typeof arrival.eta === 'number') {
           etaVal = arrival.eta;
+        } else if (typeof arrival.eta === 'string') {
+          const match = arrival.eta.match(/\d+/);
+          if (match) etaVal = parseInt(match[0], 10);
         }
 
         if (etaVal === null || !arrival.routeId) continue;
@@ -301,8 +507,9 @@ export class ShuttleTrackerService implements OnModuleInit, OnModuleDestroy {
         });
       }
 
-      // Sort from closest to furthest ETA
-      return arrivals.sort((a, b) => (a.etaMinutes as number) - (b.etaMinutes as number));
+      const sorted = arrivals.sort((a, b) => (a.etaMinutes as number) - (b.etaMinutes as number));
+      await this.redis.set(cacheKey, sorted, ETA_TTL_S);
+      return sorted;
 
     } catch (error) {
       this.logger.error(`Failed to fetch ETAs for stop ${stopId}`, error);

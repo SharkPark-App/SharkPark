@@ -1,4 +1,10 @@
 name: CI
+
+# Principle of least privilege for the GITHUB_TOKEN. Job-level overrides
+# can widen this if a future job needs to comment on PRs or upload artifacts.
+permissions:
+  contents: read
+
 on: [push, pull_request]
 
 env:

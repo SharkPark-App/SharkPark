@@ -46,8 +46,8 @@ Export for the AWS CLI session:
 
 ```bash
 export R2_ACCOUNT_ID=...                # 32-char hex
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
+export AWS_ACCESS_KEY_ID=...            # BACKUP_R2_ACCESS_KEY_ID
+export AWS_SECRET_ACCESS_KEY=...        # BACKUP_R2_SECRET_ACCESS_KEY
 export AWS_DEFAULT_REGION=auto
 ```
 

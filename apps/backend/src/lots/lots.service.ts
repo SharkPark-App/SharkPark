@@ -656,15 +656,22 @@ export class LotsService {
     const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
     if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
 
-    const now = new Date();
+    // Grab predictions from the latest batch only. Filtering by predicted_at
+    // (rather than target_time) avoids UTC-vs-campus-day boundary issues —
+    // a single campus day's predictions span two UTC days (14:00Z..04:00Z+1
+    // for 7 AM..9 PM PT), so a UTC-day filter on target_time would clip the
+    // late-evening bars.
+    const recentCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+    // Append-only table — dedupe to freshest prediction per target_time.
     const [predictions, weather] = await Promise.all([
       this.prisma.predictionShortTerm.findMany({
         where: {
           lot_id: lot.id,
-          target_time: { gte: now },
+          predicted_at: { gte: recentCutoff },
         },
-        orderBy: { target_time: 'asc' },
+        distinct: ['target_time'],
+        orderBy: [{ target_time: 'asc' }, { predicted_at: 'desc' }],
         take: 20,
       }),
       this.weatherService.getCurrent(),
@@ -694,6 +701,12 @@ export class LotsService {
    * Fetches long-term ML predictions for a lot from predictions_long_term.
    * Falls back to heuristic predictions based on historical snapshot averages
    * when ML predictions are unavailable.
+   *
+   * Bundles upcoming WeatherForecast rows (one per (target_date, target_hour)
+   * slot covered by the prediction window) so clients can display the
+   * forecast that informed each row. The Python predictor pipes the same
+   * forecast rows through its rule-based weather adjustment, keeping the
+   * UI and the ML view of "expected weather" in sync.
    */
   async getLongTermPredictions(lotId: string, days = 7): Promise<{
     lot_id: string;
@@ -706,6 +719,14 @@ export class LotsService {
       confidence_upper: number;
       model_version: string;
     }>;
+    weather_forecast: Array<{
+      target_time: string;
+      temperature_f: number;
+      precipitation_probability: number;
+      is_raining: boolean;
+      wind_speed_mph: number;
+      conditions: string;
+    }>;
   }> {
     const lot = await this.prisma.lot.findFirst({ where: { lot_id: lotId } });
     if (!lot) throw new NotFoundException(`Lot ${lotId} not found`);
@@ -713,13 +734,37 @@ export class LotsService {
     const now = new Date();
     const endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
-    const predictions = await this.prisma.predictionLongTerm.findMany({
-      where: {
-        lot_id: lot.id,
-        target_date: { gte: now, lte: endDate },
-      },
-      orderBy: [{ target_date: 'asc' }, { target_hour: 'asc' }],
-    });
+    // Append-only predictions table — dedupe to freshest prediction per (target_date, target_hour).
+    const [predictions, forecastRows] = await Promise.all([
+      this.prisma.predictionLongTerm.findMany({
+        where: {
+          lot_id: lot.id,
+          target_date: { gte: now, lte: endDate },
+        },
+        distinct: ['target_date', 'target_hour'],
+        orderBy: [
+          { target_date: 'asc' },
+          { target_hour: 'asc' },
+          { predicted_at: 'desc' },
+        ],
+      }),
+      this.prisma.weatherForecast.findMany({
+        where: {
+          school_id: lot.school_id,
+          target_time: { gte: now, lte: endDate },
+        },
+        orderBy: { target_time: 'asc' },
+      }),
+    ]);
+
+    const weather_forecast = forecastRows.map((f) => ({
+      target_time: f.target_time.toISOString(),
+      temperature_f: f.temperature_f,
+      precipitation_probability: f.precipitation_probability,
+      is_raining: f.is_raining,
+      wind_speed_mph: f.wind_speed_mph,
+      conditions: f.conditions,
+    }));
 
     // If ML predictions exist, return them
     if (predictions.length > 0) {
@@ -734,6 +779,7 @@ export class LotsService {
           confidence_upper: p.confidence_upper,
           model_version: p.model_version,
         })),
+        weather_forecast,
       };
     }
 
@@ -742,6 +788,7 @@ export class LotsService {
       lot_id: lotId,
       source: 'heuristic',
       predictions: this.generateHeuristicPredictions(days, now),
+      weather_forecast,
     };
   }
 

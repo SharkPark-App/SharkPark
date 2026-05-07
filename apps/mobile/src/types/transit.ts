@@ -5,7 +5,7 @@ export interface MapStop {
   name: string;
   latitude: number;
   longitude: number;
-  routeId: string;
+  routeIds: string[];
   color: string;
 }
 
@@ -45,4 +45,12 @@ export interface RouteArrival {
   abbreviation: string;
   color: string;
   etaMinutes: number | null;
+}
+
+export interface GroupedArrival {
+  routeId: string;
+  routeName: string;
+  abbreviation: string;
+  color: string;
+  etas: (number | null)[];
 }
