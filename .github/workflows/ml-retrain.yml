@@ -97,9 +97,9 @@ jobs:
         horizon: ${{ fromJSON(needs.resolve-matrix.outputs.horizons) }}
     env:
       # Read-only follower DSN preferred so a runaway training query
-      # can never lock prod write traffic. Falls back to the primary if
-      # the follower secret isn't configured.
-      DATABASE_URL: ${{ secrets.ML_DATABASE_URL || secrets.DATABASE_URL }}
+      # can never lock prod write traffic. Falls back to the app DB
+      # secrets used by deploy when the follower is not configured.
+      DATABASE_URL: ${{ secrets.ML_DATABASE_URL || secrets.DATABASE_URL || secrets.NEON_DATABASE_URL }}
       MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
       MLFLOW_ARTIFACT_LOCATION: ${{ secrets.MLFLOW_ARTIFACT_LOCATION }}
       R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
@@ -126,6 +126,42 @@ jobs:
 
       - name: Install ML package (locked)
         run: uv sync --frozen --no-dev
+
+      - name: Verify required ML secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            DATABASE_URL \
+            MLFLOW_TRACKING_URI \
+            MLFLOW_ARTIFACT_LOCATION \
+            R2_ENDPOINT_URL \
+            R2_ACCESS_KEY_ID \
+            R2_SECRET_ACCESS_KEY \
+            R2_BUCKET; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name is not configured for ML retrain"
+              missing=1
+            fi
+          done
+
+          if [[ "${MLFLOW_ARTIFACT_LOCATION:-}" != s3://* ]]; then
+            echo "::error::MLFLOW_ARTIFACT_LOCATION must be s3://<bucket>/<prefix>"
+            missing=1
+          fi
+
+          if [[ -n "${R2_ENDPOINT_URL:-}" && "${R2_ENDPOINT_URL:-}" != https://*.r2.cloudflarestorage.com ]]; then
+            echo "::warning::R2_ENDPOINT_URL should look like https://<account-id>.r2.cloudflarestorage.com with no bucket or path"
+          fi
+
+          artifact_bucket="${MLFLOW_ARTIFACT_LOCATION:-}"
+          artifact_bucket="${artifact_bucket#s3://}"
+          artifact_bucket="${artifact_bucket%%/*}"
+          if [[ -n "${artifact_bucket:-}" && -n "${R2_BUCKET:-}" && "$artifact_bucket" != "$R2_BUCKET" ]]; then
+            echo "::warning::MLFLOW_ARTIFACT_LOCATION bucket does not match R2_BUCKET; MLflow artifacts and promoted exports will go to different buckets"
+          fi
+
+          exit "$missing"
 
       - name: Verify MLflow + R2 connectivity (bootstrap)
         run: uv run python -m scripts.bootstrap_mlflow
