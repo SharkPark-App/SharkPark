@@ -397,7 +397,7 @@ def load_synthetic_v2_snapshots(
                 )
             school_id = row[0]
 
-        # JOIN lots to derive `available = total_spaces - occupancy`.
+        # JOIN lots to derive `available = capacity - occupancy`.
         query = """
             SELECT
                 s.lot_id        AS lot_cuid,
@@ -407,7 +407,7 @@ def load_synthetic_v2_snapshots(
                 s.sample_weight AS sample_weight,
                 s.term          AS term,
                 s.generator_version AS generator_version,
-                l.total_spaces  AS total_spaces
+                l.capacity      AS total_spaces
             FROM synthetic_observations s
             JOIN lots l ON l.id = s.lot_id
             WHERE s.generator_version = :gen
