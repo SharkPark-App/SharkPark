@@ -731,8 +731,9 @@ def write_short_term_predictions(predictions_df: pd.DataFrame) -> int:
     """
     Write short-term predictions to the predictions_short_term table.
 
-    Replaces all existing predictions for the affected lots in a single
-    transaction (DELETE + INSERT).
+    Append-only. Each call inserts new rows for every prediction in
+    the dataframe; prior predictions for the same `(lot_id, target_time)` are
+    NOT deleted/overwritten.
 
     Args:
         predictions_df: DataFrame with columns matching predictions_short_term
@@ -765,13 +766,6 @@ def write_short_term_predictions(predictions_df: pd.DataFrame) -> int:
         cuid_lot_ids = [lot_id_map[lid] for lid in predictions_df["lot_id"]]
 
         with conn.cursor() as cur:
-            # Delete existing predictions for these lots
-            affected_cuids = list({lot_id_map[lid] for lid in lot_ids_in_df})
-            cur.execute(
-                "DELETE FROM predictions_short_term WHERE lot_id = ANY(%s)",
-                (affected_cuids,),
-            )
-
             # Batch insert new predictions
             ids = [_generate_cuid() for _ in range(len(predictions_df))]
             rows = list(
@@ -815,8 +809,9 @@ def write_long_term_predictions(predictions_df: pd.DataFrame) -> int:
     """
     Write long-term predictions to the predictions_long_term table.
 
-    Replaces all existing predictions for the affected lots in a single
-    transaction (DELETE + INSERT).
+    Append-only. Each call inserts new rows for every prediction in
+    the dataframe; prior predictions for the same
+    `(lot_id, target_date, target_hour)` are NOT deleted or overwritten.
 
     Args:
         predictions_df: DataFrame with columns: lot_id, predicted_at, target_date,
@@ -848,14 +843,7 @@ def write_long_term_predictions(predictions_df: pd.DataFrame) -> int:
         # Resolve readable lot_ids to CUIDs
         cuid_lot_ids = [lot_id_map[lid] for lid in predictions_df["lot_id"]]
 
-        # Delete existing predictions
         with conn.cursor() as cur:
-            affected_cuids = list({lot_id_map[lid] for lid in lot_ids_in_df})
-            cur.execute(
-                "DELETE FROM predictions_long_term WHERE lot_id = ANY(%s)",
-                (affected_cuids,),
-            )
-
             ids = [_generate_cuid() for _ in range(len(predictions_df))]
             rows = list(
                 zip(

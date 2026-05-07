@@ -17,8 +17,9 @@ import argparse
 import json
 import logging
 from collections import Counter
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import mlflow
 import numpy as np
@@ -34,6 +35,8 @@ from src.features.long_term import compute_baseline, prepare_inference_features
 from src.models.long_term import LongTermModel
 from src.postprocess.low_activity_scaling import apply_low_activity_scaling
 from src.postprocess.weather_adjustment import apply_weather_adjustment_long_term
+
+CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +86,7 @@ def predict(
 
     lot_ids = df["lot_id"].unique().tolist()
 
-    today = date.today()
+    today = datetime.now(CAMPUS_TZ).date()
     target_dates = [today + timedelta(days=d) for d in range(1, days_ahead + 1)]
     logger.info(
         "Building inference features for %d lots x %d days x 15 hours...",

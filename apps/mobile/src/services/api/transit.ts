@@ -15,7 +15,7 @@ export const TransitService = {
   },
 
   async getLiveShuttles(): Promise<MapShuttle[]> {
-    const response = await apiService.get<MapShuttle[]>(API_CONFIG.ENDPOINTS.TRANSIT_SHUTTLES);  
+    const response = await apiService.get<MapShuttle[]>(API_CONFIG.ENDPOINTS.TRANSIT_SHUTTLES);
     return response.data;
   },
 

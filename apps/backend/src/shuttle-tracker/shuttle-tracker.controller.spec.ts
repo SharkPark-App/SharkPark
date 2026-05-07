@@ -116,7 +116,7 @@ describe('ShuttleTrackerController', () => {
 
   describe('getETAs', () => {
     it('should return a list of ETAs for a specific stop', async () => {
-      const stopId = 's1';
+      const stopId = 1001; // number — ParseIntPipe converts the route param before it reaches the handler
       const mockETAs = [
         { routeId: 'r1', routeName: 'Red Route', abbreviation: 'RD', color: '#FF0000', etaMinutes: 5 },
         { routeId: 'r2', routeName: 'Blue Route', abbreviation: 'BL', color: '#0000FF', etaMinutes: 12 },
@@ -129,12 +129,12 @@ describe('ShuttleTrackerController', () => {
       expect(result.success).toBe(true);
       expect(result.count).toBe(2);
       expect(result.data).toEqual(mockETAs);
-      expect(service.getStopETAs).toHaveBeenCalledWith(stopId);
+      expect(service.getStopETAs).toHaveBeenCalledWith('1001'); // handler converts number back to string
       expect(service.getStopETAs).toHaveBeenCalledTimes(1);
     });
 
     it('should return an empty list if there are no ETAs for the stop', async () => {
-      const stopId = 'unknown-stop';
+      const stopId = 9999;
       service.getStopETAs.mockResolvedValue([]);
 
       const result = await controller.getETAs(stopId);
@@ -142,7 +142,7 @@ describe('ShuttleTrackerController', () => {
       expect(result.success).toBe(true);
       expect(result.count).toBe(0);
       expect(result.data).toEqual([]);
-      expect(service.getStopETAs).toHaveBeenCalledWith(stopId);
+      expect(service.getStopETAs).toHaveBeenCalledWith('9999');
     });
   });
 });
