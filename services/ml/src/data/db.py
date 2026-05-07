@@ -40,8 +40,8 @@ __all__ = [
 
 def _get_db_url() -> str:
     """Return a DB URL compatible with psycopg2/SQLAlchemy on Fly/Neon."""
-    # Prefer DIRECT_URL when present because it omits pooled-only query params.
-    url = os.environ.get("DIRECT_URL") or os.environ.get("DATABASE_URL", DATABASE_URL)
+    # Prefer DATABASE_URL to match app defaults; fall back to DIRECT_URL.
+    url = os.environ.get("DATABASE_URL", DATABASE_URL) or os.environ.get("DIRECT_URL")
     if not url:
         raise RuntimeError(
             "DATABASE_URL environment variable is required but not set."
