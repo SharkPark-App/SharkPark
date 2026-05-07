@@ -6,6 +6,7 @@ to PostgreSQL. Uses psycopg2 directly (same pattern as synthetic.py).
 """
 
 import os
+import re
 from datetime import date
 from typing import Optional
 
@@ -42,6 +43,17 @@ def _get_db_url() -> str:
     if not url:
         raise RuntimeError("DATABASE_URL environment variable is required but not set.")
     return url
+
+
+def _normalize_catalog_term(term: Optional[str]) -> Optional[str]:
+    """Normalize tags like Spring_2026 / spring-2026 to catalog term values."""
+    if term is None:
+        return None
+    raw = term.strip()
+    m = re.fullmatch(r"(?i)(spring|summer|fall|winter)[_-]\d{4}", raw)
+    if m:
+        return m.group(1).title()
+    return raw
 
 
 def get_engine():
@@ -351,7 +363,8 @@ def load_synthetic_v2_snapshots(
     Args:
         school_short_name: Required filter (e.g. ``"CSULB"``) — the v2 table
             is multi-school. Pass ``None`` to load all schools (rare).
-        term: Required filter (e.g. ``"Spring_2026"``) for reproducibility.
+        term: Required filter (e.g. ``"Spring_2026"`` or ``"Spring"``)
+            for reproducibility.
         start_date / end_date: Inclusive / exclusive ISO timestamp bounds.
         generator_version: Defaults to ``"v2"``; rarely overridden.
 
@@ -416,9 +429,10 @@ def load_synthetic_v2_snapshots(
         if school_id is not None:
             query += " AND s.school_id = :school_id"
             params["school_id"] = school_id
-        if term is not None:
+        resolved_term = _normalize_catalog_term(term)
+        if resolved_term is not None:
             query += " AND s.term = :term"
-            params["term"] = term
+            params["term"] = resolved_term
         if start_date:
             query += " AND s.timestamp >= :start_date"
             params["start_date"] = start_date

@@ -126,6 +126,35 @@ def train(
         df_v2 = pd.DataFrame()
 
     if not df_v1.empty and not df_v2.empty:
+        v1_keys = pd.DataFrame(
+            {
+                "lot_id": df_v1["lot_id"],
+                "timestamp": pd.to_datetime(df_v1["timestamp"], utc=True, errors="coerce")
+                .dt.tz_localize(None),
+            }
+        )
+        v2_keys = pd.DataFrame(
+            {
+                "lot_id": df_v2["lot_id"],
+                "timestamp": pd.to_datetime(df_v2["timestamp"], utc=True, errors="coerce")
+                .dt.tz_localize(None),
+            }
+        ).drop_duplicates()
+        v1_mask = (
+            v1_keys.merge(v2_keys, on=["lot_id", "timestamp"], how="left", indicator=True)[
+                "_merge"
+            ]
+            == "left_only"
+        )
+        dropped_overlap = int((~v1_mask).sum())
+        if dropped_overlap:
+            logger.info(
+                "  Dropped %s overlapping synthetic v1 rows replaced by v2",
+                f"{dropped_overlap:,}",
+            )
+        df_v1 = df_v1.loc[v1_mask].reset_index(drop=True)
+
+    if not df_v1.empty and not df_v2.empty:
         df_synthetic = pd.concat([df_v1, df_v2], ignore_index=True, sort=False)
     elif not df_v2.empty:
         df_synthetic = df_v2

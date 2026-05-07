@@ -131,6 +131,37 @@ def train(
     else:
         df_v2 = pd.DataFrame()
 
+    # Prefer v2 rows on overlapping (lot_id, timestamp) keys so we do not
+    # double-count the same slot from both synthetic tiers.
+    if not df_v1.empty and not df_v2.empty:
+        v1_keys = pd.DataFrame(
+            {
+                "lot_id": df_v1["lot_id"],
+                "timestamp": pd.to_datetime(df_v1["timestamp"], utc=True, errors="coerce")
+                .dt.tz_localize(None),
+            }
+        )
+        v2_keys = pd.DataFrame(
+            {
+                "lot_id": df_v2["lot_id"],
+                "timestamp": pd.to_datetime(df_v2["timestamp"], utc=True, errors="coerce")
+                .dt.tz_localize(None),
+            }
+        ).drop_duplicates()
+        v1_mask = (
+            v1_keys.merge(v2_keys, on=["lot_id", "timestamp"], how="left", indicator=True)[
+                "_merge"
+            ]
+            == "left_only"
+        )
+        dropped_overlap = int((~v1_mask).sum())
+        if dropped_overlap:
+            logger.info(
+                "  Dropped %s overlapping synthetic v1 rows replaced by v2",
+                f"{dropped_overlap:,}",
+            )
+        df_v1 = df_v1.loc[v1_mask].reset_index(drop=True)
+
     # Concatenate synthetic tiers; align columns so the 4-tier weighter
     # can read generator_version + sample_weight per row.
     if not df_v1.empty and not df_v2.empty:

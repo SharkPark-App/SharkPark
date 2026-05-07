@@ -250,7 +250,7 @@ jobs:
               --synthetic-v2-weight 1.0 \
               --synthetic-weight 0.1 \
               "${V2_ARGS[@]}" \
-              | tee train.log
+              |& tee train.log
           else
             uv run python -m scripts.train_long_term \
               --include-real \
@@ -259,12 +259,12 @@ jobs:
               --synthetic-v2-weight 1.0 \
               --synthetic-weight 0.1 \
               "${V2_ARGS[@]}" \
-              | tee train.log
+              |& tee train.log
           fi
           # train_*.py logs the candidate run id in the format
           #   "MLflow run ID: <run_id>"  (see logger.info call in
           #   services/ml/scripts/train_short_term.py).
-          RUN_ID=$(grep -oE 'MLflow run ID: [a-f0-9]+' train.log | tail -n1 | awk '{print $4}')
+          RUN_ID=$(grep -oE 'MLflow run ID: [a-f0-9]+' train.log | tail -n1 | awk '{print $4}' || true)
           if [[ -z "$RUN_ID" ]]; then
             echo "::error::Could not parse MLflow run ID from train.log"
             exit 1
