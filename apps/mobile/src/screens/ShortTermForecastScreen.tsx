@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/CustomText';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -67,6 +68,7 @@ export function ShortTermForecastScreen() {
   const route = useRoute<MapStackScreenProps<'Short Term Forecast'>['route']>();
   const { lotId } = route.params || { lotId: 'G1' };
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   // Navigate FAB uses dark slate by default. On dark mode that slate disappears
   // into the surface, so swap to a lighter slate-blue with a darker glyph for
   // contrast against both the button and the underlying dark card stack.
@@ -264,7 +266,7 @@ export function ShortTermForecastScreen() {
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 80 + insets.bottom }]}
       >
         {/* Event Notifications */}
         <EventBanner events={todayEvents} />
@@ -399,7 +401,7 @@ export function ShortTermForecastScreen() {
 
       {/* Report Button */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { bottom: SPACING.xxl + insets.bottom }]}
         onPress={() => setIsReportModalOpen(true)}
         activeOpacity={0.8}
         accessibilityRole="button"
@@ -416,7 +418,7 @@ export function ShortTermForecastScreen() {
 
       {/* Navigate Button (bottom right, symmetric to report button) */}
       <TouchableOpacity
-        style={[styles.fabNavigate, { backgroundColor: navigateFabBg }]}
+        style={[styles.fabNavigate, { backgroundColor: navigateFabBg, bottom: SPACING.xxl + insets.bottom }]}
         onPress={() => setIsMapModalOpen(true)}
         activeOpacity={0.8}
         accessibilityRole="button"

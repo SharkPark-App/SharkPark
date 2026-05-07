@@ -214,6 +214,10 @@ const ProfileScreen: React.FC = () => {
                 <TouchableOpacity
                   disabled={savingNotif || !isAuthenticated || isGuest}
                   onPress={() => toggleNotifPref('favorites_filling')}
+                  accessibilityRole="switch"
+                  accessibilityLabel="Lot Filling Up notifications"
+                  accessibilityHint="Alert when a favourite lot goes above 80%"
+                  accessibilityState={{ checked: !!notifPrefs.favorites_filling, disabled: savingNotif || !isAuthenticated || isGuest }}
                 >
                   <ToggleSwitch value={!!notifPrefs.favorites_filling} />
                 </TouchableOpacity>
@@ -229,6 +233,10 @@ const ProfileScreen: React.FC = () => {
                 <TouchableOpacity
                   disabled={savingNotif || !isAuthenticated || isGuest}
                   onPress={() => toggleNotifPref('favorites_clearing')}
+                  accessibilityRole="switch"
+                  accessibilityLabel="Lot Clearing Up notifications"
+                  accessibilityHint="Alert when a favourite lot drops below 30%"
+                  accessibilityState={{ checked: !!notifPrefs.favorites_clearing, disabled: savingNotif || !isAuthenticated || isGuest }}
                 >
                   <ToggleSwitch value={!!notifPrefs.favorites_clearing} />
                 </TouchableOpacity>
@@ -244,6 +252,10 @@ const ProfileScreen: React.FC = () => {
                 <TouchableOpacity
                   disabled={savingNotif || !isAuthenticated || isGuest}
                   onPress={() => toggleNotifPref('surge_alerts')}
+                  accessibilityRole="switch"
+                  accessibilityLabel="Campus Surge Alerts notifications"
+                  accessibilityHint="Notify when multiple lots exceed 90% full"
+                  accessibilityState={{ checked: !!notifPrefs.surge_alerts, disabled: savingNotif || !isAuthenticated || isGuest }}
                 >
                   <ToggleSwitch value={!!notifPrefs.surge_alerts} />
                 </TouchableOpacity>
@@ -259,6 +271,10 @@ const ProfileScreen: React.FC = () => {
                 <TouchableOpacity
                   disabled={savingNotif || !isAuthenticated || isGuest}
                   onPress={() => toggleNotifPref('event_alerts')}
+                  accessibilityRole="switch"
+                  accessibilityLabel="Event Alerts notifications"
+                  accessibilityHint="Notify about campus events starting in 2 hours"
+                  accessibilityState={{ checked: !!notifPrefs.event_alerts, disabled: savingNotif || !isAuthenticated || isGuest }}
                 >
                   <ToggleSwitch value={!!notifPrefs.event_alerts} />
                 </TouchableOpacity>
@@ -298,6 +314,9 @@ const ProfileScreen: React.FC = () => {
               <TouchableOpacity 
                 style={[styles.settingsButton, { backgroundColor: colors.primary }]}
                   onPress={openLocationSettings}
+                  accessibilityRole="button"
+                  accessibilityLabel="Grant location access"
+                  accessibilityHint="Opens location permission settings"
                 >
                   <Text style={styles.settingsButtonText}>
                     Grant Location Access
@@ -339,7 +358,11 @@ const ProfileScreen: React.FC = () => {
 
           {/* Appearance Settings */}
           <SectionCard title="Appearance">
-            <View style={styles.themeList}>
+            <View
+              style={styles.themeList}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Theme selection"
+            >
               <TouchableOpacity
                 onPress={() => setThemeMode('light')}
                 style={[
@@ -347,11 +370,14 @@ const ProfileScreen: React.FC = () => {
                   { borderColor: colors.borderGray },
                 themeMode === 'light' && { borderColor: colors.primary, backgroundColor: colors.yellowLight }
                 ]}
+                accessibilityRole="radio"
+                accessibilityLabel="Light mode"
+                accessibilityState={{ checked: themeMode === 'light' }}
               >
                 <Text style={[styles.themeLabel, { color: colors.black }]}>
                   Light Mode
                 </Text>
-              {themeMode === 'light' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} />}
+              {themeMode === 'light' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} accessible={false} />}
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -361,11 +387,14 @@ const ProfileScreen: React.FC = () => {
                   { borderColor: colors.borderGray },
                 themeMode === 'dark' && { borderColor: colors.primary, backgroundColor: colors.yellowLight }
                 ]}
+                accessibilityRole="radio"
+                accessibilityLabel="Dark mode"
+                accessibilityState={{ checked: themeMode === 'dark' }}
               >
                 <Text style={[styles.themeLabel, { color: colors.black }]}>
                   Dark Mode
                 </Text>
-              {themeMode === 'dark' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} />}
+              {themeMode === 'dark' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} accessible={false} />}
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -375,11 +404,14 @@ const ProfileScreen: React.FC = () => {
                   { borderColor: colors.borderGray },
                 themeMode === 'system' && { borderColor: colors.primary, backgroundColor: colors.yellowLight }
                 ]}
+                accessibilityRole="radio"
+                accessibilityLabel="System default theme"
+                accessibilityState={{ checked: themeMode === 'system' }}
               >
                 <Text style={[styles.themeLabel, { color: colors.black }]}>
                   System Settings
                 </Text>
-              {themeMode === 'system' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} />}
+              {themeMode === 'system' && <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]} accessible={false} />}
               </TouchableOpacity>
             </View>
           </SectionCard>
@@ -391,8 +423,10 @@ const ProfileScreen: React.FC = () => {
             { backgroundColor: colors.errorLight, borderColor: colors.errorBorder }
             ]}
             onPress={handleLogout}
+            accessibilityRole="button"
+            accessibilityLabel="Logout"
           >
-            <Icon name="log-out-outline" size={20} color={colors.errorText} />
+            <Icon name="log-out-outline" size={20} color={colors.errorText} accessible={false} />
           <Text style={[styles.logoutButtonText, { color: colors.errorText }]}>Logout</Text>
           </TouchableOpacity>
 
@@ -400,8 +434,11 @@ const ProfileScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.deleteAccountButton, { borderColor: colors.errorBorder }]}
             onPress={handleDeleteAccount}
+            accessibilityRole="button"
+            accessibilityLabel="Delete account"
+            accessibilityHint="Permanently deletes your SharkPark account and all data"
           >
-            <Icon name="trash-outline" size={18} color={colors.errorText} />
+            <Icon name="trash-outline" size={18} color={colors.errorText} accessible={false} />
             <Text style={[styles.deleteAccountText, { color: colors.errorText }]}>
               Delete Account
             </Text>

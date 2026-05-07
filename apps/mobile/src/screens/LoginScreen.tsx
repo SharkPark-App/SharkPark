@@ -12,12 +12,14 @@ import { Text } from '../components/CustomText';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const sharkParkLogo = require('../assets/images/SharkParkV4.webp') as ImageSourcePropType;
 
 export const LoginScreen = () => {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [errorMessage, setErrorMessage] = useState('');
   const { login, isLoading, continueAsGuest } = useAuth();
 
@@ -34,7 +36,7 @@ export const LoginScreen = () => {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.lightGray }]}
+      style={[styles.container, { backgroundColor: colors.lightGray, paddingBottom: insets.bottom }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
@@ -67,6 +69,9 @@ export const LoginScreen = () => {
               ]}
               onPress={handleLogin}
               disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel={isLoading ? 'Authenticating, please wait' : 'Login with CSULB SSO'}
+              accessibilityState={{ disabled: isLoading }}
             >
               <Text style={[styles.sendButtonText, { color: colors.white }]}>
                 {isLoading ? 'Authenticating...' : 'Login with CSULB SSO'}
