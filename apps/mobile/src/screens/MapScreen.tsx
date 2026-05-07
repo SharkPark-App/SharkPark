@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   StyleSheet,
@@ -9,7 +10,7 @@ import { Text } from '../components/CustomText';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polygon, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { getOccupancyColorGradient, getReadableTextColor } from '../utils/parkingUtils';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
@@ -24,11 +25,33 @@ import useFavorites from '../hooks/useFavorites';
 import { useTransitData } from '../hooks/useTransitData';
 import { useStopETAs } from '../hooks/useStopETAs';
 import { ShuttleMarker } from '../components/Map/ShuttleMarker';
+import { SegmentedCircle } from '../components/Map/SegmentedCircle';
 import { StopModal } from '../components/Modals/StopModal';
 import { ShuttleModal } from '../components/Modals/ShuttleModal';
 import type { MapStop } from '../types/transit';
+import { LOT_POLYGONS, type LatLng } from '../data/lotPolygons'
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+function centroid(ring: LatLng[]): { latitude: number; longitude: number } {
+  const pts =
+    ring.length > 1 &&
+    ring[0].lat === ring[ring.length - 1].lat &&
+    ring[0].lng === ring[ring.length - 1].lng
+      ? ring.slice(0, -1)
+      : ring;
+  const sum = pts.reduce(
+    (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
+    { lat: 0, lng: 0 },
+  );
+  return { latitude: sum.lat / pts.length, longitude: sum.lng / pts.length };
+}
+
+function hexWithAlpha(hex: string, alpha: number): string {
+  const clean = hex.startsWith('#') ? hex : `#${hex}`;
+  const a = Math.round(alpha * 255).toString(16).padStart(2, '0');
+  return `${clean}${a}`;
+}
 
 // Interactive lot component
 const InteractiveLot: React.FC<{
@@ -58,17 +81,59 @@ const InteractiveLot: React.FC<{
   // at every band. Redacted pins keep white over the neutral fill.
   const labelColor = isRedacted ? colors.white : getReadableTextColor(occupancyColor);
   const isSingleWord = !lot.lot_name.trim().includes(' ');
+  const a11yLabel = isRedacted
+    ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
+    : `${lot.lot_name} parking lot, ${pct} percent full`;
 
+  const polygon = LOT_POLYGONS[lot.lot_id];
+
+  if (polygon) {
+    const coords = polygon.map((p) => ({ latitude: p.lat, longitude: p.lng }));
+    const center = centroid(polygon);
+    return (
+      <React.Fragment>
+        <Polygon
+          coordinates={coords}
+          strokeColor={occupancyColor}
+          strokeWidth={2}
+          fillColor={hexWithAlpha(occupancyColor, 0.35)}
+          tappable
+          onPress={() => onPress(lot)}
+        />
+        <Marker
+          coordinate={center}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={true}
+          onPress={() => onPress(lot)}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel={a11yLabel}
+        >
+          <View
+            style={[
+              styles.lotLabel,
+              { backgroundColor: occupancyColor, borderColor: colors.white },
+            ]}
+          >
+            <Text
+              style={[styles.lotText, { color: colors.white }]}
+              adjustsFontSizeToFit={true}
+              numberOfLines={isSingleWord ? 1 : 2}
+              accessible={false}
+            >
+              {lot.lot_name}
+            </Text>
+          </View>
+        </Marker>
+      </React.Fragment>
+    );
+  }
+
+  // Fallback: circle marker for lots not yet in LOT_POLYGONS
   return (
     <Marker
       coordinate={{ latitude: lot.center_lat, longitude: lot.center_lng }}
       onPress={() => onPress(lot)}
-      // Must stay true so iOS re-snapshots the marker bitmap when the
-      // pin's color flips (live\u2194redacted on contributor grant/revoke,
-      // or band change on poll). With ~30 lots the perf cost is
-      // negligible; tracksViewChanges={false} silently caches the very
-      // first render and never updates, which is the bug the user hit
-      // where pins stayed neutral after granting Always.
       tracksViewChanges={true}
     >
       <View
@@ -81,11 +146,7 @@ const InteractiveLot: React.FC<{
           }
         ]}
         accessibilityRole="button"
-        accessibilityLabel={
-          isRedacted
-            ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
-            : `${lot.lot_name} parking lot, ${pct} percent full.`
-        }
+        accessibilityLabel={a11yLabel}
       >
         <Text
           style={[styles.lotText, { color: labelColor }]}
@@ -160,10 +221,43 @@ const MapScreen: React.FC = () => {
 
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
+  const [hiddenRouteIds, setHiddenRouteIds] = useState<string[]>([]);
+  // Gate map content rendering on AsyncStorage hydration so the persisted
+  // filter snaps in before the user sees an unfiltered flash.
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.multiGet(['filter:selectedLots', 'filter:hiddenRouteIds'])
+      .then(([lots, routes]) => {
+        // Parse each entry independently — a single corrupted key shouldn't
+        // wipe the other persisted filter.
+        if (lots[1]) {
+          try {
+            const parsed = JSON.parse(lots[1]);
+            if (Array.isArray(parsed)) setSelectedLots(parsed);
+          } catch {
+            // Corrupted entry — drop it so a subsequent setItem rewrites cleanly.
+            AsyncStorage.removeItem('filter:selectedLots').catch(() => {});
+          }
+        }
+        if (routes[1]) {
+          try {
+            const parsed = JSON.parse(routes[1]);
+            if (Array.isArray(parsed)) setHiddenRouteIds(parsed);
+          } catch {
+            AsyncStorage.removeItem('filter:hiddenRouteIds').catch(() => {});
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setFiltersHydrated(true));
+  }, []);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
   const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
   const [selectedShuttleId, setSelectedShuttleId] = useState<string | null>(null);
+  const [mapBearing, setMapBearing] = useState(0);
+  const mapRef = useRef<MapView>(null);
   const { arrivals, isLoading: stopLoading } = useStopETAs(selectedStop?.id);
 
   // Re-derive the selected shuttle from the live `shuttles` array on every
@@ -203,6 +297,7 @@ const MapScreen: React.FC = () => {
   const handleApplyFilter = (filteredLots: string[]) => {
     setSelectedLots(filteredLots);
     setIsFilterModalOpen(false);
+    AsyncStorage.setItem('filter:selectedLots', JSON.stringify(filteredLots)).catch(() => {});
     // Filter is visual-only — does NOT affect geofence registration.
     // Geofences are registered for all lots at startup based on user type (see geoHelpers).
   };
@@ -215,15 +310,45 @@ const MapScreen: React.FC = () => {
     });
   };
 
+  const handleRegionChangeComplete = useCallback(async () => {
+    if (!mapRef.current) return;
+    const camera = await mapRef.current.getCamera();
+    const next = camera.heading ?? 0;
+    // Only push state if the bearing meaningfully changed — sub-1° deltas
+    // re-render every ShuttleMarker (each runs the heading subtraction)
+    // for no perceptible visual benefit. ~1° is the smallest rotation a
+    // user can intentionally produce in a two-finger gesture.
+    setMapBearing((prev) => {
+      const delta = Math.abs(next - prev);
+      const wrapped = Math.min(delta, 360 - delta);
+      return wrapped >= 1 ? next : prev;
+    });
+  }, []);
+
   const openRecommendationModal = useCallback(() => {
     refreshFavorites();
     setIsRecommendationModalOpen(true);
   }, [refreshFavorites]);
 
   // Filter parking lots based on selected filter
-  const filteredParkingLots = selectedLots.length > 0 
+  const filteredParkingLots = selectedLots.length > 0
     ? lots.filter(lot => selectedLots.includes(lot.lot_id))
     : lots;
+
+  const filteredRoutes = hiddenRouteIds.length > 0
+    ? routes?.filter(r => !hiddenRouteIds.includes(r.id))
+    : routes;
+  const filteredStops = hiddenRouteIds.length > 0
+    ? stops?.filter(s => s.routeIds.some(id => !hiddenRouteIds.includes(id)))
+    : stops;
+
+  const routeColorMap = useMemo(
+    () => new Map(routes?.map((r) => [r.id, r.color]) ?? []),
+    [routes],
+  );
+  const filteredShuttles = hiddenRouteIds.length > 0
+    ? shuttles?.filter(s => !hiddenRouteIds.includes(s.routeId))
+    : shuttles;
 
   // Intial map display centered around CSULB
   const initialRegion = {
@@ -240,6 +365,7 @@ const MapScreen: React.FC = () => {
 
       <View style={styles.mapContainer}>
         <MapView
+          ref={mapRef}
           key={isDark ? 'dark-map' : 'light-map'} // Android (Google Maps) requires a forced re-render
           provider={PROVIDER_DEFAULT} // Apple Maps for iOS, Google Maps for Android
           style={styles.map}
@@ -249,8 +375,9 @@ const MapScreen: React.FC = () => {
           pitchEnabled={false}
           moveOnMarkerPress={false}
           userInterfaceStyle={isDark ? 'dark' : 'light'}
+          onRegionChangeComplete={handleRegionChangeComplete}
         >
-          {filteredParkingLots?.map((lot) => {
+          {filtersHydrated && filteredParkingLots?.map((lot) => {
             // Force remount of the Marker whenever the visual state changes
             // (live → redacted on contributor revoke, color band change on
             // poll, or null → number on grant). Apple Maps' Marker caches
@@ -281,19 +408,19 @@ const MapScreen: React.FC = () => {
             );
           })}
           
-          {/* Draw route paths */}
-          {isFocused && routes?.map((route) => (
+          {/* Draw route paths — static, no isFocused guard to avoid unmount on nav transitions */}
+          {filtersHydrated && filteredRoutes?.map((route) => (
             <Polyline
               key={route.id}
               coordinates={route.coordinates}
               strokeColor={route.color}
               strokeWidth={4}
-              zIndex={1} 
+              zIndex={1}
             />
           ))}
 
-          {/* Draw stops */}
-          {isFocused && stops?.map((stop) => (
+          {/* Draw stops — static, no isFocused guard to avoid unmount on nav transitions */}
+          {filtersHydrated && filteredStops?.map((stop) => (
             <Marker
               key={stop.id}
               coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
@@ -303,28 +430,22 @@ const MapScreen: React.FC = () => {
               accessible={true}
               accessibilityRole="button"
               accessibilityLabel={`Shuttle stop: ${stop.name}`}
-              tracksViewChanges={false} // Locks the snapshot so MapKit doesn't constantly re-render
+              tracksViewChanges={false}
             >
-              {/* Custom Stop Circle */}
-              <View
-                style={[
-                  styles.stopCircle,
-                  {
-                    backgroundColor: stop.color,
-                    // dynamically apply a gray border for dark mode, white for light mode
-                    borderColor: colors.white, 
-                  }
-                ]}
+              <SegmentedCircle
+                colors={stop.routeIds.map(id => routeColorMap.get(id) ?? stop.color)}
+                borderColor={colors.white}
               />
             </Marker>
           ))}
 
           {/* Draw live shuttles */}
-          {isFocused && shuttles?.map((shuttle) => (
+          {filtersHydrated && isFocused && filteredShuttles?.map((shuttle) => (
             <ShuttleMarker
               key={shuttle.id}
               shuttle={shuttle}
               colors={colors}
+              mapBearing={mapBearing}
               onPress={(s) => setSelectedShuttleId(s.id)}
             />
           ))}
@@ -343,8 +464,15 @@ const MapScreen: React.FC = () => {
       <LotFilterModal
         isOpen={isFilterModalOpen}
         onClose={handleFilterClose}
+        lots={lots ?? []}
         selectedLots={selectedLots}
         onApplyFilter={handleApplyFilter}
+        routes={routes ?? []}
+        hiddenRouteIds={hiddenRouteIds}
+        onApplyTransitFilter={(ids) => {
+          setHiddenRouteIds(ids);
+          AsyncStorage.setItem('filter:hiddenRouteIds', JSON.stringify(ids)).catch(() => {});
+        }}
       />
 
       {/* Combined Favorites & Recommendations Modal */}
@@ -389,6 +517,15 @@ const styles = StyleSheet.create({
   map: {
     width: screenWidth,
     height: screenHeight,
+  },
+  lotLabel: {
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxWidth: 52,
   },
   lotCircle: {
     width: 40,

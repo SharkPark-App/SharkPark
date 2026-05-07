@@ -188,7 +188,7 @@ describe('StopModal Component', () => {
       />
     );
 
-    const firstArrivalRow = screen.getByLabelText('Route East Loop. Arriving in 3 minutes.');
+    const firstArrivalRow = screen.getByLabelText('Route East Loop. 3 min.');
     expect(firstArrivalRow).toBeTruthy();
   });
 });

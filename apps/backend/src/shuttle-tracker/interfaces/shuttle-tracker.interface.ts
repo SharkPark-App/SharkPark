@@ -6,7 +6,7 @@ export interface MapStop {
   name: string;
   latitude: number;
   longitude: number;
-  routeId: string;
+  routeIds: string[];
   color: string;
 }
 
@@ -36,6 +36,17 @@ export interface MapShuttle {
   heading?: number;
   paxLoad: number;
   capacity: number;
+}
+
+/**
+ * Live position frame received from the PassioGO! WebSocket.
+ */
+export interface ShuttleLiveUpdate {
+  id: string;
+  latitude: number;
+  longitude: number;
+  heading: number;
+  paxLoad: number;
 }
 
 /**
