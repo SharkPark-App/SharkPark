@@ -337,8 +337,8 @@ async function main() {
   for (const event of campusEvents) {
     const loc = event.location.toLowerCase();
     let buildingId: string | null = null;
-    for (const [, b] of buildingMap) {
-      if (b.alternate_names.some(alt => loc.includes(alt.toLowerCase()))) {
+    for (const [name, b] of buildingMap) {
+      if (loc.includes(name.toLowerCase()) || b.alternate_names.some(alt => loc.includes(alt.toLowerCase()))) {
         buildingId = b.id;
         break;
       }

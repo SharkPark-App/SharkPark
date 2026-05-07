@@ -4,6 +4,8 @@ import {
   TouchableOpacity,
   ScrollView, StyleSheet,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Text } from '../CustomText';
 import { TextInput } from '../CustomTextInput';
@@ -101,13 +103,11 @@ export function ReportModal({ lotDisplayName, isOpen, onClose, onSubmit }: Repor
       onRequestClose={handleClose}
     >
       <View style={styles.backdrop}>
-        <TouchableOpacity 
-          style={styles.backdropTouchable}
-          activeOpacity={1}
-          onPress={handleClose}
-        />
-        
-        <View style={styles.modal}>
+        <KeyboardAvoidingView
+          style={styles.modal}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+        >
           {/* Modal Header */}
           <View style={styles.header}>
             <View>
@@ -125,7 +125,7 @@ export function ReportModal({ lotDisplayName, isOpen, onClose, onSubmit }: Repor
           </View>
 
           {/* Modal Content */}
-          <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
             {/* Incident Type Selection */}
             <View style={styles.section}>
               <Text style={styles.label}>Select Incident Type</Text>
@@ -212,7 +212,7 @@ export function ReportModal({ lotDisplayName, isOpen, onClose, onSubmit }: Repor
               }
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
