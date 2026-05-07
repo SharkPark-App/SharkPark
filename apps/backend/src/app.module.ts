@@ -21,6 +21,7 @@ import { ReportsModule } from './reports/reports.module';
 import { RedisModule } from './redis/redis.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { MinVersionModule } from './min-version/min-version.module';
+import { AdminModule } from './admin/admin.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { appConfig, authConfig, dbConfig, privacyConfig, weatherConfig, notificationsConfig, validateConfig } from './config/configuration';
 
@@ -105,6 +106,7 @@ const isProduction = process.env.NODE_ENV === 'production';
     RedisModule,
     NotificationsModule,
     MinVersionModule,
+    AdminModule,
   ],
   controllers: [],
   providers: [

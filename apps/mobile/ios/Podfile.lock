@@ -2015,6 +2015,28 @@ PODS:
     - ReactNativeDependencies
     - TSLocationManager (~> 4.1.0)
     - Yoga
+  - RNBootSplash (6.3.12):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - RNCAsyncStorage (2.2.0):
     - hermes-engine
     - RCTRequired
@@ -2507,6 +2529,7 @@ DEPENDENCIES:
   - ReactCommon/turbomodule/core (from `../../../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../../../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
   - RNBackgroundGeolocation (from `../../../node_modules/react-native-background-geolocation`)
+  - RNBootSplash (from `../../../node_modules/react-native-bootsplash`)
   - "RNCAsyncStorage (from `../../../node_modules/@react-native-async-storage/async-storage`)"
   - RNDeviceInfo (from `../../../node_modules/react-native-device-info`)
   - "RNFBApp (from `../../../node_modules/@react-native-firebase/app`)"
@@ -2696,6 +2719,8 @@ EXTERNAL SOURCES:
     :podspec: "../../../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
   RNBackgroundGeolocation:
     :path: "../../../node_modules/react-native-background-geolocation"
+  RNBootSplash:
+    :path: "../../../node_modules/react-native-bootsplash"
   RNCAsyncStorage:
     :path: "../../../node_modules/@react-native-async-storage/async-storage"
   RNDeviceInfo:
@@ -2813,6 +2838,7 @@ SPEC CHECKSUMS:
   ReactCommon: 376f3a275bcf5e59a360e0b1762beb3bd41495ce
   ReactNativeDependencies: a04296b4caff1e7581286eac69bd3b3f660fe025
   RNBackgroundGeolocation: ce3b7173820e25a7eb93a0636e43679aa02ef0c1
+  RNBootSplash: e6cc84341d0e5f0041ba7d58e6660ab0c31ddf1f
   RNCAsyncStorage: 0f84413588571e74ef9cff6e3b669346e3abf9cb
   RNDeviceInfo: d79872e11c8e9c4de0d65b0ee6e0cee719f37fea
   RNFBApp: 87b0a7d66a333c9b6d0de5ec99c51a649a1a3e1e

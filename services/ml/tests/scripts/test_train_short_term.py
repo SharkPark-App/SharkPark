@@ -82,6 +82,12 @@ class TestTrain:
         assert "synthetic_weight" in params
         assert "cold_start_weight" in params
         assert "synthetic_rows" in params
+        # D5: 4-tier weighting + v2 loader knobs.
+        assert "real_weight" in params
+        assert "synthetic_v2_weight" in params
+        assert "include_synthetic_v2" in params
+        assert "synthetic_v1_rows" in params
+        assert "synthetic_v2_rows" in params
 
     def test_train_multi_file_glob(self, synthetic_df, tmp_path):
         """Training with a glob pattern should concatenate multiple parquets."""

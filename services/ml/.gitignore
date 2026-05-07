@@ -9,6 +9,11 @@ __pycache__/
 # Generated data
 *.parquet
 *.csv
+# Operator-supplied enrollment override CSV (if used) stays ignored —
+# it may contain non-public PeopleSoft numbers and goes stale fast.
+# Reference room-capacity / building-code data now lives in Postgres,
+# refreshed weekly by the ingest_room_capacities cron job.
+data/section_enrollment_overrides.csv
 
 # Model artifacts
 *.joblib

@@ -3,7 +3,9 @@ import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
 import WebSocket from 'ws';
 import { ShuttleTrackerGateway } from './shuttle-tracker.gateway';
+import { ShuttleTrackerService } from './shuttle-tracker.service';
 import { PassioLiveShuttleDto } from './dto/passiogo.dto';
+import type { ShuttleLiveUpdate } from './interfaces/shuttle-tracker.interface';
 
 @Injectable()
 export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
@@ -15,6 +17,13 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
   private reconnectAttempts = 0;
   private readonly BASE_DELAY_MS = 5000;         // 5 sec
   private readonly MAX_DELAY_MS = 5 * 60 * 1000; // 5 min
+
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Batch outgoing broadcasts: accumulate updates within a window, emit once
+  private pendingUpdates = new Map<string, ShuttleLiveUpdate>();
+  private batchTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly BATCH_WINDOW_MS = 200;
 
   private readonly PASSIO_WS_URL = 'wss://passio3.com/';
   // CSULB specification
@@ -28,8 +37,11 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     field: ['busId', 'latitude', 'longitude', 'course', 'paxLoad', 'more']
   });
 
-  constructor(private readonly shuttleGateway: ShuttleTrackerGateway) {}
-  
+  constructor(
+    private readonly shuttleGateway: ShuttleTrackerGateway,
+    private readonly shuttleService: ShuttleTrackerService,
+  ) {}
+
   onModuleInit() {
     this.connect();
   }
@@ -51,6 +63,13 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
         this.logger.log('Subscription handshake established.');
         this.ws.send(this.HANDSHAKE_PAYLOAD);
       }
+
+      // Keep-alive: detect silent drops that don't produce close/error events
+      this.pingInterval = setInterval(() => {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.ping();
+        }
+      }, 30_000);
     });
 
     this.ws.on('message', (data: WebSocket.Data) => {
@@ -69,12 +88,20 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
 
     this.ws.on('close', () => {
       this.logger.warn('PassioGo WebSocket closed. Reconnect attempt queued...');
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
+        this.pingInterval = null;
+      }
+      // Refresh lastSeen so buses aren't pruned during the reconnect backoff window
+      this.shuttleService.refreshAllLastSeen();
       this.scheduleReconnect();
     });
 
     this.ws.on('error', (error) => {
       this.logger.error(`PassioGo WebSocket error: ${error.message}`);
-      this.ws?.close();
+      // terminate() forces immediate teardown; ws fires 'close' automatically after 'error'
+      // so the reconnect loop is still triggered. close() would wait for a clean handshake.
+      this.ws?.terminate();
     });
   }
 
@@ -91,25 +118,42 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      // Transform for frontend
-      const locationUpdate = {
-        id: liveData.busId.toString(), // Standardize ID as a string
+      const update: ShuttleLiveUpdate = {
+        id: liveData.busId.toString(),
         latitude: liveData.latitude,
         longitude: liveData.longitude,
-        heading: liveData.course,      // Map course -> heading
+        heading: liveData.course,
         paxLoad: liveData.paxLoad,
       };
 
-      // Broadcast data (batching happens later)
-      this.shuttleGateway.broadcastShuttles([locationUpdate]);
-
+      // Accumulate by bus ID — last frame wins if two arrive within the window
+      this.pendingUpdates.set(update.id, update);
+      if (!this.batchTimer) {
+        this.batchTimer = setTimeout(() => this.flushBatch(), this.BATCH_WINDOW_MS);
+      }
     } catch (error) {
       this.logger.error('Failed to process live location payload', error);
     }
   }
 
+  private flushBatch() {
+    const updates = [...this.pendingUpdates.values()];
+    this.shuttleService.applyLiveUpdates(updates);
+    this.shuttleGateway.broadcastShuttles(updates);
+    this.pendingUpdates.clear();
+    this.batchTimer = null;
+  }
+
+  /**
+   * Filters out keep-alive / control frames before validation. PassioGO's
+   * current protocol keys position frames by `busId`, but older deployments
+   * have been observed sending the same payload keyed only by `latitude` /
+   * `longitude`. Accept either so a protocol bump doesn't silently mute the
+   * live feed; downstream DTO validation drops anything genuinely malformed.
+   */
   private hasActiveShuttles(data: Record<string, unknown>): boolean {
-    return data !== null && typeof data === 'object' && Object.keys(data).length > 0;
+    if (data === null || typeof data !== 'object') return false;
+    return 'busId' in data || ('latitude' in data && 'longitude' in data);
   }
 
   private scheduleReconnect() {
@@ -133,23 +177,34 @@ export class PassioWebSocketService implements OnModuleInit, OnModuleDestroy {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    
+
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+      this.batchTimer = null;
+    }
+    this.pendingUpdates.clear();
+
     if (this.ws) {
       this.ws.removeAllListeners();
-      
+
       // Swallow error if close() is called during connection establishment
       this.ws.on('error', () => {});
-      
+
       try {
         if (this.ws.readyState === WebSocket.OPEN) {
           this.ws.close();
         } else {
-          this.ws.terminate(); 
+          this.ws.terminate();
         }
       } catch {
         this.logger.debug('Safely caught error during WebSocket teardown');
       }
-      
+
       this.ws = null;
     }
   }

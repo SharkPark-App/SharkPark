@@ -1,6 +1,13 @@
 """
 Inspection tool for long-term predictions in the database.
 
+predictions_long_term is append-only; this script dedupes to the
+freshest `predicted_at` per (lot_id, target_date, target_hour) so output
+reflects the current forecast, matching how the backend serves it.
+
+`--summary` aggregates over the deduped set, so row counts reflect unique
+slots and `Predicted At` is the freshest prediction time per date.
+
 Usage:
     python -m scripts.check_long_term_predictions
     python -m scripts.check_long_term_predictions --limit 20
@@ -53,8 +60,14 @@ def check_predictions(
                         COUNT(DISTINCT lot_id) AS lots,
                         COUNT(*) AS total_rows,
                         AVG(predicted_occupancy) AS avg_predicted,
-                        MIN(predicted_at) AS predicted_at
-                    FROM predictions_long_term
+                        MAX(predicted_at) AS predicted_at
+                    FROM (
+                        SELECT DISTINCT ON (lot_id, target_date, target_hour)
+                               lot_id, target_date, target_hour,
+                               predicted_occupancy, predicted_at
+                        FROM predictions_long_term
+                        ORDER BY lot_id, target_date, target_hour, predicted_at DESC
+                    ) latest
                     GROUP BY DATE(target_date)
                     ORDER BY target_date
                 """)
@@ -113,12 +126,16 @@ def check_predictions(
 
             cur.execute(
                 f"""
-                SELECT p.lot_id, p.predicted_at, p.target_date, p.target_hour,
-                       p.predicted_occupancy, p.confidence_lower, p.confidence_upper,
-                       p.model_version
-                FROM predictions_long_term p
-                {where}
-                ORDER BY p.target_date, p.target_hour, p.lot_id
+                SELECT * FROM (
+                    SELECT DISTINCT ON (p.lot_id, p.target_date, p.target_hour)
+                           p.lot_id, p.predicted_at, p.target_date, p.target_hour,
+                           p.predicted_occupancy, p.confidence_lower, p.confidence_upper,
+                           p.model_version
+                    FROM predictions_long_term p
+                    {where}
+                    ORDER BY p.lot_id, p.target_date, p.target_hour, p.predicted_at DESC
+                ) latest
+                ORDER BY target_date, target_hour, lot_id
                 LIMIT %s
             """,
                 params + [limit],

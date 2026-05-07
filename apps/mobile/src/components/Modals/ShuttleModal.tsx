@@ -20,11 +20,12 @@ interface PassengerLoadInfo {
 
 /** Map raw passenger / capacity counts to a friendly load category. */
 const getPassengerLoadInfo = (paxLoad: number, capacity: number): PassengerLoadInfo => {
-  const percent = capacity > 0 ? Math.round((paxLoad / capacity) * 100) : 0;
+  const percent = capacity > 0 ? Math.min(100, Math.round((paxLoad / capacity) * 100)) : 0;
   let text: string;
   if (percent >= 85) text = 'Very crowded';
   else if (percent >= 50) text = 'Crowded';
   else if (percent >= 20) text = 'Not too crowded';
+  else if (percent > 0) text = 'Not crowded';
   else text = 'Empty';
   return { text, percent };
 };
@@ -93,7 +94,7 @@ export const ShuttleModal: React.FC<ShuttleModalProps> = ({
               <View style={styles.row}>
                 <Icon name="navigate" size={TYPOGRAPHY.fontSize.md} color={colors.darkGray} accessible={false} />
                 <Text style={[styles.rowText, { color: colors.textPrimary }]}>
-                  Route: {shuttle.route || 'Unknown'}
+                  {shuttle.route || 'Unknown'}
                 </Text>
               </View>
 
@@ -101,13 +102,15 @@ export const ShuttleModal: React.FC<ShuttleModalProps> = ({
               <View style={styles.row}>
                 <Icon name="people" size={TYPOGRAPHY.fontSize.md} color={colors.darkGray} accessible={false} />
                 <Text style={[styles.rowText, { color: colors.textPrimary }]}>
-                  {loadText} ({percent}%)
+                  {shuttle.capacity > 0 ? `${loadText} (${percent}%)` : 'Unknown'}
                 </Text>
               </View>
 
-              <Text style={[styles.subText, { color: colors.darkGray }]}>
-                {shuttle.paxLoad} / {shuttle.capacity} passengers
-              </Text>
+              {shuttle.capacity > 0 && (
+                <Text style={[styles.subText, { color: colors.darkGray }]}>
+                  {shuttle.paxLoad} / {shuttle.capacity} passengers
+                </Text>
+              )}
             </View>
           </View>
         </TouchableWithoutFeedback>
@@ -168,7 +171,6 @@ const styles = StyleSheet.create({
   },
   body: {
     gap: SPACING.sm,
-    minHeight: 100,
   },
   row: {
     flexDirection: 'row',

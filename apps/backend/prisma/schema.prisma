@@ -12,81 +12,100 @@ datasource db {
 // ─── Core Tables ──────────────────────────────────────────
 
 model School {
-  id           String   @id @default(cuid())
-  school_name  String   @unique
-  short_name   String   @unique // e.g. "CSULB"
-  timezone     String   @default("America/Los_Angeles")
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id          String   @id @default(cuid())
+  school_name String   @unique
+  short_name  String   @unique // e.g. "CSULB"
+  timezone    String   @default("America/Los_Angeles")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
-  lots              Lot[]
-  users             User[]
-  buildings         Building[]
-  campus_events     CampusEvent[]
-  weather           Weather[]
-  weather_forecasts WeatherForecast[]
-  lot_advisories    LotAdvisory[]
+  lots                         Lot[]
+  users                        User[]
+  buildings                    Building[]
+  campus_events                CampusEvent[]
+  course_meetings              CourseMeeting[]
+  weather                      Weather[]
+  weather_forecasts            WeatherForecast[]
+  lot_advisories               LotAdvisory[]
+  room_capacities              RoomCapacity[]
+  section_enrollment_overrides SectionEnrollmentOverride[]
+  lot_building_proximity       LotBuildingProximity[]
+  synthetic_observations       SyntheticObservation[]
 
   @@map("schools")
 }
 
 model Lot {
-  id                  String   @id @default(cuid())
-  school_id           String
-  lot_id              String   // e.g. "G1", "E7" — human-readable
-  lot_name            String
-  display_name        String
-  lot_number          String
-  lot_type            LotType
-  capacity            Int
-  current_occupancy   Int      @default(0)
-  location_description String
-  center_lat          Float
-  center_lng          Float
-  geofence_polygon    Json     // Array<{ lat: number; lng: number }>
-  geofence_radius     Float
-  permit_types        String[]
-  daily_permit_allowed Boolean @default(false)
-  daily_rate          Decimal? @db.Decimal(10, 2)
-  hours_weekday       Json     // { open: string; close: string } | string
-  hours_saturday      Json
-  hours_sunday        Json
-  ev_charging_stations Int     @default(0)
-  motorcycle_spaces   Int      @default(0)
-  accessible_spaces   Int      @default(0)
-  /** Spaces dedicated to short-term/visitor parking (≤30 min metered or designated). */
-  short_term_parking_spaces Int @default(0)
-  /** Spaces designated for low-emission vehicles (signed but unenforced — count is informational). */
-  low_emission_spaces Int      @default(0)
-  /** Number of pay stations physically located in this lot. */
-  pay_stations        Int      @default(0)
-  has_lighting        Boolean  @default(true)
-  has_cameras         Boolean  @default(false)
-  has_emergency_phone Boolean  @default(false)
-  is_covered          Boolean  @default(false)
-  is_paved            Boolean  @default(true)
-  /** True for multi-level parking structures (PVN/PVS/PYR at CSULB). */
-  is_structure        Boolean  @default(false)
-  /** True for surface lots with solar-panel canopies overhead (G6/G7/G8/E8 at CSULB). */
-  has_solar_canopy    Boolean  @default(false)
-  levels              Int?
+  id                        String          @id @default(cuid())
+  school_id                 String
+  lot_id                    String // e.g. "G1", "E7" — human-readable
+  lot_name                  String
+  display_name              String
+  lot_number                String
+  lot_type                  LotType
+  capacity                  Int
+  current_occupancy         Int             @default(0)
+  location_description      String
+  center_lat                Float
+  center_lng                Float
+  geofence_polygon          Json // Array<{ lat: number; lng: number }>
+  geofence_radius           Float
+  permit_types              String[]
+  daily_permit_allowed      Boolean         @default(false)
+  daily_rate                Decimal?        @db.Decimal(10, 2)
+  hours_weekday             Json // { open: string; close: string } | string
+  hours_saturday            Json
+  hours_sunday              Json
+  ev_charging_stations      Int             @default(0)
+  motorcycle_spaces         Int             @default(0)
+  accessible_spaces         Int             @default(0)
+  /**
+   * Spaces dedicated to short-term/visitor parking (≤30 min metered or designated).
+   */
+  short_term_parking_spaces Int             @default(0)
+  /**
+   * Spaces designated for low-emission vehicles (signed but unenforced — count is informational).
+   */
+  low_emission_spaces       Int             @default(0)
+  /**
+   * Number of pay stations physically located in this lot.
+   */
+  pay_stations              Int             @default(0)
+  has_lighting              Boolean         @default(true)
+  has_cameras               Boolean         @default(false)
+  has_emergency_phone       Boolean         @default(false)
+  is_covered                Boolean         @default(false)
+  is_paved                  Boolean         @default(true)
+  /**
+   * True for multi-level parking structures (PVN/PVS/PYR at CSULB).
+   */
+  is_structure              Boolean         @default(false)
+  /**
+   * True for surface lots with solar-panel canopies overhead (G6/G7/G8/E8 at CSULB).
+   */
+  has_solar_canopy          Boolean         @default(false)
+  levels                    Int?
   /// Quality grade of the static metadata (capacity, geofence, amenity counts, hours).
   /// NOT a runtime/ML signal — see OccupancySnapshot.confidence for the live grade.
-  metadata_confidence ConfidenceLevel @default(LOW)
-  created_at          DateTime @default(now())
-  updated_at          DateTime @updatedAt
+  metadata_confidence       ConfidenceLevel @default(LOW)
+  created_at                DateTime        @default(now())
+  updated_at                DateTime        @updatedAt
 
-  school              School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  user_favorites      UserFavorite[]
-  occupancy_events    OccupancyEvent[]
-  occupancy_snapshots OccupancySnapshot[]
-  device_states       DeviceState[]
-  predictions_short   PredictionShortTerm[]
-  predictions_long    PredictionLongTerm[]
-  reports             Report[]
-  lot_buildings       LotBuilding[]
-  lot_advisories      LotAdvisory[]
-  notification_logs   NotificationLog[]
+  school                     School                    @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  user_favorites             UserFavorite[]
+  occupancy_events           OccupancyEvent[]
+  occupancy_snapshots        OccupancySnapshot[]
+  consensus_observations     ConsensusObservation[]
+  penetration_rate_estimates PenetrationRateEstimate[]
+  device_states              DeviceState[]
+  predictions_short          PredictionShortTerm[]
+  predictions_long           PredictionLongTerm[]
+  reports                    Report[]
+  lot_buildings              LotBuilding[]
+  lot_building_proximity     LotBuildingProximity[]
+  synthetic_observations     SyntheticObservation[]
+  lot_advisories             LotAdvisory[]
+  notification_logs          NotificationLog[]
 
   @@unique([school_id, lot_id])
   @@index([lot_type], name: "idx_lots_type")
@@ -94,22 +113,22 @@ model Lot {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  school_id      String
-  email          String   @unique
-  first_name     String
-  last_name      String
-  user_type      UserType
-  notification_preferences Json @default("{\"favorites_filling\":false,\"favorites_clearing\":false,\"surge_alerts\":false,\"event_alerts\":false}")
-  created_at     DateTime @default(now())
-  last_login     DateTime?
-  updated_at     DateTime @updatedAt
+  id                       String    @id @default(cuid())
+  school_id                String
+  email                    String    @unique
+  first_name               String
+  last_name                String
+  user_type                UserType
+  notification_preferences Json      @default("{\"favorites_filling\":false,\"favorites_clearing\":false,\"surge_alerts\":false,\"event_alerts\":false}")
+  created_at               DateTime  @default(now())
+  last_login               DateTime?
+  updated_at               DateTime  @updatedAt
 
-  school             School             @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  favorites          UserFavorite[]
-  reports            Report[]
-  push_tokens        PushToken[]
-  notification_logs  NotificationLog[]
+  school            School            @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  favorites         UserFavorite[]
+  reports           Report[]
+  push_tokens       PushToken[]
+  notification_logs NotificationLog[]
 
   @@index([school_id])
   @@map("users")
@@ -131,12 +150,12 @@ model UserFavorite {
 // ─── Timeseries Tables ────────────────────────────────────
 
 model OccupancyEvent {
-  id                String           @id @default(cuid())
-  lot_id            String
-  event_type        EventType
-  device_hash       String           // SHA-256 hash of device_id + salt
-  timestamp         DateTime
-  created_at        DateTime         @default(now())
+  id          String    @id @default(cuid())
+  lot_id      String
+  event_type  EventType
+  device_hash String // SHA-256 hash of device_id + salt
+  timestamp   DateTime
+  created_at  DateTime  @default(now())
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
@@ -158,17 +177,17 @@ model OccupancySnapshot {
   is_cold_start     Boolean?
 
   // Penetration rate estimation columns
-  estimated_occupancy    Int?     // Scaled-up occupancy estimate
-  penetration_rate_used  Float?   // Effective penetration rate at snapshot time
+  estimated_occupancy   Int? // Scaled-up occupancy estimate
+  penetration_rate_used Float? // Effective penetration rate at snapshot time
 
   // Weather context at snapshot time
-  weather_id        String?
+  weather_id String?
 
   // ML feature columns (populated at write time by academic-calendar.ts)
-  semester          String?         // "fall", "spring", "summer", "session", "break"
-  academic_period   String?         // "early", "regular", "midterms", "late", "dead_week", "finals", "break"
-  week_of_semester  Int?
-  is_campus_open    Boolean         @default(true)
+  semester         String? // "fall", "spring", "summer", "session", "break"
+  academic_period  String? // "early", "regular", "midterms", "late", "dead_week", "finals", "break"
+  week_of_semester Int?
+  is_campus_open   Boolean @default(true)
 
   lot     Lot      @relation(fields: [lot_id], references: [id], onDelete: Cascade)
   weather Weather? @relation(fields: [weather_id], references: [id], onDelete: SetNull)
@@ -191,27 +210,115 @@ model DeviceState {
   @@map("device_states")
 }
 
+/// Per-lot 5-minute consensus window built from contributor pings.
+///
+/// Computed inside the existing 15-minute snapshot job (see
+/// `apps/backend/src/scheduler/jobs/snapshot.job.ts`) for the most-recently-
+/// completed 5-minute UTC bucket; backfilled densely (every 5 min) for the
+/// last 90 days by `apps/backend/src/scripts/backfill-consensus.ts`.
+///
+/// `agreement_score` is `1 - MAD(claims) / max(median(claims), 1)` clipped
+/// to [0, 1], where `claims` is the running occupancy count after each
+/// OccupancyEvent in the window. Stable windows → score ≈ 1; choppy
+/// in/out churn → score → 0.
+///
+/// `is_ground_truth` gates downstream training: requires
+/// `agreement_score >= 0.7` AND `contributor_count >= 3`.
+/// TODO: also exclude windows containing FLAGGED devices once a per-device
+/// flag persistence layer exists (today, FLAGGED is only a per-call SourceType
+/// passed to ReliabilityService — there is no device-flag table to query).
+model ConsensusObservation {
+  id                 String   @id @default(cuid())
+  lot_id             String
+  /// Inclusive start of the 5-minute UTC bucket (always aligned to :00/:05/...).
+  window_start       DateTime
+  /// Exclusive end of the bucket; always `window_start + 5 minutes`.
+  window_end         DateTime
+  /// Distinct contributor device_hashes with at least one event in the window.
+  contributor_count  Int
+  /// `1 - MAD/max(median,1)` clipped to [0,1]. 1.0 = perfect agreement.
+  agreement_score    Float
+  /// Median of the running per-event occupancy counts in the window.
+  observed_occupancy Int
+  /// `observed_occupancy / lot.capacity`, rounded to 4 decimals.
+  observed_rate      Float
+  /// True iff `agreement_score >= 0.7` AND `contributor_count >= 3`.
+  is_ground_truth    Boolean  @default(false)
+  created_at         DateTime @default(now())
+
+  lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+
+  @@unique([lot_id, window_start])
+  @@index([lot_id, window_start, is_ground_truth], name: "idx_consensus_lot_window_truth")
+  @@map("consensus_observations")
+}
+
+/// Per-(lot, day-of-week bucket, hour) running EWMA estimate of the app's
+/// penetration rate (= contributor pings / true occupancy at that bucket).
+///
+/// Recomputed daily by `services/ml/scripts/recompute_penetration_rates.py`
+/// at 02:30 PT, scheduled in `apps/backend/src/scheduler/cron-monitors.ts`.
+/// Only consensus windows with `is_ground_truth = true` contribute samples,
+/// so the EWMA inherits the B-pipeline's quality gate.
+///
+/// `dow_bucket` collapses the seven weekdays into three traffic profiles
+/// (CSULB observed pattern):
+///   0 = weekday (Mon–Fri or holiday-shifted weekday)
+///   1 = Saturday-like (light commuter day)
+///   2 = Sunday-like / closure
+/// Daily recompute is responsible for any holiday remapping.
+///
+/// Variance is maintained via Welford's algorithm so we can later expose a
+/// confidence interval / decide when to trust the EWMA over the rule.
+model PenetrationRateEstimate {
+  lot_id        String
+  /// 0=weekday, 1=Sat-like, 2=Sun-like (see model docstring).
+  dow_bucket    Int
+  /// 0..23 (school-local hour at sample time).
+  hour_bucket   Int
+  /// Current EWMA, alpha = 0.1 (new = 0.1*sample + 0.9*old).
+  ewma_value    Float
+  /// Running variance via Welford's M2/(n-1). 0 when sample_count < 2.
+  ewma_variance Float    @default(0)
+  /// Total number of samples observed for this bucket.
+  sample_count  Int      @default(0)
+  /// Wall-clock of the most recent recompute that mutated the row.
+  last_updated  DateTime @default(now()) @updatedAt
+
+  lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+
+  @@id([lot_id, dow_bucket, hour_bucket])
+  @@map("penetration_rate_estimates")
+}
+
 // ─── Campus Context Tables ────────────────────────────────
 
 model Building {
-  id              String   @id @default(cuid())
-  school_id       String
-  name            String
-  alternate_names String[]
+  id                String            @id @default(cuid())
+  school_id         String
+  name              String
+  alternate_names   String[]
   /// Approximate centerpoint (degrees, WGS84). Used to compute proximity to lots / events.
-  center_lat      Float
-  center_lng      Float
+  center_lat        Float
+  center_lng        Float
   /// Optional outer-ring polygon (array of {lat,lng}) extracted from concept3d.
   /// Null when no authoritative footprint is available (e.g. small offices, off-campus venues).
   /// When present, used for point-to-edge proximity instead of haversine-to-centroid.
   footprint_polygon Json?
   /// Functional category — drives grouped display in lot info and other UIs.
-  category        BuildingCategory @default(OTHER)
-  created_at      DateTime @default(now())
+  category          BuildingCategory  @default(OTHER)
+  /// Capacity profile used as a fallback when no specific room capacity
+  /// is known for a section's location. Independent of `category` (which
+  /// drives UI grouping). Auto-derived from `room_capacities` median by
+  /// the catalog ingest job; nullable when fewer than 3 rooms are known.
+  classroom_profile ClassroomProfile?
+  created_at        DateTime          @default(now())
 
-  school        School        @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  lot_buildings LotBuilding[]
-  campus_events CampusEvent[]
+  school                 School                 @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  lot_buildings          LotBuilding[]
+  lot_building_proximity LotBuildingProximity[]
+  campus_events          CampusEvent[]
+  course_meetings        CourseMeeting[]
 
   @@unique([school_id, name])
   @@map("buildings")
@@ -228,10 +335,225 @@ model LotBuilding {
   @@map("lot_buildings")
 }
 
-model CampusEvent {
-  id          String   @id @default(cuid())
+/// Computed (lot × building) proximity matrix used by the D4 synthetic
+/// generator to allocate arriving drivers to lots via Plackett-Luce
+/// softmax weights. Distinct from `LotBuilding`, which is a hand-curated
+/// "this lot serves these buildings" semantic mapping shown in the UI:
+/// `LotBuildingProximity` is a dense numeric matrix capped at 500 m
+/// containing every (lot, building) pair the ML pipeline might need.
+///
+/// Refreshed weekly (Sat 02:30 PT, after the room-capacities scrape) by
+/// `services/ml/scripts/build_proximity_matrix.py`. The job is cheap and
+/// idempotent — lots and buildings are nearly static, but running on a
+/// schedule means newly-seeded buildings get weights without manual
+/// intervention. `weight = exp(-distance_m / 250)` so the contribution
+/// decays to 0.135 at 500 m (the cap) and 0.368 at the historical
+/// `DEFAULT_LOT_BUILDING_RADIUS_M = 250` membership radius.
+model LotBuildingProximity {
+  lot_id      String
+  building_id String
   school_id   String
-  external_id String   @unique
+  /// Great-circle (haversine) distance, lot centroid → building centroid.
+  /// Polygon-aware refinement is left to the membership table; the
+  /// proximity matrix only needs centroid-to-centroid for the Plackett-
+  /// Luce softmax to behave correctly.
+  distance_m  Float
+  /// `exp(-distance_m / 250)`, in (e^-2, 1] = (~0.135, 1].
+  weight      Float
+  computed_at DateTime @default(now())
+
+  lot      Lot      @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  building Building @relation(fields: [building_id], references: [id], onDelete: Cascade)
+  school   School   @relation(fields: [school_id], references: [id], onDelete: Cascade)
+
+  @@id([lot_id, building_id])
+  @@index([school_id])
+  @@index([building_id])
+  @@map("lot_building_proximity")
+}
+
+/// Course-catalog driven synthetic occupancy training set produced by
+/// `services/ml/scripts/generate_synthetic_v2.py` (D4). One row per
+/// (lot, 15-minute UTC bucket, generator_version) — schema mirrors the
+/// real `OccupancySnapshot` so `train_short_term.py` /
+/// `train_long_term.py` can `UNION ALL` real + synthetic with a
+/// `sample_weight` column and a single set of features.
+///
+/// Distinct from `OccupancySnapshot` so:
+///   1. real / synthetic never accidentally co-mingle in admin dashboards
+///      (which only read `occupancy_snapshots`),
+///   2. multiple generator versions can coexist for A/B comparison
+///      (`generator_version` is part of the unique key),
+///   3. periodic regeneration is a hard `DELETE WHERE term=? AND
+///      generator_version=?` instead of a heuristic merge.
+///
+/// `sample_weight` is set at generation time per the D5 schedule
+/// (v2 → 1.0; v1 legacy → 0.1). Per-lot decay against real-observation
+/// counts is applied at training time (not stored here, so re-running
+/// training with a freshly grown real corpus doesn't require a
+/// regeneration pass).
+model SyntheticObservation {
+  id                String   @id @default(cuid())
+  school_id         String
+  lot_id            String
+  /// Aligned to the real-data 15-minute UTC bucket (`:00/:15/:30/:45`).
+  timestamp         DateTime
+  occupancy         Int
+  occupancy_rate    Float
+  /// Generator label, e.g. "v2" for the catalog-driven generator,
+  /// "v1" for the legacy heuristic generator. Part of the uniqueness
+  /// key so A/B regenerations don't collide.
+  generator_version String
+  /// Term label matching `CourseMeeting.term` (e.g. "Spring_2026").
+  /// Lets us delete & regenerate one term at a time.
+  term              String
+  /// Per-row training weight. Cohort-level prior; per-lot real-data
+  /// decay is applied at training time.
+  sample_weight     Float    @default(1.0)
+  generated_at      DateTime @default(now())
+
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  lot    Lot    @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+
+  @@unique([lot_id, timestamp, generator_version])
+  @@index([school_id, term, generator_version])
+  @@index([lot_id, timestamp])
+  @@map("synthetic_observations")
+}
+
+/// CSULB course schedule rows scraped from the public Schedule of Classes
+/// (`web.csulb.edu/depts/enrollment/registration/class_schedule/{Term}/By_Subject/{SUBJ}.html`).
+///
+/// Populated by `services/ml/scripts/ingest_csulb_catalog.py` (D2). Each row
+/// represents one section of one course on one meeting pattern (a course that
+/// meets MWF + has a separate Friday lab is two rows). Down-stream consumers:
+///
+///   * D3 `build_proximity_matrix.py` — joins `building_id` → lot centroids to
+///     produce a (course_meeting × lot) walking-distance matrix.
+///   * D4 `synthetic_v2.py` — generates per-5-min synthetic occupancy:
+///       attending_students = enrollment * ATTENDANCE * COMMUTER_RATE * DRIVE_SHARE
+///     allocated to lots via the proximity matrix.
+///
+/// Capacity / true enrollment is NOT exposed by the public scraper (gated
+/// behind CSULB SSO). At ingest time `enrollment` is filled with a course-type
+/// default (LECTURE=35, LAB=24, SEMINAR=20, ACTIVITY=20, SUPPLEMENTAL=15) and
+/// `enrollment_source` records the provenance ('default' | 'override' | 'sso').
+/// Operators can supply per-section overrides via
+/// `services/ml/data/raw/section_enrollment_overrides.csv` between ingest runs.
+///
+/// Days are stored two ways: `days_raw` preserves the original token (e.g.
+/// 'TuTh') for display/debugging, and `days_mask` is a 7-bit field
+/// (Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64) for cheap
+/// time-window queries.
+///
+/// Times are minutes-since-midnight in the school's local timezone (no DST
+/// math needed; CSULB uses fixed wall-clock meeting times). Range 0..1439.
+model CourseMeeting {
+  id                String   @id @default(cuid())
+  school_id         String
+  /// e.g. "Spring_2026". Matches the URL segment on the public schedule.
+  term              String
+  /// e.g. "CECS". Indexed alongside (school_id, term) for bulk filters.
+  subject_code      String
+  /// Full course code as printed (e.g. "CECS 174"). Includes the subject prefix.
+  course_code       String
+  course_title      String
+  /// Section number from the schedule (e.g. "01", "SEM-2").
+  section           String
+  /// Catalog "class #" identifier when present (5-digit numeric for CSULB).
+  class_number      String?
+  /// LECTURE | LAB | SEMINAR | ACTIVITY | SUPPLEMENTAL — derived from CLASS NOTES.
+  course_type       String?
+  /// Units string as printed (e.g. "3.0", "1.0-3.0"). Stored as text to preserve ranges.
+  units             String?
+  /// Bitmask: Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64.
+  /// 0 means no scheduled meeting (online / by-arrangement).
+  days_mask         Int      @default(0)
+  /// Original token from the schedule (e.g. "MWF", "TuTh"). For display/debug.
+  days_raw          String?
+  /// Start time as minutes since local midnight (0..1439). Null for online/TBA.
+  start_minute      Int?
+  /// End time as minutes since local midnight (0..1439). Null for online/TBA.
+  end_minute        Int?
+  /// Raw location string from the schedule (e.g. "ECS-105", "ONLINE", "TBA").
+  location_raw      String?
+  /// Resolved building reference. Null when location is ONLINE/TBA or unmapped.
+  building_id       String?
+  /// Room number split out of `location_raw` when known (e.g. "105" from "ECS-105").
+  room              String?
+  instructor        String?
+  /// Best-effort enrollment count. See model docstring for source priority.
+  enrollment        Int?
+  /// Provenance of `enrollment`: 'default' | 'override' | 'sso'.
+  enrollment_source String?
+  /// Best-effort room capacity (when populated by override CSV). Null otherwise.
+  room_capacity     Int?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  school   School    @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  building Building? @relation(fields: [building_id], references: [id], onDelete: SetNull)
+
+  /// Idempotency key for the D2 ingest upsert.
+  @@unique([school_id, term, subject_code, course_code, section])
+  @@index([school_id, term])
+  @@index([school_id, term, days_mask])
+  @@index([building_id])
+  @@map("course_meetings")
+}
+
+/// Per-room seat counts scraped weekly from the public CSULB Faculty/Staff
+/// Resources pages (lecture allocations, auditoriums, active-learning rooms,
+/// conflict-off rooms). Refreshed Sat 02:00 PT by
+/// `services/ml/scripts/ingest_room_capacities.py`. Source-of-truth for
+/// tier-2 of the catalog ingest enrollment fallback (see CourseMeeting
+/// docstring). `building_code` matches one of the strings in
+/// `Building.alternate_names` (CSULB's PeopleSoft 3-letter abbreviation).
+/// Capacity = 999 is the sentinel for outdoor/PE-range rooms; downstream
+/// ML code falls through to type-default for those.
+model RoomCapacity {
+  id            String   @id @default(cuid())
+  school_id     String
+  building_code String
+  room          String
+  capacity      Int
+  /// Provenance label, used in /admin/ml-status: 'lecture-allocation' |
+  /// 'auditorium' | 'active-learning' | 'conflict-off' | 'manual-seed'.
+  source        String
+  fetched_at    DateTime @default(now())
+
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+
+  @@unique([school_id, building_code, room])
+  @@index([school_id, building_code])
+  @@map("room_capacities")
+}
+
+/// Operator-curated enrollment override for a specific class section.
+/// Highest-priority tier of the catalog ingest fallback — beats
+/// `room_capacities` and the building-profile/type defaults. Replaces the
+/// previously-planned gitignored CSV; storing in DB lets operators edit
+/// via SQL or a future admin endpoint without redeploying the scraper.
+model SectionEnrollmentOverride {
+  id           String   @id @default(cuid())
+  school_id    String
+  /// CSULB 5-digit class number from the public Schedule of Classes.
+  class_number String
+  enrollment   Int
+  /// Optional human note ("manual SSO export 2026-05-01", etc.).
+  note         String?
+  updated_at   DateTime @updatedAt
+
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+
+  @@unique([school_id, class_number])
+  @@map("section_enrollment_overrides")
+}
+
+model CampusEvent {
+  id          String    @id @default(cuid())
+  school_id   String
+  external_id String    @unique
   event_name  String
   location    String
   description String?
@@ -244,7 +566,7 @@ model CampusEvent {
   // flips SCHEDULED → FINAL. CampusLabs (academic / club) events always set a
   // real end_time from the source feed.
   end_time    DateTime?
-  created_at  DateTime @default(now())
+  created_at  DateTime  @default(now())
 
   // ── Live sports state ────────────────────────────────────
   // Populated by the sports scraper for LBSU home games. Null for
@@ -328,8 +650,8 @@ model Report {
   message    String?
   created_at DateTime   @default(now())
 
-  lot        Lot        @relation(fields: [lot_id], references: [id], onDelete: Cascade)
-  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lot  Lot  @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([lot_id, created_at], name: "idx_reports_lot_time")
   @@index([user_id, created_at], name: "idx_reports_user_time")
@@ -339,35 +661,35 @@ model Report {
 // ─── ML Prediction Tables ─────────────────────────────────
 
 model PredictionShortTerm {
-  id              String   @id @default(cuid())
-  lot_id          String
-  predicted_at    DateTime
-  target_time     DateTime
-  predicted_occupancy Float   // rate [0, 1] — CHECK constraint in DB
+  id                  String   @id @default(cuid())
+  lot_id              String
+  predicted_at        DateTime
+  target_time         DateTime
+  predicted_occupancy Float // rate [0, 1] — CHECK constraint in DB
   confidence_lower    Float
   confidence_upper    Float
-  model_version   String
+  model_version       String
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
-  @@index([lot_id, target_time], name: "idx_pred_short")
+  @@index([lot_id, target_time, predicted_at(sort: Desc)], name: "idx_pred_short")
   @@map("predictions_short_term")
 }
 
 model PredictionLongTerm {
-  id              String   @id @default(cuid())
-  lot_id          String
-  predicted_at    DateTime
-  target_date     DateTime
-  target_hour     Int      // 0-23
-  predicted_occupancy Float   // rate [0, 1] — CHECK constraint in DB
+  id                  String   @id @default(cuid())
+  lot_id              String
+  predicted_at        DateTime
+  target_date         DateTime
+  target_hour         Int // 0-23
+  predicted_occupancy Float // rate [0, 1] — CHECK constraint in DB
   confidence_lower    Float
   confidence_upper    Float
-  model_version   String
+  model_version       String
 
   lot Lot @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
-  @@index([lot_id, target_date, target_hour], name: "idx_pred_long")
+  @@index([lot_id, target_date, target_hour, predicted_at(sort: Desc)], name: "idx_pred_long")
   @@map("predictions_long_term")
 }
 
@@ -377,7 +699,7 @@ model PushToken {
   id         String   @id @default(cuid())
   user_id    String
   token      String   @unique
-  platform   String   // "ios" | "android"
+  platform   String // "ios" | "android"
   created_at DateTime @default(now())
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -413,11 +735,11 @@ model NotificationLog {
 // while still letting us prove "an account at this hash was deleted at T".
 
 model AuditEvent {
-  id          String         @id @default(cuid())
-  event_type  AuditEventType
-  actor_hash  String         // SHA-256(email + AUDIT_HASH_SALT)
-  metadata    Json?          // event-type-specific structured fields, no PII
-  created_at  DateTime       @default(now())
+  id         String         @id @default(cuid())
+  event_type AuditEventType
+  actor_hash String // SHA-256(email + AUDIT_HASH_SALT)
+  metadata   Json? // event-type-specific structured fields, no PII
+  created_at DateTime       @default(now())
 
   @@index([event_type, created_at], name: "idx_audit_type_time")
   @@index([actor_hash, created_at], name: "idx_audit_actor_time")
@@ -432,9 +754,9 @@ model AuditEvent {
 // which still prove the device is alive and reporting).
 
 model ContributorPing {
-  device_hash    String    @id           // SHA-256(salt:device_id) — same hash used in OccupancyEvent
-  first_seen_at  DateTime  @default(now())
-  last_seen_at   DateTime  @default(now())
+  device_hash   String    @id // SHA-256(salt:device_id) — same hash used in OccupancyEvent
+  first_seen_at DateTime  @default(now())
+  last_seen_at  DateTime  @default(now())
   // Permission-grant grace pass. Set when the device confirms it has granted
   // location permissions but hasn't necessarily produced an occupancy event
   // yet (e.g. a fresh install on opening day). The ContributorGuard accepts a
@@ -442,10 +764,10 @@ model ContributorPing {
   // OR `granted_at` is within CONTRIBUTOR_GRANT_TTL_MS (24h by default). This
   // unblocks first-run UX without giving away unlimited free reads — the
   // grant expires unless the device starts contributing real events.
-  granted_at     DateTime?
+  granted_at    DateTime?
 
   @@index([last_seen_at], name: "idx_contributor_last_seen")
-  @@index([granted_at],   name: "idx_contributor_granted_at")
+  @@index([granted_at], name: "idx_contributor_granted_at")
   @@map("contributor_pings")
 }
 
@@ -459,31 +781,72 @@ model ContributorPing {
 // removed from the source must be marked is_active=false (handled by
 // the seeder when an existing row is no longer in the generated set).
 model LotAdvisory {
-  id                String           @id @default(cuid())
-  school_id         String
-  lot_id            String           // FK → Lot.id
-  title             String
-  description       String?
-  severity          AdvisorySeverity
-  source            AdvisorySource
-  source_cat_id     Int              // concept3d catId
-  source_marker_id  Int              // concept3d location.id
-  /** Reason this advisory was attached to this lot. */
-  match_reason      String           // "name_mention" | "polygon_overlap"
-  /** Advisory's own footprint polygon (Array<{lat,lng}>). */
-  polygon           Json
-  starts_at         DateTime?
-  ends_at           DateTime?
-  is_active         Boolean          @default(true)
-  created_at        DateTime         @default(now())
-  updated_at        DateTime         @updatedAt
+  id               String           @id @default(cuid())
+  school_id        String
+  lot_id           String // FK → Lot.id
+  title            String
+  description      String?
+  severity         AdvisorySeverity
+  source           AdvisorySource
+  source_cat_id    Int // concept3d catId
+  source_marker_id Int // concept3d location.id
+  /**
+   * Reason this advisory was attached to this lot.
+   */
+  match_reason     String // "name_mention" | "polygon_overlap"
+  /**
+   * Advisory's own footprint polygon (Array<{lat,lng}>).
+   */
+  polygon          Json
+  starts_at        DateTime?
+  ends_at          DateTime?
+  is_active        Boolean          @default(true)
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
 
-  school            School           @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  lot               Lot              @relation(fields: [lot_id], references: [id], onDelete: Cascade)
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  lot    Lot    @relation(fields: [lot_id], references: [id], onDelete: Cascade)
 
   @@unique([school_id, source, source_marker_id, lot_id], name: "uq_lot_advisory_source_lot")
   @@index([lot_id, is_active], name: "idx_lot_advisory_lot_active")
   @@map("lot_advisories")
+}
+
+// ─── ML observability ─────────────────────────────────────
+// One row per scheduled run of an ML-related cron (predict-short-term,
+// predict-long-term, …). Written by CronRunnerService when the monitor
+// config has `track: true`. Powers /admin/ml-status — the demo-day
+// "is the model alive?" dashboard and the Sentry-independent audit trail
+// for promotions/predictions.
+//
+// Lifecycle: row is INSERTed with status=RUNNING at tick start, then
+// UPDATEd at completion to one of SUCCESS / FAILED / SKIPPED. The
+// `metadata` JSON captures whatever the job parses out of its ML
+// subprocess (model_version, predictions_written, mae, …) — schema
+// is intentionally loose so we can evolve what we record without a
+// migration each time.
+model MlCronRun {
+  id            String          @id @default(cuid())
+  job_name      String // 'predict-short-term' | 'predict-long-term' | …
+  started_at    DateTime        @default(now())
+  completed_at  DateTime?
+  status        MlCronRunStatus @default(RUNNING)
+  duration_ms   Int?
+  error_message String?
+  /// Free-form payload populated by the job: model_version, predictions_written,
+  /// rmse, etc. JSON keeps schema flexible as we expand observability fields.
+  metadata      Json?
+
+  @@index([job_name, started_at(sort: Desc)], name: "idx_ml_cron_runs_job_started")
+  @@index([status, started_at(sort: Desc)], name: "idx_ml_cron_runs_status_started")
+  @@map("ml_cron_runs")
+}
+
+enum MlCronRunStatus {
+  RUNNING // tick started, work() in progress (or process killed before update)
+  SUCCESS // work() resolved without throwing
+  FAILED // work() threw — error_message populated
+  SKIPPED // advisory lock busy on this instance — another machine ran it
 }
 
 // ─── Enums ────────────────────────────────────────────────
@@ -516,9 +879,9 @@ enum ReportType {
 }
 
 enum AdvisorySeverity {
-  INFO      // general notice (e.g. "coming in 2026")
-  ADVISORY  // construction in/near lot, expect impact
-  CLOSURE   // lot or access road closed
+  INFO // general notice (e.g. "coming in 2026")
+  ADVISORY // construction in/near lot, expect impact
+  CLOSURE // lot or access road closed
 }
 
 enum AdvisorySource {
@@ -526,13 +889,28 @@ enum AdvisorySource {
 }
 
 enum BuildingCategory {
-  ACADEMIC        // classroom buildings, faculty offices, libraries
-  ADMINISTRATIVE  // admin offices, services, support facilities
-  HOUSING         // residence halls and on-campus housing (non-public)
-  RETAIL          // bookstore, cafes, convenience stores
-  ATHLETIC        // athletics venues, performance halls, recreation
-  OUTDOOR         // outdoor spaces (quads, fields not used as venues)
-  OTHER           // misc / uncategorised
+  ACADEMIC // classroom buildings, faculty offices, libraries
+  ADMINISTRATIVE // admin offices, services, support facilities
+  HOUSING // residence halls and on-campus housing (non-public)
+  RETAIL // bookstore, cafes, convenience stores
+  ATHLETIC // athletics venues, performance halls, recreation
+  OUTDOOR // outdoor spaces (quads, fields not used as venues)
+  OTHER // misc / uncategorised
+}
+
+/// Building-level seat-count profile, used as a fallback when no specific
+/// room is in `room_capacities`. Independent of `BuildingCategory`
+/// (which drives UI grouping). Auto-derived from the median capacity of
+/// rooms in `room_capacities` for the building, by the catalog ingest
+/// job. See `_classify_building_profile` in
+/// `services/ml/scripts/ingest_csulb_catalog.py` for the bucket cutoffs.
+enum ClassroomProfile {
+  STANDARD // 15-79 seat general-ed classrooms (most academic bldgs)
+  LECTURE_HALL // 80-322 seat lecture halls (PH1, MIC, LH-1, ...)
+  ACTIVE // 24/38/55 seat collaborative rooms
+  SEMINAR // ~15-25 seat upper-division
+  LAB // 20-30 seat lab benches
+  MIXED // multiple profiles in same building — fall through to type default
 }
 
 enum AuditEventType {

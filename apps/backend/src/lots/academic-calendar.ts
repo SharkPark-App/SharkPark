@@ -50,7 +50,16 @@ export interface AcademicYear {
 }
 
 export type SemesterKey = 'fall' | 'spring' | 'winter' | 'mayIntersession' | 'summer';
-export type PeriodType = 'early' | 'regular' | 'midterms' | 'late' | 'dead_week' | 'finals' | 'break';
+export type PeriodType =
+  | 'early'
+  | 'regular'
+  | 'midterms'
+  | 'late'
+  | 'dead_week'
+  | 'finals'
+  | 'winter_session'
+  | 'summer_session'
+  | 'break';
 export type SemesterCategory = 'fall' | 'spring' | 'summer' | 'session' | 'break';
 
 // ─── Constants ─────────────────────────────────────────────
@@ -347,15 +356,18 @@ function findSemester(d: Date): SemesterMatch | null {
  * Week number (1-based) and academic period classification for a date.
  *
  * Period values: early (weeks 1-2), regular (3-7), midterms (8-9),
- * late (10-14), dead_week (15+), finals, break.
- * Intersession weeks always return "regular".
+ * late (10-14), dead_week (15+), finals, winter_session, summer_session,
+ * break. Intersession class days return ``winter_session`` (winter or
+ * may intersession) or ``summer_session`` (summer term) so downstream
+ * consumers can apply low-activity scaling without re-deriving the
+ * semester key.
  */
 export function getWeekOfSemester(input: Date): [number, PeriodType] {
   const d = toCalDate(input);
   const match = findSemester(d);
   if (!match) return [0, 'break'];
 
-  const { semester: sem, isIntersession } = match;
+  const { semester: sem, key, isIntersession } = match;
   const breakDates = allBreakDates(sem);
 
   const week = lte(sem.classesStart, d)
@@ -369,7 +381,16 @@ export function getWeekOfSemester(input: Date): [number, PeriodType] {
   }
 
   if (lte(sem.classesStart, d) && lte(d, sem.classesEnd)) {
-    if (isIntersession) return [week, 'regular'];
+    if (isIntersession) {
+      // May intersession is the ~3-week term that starts the Monday
+      // *after* spring finals end (typically May 18+) — the first half
+      // of May is still classified as regular spring / finals by
+      // _findSemester, so this branch only fires for the post-finals
+      // window. Bucket it with summer (warm-season, low-staff) so the
+      // postprocess multiplier (~0.30, ~8k commuters) matches summer
+      // rather than winter's ~0.10.
+      return [week, key === 'winter' ? 'winter_session' : 'summer_session'];
+    }
     if (week <= 2) return [week, 'early'];
     if (week <= 7) return [week, 'regular'];
     if (week <= 9) return [week, 'midterms'];

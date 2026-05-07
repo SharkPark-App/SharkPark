@@ -1,0 +1,191 @@
+name: ML Retrain
+
+# Principle of least privilege for the GITHUB_TOKEN — only checkout needs
+# read access; this workflow does not push, comment, or write releases.
+permissions:
+  contents: read
+
+# Why GitHub Actions instead of the backend cron VM?
+#   - Training is a CPU/RAM-heavy batch (XGBoost on 90+ days of snapshots).
+#     The runner gets 7GB RAM dedicated; the prod cron VM has 1GB shared
+#     with the always-on Node scheduler.
+#   - GH-hosted runners are free for public repos and well-instrumented
+#     (per-step timing, log retention, retry UI, Sentry-style failure
+#     dashboards via the Actions tab).
+#   - Industry-standard MLOps split: training in CI, inference at edge.
+#     Both runtimes share the same MLflow registry (Postgres backend +
+#     R2 artifact store — see services/ml/src/utils/mlflow_setup.py).
+#
+# After training, A3's auto-promotion guard decides whether the new run
+# beats the current @production model on hold-out metrics. If yes, it
+# promotes the version and exports to R2 so backend predict cron picks
+# it up on the next 15-min tick. If no, the run stays in MLflow as
+# @candidate for human review.
+
+on:
+  schedule:
+    # Short-term: nightly at 02:00 America/Los_Angeles = 10:00 UTC (PST)
+    # / 09:00 UTC (PDT). We pick PST baseline and accept a 1-hour
+    # offset during DST — the model is hour-of-day aware, not
+    # wall-clock-aware, so the extra hour of yesterday's data
+    # doesn't change anything material.
+    - cron: '0 10 * * *'
+    # Long-term: weekly Sunday at 03:00 PT = 11:00 UTC Sun.
+    - cron: '0 11 * * 0'
+  workflow_dispatch:
+    inputs:
+      horizon:
+        description: 'Which model to retrain'
+        required: true
+        type: choice
+        options:
+          - short-term
+          - long-term
+          - both
+        default: short-term
+      auto_promote:
+        description: 'Run A3 promotion guard after training'
+        required: true
+        type: boolean
+        default: true
+
+# Per-horizon mutex — only one short-term retrain at a time, only one
+# long-term retrain at a time. `cancel-in-progress: false` because we
+# don't want a manual workflow_dispatch to kill the scheduled run that
+# already started writing to MLflow.
+concurrency:
+  group: ml-retrain-${{ github.event.inputs.horizon || (github.event.schedule == '0 11 * * 0' && 'long-term' || 'short-term') }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-matrix:
+    # Schedule events fan out to a single horizon based on cron string.
+    # Manual dispatch uses the user-selected input. Output is a JSON
+    # array consumed by the matrix in the train job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      horizons: ${{ steps.pick.outputs.horizons }}
+      auto_promote: ${{ steps.pick.outputs.auto_promote }}
+    steps:
+      - id: pick
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            case "${{ inputs.horizon }}" in
+              short-term) HZ='["short-term"]' ;;
+              long-term)  HZ='["long-term"]'  ;;
+              both)       HZ='["short-term","long-term"]' ;;
+            esac
+            echo "auto_promote=${{ inputs.auto_promote }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event.schedule }}" == "0 11 * * 0" ]]; then
+            HZ='["long-term"]'
+            echo "auto_promote=true" >> "$GITHUB_OUTPUT"
+          else
+            HZ='["short-term"]'
+            echo "auto_promote=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "horizons=$HZ" >> "$GITHUB_OUTPUT"
+
+  retrain:
+    needs: resolve-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        horizon: ${{ fromJSON(needs.resolve-matrix.outputs.horizons) }}
+    env:
+      # Read-only follower DSN preferred so a runaway training query
+      # can never lock prod write traffic. Falls back to the primary if
+      # the follower secret isn't configured.
+      DATABASE_URL: ${{ secrets.ML_DATABASE_URL || secrets.DATABASE_URL }}
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      MLFLOW_ARTIFACT_LOCATION: ${{ secrets.MLFLOW_ARTIFACT_LOCATION }}
+      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: services/ml
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'services/ml/uv.lock'
+
+      - name: Install ML package (locked)
+        run: uv sync --frozen --no-dev
+
+      - name: Verify MLflow + R2 connectivity (bootstrap)
+        run: uv run python -m scripts.bootstrap_mlflow
+
+      - name: Train (${{ matrix.horizon }})
+        id: train
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.horizon }}" == "short-term" ]]; then
+            uv run python -m scripts.train_short_term \
+              --include-real \
+              --real-start-date "$(date -u -d '90 days ago' +%Y-%m-%d)" \
+              | tee train.log
+          else
+            uv run python -m scripts.train_long_term \
+              --include-real \
+              --real-start-date "$(date -u -d '180 days ago' +%Y-%m-%d)" \
+              | tee train.log
+          fi
+          # train_*.py logs the candidate run id in the format
+          #   "MLflow run ID: <run_id>"  (see logger.info call in
+          #   services/ml/scripts/train_short_term.py).
+          RUN_ID=$(grep -oE 'MLflow run ID: [a-f0-9]+' train.log | tail -n1 | awk '{print $4}')
+          if [[ -z "$RUN_ID" ]]; then
+            echo "::error::Could not parse MLflow run ID from train.log"
+            exit 1
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate (${{ matrix.horizon }})
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.horizon }}" == "short-term" ]]; then
+            uv run python -m scripts.evaluate_short_term \
+              --run-id "${{ steps.train.outputs.run_id }}"
+          else
+            uv run python -m scripts.evaluate_long_term \
+              --run-id "${{ steps.train.outputs.run_id }}"
+          fi
+
+      - name: Auto-promote if better than @production (${{ matrix.horizon }})
+        if: needs.resolve-matrix.outputs.auto_promote == 'true'
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.horizon }}" == "short-term" ]]; then
+            uv run python -m scripts.promote_short_term \
+              --auto-only \
+              --candidate-run-id "${{ steps.train.outputs.run_id }}" \
+              --export-s3
+          else
+            uv run python -m scripts.promote_long_term \
+              --auto-only \
+              --candidate-run-id "${{ steps.train.outputs.run_id }}" \
+              --export-s3
+          fi
+
+      - name: Upload train log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: train-log-${{ matrix.horizon }}-${{ github.run_id }}
+          path: services/ml/train.log
+          retention-days: 14

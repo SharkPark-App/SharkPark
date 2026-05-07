@@ -12,7 +12,14 @@ from pathlib import Path
 import mlflow
 import pandas as pd
 
+from src.utils.mlflow_setup import configure_mlflow
+
 logger = logging.getLogger(__name__)
+
+# Idempotent: applies MLFLOW_TRACKING_URI + R2 artifact env exactly once per
+# process. Tests override via the ``isolated_mlflow`` fixture, which calls
+# ``mlflow.set_tracking_uri`` after this import — last writer wins.
+configure_mlflow()
 
 __all__ = [
     "load_run_data",
