@@ -34,9 +34,15 @@ __all__ = [
 def normalize_timestamps(df: pd.DataFrame, col: str = "timestamp") -> pd.DataFrame:
     """Strip timezone info from timestamps for consistent comparisons."""
     df = df.copy()
-    ts = pd.to_datetime(df[col])
-    if ts.dt.tz is not None:
-        ts = ts.dt.tz_localize(None)
+    # Parse all timestamps as UTC so mixed-offset strings remain datetimelike
+    # (pandas otherwise returns object dtype and `.dt` fails).
+    ts = pd.to_datetime(df[col], errors="coerce", utc=True)
+    invalid = int(ts.isna().sum())
+    if invalid:
+        raise ValueError(
+            f"{col} contains {invalid} invalid timestamp value(s); cannot normalize"
+        )
+    ts = ts.dt.tz_localize(None)
     df[col] = ts
     return df
 
