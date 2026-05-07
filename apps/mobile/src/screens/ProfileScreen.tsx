@@ -358,7 +358,11 @@ const ProfileScreen: React.FC = () => {
 
           {/* Appearance Settings */}
           <SectionCard title="Appearance">
-            <View style={styles.themeList}>
+            <View
+              style={styles.themeList}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Theme selection"
+            >
               <TouchableOpacity
                 onPress={() => setThemeMode('light')}
                 style={[

@@ -15,7 +15,7 @@
  * dependency — parent simply conditionally renders this screen.
  */
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -85,6 +85,10 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList<Slide>>(null);
   const { width: screenWidth } = useWindowDimensions();
+
+  useEffect(() => {
+    flatListRef.current?.scrollToIndex({ index: activeIndex, animated: false });
+  }, [screenWidth, activeIndex]);
 
   const isLast = activeIndex === SLIDES.length - 1;
 

@@ -56,8 +56,7 @@ export const ShuttleModal: React.FC<ShuttleModalProps> = ({
         style={styles.overlay}
         activeOpacity={1}
         onPress={onClose}
-        accessibilityLabel="Close shuttle details"
-        accessibilityRole="button"
+        accessible={false}
       >
         <TouchableWithoutFeedback>
           <View style={[styles.card, { backgroundColor: colors.backgroundLight, shadowColor: colors.shadowDark }]}>
