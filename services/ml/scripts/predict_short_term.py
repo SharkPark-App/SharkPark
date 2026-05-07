@@ -36,6 +36,12 @@ from src.features.short_term import prepare_inference_features
 from src.models.short_term import ShortTermModel
 from src.postprocess.weather_adjustment import apply_weather_adjustment
 from src.postprocess.low_activity_scaling import apply_low_activity_scaling
+from src.utils.mlflow_setup import configure_mlflow
+
+# Mirror ML_R2_* Fly secrets → AWS_*/MLFLOW_S3_* env vars that boto3 needs
+# when MLflow downloads artifacts from Cloudflare R2. Must happen before any
+# mlflow.artifacts call.
+configure_mlflow()
 
 CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
 UTC = ZoneInfo("UTC")
