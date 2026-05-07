@@ -8,6 +8,18 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# Pin Firebase SDK version to match @react-native-firebase/app@24.x expectations.
+# Without this, CocoaPods 1.16.x's SPM resolver independently picks up a newer
+# Firebase version (e.g. 12.13.0) while CocoaPods itself stays on 12.10.0,
+# causing 'invalid custom path FirebaseSharedSwift/Sources' at build time.
+#
+# BUMP CONTRACT: when upgrading @react-native-firebase/* major versions, update
+# this pin to match the Firebase iOS SDK version listed in that release's
+# `ios/firebase_sdk_version.rb` (or the package's RNFBVersions table). Leaving
+# this stale on a major bump will silently downgrade Firebase below what the
+# JS layer expects and break runtime initialization.
+$FirebaseSDKVersion = '12.10.0'
+
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
@@ -19,6 +31,17 @@ target 'mobile' do
 
   # Required for react-native-app-auth with bridgeless mode
   pod 'AppAuth', :modular_headers => true
+
+  # @react-native-firebase/* uses Swift internally; the underlying GoogleUtilities
+  # pod ships without module maps, so cocoapods refuses to integrate it as a
+  # static library unless we opt these targets into modular headers explicitly.
+  # Without this, `pod install` fails with:
+  #   "The Swift pod `FirebaseCoreInternal` depends upon `GoogleUtilities`,
+  #    which does not define modules."
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseInstallations', :modular_headers => true
 
   use_react_native!(
     :path => config[:reactNativePath],
@@ -40,6 +63,41 @@ target 'mobile' do
         target.build_configurations.each do |config|
           config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
         end
+      end
+    end
+
+    # Xcode 26 introduced "Explicitly Built Modules" which generates its own
+    # module maps for every pod regardless of DEFINES_MODULE, causing
+    # "redefinition of module 'FirebaseCore'" for pods that already ship module
+    # maps via :modular_headers => true. Disabling it on the Pods project,
+    # all pod targets, AND the main app project fixes the cascade.
+    user_projects = installer.aggregate_targets.map(&:user_project).compact.uniq
+    [installer.pods_project, *user_projects].each do |proj|
+      proj.build_configurations.each do |cfg|
+        cfg.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+      end
+      proj.targets.each do |target|
+        target.build_configurations.each do |cfg|
+          cfg.build_settings['CLANG_ENABLE_EXPLICIT_MODULES'] = 'NO'
+        end
+      end
+      proj.save
+    end
+
+    # Belt-and-suspenders: also keep DEFINES_MODULE off for Firebase pods that
+    # already supply their own module maps via :modular_headers above.
+    firebase_pods_with_own_modulemaps = %w[
+      FirebaseCore
+      FirebaseCoreInternal
+      FirebaseCoreExtension
+      FirebaseInstallations
+      FirebaseMessaging
+      GoogleUtilities
+    ]
+    installer.pods_project.targets.each do |target|
+      next unless firebase_pods_with_own_modulemaps.include?(target.name)
+      target.build_configurations.each do |cfg|
+        cfg.build_settings['DEFINES_MODULE'] = 'NO'
       end
     end
     # ----------------------------

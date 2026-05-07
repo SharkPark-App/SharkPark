@@ -35,6 +35,7 @@ describe('NotificationsService', () => {
     };
     user: {
       findUniqueOrThrow: jest.Mock;
+      findUnique: jest.Mock;
     };
   };
 
@@ -59,6 +60,7 @@ describe('NotificationsService', () => {
       },
       user: {
         findUniqueOrThrow: jest.fn(),
+        findUnique: jest.fn(),
       },
     };
 
@@ -138,6 +140,42 @@ describe('NotificationsService', () => {
       expect(prisma.pushToken.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ create: expect.objectContaining({ user_id: 'user-cuid' }) }),
       );
+    });
+  });
+
+  // ─── unregisterPushTokenByEmail ────────────────────────────────────────
+
+  describe('unregisterPushTokenByEmail', () => {
+    it('deletes the token scoped to the resolved user id', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-cuid' });
+      prisma.pushToken.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.unregisterPushTokenByEmail('student@csulb.edu', 'fcm-abc123');
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'student@csulb.edu' },
+        select: { id: true },
+      });
+      expect(prisma.pushToken.deleteMany).toHaveBeenCalledWith({
+        where: { token: 'fcm-abc123', user_id: 'user-cuid' },
+      });
+    });
+
+    it('silently no-ops if the user does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await service.unregisterPushTokenByEmail('ghost@csulb.edu', 'fcm-abc123');
+
+      expect(prisma.pushToken.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent when the token does not exist (deleteMany returns count: 0)', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-cuid' });
+      prisma.pushToken.deleteMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.unregisterPushTokenByEmail('student@csulb.edu', 'missing-token'),
+      ).resolves.toBeUndefined();
     });
   });
 

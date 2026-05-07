@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1034929964217",
+    "project_id": "sharkpark-dev",
+    "storage_bucket": "sharkpark-dev.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1034929964217:android:675e691e45a37e74ca8768",
+        "android_client_info": {
+          "package_name": "app.sharkpark.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAiZO1pjWVSoxlOdKNjePLOfUj4wr_pbB0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

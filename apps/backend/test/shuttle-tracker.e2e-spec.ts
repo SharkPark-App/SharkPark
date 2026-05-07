@@ -105,7 +105,7 @@ describe('ShuttleTrackerController (e2e)', () => {
   describe('/api/v1/transit/etas/:stopId (GET)', () => {
     it('should return a success response with ETAs for a valid stop', () => {
       // 154358 = stopId of Beachside College
-      // If ever invalid, empty array is returned
+      // If ever invalid, empty array is returned (still a valid response)
       const testStopId = '154358'; 
 
       return request(app.getHttpServer())
@@ -125,9 +125,15 @@ describe('ShuttleTrackerController (e2e)', () => {
         });
     });
 
+    it('should return 400 for a non-numeric stop ID', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/transit/etas/abc')
+        .expect(400);
+    });
+
     it('should gracefully handle requests for non-existent stop IDs', () => {
       return request(app.getHttpServer())
-        .get('/api/v1/transit/etas/non-existent-stop-id')
+        .get('/api/v1/transit/etas/-676767')
         .expect(200)
         .expect((res: Response) => {
           expect(res.body.success).toBe(true);

@@ -59,6 +59,8 @@ jest.mock('../src/hooks/useOnboarding', () => ({
     isLoading: false,
     needsOnboarding: false,
     completeOnboarding: jest.fn(),
+    needsPermissionGate: false,
+    completePermissionGate: jest.fn(),
   }),
 }));
 
@@ -75,6 +77,7 @@ jest.mock('../src/navigation/linking', () => ({ linkingConfig: {} }));
 jest.mock('../src/screens', () => ({
   LoginScreen: () => null,
   OnboardingScreen: () => null,
+  PermissionGateScreen: () => null,
   ForceUpdateScreen: () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Text } = require('react-native');

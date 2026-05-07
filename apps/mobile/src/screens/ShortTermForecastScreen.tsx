@@ -10,7 +10,6 @@ import {
 import { Text } from '../components/CustomText';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { Header, ReliabilityRow, LockedOccupancyBadge, LockedForecastCard, UnlockCTAButton } from '../components';
 import { useTheme } from '../context/ThemeContext';
@@ -28,7 +27,9 @@ import { EventBanner } from '../components/EventBanner';
 import { useEvents } from '../hooks/useEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
 import { ReliabilityModal } from '../components/Modals/ReliabilityModal';
+import { NearbyTransitCard } from '../components/NearbyTransitCard';
 import { reportsApi, ReportUnauthorizedError, ReportThrottledError } from '../services/api/reports';
+import { useNearbyStopETAs } from '../hooks/useNearbyStopETAs';
 import type { MapStackScreenProps } from '../types/navigation';
 
 // Format a wall-clock timestamp into a short "X ago" relative string for the
@@ -82,6 +83,7 @@ export function ShortTermForecastScreen() {
   void _refreshing;
   const { reliability, loading: reliabilityLoading } = useReliability(lotId);
   const { events: lotEvents } = useEvents(lotId);
+  const nearbyStops = useNearbyStopETAs(lotId, lot?.center_lat, lot?.center_lng);
 
   // Live OS contributor state. Drives the lock UI directly so the badge /
   // forecast card flip the instant the user toggles permission — we don't
@@ -110,7 +112,7 @@ export function ShortTermForecastScreen() {
   const handleReportSubmit = async (report: import('../components/Modals/ReportModal').IncidentReport) => {
     if (isGuest || !isAuthenticated) {
       setIsReportModalOpen(false);
-      navigation.navigate('Profile' as never);
+      Alert.alert('Sign in required', 'Please sign in to submit a report.');
       return;
     }
     if (!lot?.id) throw new Error('Lot data unavailable. Please try again.');
@@ -120,10 +122,11 @@ export function ShortTermForecastScreen() {
         type: report.type,
         message: report.message || undefined,
       });
+      setIsReportModalOpen(false);
     } catch (err) {
       if (err instanceof ReportUnauthorizedError) {
         setIsReportModalOpen(false);
-        navigation.navigate('Profile' as never);
+        Alert.alert('Sign in required', 'Please sign in to submit a report.');
         return;
       }
       if (err instanceof ReportThrottledError) {
@@ -387,6 +390,9 @@ export function ShortTermForecastScreen() {
           <HourlyChart data={forecast}/>
         )}
 
+        {/* Nearby shuttle stop ETAs */}
+        <NearbyTransitCard nearbyStops={nearbyStops} colors={colors} />
+
         {/* Lot Amenities & Details */}
         <LotAmenities lot={lot} />
       </ScrollView>
@@ -400,7 +406,7 @@ export function ShortTermForecastScreen() {
         accessibilityLabel="Report an incident"
         importantForAccessibility="yes"
       >
-        <MaterialIcon
+        <Icon
           name="warning"
           size={TYPOGRAPHY.fontSize.xxxxl}
           color={COLORS.white}

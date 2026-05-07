@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ShuttleTrackerService } from './shuttle-tracker.service';
 import { Public } from '../auth/public.decorator';
@@ -49,8 +49,8 @@ export class ShuttleTrackerController {
 
   /** Get list of ETAs for shuttles on route to specified stop */
   @Get('etas/:stopId')
-  async getETAs(@Param('stopId') stopId: string) {
-    const etas = await this.shuttleTrackerService.getStopETAs(stopId);
+  async getETAs(@Param('stopId', ParseIntPipe) stopId: number) {
+    const etas = await this.shuttleTrackerService.getStopETAs(stopId.toString());
 
     return {
       success: true,

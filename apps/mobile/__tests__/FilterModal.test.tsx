@@ -35,17 +35,33 @@ jest.mock('../src/components/CustomText', () => ({
 
 // ────────────────────── Helpers ──────────────────────
 
+const mockLots = [
+  { lot_id: 'G1', lot_type: 'STUDENT' as const },
+  { lot_id: 'G2', lot_type: 'STUDENT' as const },
+  { lot_id: 'E1', lot_type: 'EMPLOYEE' as const },
+];
+
 const defaultProps = {
   isOpen: true,
   onClose: jest.fn(),
+  lots: mockLots,
   selectedLots: [] as string[],
   onApplyFilter: jest.fn(),
+  routes: [] as { id: string; name: string; shortName: string; color: string; status: string; coordinates: [] }[],
+  hiddenRouteIds: [] as string[],
+  onApplyTransitFilter: jest.fn(),
 };
 
 function render(props = defaultProps) {
   let tree!: ReactTestRenderer.ReactTestRenderer;
   ReactTestRenderer.act(() => {
     tree = ReactTestRenderer.create(<LotFilterModal {...props} />);
+  });
+  // Fire layout so the paginated scroll area renders (native measurement
+  // doesn't run in ReactTestRenderer — pageWidth/pageHeight stay 0 otherwise).
+  ReactTestRenderer.act(() => {
+    const wrapper = tree.root.findAll(node => typeof node.props.onLayout === 'function')[0];
+    wrapper?.props.onLayout({ nativeEvent: { layout: { width: 300, height: 400 } } });
   });
   return tree;
 }
@@ -169,7 +185,7 @@ describe('LotFilterModal -- footer buttons', () => {
   it('shows "Select All" when nothing is selected', () => {
     const tree = render({ ...defaultProps, selectedLots: [] });
     const btn = tree.root.find(
-      node => node.props.accessibilityLabel === 'Select all parking lots',
+      node => node.props.accessibilityLabel === 'Select All',
     );
     expect(btn).toBeTruthy();
   });
@@ -177,7 +193,7 @@ describe('LotFilterModal -- footer buttons', () => {
   it('shows "Clear All" when lots are selected', () => {
     const tree = render({ ...defaultProps, selectedLots: ['G1'] });
     const btn = tree.root.find(
-      node => node.props.accessibilityLabel === 'Clear all selected parking lots',
+      node => node.props.accessibilityLabel === 'Clear All',
     );
     expect(btn).toBeTruthy();
   });
@@ -185,7 +201,7 @@ describe('LotFilterModal -- footer buttons', () => {
   it('apply button has correct accessibility attributes', () => {
     const tree = render();
     const applyBtn = tree.root.find(
-      node => node.props.accessibilityLabel === 'Apply selected parking lot filters',
+      node => node.props.accessibilityLabel === 'Apply filters',
     );
     expect(applyBtn.props.accessibilityRole).toBe('button');
   });
@@ -195,12 +211,12 @@ describe('LotFilterModal -- footer buttons', () => {
     const onClose = jest.fn();
     const tree = render({ ...defaultProps, onApplyFilter, onClose });
     const applyBtn = tree.root.find(
-      node => node.props.accessibilityLabel === 'Apply selected parking lot filters',
+      node => node.props.accessibilityLabel === 'Apply filters',
     );
     ReactTestRenderer.act(() => {
       applyBtn.props.onPress();
     });
-    
+
     expect(onApplyFilter).toHaveBeenCalledWith([]);
     expect(onClose).toHaveBeenCalled();
   });
@@ -208,7 +224,7 @@ describe('LotFilterModal -- footer buttons', () => {
   it('select all selects every lot', () => {
     const tree = render({ ...defaultProps, selectedLots: [] });
     const selectAllBtn = tree.root.find(
-      node => node.props.accessibilityLabel === 'Select all parking lots',
+      node => node.props.accessibilityLabel === 'Select All',
     );
     ReactTestRenderer.act(() => {
       selectAllBtn.props.onPress();

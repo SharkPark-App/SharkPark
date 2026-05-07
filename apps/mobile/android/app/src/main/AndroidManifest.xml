@@ -1,173 +1,169 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    <!-- Required on Android 13+ (API 33) for the Transistor BG-geo persistent
-         foreground-service notification and any future push notifications. -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Legacy Bluetooth permissions for Android 11 and below -->
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <!-- Bluetooth permissions required on Android 12+ (API 31+) -->
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <queries>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="http"/>
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="https"/>
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="geo" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="google.navigation" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="applemaps" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="citymapper" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="uber" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="lyft" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="transit" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="truckmap" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="waze" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="yandexnavi" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="moovit" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="yandexmaps" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="yandextaxi" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="kakaomap" />
-      </intent>
-        <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="tmap" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="mapycz" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="mapsme" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="osmand.geo" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="gett" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="nmap" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="dgis" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="lftgpas" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="petalmaps" />
-      </intent>
-      <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="com.sygic.aura" />
-      </intent>
-    </queries>
-    
-    <application
-      android:name=".MainApplication"
+  <uses-permission android:name="android.permission.BLUETOOTH" />
+  <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+
+  <uses-permission
+    android:name="android.permission.BLUETOOTH_SCAN"
+    android:usesPermissionFlags="neverForLocation" />
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="http" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="https" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="geo" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="google.navigation" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="applemaps" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="citymapper" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="uber" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="lyft" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="transit" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="truckmap" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="waze" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="yandexnavi" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="moovit" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="yandexmaps" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="yandextaxi" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="kakaomap" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="tmap" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="mapycz" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="mapsme" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="osmand.geo" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="gett" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="nmap" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="dgis" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="lftgpas" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="petalmaps" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="com.sygic.aura" />
+    </intent>
+  </queries>
+
+  <application
+    android:name=".MainApplication"
+    android:label="@string/app_name"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:allowBackup="false"
+    android:theme="@style/AppTheme"
+    android:usesCleartextTraffic="${usesCleartextTraffic}"
+    android:supportsRtl="true">
+    <meta-data
+      android:name="com.transistorsoft.locationmanager.license"
+      android:value="${BG_GEOLOCATION_LICENSE}" />
+    <activity
+      android:name=".MainActivity"
       android:label="@string/app_name"
-      android:icon="@mipmap/ic_launcher"
-      android:roundIcon="@mipmap/ic_launcher_round"
-      android:allowBackup="false"
-      android:theme="@style/AppTheme"
-      android:usesCleartextTraffic="${usesCleartextTraffic}"
-      android:supportsRtl="true">
-      <meta-data
-          android:name="com.transistorsoft.locationmanager.license"
-          android:value="${BG_GEOLOCATION_LICENSE}" />
-      <activity
-        android:name=".MainActivity"
-        android:label="@string/app_name"
-        android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
-        android:launchMode="singleTask"
-        android:windowSoftInputMode="adjustResize"
-        android:exported="true">
-        <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent-filter>
+      android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+      android:launchMode="singleTask"
+      android:windowSoftInputMode="adjustResize"
+      android:exported="true"
+      android:theme="@style/BootTheme">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
 
-        <!-- Custom URL scheme: sharkpark://  -->
-        <intent-filter>
-            <action android:name="android.intent.action.VIEW" />
-            <category android:name="android.intent.category.DEFAULT" />
-            <category android:name="android.intent.category.BROWSABLE" />
-            <data android:scheme="sharkpark" />
-        </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="sharkpark" />
+      </intent-filter>
 
-        <!-- App Links (HTTPS): https://sharkpark.app/...
-             Requires a Digital Asset Links file at:
-             https://sharkpark.app/.well-known/assetlinks.json
-             Set android:autoVerify="true" to skip the disambiguation dialog. -->
-        <intent-filter android:autoVerify="true">
-            <action android:name="android.intent.action.VIEW" />
-            <category android:name="android.intent.category.DEFAULT" />
-            <category android:name="android.intent.category.BROWSABLE" />
-            <data
-                android:scheme="https"
-                android:host="sharkpark.app" />
-        </intent-filter>
-      </activity>
-      <meta-data
-        android:name="com.google.android.geo.API_KEY"
-        android:value="${MAPS_API_KEY}" />
-    </application>
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data
+          android:scheme="https"
+          android:host="sharkpark.app" />
+      </intent-filter>
+    </activity>
+    <meta-data
+      android:name="com.google.android.geo.API_KEY"
+      android:value="${MAPS_API_KEY}" />
+  </application>
 </manifest>
