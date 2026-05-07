@@ -29,6 +29,12 @@ from src.data.synthetic import (
 class TestFetchLots:
     """Verify Aurora PostgreSQL lot fetching, deserialization, and error handling."""
 
+    @pytest.fixture(autouse=True)
+    def _set_database_url(self, monkeypatch):
+        """fetch_lots() requires DATABASE_URL; provide a dummy value since
+        psycopg2.connect is mocked in every test below."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
+
     @patch("src.data.synthetic.psycopg2.connect")
     def test_returns_lots_from_aurora(self, mock_connect):
         """

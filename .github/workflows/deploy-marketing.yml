@@ -1,5 +1,10 @@
 name: Deploy marketing site to Cloudflare Workers
 
+# Principle of least privilege for the GITHUB_TOKEN — deploys to Cloudflare
+# use CLOUDFLARE_API_TOKEN; GITHUB_TOKEN only reads the repo for checkout.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]

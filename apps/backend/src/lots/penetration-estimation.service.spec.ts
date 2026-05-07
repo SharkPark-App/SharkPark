@@ -74,12 +74,17 @@ describe('PenetrationEstimationService', () => {
   let prisma: {
     school: { findUnique: jest.Mock };
     $queryRaw: jest.Mock;
+    penetrationRateEstimate: { findUnique: jest.Mock; findMany: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
       school: { findUnique: jest.fn().mockResolvedValue({ timezone: 'UTC' }) },
       $queryRaw: jest.fn().mockResolvedValue([{ count: BigInt(0) }]),
+      penetrationRateEstimate: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -135,6 +140,23 @@ describe('PenetrationEstimationService', () => {
       expect(service.computeFloor(500, 1.0, false)).toBe(75);
       // 200-space lot: floor(200 × 0.15 × 1.0) = 30
       expect(service.computeFloor(200, 1.0, false)).toBe(30);
+    });
+
+    it('uses the 5% low-activity rate during winter intersession', () => {
+      // Jan 5 2026 falls inside the CSULB winter intersession.
+      const winterDay = new Date(Date.UTC(2026, 0, 5, 18, 0, 0));
+      // floor(1000 × 0.05 × 1.0) = 50, vs 150 during the regular semester
+      expect(service.computeFloor(1000, 1.0, false, winterDay)).toBe(50);
+    });
+
+    it('uses the 5% low-activity rate during summer session', () => {
+      const summerDay = new Date(Date.UTC(2026, 6, 1, 18, 0, 0));
+      expect(service.computeFloor(1000, 1.0, false, summerDay)).toBe(50);
+    });
+
+    it('keeps the 15% rate for a regular fall class day', () => {
+      const fallDay = new Date(Date.UTC(2025, 8, 15, 18, 0, 0));
+      expect(service.computeFloor(1000, 1.0, false, fallDay)).toBe(150);
     });
   });
 
@@ -561,6 +583,177 @@ describe('PenetrationEstimationService', () => {
       const estimate = result.get('lot-zero')!;
       expect(estimate.estimatedRate).toBe(0);
       expect(estimate.rawOccupancy).toBe(5);
+    });
+  });
+
+  // ─── EWMA blending (C3) ──────────────────────────────
+
+  describe('EWMA blending (C3)', () => {
+    const ENV_FLAG = 'PENETRATION_RATE_LEARNING_ENABLED';
+    const originalFlag = process.env[ENV_FLAG];
+
+    afterEach(() => {
+      if (originalFlag === undefined) delete process.env[ENV_FLAG];
+      else process.env[ENV_FLAG] = originalFlag;
+    });
+
+    const freshLearnedRow = (overrides: Record<string, unknown> = {}) => ({
+      lot_id: 'lot-1',
+      dow_bucket: 0,
+      hour_bucket: 10,
+      ewma_value: 0.50,
+      ewma_variance: 0.001,
+      sample_count: 100,
+      last_updated: new Date(), // "now" — fresh
+      ...overrides,
+    });
+
+    describe('flag disabled', () => {
+      beforeEach(() => {
+        delete process.env[ENV_FLAG];
+      });
+
+      it('does not query penetrationRateEstimate from estimateForAllLots', async () => {
+        (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(100) }]);
+        const lots = [makeLot({ id: 'lot-1', current_occupancy: 100, capacity: 1000 })];
+        await service.estimateForAllLots(lots, WEEKDAY_PEAK);
+        expect(prisma.penetrationRateEstimate.findMany).not.toHaveBeenCalled();
+      });
+
+      it('does not query penetrationRateEstimate from estimateForLot', async () => {
+        (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(100) }]);
+        await service.estimateForLot(makeLot({ current_occupancy: 100 }), WEEKDAY_PEAK);
+        expect(prisma.penetrationRateEstimate.findUnique).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('flag enabled', () => {
+      beforeEach(() => {
+        process.env[ENV_FLAG] = 'true';
+      });
+
+      it('falls back to rule rate when no learned row exists', () => {
+        const blended = service.blendLearnedRate(0.30, null);
+        expect(blended).toBe(0.30);
+      });
+
+      it('falls back to rule rate when sample_count < 30', () => {
+        const blended = service.blendLearnedRate(
+          0.30,
+          { lot_id: 'l', ewma_value: 0.80, ewma_variance: 0, sample_count: 29, last_updated: new Date() },
+        );
+        expect(blended).toBe(0.30);
+      });
+
+      it('falls back to rule rate when last_updated is older than 14 days', () => {
+        const stale = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+        const blended = service.blendLearnedRate(
+          0.30,
+          { lot_id: 'l', ewma_value: 0.80, ewma_variance: 0, sample_count: 100, last_updated: stale },
+        );
+        expect(blended).toBe(0.30);
+      });
+
+      it('blends 70% learned + 30% rule when fresh and well-sampled', () => {
+        const blended = service.blendLearnedRate(
+          0.30,
+          { lot_id: 'l', ewma_value: 0.80, ewma_variance: 0, sample_count: 100, last_updated: new Date() },
+        );
+        // 0.7*0.80 + 0.3*0.30 = 0.56 + 0.09 = 0.65
+        expect(blended).toBeCloseTo(0.65, 6);
+      });
+
+      it('floors blended value at MIN_PENETRATION_RATE', () => {
+        const blended = service.blendLearnedRate(
+          0.005,
+          { lot_id: 'l', ewma_value: 0.005, ewma_variance: 0, sample_count: 100, last_updated: new Date() },
+        );
+        expect(blended).toBeGreaterThanOrEqual(0.01);
+      });
+
+      it('estimateForAllLots applies blended rate per-lot', async () => {
+        // 50 devices over 7000 commuters → campusRate ≈ 0.0071 → floored to 0.01
+        // ruleRate = 0.01, learned ewma = 0.50 → blended = 0.7*0.50 + 0.3*0.01 = 0.353
+        (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(50) }]);
+        (prisma.penetrationRateEstimate.findMany as jest.Mock).mockResolvedValue([
+          freshLearnedRow({ lot_id: 'lot-1', ewma_value: 0.50 }),
+        ]);
+
+        const lots = [makeLot({ id: 'lot-1', current_occupancy: 100, capacity: 1000 })];
+        const result = await service.estimateForAllLots(lots, WEEKDAY_PEAK);
+
+        expect(prisma.penetrationRateEstimate.findMany).toHaveBeenCalledTimes(1);
+        expect(result.get('lot-1')!.effectiveRate).toBeCloseTo(0.353, 3);
+      });
+
+      it('estimateForAllLots leaves un-learned lots on the rule path', async () => {
+        (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(50) }]);
+        (prisma.penetrationRateEstimate.findMany as jest.Mock).mockResolvedValue([
+          freshLearnedRow({ lot_id: 'lot-1', ewma_value: 0.50 }),
+          // lot-2 absent → falls back to rule
+        ]);
+
+        const lots = [
+          makeLot({ id: 'lot-1', current_occupancy: 100, capacity: 1000 }),
+          makeLot({ id: 'lot-2', current_occupancy: 100, capacity: 1000 }),
+        ];
+        const result = await service.estimateForAllLots(lots, WEEKDAY_PEAK);
+
+        // lot-2 stays on rule = 0.01 (campusRate floored)
+        expect(result.get('lot-2')!.effectiveRate).toBe(0.01);
+        // lot-1 blended
+        expect(result.get('lot-1')!.effectiveRate).toBeCloseTo(0.353, 3);
+      });
+
+      it('empty-lot floor still bypasses EWMA blending', async () => {
+        (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(50) }]);
+        (prisma.penetrationRateEstimate.findMany as jest.Mock).mockResolvedValue([
+          freshLearnedRow({ lot_id: 'lot-1', ewma_value: 0.99 }),
+        ]);
+
+        const lots = [makeLot({ id: 'lot-1', current_occupancy: 0, capacity: 1000 })];
+        const result = await service.estimateForAllLots(lots, WEEKDAY_PEAK);
+
+        // Empty-lot path returns sentinel effectiveRate=1, occupancy=floor.
+        expect(result.get('lot-1')!.effectiveRate).toBe(1);
+        expect(result.get('lot-1')!.estimatedOccupancy).toBe(150);
+      });
+
+      it('estimateForLot looks up via composite key (lot_id, dow_bucket, hour_bucket)', async () => {
+        (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(50) }]);
+        (prisma.penetrationRateEstimate.findUnique as jest.Mock).mockResolvedValue(
+          freshLearnedRow({ lot_id: 'lot-1', ewma_value: 0.50 }),
+        );
+
+        const lot = makeLot({ id: 'lot-1', current_occupancy: 100, capacity: 1000 });
+        await service.estimateForLot(lot, WEEKDAY_PEAK);
+
+        expect(prisma.penetrationRateEstimate.findUnique).toHaveBeenCalledWith({
+          where: {
+            lot_id_dow_bucket_hour_bucket: {
+              lot_id: 'lot-1',
+              dow_bucket: 0, // weekday
+              hour_bucket: 10, // WEEKDAY_PEAK = 10:00
+            },
+          },
+        });
+      });
+
+      it('uses dow_bucket=1 for Saturday and dow_bucket=2 for Sunday', async () => {
+        (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ count: BigInt(50) }]);
+        (prisma.penetrationRateEstimate.findMany as jest.Mock).mockResolvedValue([]);
+
+        const lots = [makeLot({ id: 'lot-1', current_occupancy: 100 })];
+        await service.estimateForAllLots(lots, SATURDAY_DAY);
+        expect(prisma.penetrationRateEstimate.findMany).toHaveBeenLastCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ dow_bucket: 1, hour_bucket: 12 }) }),
+        );
+
+        await service.estimateForAllLots(lots, SUNDAY);
+        expect(prisma.penetrationRateEstimate.findMany).toHaveBeenLastCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ dow_bucket: 2, hour_bucket: 12 }) }),
+        );
+      });
     });
   });
 });

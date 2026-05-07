@@ -6,11 +6,13 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../components';
 import { Text } from '../components/CustomText';
 import { useTheme } from '../context/ThemeContext';
 import { HourlyChart } from '../components/HourlyChart';
 import { lotsApi } from '../services/api';
+import { BackgroundLocationRequiredError } from '../services/api/base';
 import { useLotsList } from '../hooks/useLotData';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { EventBanner } from '../components/EventBanner';
@@ -33,6 +35,7 @@ function getNext7Days(): Date[] {
 
 const LongTermForecastScreen: React.FC = () => {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const { lots } = useLotsList();
   const sortedLots = useMemo(
@@ -75,16 +78,54 @@ const LongTermForecastScreen: React.FC = () => {
     [lots, selectedLot],
   );
 
-  const forecast = useMemo(
-    () => (activeLot ? lotsApi.generateForecast(activeLot) : []),
-    // TODO(long-term-forecast): when the real GET /lots/:id/predictions/long-term
-    // call replaces this local heuristic, the wrapping hook MUST surface
-    // `bgLocationRequired` (see useLotData) and this screen MUST early-return a
-    // loading state + navigate to 'LocationPermission' — same pattern as
-    // ShortTermForecastScreen — otherwise the screen will flash a partial UI
-    // before the soft-ask appears. Also pass selectedDayIndex through.
-    [activeLot, selectedDayIndex],
-  );
+  // Multi-day long-term forecast fetched from the backend ML pipeline.
+  // One entry per day with hourly bands + the slice of weather forecast
+  // covering that day. Falls back to local heuristic (per-day copy of the
+  // typical campus curve) if the network and cache both miss.
+  type LongTermDay = Awaited<ReturnType<typeof lotsApi.getLongTermForecast>>[number];
+  const [longTerm, setLongTerm] = useState<LongTermDay[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeLot) return;
+    (async () => {
+      try {
+        const data = await lotsApi.getLongTermForecast(activeLot, { days: 7 });
+        if (!cancelled) setLongTerm(data);
+      } catch (err) {
+        // BG-location revoked: render the local heuristic so the screen
+        // doesn't go blank. The user is still routed through the soft-ask
+        // flow elsewhere (lot detail / contributor state listener).
+        if (err instanceof BackgroundLocationRequiredError) {
+          if (!cancelled) {
+            setLongTerm(
+              days.map((d) => ({
+                date: d.toISOString().split('T')[0],
+                source: 'heuristic' as const,
+                hourly: lotsApi.generateForecast(activeLot),
+                weather: [],
+              })),
+            );
+          }
+          return;
+        }
+        if (!cancelled) setLongTerm([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeLot, days]);
+
+  const forecast = useMemo(() => {
+    if (longTerm.length > 0) {
+      const day = longTerm[selectedDayIndex] ?? longTerm[0];
+      return day?.hourly ?? [];
+    }
+    // Initial render before the fetch resolves: keep the legacy local
+    // heuristic so the chart isn't empty.
+    return activeLot ? lotsApi.generateForecast(activeLot) : [];
+  }, [longTerm, selectedDayIndex, activeLot]);
 
   const selectedDayEvents = useMemo(() => {
     const selectedDate = days[selectedDayIndex];
@@ -96,7 +137,11 @@ const LongTermForecastScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       <Header />
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + SPACING.xxl }}
+      >
         {/* Lot Selection */}
         <View style={styles.lotPickerContainer}>
           <TouchableOpacity

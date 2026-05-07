@@ -143,17 +143,30 @@ class TestGetWeekOfSemester:
         _, period = get_week_of_semester(date(2025, 11, 27))
         assert period == "break"
 
-    def test_winter_session_regular(self):
+    def test_winter_session_period(self):
         week, period = get_week_of_semester(date(2026, 1, 5))
-        assert period == "regular"
+        assert week >= 1
+        assert period == "winter_session"
 
-    def test_may_intersession_regular(self):
-        week, period = get_week_of_semester(date(2026, 5, 20))
-        assert period == "regular"
+    def test_may_intersession_period(self):
+        _, period = get_week_of_semester(date(2026, 5, 20))
+        # May intersession runs adjacent to summer; bucket it as
+        # summer_session so the postprocess multiplier (~0.30) reflects
+        # the same staffing/weather profile as the summer term.
+        assert period == "summer_session"
 
-    def test_summer_session_regular(self):
-        week, period = get_week_of_semester(date(2026, 7, 1))
-        assert period == "regular"
+    def test_summer_session_period(self):
+        _, period = get_week_of_semester(date(2026, 7, 1))
+        assert period == "summer_session"
+
+    def test_early_may_is_still_spring(self):
+        # First half of May is regular spring class / finals week,
+        # NOT may_intersession. Guards against a future calendar
+        # refactor that accidentally widens the may_intersession window.
+        _, early_may = get_week_of_semester(date(2026, 5, 5))
+        assert early_may in {"regular", "dead_week", "midterms", "early"}
+        _, finals_week = get_week_of_semester(date(2026, 5, 11))
+        assert finals_week == "finals"
 
     def test_intersession_break_is_break(self):
         # Memorial Day during May Intersession

@@ -118,7 +118,7 @@ const InteractiveLot: React.FC<{
             ]}
           >
             <Text
-              style={[styles.lotText, { color: colors.white }]}
+              style={[styles.lotText, { color: labelColor }]}
               adjustsFontSizeToFit={true}
               numberOfLines={isSingleWord ? 1 : 2}
               accessible={false}
@@ -166,9 +166,9 @@ const InteractiveLot: React.FC<{
 };
 
 // Filter button component
-const FilterButton: React.FC<{ onPress: () => void; bottomInset: number }> = ({ onPress, bottomInset }) => (
+const FilterButton: React.FC<{ onPress: () => void; insetBottom?: number }> = ({ onPress, insetBottom = 0 }) => (
   <TouchableOpacity
-    style={[styles.fab, styles.filterButton, { backgroundColor: COLORS.primary, shadowColor: COLORS.shadowDark, bottom: SPACING.xxl + bottomInset }]}
+    style={[styles.fab, styles.filterButton, { backgroundColor: COLORS.primary, shadowColor: COLORS.shadowDark, bottom: SPACING.xxl + insetBottom }]}
     onPress={onPress}
     activeOpacity={0.8}
     accessibilityRole="button"
@@ -458,7 +458,7 @@ const MapScreen: React.FC = () => {
       </View>
 
       {/* Filter button - bottom left */}
-      <FilterButton onPress={handleFilterPress} bottomInset={insets.bottom} />
+      <FilterButton onPress={handleFilterPress} insetBottom={insets.bottom} />
 
       {/* Navigate button FAB - bottom right */}
       <View style={[styles.navigateButtonContainer, { bottom: SPACING.xxl + insets.bottom }]}>

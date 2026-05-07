@@ -48,9 +48,15 @@ NUMERIC_FEATURES = [
     "momentum",
     "target_hour",
     "hours_ahead",
+    # Weather features (E1) — XGBoost handles NaN natively, so synthetic rows
+    # without weather + real rows whose weather_id was NULL are first-class.
+    "temperature_f",
+    "precipitation_probability",
+    "wind_speed_mph",
+    "is_raining",
 ]
 
-CATEGORICAL_FEATURES = ["lot_id", "semester", "academic_period"]
+CATEGORICAL_FEATURES = ["lot_id", "semester", "academic_period", "weather_severity"]
 
 TARGET_COL = "target_occupancy_rate"
 
@@ -90,6 +96,9 @@ class ShortTermModel(BaseXGBoostModel):
         synthetic_weight: float = 1.0,
         cold_start_weight: float = 1.0,
         hyperparams: dict | None = None,
+        *,
+        real_weight: float = 1.0,
+        synthetic_v2_weight: float = 1.0,
     ) -> dict:
         """
         Train the model on snapshot data.
@@ -100,10 +109,15 @@ class ShortTermModel(BaseXGBoostModel):
                 occupancy_rate, confidence, semester, academic_period,
                 week_of_semester, is_campus_open, is_cold_start (bool),
                 _source ("synthetic"/"real").
-            synthetic_weight: Sample weight for synthetic rows (0.0-1.0).
-            cold_start_weight: Sample weight for real cold-start rows (0.0-1.0).
+            synthetic_weight: Tier weight for synthetic v1 (legacy parquet)
+                rows. Spec default at the script layer is ``0.1``.
+            cold_start_weight: Tier weight for real cold-start rows.
             hyperparams: Optional dict of XGBoost hyperparameters. Merged with
                 DEFAULT_HYPERPARAMS (caller values take precedence).
+            real_weight: Tier weight for real established rows. Spec default
+                at the script layer is ``10.0``.
+            synthetic_v2_weight: Tier weight for catalog-driven synthetic v2
+                rows (``generator_version=='v2'``). Spec default ``1.0``.
 
         Returns:
             Dict with train_size, test_size, split_date, feature_columns,
@@ -117,7 +131,10 @@ class ShortTermModel(BaseXGBoostModel):
 
         has_source = "_source" in df.columns
         use_weights = has_source and (
-            synthetic_weight != 1.0 or cold_start_weight != 1.0
+            synthetic_weight != 1.0
+            or cold_start_weight != 1.0
+            or real_weight != 1.0
+            or synthetic_v2_weight != 1.0
         )
 
         # Split train/test according to split date
@@ -133,12 +150,16 @@ class ShortTermModel(BaseXGBoostModel):
         if train_features.empty:
             raise ValueError("No training features after split — need more data.")
 
-        # Build volume-normalized sample weights from _source / is_cold_start
+        # Build volume-normalized sample weights from _source / is_cold_start /
+        # generator_version (4 tiers: real_clean, real_cold, synthetic_v2,
+        # synthetic_v1) with optional per-lot decay for synthetic rows.
         if use_weights:
             sample_weight = self._build_sample_weights(
                 train_features,
                 synthetic_weight,
                 cold_start_weight,
+                real_weight=real_weight,
+                synthetic_v2_weight=synthetic_v2_weight,
             )
         else:
             sample_weight = None

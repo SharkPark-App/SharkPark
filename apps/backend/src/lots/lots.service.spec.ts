@@ -13,6 +13,7 @@ describe('LotsService', () => {
     occupancySnapshot: { findMany: jest.Mock; groupBy: jest.Mock };
     predictionShortTerm: { findMany: jest.Mock };
     predictionLongTerm: { findMany: jest.Mock };
+    weatherForecast: { findMany: jest.Mock };
   };
   let penetrationService: {
     estimateForAllLots: jest.Mock;
@@ -40,6 +41,7 @@ describe('LotsService', () => {
       occupancySnapshot: { findMany: jest.fn(), groupBy: jest.fn() },
       predictionShortTerm: { findMany: jest.fn().mockResolvedValue([]) },
       predictionLongTerm: { findMany: jest.fn().mockResolvedValue([]) },
+      weatherForecast: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     penetrationService = {
@@ -669,7 +671,7 @@ describe('LotsService', () => {
   describe('getLongTermPredictions', () => {
     const mockLotFull = {
       id: 'uuid-1', lot_id: 'G1', capacity: 200, current_occupancy: 100,
-      lot_type: 'STUDENT', lot_name: 'Lot G1',
+      lot_type: 'STUDENT', lot_name: 'Lot G1', school_id: 'school-1',
     };
 
     it('should throw NotFoundException when lot not found', async () => {
@@ -733,6 +735,40 @@ describe('LotsService', () => {
         expect(p.confidence_lower).toBeGreaterThanOrEqual(0);
         expect(p.confidence_upper).toBeLessThanOrEqual(1);
       }
+    });
+
+    it('should bundle WeatherForecast rows for the prediction window', async () => {
+      prisma.lot.findFirst.mockResolvedValue(mockLotFull);
+      prisma.predictionLongTerm.findMany.mockResolvedValue([]);
+      const targetTime = new Date('2026-04-13T14:00:00Z');
+      prisma.weatherForecast.findMany.mockResolvedValue([
+        {
+          target_time: targetTime,
+          temperature_f: 68,
+          precipitation_probability: 0.4,
+          is_raining: false,
+          wind_speed_mph: 6,
+          conditions: 'partly cloudy',
+        },
+      ]);
+
+      const result = await service.getLongTermPredictions('G1', 7);
+
+      expect(prisma.weatherForecast.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ school_id: 'school-1' }),
+        }),
+      );
+      expect(result.weather_forecast).toEqual([
+        {
+          target_time: targetTime.toISOString(),
+          temperature_f: 68,
+          precipitation_probability: 0.4,
+          is_raining: false,
+          wind_speed_mph: 6,
+          conditions: 'partly cloudy',
+        },
+      ]);
     });
   });
 

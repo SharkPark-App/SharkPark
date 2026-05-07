@@ -14,9 +14,12 @@ Usage:
 """
 
 import argparse
+import json
 import logging
-from datetime import date, timedelta
+from collections import Counter
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import mlflow
 import numpy as np
@@ -26,9 +29,14 @@ from src.config import (
     LONG_TERM_HORIZON_DAYS,
     LONG_TERM_MODEL_NAME,
     LONG_TERM_BASELINE_WEEKS,
+    WEATHER_ADJUSTMENT_ENABLED,
 )
 from src.features.long_term import compute_baseline, prepare_inference_features
 from src.models.long_term import LongTermModel
+from src.postprocess.low_activity_scaling import apply_low_activity_scaling
+from src.postprocess.weather_adjustment import apply_weather_adjustment_long_term
+
+CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +86,7 @@ def predict(
 
     lot_ids = df["lot_id"].unique().tolist()
 
-    today = date.today()
+    today = datetime.now(CAMPUS_TZ).date()
     target_dates = [today + timedelta(days=d) for d in range(1, days_ahead + 1)]
     logger.info(
         "Building inference features for %d lots x %d days x 15 hours...",
@@ -98,6 +106,55 @@ def predict(
         return pd.DataFrame()
 
     median, lower, upper = model.predict_quantiles(features)
+
+    # Low-activity session cap (winter / summer / break). Long-term
+    # forecasts span up to a week, so any one run will routinely cross
+    # the boundary into or out of an intersession; clip per-row.
+    pred_target_dates = pd.to_datetime(features["target_date"]).dt.date.tolist()
+    median, lower, upper, _ = apply_low_activity_scaling(
+        median, lower, upper, pred_target_dates,
+    )
+
+    # Per-row weather adjustment using the upcoming NWS forecast. Each
+    # prediction row spans its own (target_date, target_hour) slot, so we
+    # look up the matching WeatherForecast row and apply the same
+    # severity-based clamps as short-term. Skipped when running against
+    # a parquet fixture (no live DB) or when forecast rows are missing
+    # for the target window \u2014 the per-row helper degrades to a no-op
+    # in that case.
+    if WEATHER_ADJUSTMENT_ENABLED and not data_path:
+        try:
+            from src.data.db import (
+                fetch_long_term_weather_forecast,
+                get_school_id_for_lots,
+            )
+
+            school_id = get_school_id_for_lots(lot_ids)
+            forecast_grid = fetch_long_term_weather_forecast(
+                school_id, days_ahead=days_ahead
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not load long-term weather forecast (%s); "
+                "skipping weather adjustment.",
+                exc,
+            )
+            forecast_grid = {}
+
+        target_hours_list = features["target_hour"].astype(int).tolist()
+        median, lower, upper, weather_reasons = apply_weather_adjustment_long_term(
+            median, lower, upper, pred_target_dates, target_hours_list, forecast_grid,
+        )
+        reason_counts = Counter(weather_reasons)
+        summary = ", ".join(
+            f"{reason}={count}" for reason, count in sorted(reason_counts.items())
+        )
+        logger.info(
+            "Long-term weather adjustment: %s (rows=%d, forecast_slots=%d)",
+            summary or "NORMAL=all",
+            len(features),
+            len(forecast_grid),
+        )
 
     predictions_df = _build_prediction_df(
         features=features,
@@ -130,6 +187,24 @@ def predict(
         "Predicted occupancy range: %s - %s",
         predictions_df["predicted_occupancy"].min(),
         predictions_df["predicted_occupancy"].max(),
+    )
+
+    # Machine-readable marker consumed by apps/backend's cron runner so
+    # /admin/ml-status can show the model version + row count for the most
+    # recent ticks. Plain `print` (NOT logger) so the format is stable
+    # regardless of logging config; backend looks for the literal
+    # `ML_RESULT:` prefix and JSON-parses the rest of the line.
+    print(
+        "ML_RESULT: "
+        + json.dumps(
+            {
+                "horizon": "long_term",
+                "model_version": model_version,
+                "predictions_written": int(n),
+                "lots": int(predictions_df["lot_id"].nunique()),
+                "days_ahead": int(days_ahead),
+            }
+        )
     )
 
     return predictions_df

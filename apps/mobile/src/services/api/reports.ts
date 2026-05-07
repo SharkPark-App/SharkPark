@@ -8,6 +8,7 @@
  * Auth: 401 for unauthenticated / guest callers
  */
 import { apiService, ApiError } from './base';
+import { loadAuth } from '../../auth';
 
 export type ReportType = 'blockage' | 'crash' | 'other';
 
@@ -41,10 +42,15 @@ export class ReportThrottledError extends ApiError {
 
 const reportsApi = {
   async create(payload: CreateReportPayload): Promise<CreateReportResponse> {
+    const auth = await loadAuth();
+    if (!auth?.idToken) {
+      throw new ReportUnauthorizedError();
+    }
     try {
       const response = await apiService.post<CreateReportResponse>(
         '/reports',
         payload,
+        { headers: { Authorization: `Bearer ${auth.idToken}` } },
       );
       // apiService.post<T> is typed as returning { success, data: T }, but
       // ReportsController returns the object raw (not wrapped). The fallback

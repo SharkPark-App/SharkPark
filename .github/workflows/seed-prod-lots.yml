@@ -1,5 +1,9 @@
 name: Seed Production Lots
 
+# Principle of least privilege for the GITHUB_TOKEN.
+permissions:
+  contents: read
+
 # Runs the idempotent prod seed (schools + lots only, never touches occupancy)
 # whenever lot-data.ts is updated on main, or on manual dispatch.
 on:
