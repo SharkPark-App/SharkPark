@@ -194,6 +194,36 @@ class BaseXGBoostModel:
             )
             return cls.load(local_dir)
 
+    @classmethod
+    def load_mlflow_artifact_uri(cls, artifact_uri: str) -> "BaseXGBoostModel":
+        """Load a model from a concrete MLflow artifact URI.
+
+        This is a resilient fallback when ``run_id`` lookup works but the
+        run-level ``artifact_path='model'`` download no longer resolves in a
+        given environment. Typical source URIs come from Model Registry
+        versions (e.g. ``version_info.source``).
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            local_dir = mlflow.artifacts.download_artifacts(
+                artifact_uri=artifact_uri,
+                dst_path=tmp,
+            )
+            local_path = Path(local_dir)
+
+            # Most sources point directly at the model directory, but some
+            # stores may resolve to a parent folder containing `model/`.
+            if (local_path / "model.json").exists():
+                return cls.load(str(local_path))
+            nested_model_dir = local_path / "model"
+            if (nested_model_dir / "model.json").exists():
+                return cls.load(str(nested_model_dir))
+
+            raise FileNotFoundError(
+                f"Could not find model artifacts at URI: {artifact_uri}"
+            )
+
     # -----------------------------------------------------------------
     # Internal helpers
     # -----------------------------------------------------------------

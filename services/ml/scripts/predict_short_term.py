@@ -282,11 +282,12 @@ def _load_production_model() -> tuple[ShortTermModel, str]:
 
     version = version_info.version
     run_id = version_info.run_id
+    source = version_info.source
 
     if run_id is None:
         # File-based registry may not populate run_id; extract from source path
-        source = version_info.source.replace("\\", "/")
-        parts = source.split("/")
+        source_norm = source.replace("\\", "/")
+        parts = source_norm.split("/")
         if "artifacts" in parts:
             run_id = parts[parts.index("artifacts") - 1]
 
@@ -296,7 +297,13 @@ def _load_production_model() -> tuple[ShortTermModel, str]:
         )
 
     logger.info("Loading production model: %s v%s", SHORT_TERM_MODEL_NAME, version)
-    model = ShortTermModel.load_mlflow(run_id)
+    # The registry version's source URI is the authoritative reference to the
+    # promoted model artifact. Prefer it over reconstructing a run-relative
+    # `artifact_path='model'`, which can drift across backends / migrations.
+    if source:
+        model = ShortTermModel.load_mlflow_artifact_uri(source)
+    else:
+        model = ShortTermModel.load_mlflow(run_id)
 
     return model, f"v{version}"
 

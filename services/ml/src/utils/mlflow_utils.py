@@ -118,11 +118,18 @@ def promote_model(
             # No @production alias set yet — nothing to warn about.
             pass
     else:
+        try:
+            client.get_registered_model(model_name)
+        except mlflow.exceptions.MlflowException as e:
+            if e.error_code != "RESOURCE_DOES_NOT_EXIST":
+                raise
+            client.create_registered_model(model_name)
+
         artifact_uri = run.info.artifact_uri
         model_uri = f"{artifact_uri}/model"
         logger.info("Registering model from run %s...", run_id)
         try:
-            result = mlflow.register_model(model_uri, model_name)
+            result = client.create_model_version(model_name, model_uri, run_id)
         except mlflow.exceptions.MlflowException as e:
             logger.error("Failed to register model — %s", e)
             return None, False, None
