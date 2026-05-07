@@ -55,6 +55,7 @@ class TestPromote:
         client = mlflow.tracking.MlflowClient()
         mv = client.get_model_version_by_alias(SHORT_TERM_MODEL_NAME, "production")
         assert mv.version == version
+        assert mv.run_id == trained_run_id
 
     def test_promote_invalid_run_id_returns_none(self):
         """Promotion with a non-existent run ID should return None."""
