@@ -393,8 +393,12 @@ class BaseXGBoostModel:
 
         X = df[self.feature_columns].copy()
         for col in X.columns:
-            if X[col].dtype == "bool" or X[col].dtype == "object":
-                X[col] = X[col].astype(int)
+            # Keep missing values as NaN for XGBoost instead of forcing integer
+            # casts that break when bool-like columns contain nulls.
+            if pd.api.types.is_bool_dtype(X[col]):
+                X[col] = X[col].astype(float)
+            elif not pd.api.types.is_numeric_dtype(X[col]):
+                X[col] = pd.to_numeric(X[col], errors="coerce")
 
         y = None
         if has_target and self.TARGET_COL in df.columns:
