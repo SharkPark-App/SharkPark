@@ -31,13 +31,12 @@ from src.config import (
     OPERATING_START_HOUR,
     WEATHER_ADJUSTMENT_ENABLED,
 )
-
-CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
-UTC = ZoneInfo("UTC")
-
 from src.features.short_term import prepare_inference_features
 from src.models.short_term import ShortTermModel
 from src.postprocess.weather_adjustment import apply_weather_adjustment
+
+CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
+UTC = ZoneInfo("UTC")
 
 logger = logging.getLogger(__name__)
 

@@ -28,10 +28,10 @@ from src.config import (
     LONG_TERM_MODEL_NAME,
     LONG_TERM_BASELINE_WEEKS,
 )
-
-CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
 from src.features.long_term import compute_baseline, prepare_inference_features
 from src.models.long_term import LongTermModel
+
+CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
 
 logger = logging.getLogger(__name__)
 
