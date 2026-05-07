@@ -6,6 +6,7 @@ import {
   Dimensions,
   TouchableOpacity,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/CustomText';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -99,6 +100,7 @@ const InteractiveLot: React.FC<{
           fillColor={hexWithAlpha(occupancyColor, 0.35)}
           tappable
           onPress={() => onPress(lot)}
+          accessible={false}
         />
         <Marker
           coordinate={center}
@@ -135,6 +137,9 @@ const InteractiveLot: React.FC<{
       coordinate={{ latitude: lot.center_lat, longitude: lot.center_lng }}
       onPress={() => onPress(lot)}
       tracksViewChanges={true}
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel={a11yLabel}
     >
       <View
         style={[
@@ -145,8 +150,7 @@ const InteractiveLot: React.FC<{
             shadowColor: colors.shadowDark,
           }
         ]}
-        accessibilityRole="button"
-        accessibilityLabel={a11yLabel}
+        accessible={false}
       >
         <Text
           style={[styles.lotText, { color: labelColor }]}
@@ -162,9 +166,9 @@ const InteractiveLot: React.FC<{
 };
 
 // Filter button component
-const FilterButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
+const FilterButton: React.FC<{ onPress: () => void; bottomInset: number }> = ({ onPress, bottomInset }) => (
   <TouchableOpacity
-    style={[styles.fab, styles.filterButton, { backgroundColor: COLORS.primary, shadowColor: COLORS.shadowDark }]}
+    style={[styles.fab, styles.filterButton, { backgroundColor: COLORS.primary, shadowColor: COLORS.shadowDark, bottom: SPACING.xxl + bottomInset }]}
     onPress={onPress}
     activeOpacity={0.8}
     accessibilityRole="button"
@@ -196,6 +200,7 @@ const FavoritesButton: React.FC<{ onPress: () => void; isDark: boolean }> = ({ o
 
 const MapScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   const isFocused = useIsFocused();
   const { favoriteLots, refreshFavorites } = useFavorites();
@@ -453,10 +458,10 @@ const MapScreen: React.FC = () => {
       </View>
 
       {/* Filter button - bottom left */}
-      <FilterButton onPress={handleFilterPress} />
+      <FilterButton onPress={handleFilterPress} bottomInset={insets.bottom} />
 
       {/* Navigate button FAB - bottom right */}
-      <View style={styles.navigateButtonContainer}>
+      <View style={[styles.navigateButtonContainer, { bottom: SPACING.xxl + insets.bottom }]}>
         <FavoritesButton onPress={openRecommendationModal} isDark={isDark} />
       </View>
 
