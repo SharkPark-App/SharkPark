@@ -463,14 +463,22 @@ def get_week_of_semester(d: date) -> tuple[int, str]:
         Tuple of (week_number, period).
         week_number: 1-based week of the semester (0 if outside classes).
         period: One of "early", "regular", "midterms", "late",
-            "dead_week", "finals", "break".
+            "dead_week", "finals", "winter_session", "summer_session",
+            "break".
             - "early": first 2 weeks of classes (weeks 1-2, fall/spring only)
             - "regular": standard class weeks (weeks 3-7, fall/spring only)
             - "midterms": weeks 8-9 of classes (fall/spring only)
             - "late": post-midterm stretch (weeks 10-14, fall/spring only)
             - "dead_week": last week of classes before finals (week 15, fall/spring only)
             - "finals": official finals period
+            - "winter_session": class days inside the winter intersession
+            - "summer_session": class days inside the summer or may intersession
             - "break": breaks, holidays, or outside any semester
+
+        ``winter_session`` and ``summer_session`` are surfaced as distinct
+        periods so downstream consumers (long-term baseline grouping,
+        synthetic-v2 ``CALENDAR_MULT``, prediction post-processing) can
+        apply low-activity scaling without re-deriving the semester.
     """
     if isinstance(d, datetime):
         d = d.date() if hasattr(d, "date") else d
@@ -479,7 +487,7 @@ def get_week_of_semester(d: date) -> tuple[int, str]:
     if result is None:
         return 0, "break"
 
-    sem, _, _, is_intersession = result
+    sem, _, sem_key, is_intersession = result
 
     classes_start = sem.get("classes_start")
     classes_end = sem.get("classes_end")
@@ -500,18 +508,29 @@ def get_week_of_semester(d: date) -> tuple[int, str]:
     elif finals_start and finals_end and finals_start <= d <= finals_end:
         period = "finals"
     elif classes_start and classes_end and classes_start <= d <= classes_end:
-        if not is_intersession and week <= 2:
+        if is_intersession:
+            # Intersession class days carry far less commuter traffic than
+            # the regular fall/spring weeks they share the calendar slot
+            # with. Surface them as their own periods so downstream code
+            # never confuses a winter Monday with a regular Monday.
+            # Note: ``_find_semester`` only matches may_intersession for
+            # the ~3-week window that starts the Monday after spring
+            # finals end, so early/mid-May regular spring class days do
+            # NOT land here \u2014 they fall through to the ``regular``/
+            # ``finals`` branches below. May intersession is bucketed
+            # with summer because it shares summer's warm-season,
+            # low-staff profile (~8k commuters), not winter's ~3k.
+            period = "winter_session" if sem_key == "winter" else "summer_session"
+        elif week <= 2:
             period = "early"
-        elif not is_intersession and 3 <= week <= 7:
+        elif 3 <= week <= 7:
             period = "regular"
-        elif not is_intersession and 8 <= week <= 9:
+        elif 8 <= week <= 9:
             period = "midterms"
-        elif not is_intersession and 10 <= week <= 14:
+        elif 10 <= week <= 14:
             period = "late"
-        elif not is_intersession and week >= 15:
-            period = "dead_week"
         else:
-            period = "regular"
+            period = "dead_week"
     elif d in reading_days:
         period = "dead_week"
     else:

@@ -35,6 +35,7 @@ import { CSULB_SCHOOL, CSULB_BUILDINGS, parkingLots } from './lot-data';
 import { LOT_GEOFENCES } from './lot-geofences.generated';
 import { BUILDING_FOOTPRINTS } from './building-footprints.generated';
 import { LOT_ADVISORIES } from './lot-advisories.generated';
+import { CSULB_ROOM_CAPACITIES } from './room-capacity-seed';
 import { deriveLotBuildings } from '../src/lots/derive-lot-buildings';
 
 const rawConnectionString = process.env.DATABASE_URL;
@@ -378,6 +379,34 @@ async function seedProd() {
     advisoryCount += 1;
   }
   console.log(`[seed-prod] ${advisoryCount} lot advisory rows upserted (active)`);
+
+  // ── 6. Bootstrap room_capacities ───────────────────────────────────────
+  // The Saturday 02:00 PT 'ingest-room-capacities' cron is the long-term
+  // source of truth for lecture-allocation, auditorium, and active-learning
+  // rows. This snapshot bootstraps a fresh database so the Sunday 03:00 PT
+  // catalog ingest has working data on first deploy without waiting a full
+  // week for the scraper. Manually-curated rows (source LIKE 'conflict-off-%')
+  // have no public source and are ONLY written here — the scraper preserves
+  // them on subsequent refreshes.
+  //
+  // Uses createMany({ skipDuplicates: true }) so this is a true bootstrap:
+  // existing rows (whether seeded or scraped) are never overwritten by stale
+  // snapshot data on later deploys.
+  console.log('\n[seed-prod] Bootstrapping room_capacities (insert-if-missing)...');
+  const roomCapacityResult = await prisma.roomCapacity.createMany({
+    data: CSULB_ROOM_CAPACITIES.map((seed) => ({
+      school_id: school.id,
+      building_code: seed.building_code,
+      room: seed.room,
+      capacity: seed.capacity,
+      source: seed.source,
+    })),
+    skipDuplicates: true,
+  });
+  console.log(
+    `[seed-prod] ${roomCapacityResult.count} room_capacities rows inserted ` +
+      `(${CSULB_ROOM_CAPACITIES.length - roomCapacityResult.count} already present)`,
+  );
 }
 
 seedProd()

@@ -1,5 +1,10 @@
 name: Manual DB Backup
 
+# Principle of least privilege for the GITHUB_TOKEN — only checkout needs
+# read; backup writes go to R2 via dedicated R2_* secrets.
+permissions:
+  contents: read
+
 # Operator-triggered Postgres backup → R2. Mirrors the daily `backup-db`
 # cron in `apps/backend/src/scheduler/jobs/backup-db.job.ts` so we have a
 # CI-resident path to seal gaps when the cron Machine has been unavailable

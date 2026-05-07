@@ -399,4 +399,115 @@ describe('LotsService', () => {
       expect(high[0].accuracy).toBe(95);
     });
   });
+
+  describe('getLongTermForecast', () => {
+    const lot = {
+      lot_id: 'G1',
+      metadata_confidence: 'HIGH' as const,
+    } as unknown as ParkingLotResponse;
+
+    it('should fetch long-term forecast and group predictions + weather by date', async () => {
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: {
+          source: 'ml',
+          predictions: [
+            {
+              target_date: '2026-04-13',
+              target_hour: 8,
+              predicted_occupancy: 0.4,
+              confidence_lower: 0.3,
+              confidence_upper: 0.5,
+              model_version: 'xgboost-v2',
+            },
+            {
+              target_date: '2026-04-13',
+              target_hour: 12,
+              predicted_occupancy: 0.8,
+              confidence_lower: 0.7,
+              confidence_upper: 0.9,
+              model_version: 'xgboost-v2',
+            },
+            {
+              target_date: '2026-04-14',
+              target_hour: 9,
+              predicted_occupancy: 0.6,
+              confidence_lower: 0.5,
+              confidence_upper: 0.7,
+              model_version: 'xgboost-v2',
+            },
+          ],
+          weather_forecast: [
+            {
+              target_time: '2026-04-13T14:00:00Z',
+              temperature_f: 68,
+              precipitation_probability: 0.4,
+              is_raining: false,
+              wind_speed_mph: 6,
+              conditions: 'partly cloudy',
+            },
+            {
+              target_time: '2026-04-14T09:00:00Z',
+              temperature_f: 72,
+              precipitation_probability: 0.1,
+              is_raining: false,
+              wind_speed_mph: 4,
+              conditions: 'sunny',
+            },
+          ],
+        },
+      } as never);
+
+      const result = await lotsApi.getLongTermForecast(lot, { days: 7 });
+
+      expect(mockApiService.get).toHaveBeenCalledWith('/lots/G1/predictions/long-term?days=7');
+      expect(result).toHaveLength(2);
+      expect(result[0].date).toBe('2026-04-13');
+      expect(result[0].source).toBe('ml');
+      expect(result[0].hourly).toHaveLength(2);
+      expect(result[0].hourly[0].occupancy).toBe(40);
+      expect(result[0].hourly[0].lowerBound).toBe(30);
+      expect(result[0].hourly[0].upperBound).toBe(50);
+      expect(result[0].hourly[0].accuracy).toBe(95); // HIGH
+      expect(result[0].weather).toHaveLength(1);
+      expect(result[0].weather[0].conditions).toBe('partly cloudy');
+      expect(result[1].date).toBe('2026-04-14');
+      expect(result[1].weather[0].temperature_f).toBe(72);
+    });
+
+    it('should fall back to local heuristic when backend returns no predictions', async () => {
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: { source: 'heuristic', predictions: [], weather_forecast: [] },
+      } as never);
+
+      const result = await lotsApi.getLongTermForecast(lot, { days: 3 });
+
+      expect(result).toHaveLength(3);
+      result.forEach((day) => {
+        expect(day.source).toBe('heuristic');
+        expect(day.hourly.length).toBeGreaterThan(0);
+        expect(day.weather).toEqual([]);
+      });
+    });
+
+    it('should fall back to heuristic on network failure', async () => {
+      mockApiService.get.mockRejectedValueOnce(new Error('Network down'));
+
+      const result = await lotsApi.getLongTermForecast(lot, { days: 2 });
+
+      expect(result).toHaveLength(2);
+      expect(result[0].source).toBe('heuristic');
+    });
+
+    it('should clamp days outside [1, 14] to default 7', async () => {
+      mockApiService.get.mockResolvedValueOnce({
+        success: true,
+        data: { source: 'heuristic', predictions: [], weather_forecast: [] },
+      } as never);
+
+      await lotsApi.getLongTermForecast(lot, { days: 999 });
+      expect(mockApiService.get).toHaveBeenCalledWith('/lots/G1/predictions/long-term?days=7');
+    });
+  });
 });

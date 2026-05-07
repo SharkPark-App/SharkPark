@@ -1,5 +1,10 @@
 name: Deploy to Fly
 
+# Principle of least privilege for the GITHUB_TOKEN — deploys to Fly use
+# FLY_API_TOKEN; the GITHUB_TOKEN only needs to read the repo for checkout.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]

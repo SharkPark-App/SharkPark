@@ -1,0 +1,79 @@
+name: ML CI
+
+# Principle of least privilege for the GITHUB_TOKEN.
+permissions:
+  contents: read
+
+# Lint + unit tests for services/ml.
+#
+# Why a dedicated workflow (instead of folding into the main `ci.yml`)?
+#   - The main CI is a Node/pnpm pipeline with a Postgres service container;
+#     adding Python + uv + an ML dependency tree (~200 packages, including
+#     numpy/scipy wheels) would double its install time on every push to
+#     unrelated areas (frontend, marketing, backend-only).
+#   - The ML package has no DB or external network dependency for tests —
+#     `services/ml/tests/` mocks MLflow + R2 and uses synthetic dataframes
+#     — so this workflow is fast (typically <90s end-to-end) and self-
+#     contained.
+#   - Path filter ensures it only runs when ML code or its lockfile changes.
+#
+# What this does NOT cover (intentionally):
+#   - End-to-end retraining: lives in ml-retrain.yml on a cron, with the
+#     MLflow secrets + heavier compute.
+#   - Backend integration with predict scripts: covered by backend Jest
+#     tests in ci.yml that mock `_ml-runner.spawnPythonModule`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/ml/**'
+      - '.github/workflows/ml-ci.yml'
+  pull_request:
+    paths:
+      - 'services/ml/**'
+      - '.github/workflows/ml-ci.yml'
+
+# Cancel in-progress runs for the same PR/branch — we only care about the
+# tip-of-branch result, and ML installs are slow enough to be wasteful.
+concurrency:
+  group: ml-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: services/ml
+    steps:
+      - uses: actions/checkout@v6
+
+      # Pin Python to match `services/ml/pyproject.toml` requires-python and
+      # the runtime in ml-retrain.yml. uv would resolve this on its own, but
+      # the actions/setup-python cache lets us skip the interpreter download.
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'services/ml/uv.lock'
+
+      # `--frozen` enforces the lockfile (PR fails if uv.lock is stale).
+      # `--extra dev` pulls the dev optional-dependencies group (pytest,
+      # ruff). Note: `--dev` is the PEP 735 [dependency-groups] flag and
+      # would NOT install our [project.optional-dependencies].dev entries.
+      - name: Install ML package + dev tools (locked)
+        run: uv sync --frozen --extra dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check src scripts tests
+
+      - name: Unit tests (pytest)
+        run: uv run pytest --maxfail=1 -q

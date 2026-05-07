@@ -14,6 +14,7 @@ import { EventsScrapersModule } from '../events/events-scrapers.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ContributorService } from '../auth/contributor.service';
 import { ReportsService } from '../reports/reports.service';
+import { ConsensusService } from '../reliability/consensus.service';
 import {
   appConfig,
   authConfig,
@@ -47,6 +48,14 @@ import { RefreshLotMetadataJob } from './jobs/refresh-lot-metadata.job';
 import { PruneNotificationLogsJob } from './jobs/prune-notification-logs.job';
 import { PruneContributorPingsJob } from './jobs/prune-contributor-pings.job';
 import { PruneOldReportMessagesJob } from './jobs/prune-old-report-messages.job';
+import { PredictShortTermJob } from './jobs/predict-short-term.job';
+import { PredictLongTermJob } from './jobs/predict-long-term.job';
+import { RecomputePenetrationRatesJob } from './jobs/recompute-penetration-rates.job';
+import { IngestCsulbCatalogJob } from './jobs/ingest-csulb-catalog.job';
+import { IngestRoomCapacitiesJob } from './jobs/ingest-room-capacities.job';
+import { BuildProximityMatrixJob } from './jobs/build-proximity-matrix.job';
+import { PruneConsensusObservationsJob } from './jobs/prune-consensus-observations.job';
+import { PredictionAccuracyJob } from './jobs/prediction-accuracy.job';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -119,6 +128,7 @@ const isProduction = process.env.NODE_ENV === 'production';
     // is available through DatabaseModule above.
     ContributorService,
     ReportsService,
+    ConsensusService,
     SnapshotJob,
     FetchWeatherJob,
     FetchWeatherForecastJob,
@@ -140,6 +150,14 @@ const isProduction = process.env.NODE_ENV === 'production';
     PruneNotificationLogsJob,
     PruneContributorPingsJob,
     PruneOldReportMessagesJob,
+    PredictShortTermJob,
+    PredictLongTermJob,
+    RecomputePenetrationRatesJob,
+    IngestCsulbCatalogJob,
+    IngestRoomCapacitiesJob,
+    BuildProximityMatrixJob,
+    PruneConsensusObservationsJob,
+    PredictionAccuracyJob,
   ],
 })
 export class SchedulerModule {}

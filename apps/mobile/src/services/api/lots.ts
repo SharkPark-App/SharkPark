@@ -207,6 +207,7 @@ class LotsApiService {
     HISTORY: 5 * 60 * 1000,        // 5 minutes — historical data is stable
     RECOMMENDATIONS: 2 * 60 * 1000, // 2 minutes
     FORECAST: 5 * 60 * 1000,       // 5 minutes
+    LONG_TERM_FORECAST: 30 * 60 * 1000, // 30 minutes — refreshed daily on the backend
   };
 
   /**
@@ -442,9 +443,152 @@ class LotsApiService {
   }
 
   /**
-   * Record anonymous occupancy event (ENTER/EXIT)
-   * Device ID is hashed server-side for privacy
+   * Fetch the multi-day long-term forecast from the backend ML pipeline.
+   *
+   * Returns one entry per day with hourly occupancy bands AND the slice of
+   * forecasted weather covering that day. Mirrors `getForecast` for the
+   * short-term range: cache-first, BG-location pre-check, local heuristic
+   * fallback if the network and cache both miss.
    */
+  async getLongTermForecast(
+    lot: Pick<ParkingLotResponse, 'lot_id' | 'metadata_confidence'>,
+    options: { days?: number; forceRefresh?: boolean } = {},
+  ): Promise<Array<{
+    date: string; // YYYY-MM-DD in UTC
+    source: 'ml' | 'heuristic';
+    hourly: Array<{
+      time: string;
+      occupancy: number;
+      lowerBound: number;
+      upperBound: number;
+      accuracy: number;
+    }>;
+    weather: Array<{
+      target_time: string;
+      temperature_f: number;
+      precipitation_probability: number;
+      is_raining: boolean;
+      wind_speed_mph: number;
+      conditions: string;
+    }>;
+  }>> {
+    const days = options.days && options.days >= 1 && options.days <= 14 ? options.days : 7;
+
+    // Mirror short-term: revoked OS state ⇒ endpoint will 403, fail loud locally
+    // so the screen can route to the soft-ask flow.
+    if (getContributorStateSync() !== 'granted') {
+      throw new BackgroundLocationRequiredError(
+        'Long-term forecast unavailable while location permission is revoked.',
+        { code: BackgroundLocationRequiredError.CODE },
+      );
+    }
+
+    const accuracyFor = (mc: ParkingLotResponse['metadata_confidence']) =>
+      mc === 'HIGH' ? 95 : mc === 'MEDIUM' ? 85 : 70;
+
+    const buildHeuristicByDay = () => {
+      // Replicate generateForecast's curve across the requested window
+      const baseHourly = this.generateForecast(lot);
+      const out: Array<{
+        date: string;
+        source: 'heuristic';
+        hourly: typeof baseHourly;
+        weather: [];
+      }> = [];
+      for (let i = 0; i < days; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() + i);
+        out.push({
+          date: d.toISOString().split('T')[0],
+          source: 'heuristic',
+          hourly: baseHourly,
+          weather: [],
+        });
+      }
+      return out;
+    };
+
+    try {
+      const result = await cacheService.getOrFetch(
+        `lots:longTermForecast:${lot.lot_id}:${days}`,
+        async () => {
+          const endpoint = `${API_CONFIG.ENDPOINTS.LOT_PREDICTIONS_LONG(lot.lot_id)}?days=${days}`;
+          const response = await apiService.get<{
+            source: 'ml' | 'heuristic';
+            predictions: Array<{
+              target_date: string; // YYYY-MM-DD
+              target_hour: number;
+              predicted_occupancy: number;
+              confidence_lower: number;
+              confidence_upper: number;
+              model_version: string;
+            }>;
+            weather_forecast: Array<{
+              target_time: string;
+              temperature_f: number;
+              precipitation_probability: number;
+              is_raining: boolean;
+              wind_speed_mph: number;
+              conditions: string;
+            }>;
+          }>(endpoint);
+
+          const { predictions = [], weather_forecast = [], source } = response.data;
+          if (predictions.length === 0) {
+            return buildHeuristicByDay();
+          }
+
+          // Group predictions by target_date
+          const byDate = new Map<string, typeof predictions>();
+          for (const p of predictions) {
+            const list = byDate.get(p.target_date) ?? [];
+            list.push(p);
+            byDate.set(p.target_date, list);
+          }
+
+          // Group weather rows by date (UTC) for per-day slicing
+          const weatherByDate = new Map<string, typeof weather_forecast>();
+          for (const w of weather_forecast) {
+            const dateKey = w.target_time.split('T')[0];
+            const list = weatherByDate.get(dateKey) ?? [];
+            list.push(w);
+            weatherByDate.set(dateKey, list);
+          }
+
+          const sortedDates = Array.from(byDate.keys()).sort();
+          return sortedDates.map((date) => {
+            const rows = (byDate.get(date) ?? []).sort((a, b) => a.target_hour - b.target_hour);
+            const accuracy = accuracyFor(lot.metadata_confidence);
+            return {
+              date,
+              source,
+              hourly: rows.map((p) => {
+                const targetTime = new Date(`${date}T${String(p.target_hour).padStart(2, '0')}:00:00`);
+                const occupancyPercent = Math.round(p.predicted_occupancy * 100);
+                const lower = Math.round(p.confidence_lower * 100);
+                const upper = Math.round(p.confidence_upper * 100);
+                return {
+                  time: targetTime.toISOString(),
+                  occupancy: Math.min(100, Math.max(0, occupancyPercent)),
+                  lowerBound: Math.min(100, Math.max(0, lower)),
+                  upperBound: Math.min(100, Math.max(0, upper)),
+                  accuracy,
+                };
+              }),
+              weather: weatherByDate.get(date) ?? [],
+            };
+          });
+        },
+        { ttl: LotsApiService.CACHE_TTL.LONG_TERM_FORECAST, forceRefresh: options.forceRefresh },
+      );
+      return result.data;
+    } catch (err) {
+      if (err instanceof BackgroundLocationRequiredError) throw err;
+      // Cache miss + network failure — degrade to local heuristic
+      return buildHeuristicByDay();
+    }
+  }
+
   /**
    * Record anonymous occupancy event (ENTER/EXIT).
    *
