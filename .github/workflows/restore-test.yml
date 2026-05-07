@@ -18,8 +18,8 @@ permissions:
 # Required GH secrets (all required — workflow fails loudly if any are missing):
 #   NEON_API_KEY
 #   R2_ACCOUNT_ID
-#   R2_ACCESS_KEY_ID
-#   R2_SECRET_ACCESS_KEY
+#   BACKUP_R2_ACCESS_KEY_ID
+#   BACKUP_R2_SECRET_ACCESS_KEY
 #   R2_BACKUPS_BUCKET         (value: "sharkpark-backups")
 # Required GH vars:
 #   NEON_PROJECT_ID
@@ -46,16 +46,16 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          BACKUP_R2_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_ACCESS_KEY_ID }}
+          BACKUP_R2_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_SECRET_ACCESS_KEY }}
           R2_BACKUPS_BUCKET: ${{ secrets.R2_BACKUPS_BUCKET }}
         run: |
           missing=()
           [ -z "$NEON_PROJECT_ID" ]      && missing+=("vars.NEON_PROJECT_ID")
           [ -z "$NEON_API_KEY" ]         && missing+=("secrets.NEON_API_KEY")
           [ -z "$R2_ACCOUNT_ID" ]        && missing+=("secrets.R2_ACCOUNT_ID")
-          [ -z "$R2_ACCESS_KEY_ID" ]     && missing+=("secrets.R2_ACCESS_KEY_ID")
-          [ -z "$R2_SECRET_ACCESS_KEY" ] && missing+=("secrets.R2_SECRET_ACCESS_KEY")
+          [ -z "$BACKUP_R2_ACCESS_KEY_ID" ]     && missing+=("secrets.BACKUP_R2_ACCESS_KEY_ID")
+          [ -z "$BACKUP_R2_SECRET_ACCESS_KEY" ] && missing+=("secrets.BACKUP_R2_SECRET_ACCESS_KEY")
           [ -z "$R2_BACKUPS_BUCKET" ]    && missing+=("secrets.R2_BACKUPS_BUCKET")
           if [ ${#missing[@]} -gt 0 ]; then
             echo "ERROR: Required configuration is missing: ${missing[*]}" >&2
@@ -103,8 +103,8 @@ jobs:
       - name: Locate latest backup in R2
         id: dump
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
           BUCKET: ${{ secrets.R2_BACKUPS_BUCKET }}

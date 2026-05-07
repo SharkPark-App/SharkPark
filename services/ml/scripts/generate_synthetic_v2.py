@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 from datetime import date, datetime
 from typing import Optional
@@ -61,6 +62,15 @@ logger = logging.getLogger(__name__)
 
 def _parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
+
+
+def _normalize_term(term: str) -> str:
+    """Accept tags like Spring_2026 and normalize to catalog term values."""
+    raw = term.strip()
+    m = re.fullmatch(r"(?i)(spring|summer|fall|winter)[_-]\d{4}", raw)
+    if m:
+        return m.group(1).title()
+    return raw
 
 
 def _resolve_school_id(conn, short_name: str) -> str:
@@ -82,10 +92,11 @@ def run(
     truncate: bool,
     dry_run: bool,
 ) -> dict:
+    resolved_term = _normalize_term(term)
     with get_connection() as conn:
         school_id = _resolve_school_id(conn, school_short_name)
         gen = SyntheticV2Generator(
-            conn=conn, school_id=school_id, term=term, seed=seed
+            conn=conn, school_id=school_id, term=resolved_term, seed=seed
         )
         gen.load()
 
@@ -94,12 +105,12 @@ def run(
         if not gen.meetings:
             raise SystemExit(
                 f"No course meetings found for school={school_short_name!r} "
-                f"term={term!r}. Run ingest_csulb_catalog first."
+                f"term={resolved_term!r}. Run ingest_csulb_catalog first."
             )
 
         deleted = 0
         if truncate and not dry_run:
-            deleted = truncate_existing(conn, school_id=school_id, term=term)
+            deleted = truncate_existing(conn, school_id=school_id, term=resolved_term)
             logger.info("Deleted %d prior %s rows", deleted, GENERATOR_VERSION)
 
         rows = list(gen.generate(start, end))
@@ -122,7 +133,8 @@ def run(
         return {
             "task": "generate_synthetic_v2",
             "school": school_short_name,
-            "term": term,
+            "term": resolved_term,
+            "term_input": term,
             "generator_version": GENERATOR_VERSION,
             "date_range": [start.isoformat(), end.isoformat()],
             "lots": len(gen.lots),
@@ -143,7 +155,11 @@ def run(
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--school", required=True, help="School short_name (e.g. CSULB).")
-    parser.add_argument("--term", required=True, help="Term tag, e.g. Spring_2026.")
+    parser.add_argument(
+        "--term",
+        required=True,
+        help="Term tag (Spring or Spring_2026; normalized to catalog term values).",
+    )
     parser.add_argument("--start", required=True, type=_parse_date, help="YYYY-MM-DD.")
     parser.add_argument("--end", required=True, type=_parse_date, help="YYYY-MM-DD.")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed.")

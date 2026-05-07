@@ -48,6 +48,21 @@ on:
         required: true
         type: boolean
         default: true
+      include_synthetic_v2:
+        description: 'Blend catalog-driven synthetic v2 rows from synthetic_observations'
+        required: false
+        type: boolean
+        default: false
+      synthetic_v2_school:
+        description: 'School short_name for v2 loader (required when include_synthetic_v2=true)'
+        required: false
+        type: string
+        default: 'CSULB'
+      synthetic_v2_term:
+        description: 'Term filter for v2 loader (e.g. Spring_2026; leave blank to load all terms for the school)'
+        required: false
+        type: string
+        default: ''
 
 # Per-horizon mutex — only one short-term retrain at a time, only one
 # long-term retrain at a time. `cancel-in-progress: false` because we
@@ -97,14 +112,14 @@ jobs:
         horizon: ${{ fromJSON(needs.resolve-matrix.outputs.horizons) }}
     env:
       # Read-only follower DSN preferred so a runaway training query
-      # can never lock prod write traffic. Falls back to the primary if
-      # the follower secret isn't configured.
-      DATABASE_URL: ${{ secrets.ML_DATABASE_URL || secrets.DATABASE_URL }}
+      # can never lock prod write traffic. Falls back to the app DB
+      # secrets used by deploy when the follower is not configured.
+      DATABASE_URL: ${{ secrets.ML_DATABASE_URL || secrets.DATABASE_URL || secrets.NEON_DATABASE_URL }}
       MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
       MLFLOW_ARTIFACT_LOCATION: ${{ secrets.MLFLOW_ARTIFACT_LOCATION }}
       R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
     defaults:
       run:
@@ -127,28 +142,129 @@ jobs:
       - name: Install ML package (locked)
         run: uv sync --frozen --no-dev
 
+      - name: Verify required ML secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            DATABASE_URL \
+            MLFLOW_TRACKING_URI \
+            MLFLOW_ARTIFACT_LOCATION \
+            R2_ENDPOINT_URL \
+            ML_R2_ACCESS_KEY_ID \
+            ML_R2_SECRET_ACCESS_KEY \
+            R2_BUCKET; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name is not configured for ML retrain"
+              missing=1
+            fi
+          done
+
+          if [[ "${MLFLOW_ARTIFACT_LOCATION:-}" != s3://* ]]; then
+            echo "::error::MLFLOW_ARTIFACT_LOCATION must be s3://<bucket>/<prefix>"
+            missing=1
+          fi
+
+          if [[ -n "${R2_ENDPOINT_URL:-}" && "${R2_ENDPOINT_URL:-}" != https://*.r2.cloudflarestorage.com ]]; then
+            echo "::warning::R2_ENDPOINT_URL should look like https://<account-id>.r2.cloudflarestorage.com with no bucket or path"
+          fi
+
+          artifact_bucket="${MLFLOW_ARTIFACT_LOCATION:-}"
+          artifact_bucket="${artifact_bucket#s3://}"
+          artifact_bucket="${artifact_bucket%%/*}"
+          if [[ -n "${artifact_bucket:-}" && -n "${R2_BUCKET:-}" && "$artifact_bucket" != "$R2_BUCKET" ]]; then
+            echo "::warning::MLFLOW_ARTIFACT_LOCATION bucket does not match R2_BUCKET; MLflow artifacts and promoted exports will go to different buckets"
+          fi
+
+          exit "$missing"
+
       - name: Verify MLflow + R2 connectivity (bootstrap)
         run: uv run python -m scripts.bootstrap_mlflow
 
-      - name: Train (${{ matrix.horizon }})
-        id: train
+      - name: Generate synthetic v1 priors
+        # The 4-tier sample-weighting scheme blends synthetic v1 priors with
+        # real cold-start + established rows. Parquets are not committed to the
+        # repo (regenerated each run from the lot catalog in Postgres). We
+        # generate the current and prior semesters so the glob
+        # ``data/synthetic_*.parquet`` always matches at least one file.
         run: |
           set -euo pipefail
+          mkdir -p data
+          # Pick current + previous semester from today's UTC date. Spring runs
+          # Jan-May, Fall runs Aug-Dec. Summer (Jun-Jul) falls back to the most
+          # recent spring + previous fall.
+          YEAR=$(date -u +%Y)
+          MONTH=$(date -u +%m)
+          MONTH=$((10#$MONTH))
+          if (( MONTH >= 8 )); then
+            CURRENT="fall-${YEAR}"
+            PREVIOUS="spring-${YEAR}"
+          elif (( MONTH >= 1 && MONTH <= 5 )); then
+            CURRENT="spring-${YEAR}"
+            PREVIOUS="fall-$((YEAR - 1))"
+          else
+            # Summer: no active semester, use most recent two
+            CURRENT="spring-${YEAR}"
+            PREVIOUS="fall-$((YEAR - 1))"
+          fi
+          echo "Generating synthetic v1 priors for $PREVIOUS and $CURRENT"
+          uv run python -m src.data.synthetic --semester "$PREVIOUS"
+          uv run python -m src.data.synthetic --semester "$CURRENT"
+          ls -lh data/synthetic_*.parquet
+
+      - name: Train (${{ matrix.horizon }})
+        id: train
+        # Tier weights match the D5 launch spec in services/ml/Model_Design.md:
+        #   --real-weight 10 --synthetic-v2-weight 1 --synthetic-weight 0.1
+        # The CLI defaults are 1.0 across the board for backward-compat with
+        # ad-hoc local training; we have to pass them explicitly here so the
+        # automated retrain matches the documented behavior.
+        #
+        # --include-synthetic-v2 is opt-in via workflow_dispatch only — the
+        # scheduled cron stays on v1+real because v2 depends on the catalog
+        # ingest (D2) + proximity build (D3) + a generate-synthetic-v2 run
+        # having been completed for the active term. Flip it on manually once
+        # those upstream pipelines have produced rows for the term.
+        env:
+          INCLUDE_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.include_synthetic_v2 || 'false' }}
+          V2_SCHOOL: ${{ github.event_name == 'workflow_dispatch' && inputs.synthetic_v2_school || '' }}
+          V2_TERM: ${{ github.event_name == 'workflow_dispatch' && inputs.synthetic_v2_term || '' }}
+        run: |
+          set -euo pipefail
+          V2_ARGS=()
+          if [[ "${INCLUDE_V2:-false}" == "true" ]]; then
+            if [[ -z "${V2_SCHOOL:-}" ]]; then
+              echo "::error::synthetic_v2_school is required when include_synthetic_v2=true"
+              exit 1
+            fi
+            V2_ARGS+=(--include-synthetic-v2 --synthetic-v2-school "$V2_SCHOOL")
+            if [[ -n "${V2_TERM:-}" ]]; then
+              V2_ARGS+=(--synthetic-v2-term "$V2_TERM")
+            fi
+          fi
           if [[ "${{ matrix.horizon }}" == "short-term" ]]; then
             uv run python -m scripts.train_short_term \
               --include-real \
               --real-start-date "$(date -u -d '90 days ago' +%Y-%m-%d)" \
-              | tee train.log
+              --real-weight 10.0 \
+              --synthetic-v2-weight 1.0 \
+              --synthetic-weight 0.1 \
+              "${V2_ARGS[@]}" \
+              |& tee train.log
           else
             uv run python -m scripts.train_long_term \
               --include-real \
               --real-start-date "$(date -u -d '180 days ago' +%Y-%m-%d)" \
-              | tee train.log
+              --real-weight 10.0 \
+              --synthetic-v2-weight 1.0 \
+              --synthetic-weight 0.1 \
+              "${V2_ARGS[@]}" \
+              |& tee train.log
           fi
           # train_*.py logs the candidate run id in the format
           #   "MLflow run ID: <run_id>"  (see logger.info call in
           #   services/ml/scripts/train_short_term.py).
-          RUN_ID=$(grep -oE 'MLflow run ID: [a-f0-9]+' train.log | tail -n1 | awk '{print $4}')
+          RUN_ID=$(grep -oE 'MLflow run ID: [a-f0-9]+' train.log | tail -n1 | awk '{print $4}' || true)
           if [[ -z "$RUN_ID" ]]; then
             echo "::error::Could not parse MLflow run ID from train.log"
             exit 1

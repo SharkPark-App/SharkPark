@@ -76,8 +76,10 @@ src/
 The canonical, fully-commented reference is [`.env.example`](.env.example).
 Required for production: `DATABASE_URL`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
 `DEVICE_HASH_SALT`, `DEVICE_EVENT_SECRET`, `WS_CONNECT_SECRET`, `REDIS_URL`,
-`CORS_ORIGINS`, plus the R2 credentials (`AWS_*` + `S3_ENDPOINT`) used by the
-backup and ML-export jobs. Sentry, Firebase, and weather overrides are
+`CORS_ORIGINS`, plus the backup R2 credentials (`R2_ACCOUNT_ID`,
+`BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`, `R2_BACKUPS_BUCKET`)
+and ML R2 credentials (`R2_ENDPOINT_URL`, `ML_R2_ACCESS_KEY_ID`,
+`ML_R2_SECRET_ACCESS_KEY`). Sentry, Firebase, and weather overrides are
 optional and degrade gracefully when unset (logged as warnings).
 
 ## Operations

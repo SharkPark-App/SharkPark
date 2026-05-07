@@ -201,22 +201,30 @@ def _upload_to_r2(model_name: str, version: str, run_id: str) -> None:
     Downloads the run's `model` artifact directory from MLflow, uploads each file
     to ``s3://<bucket>/models/<model_name>/<version>/<filename>``
 
-    Required env vars: R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.
+    Required env vars: R2_ENDPOINT_URL, ML_R2_ACCESS_KEY_ID,
+    ML_R2_SECRET_ACCESS_KEY. Legacy R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY are
+    accepted as local-dev fallbacks.
     Optional: R2_BUCKET (defaults to ``sharkpark-ml-exports``).
     """
     import boto3
 
-    endpoint_url = os.environ.get("R2_ENDPOINT_URL")
-    access_key = os.environ.get("R2_ACCESS_KEY_ID")
-    secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
+    endpoint_url = os.environ.get("ML_R2_ENDPOINT_URL") or os.environ.get(
+        "R2_ENDPOINT_URL"
+    )
+    access_key = os.environ.get("ML_R2_ACCESS_KEY_ID") or os.environ.get(
+        "R2_ACCESS_KEY_ID"
+    )
+    secret_key = os.environ.get("ML_R2_SECRET_ACCESS_KEY") or os.environ.get(
+        "R2_SECRET_ACCESS_KEY"
+    )
     bucket = os.environ.get("R2_BUCKET") or _DEFAULT_R2_BUCKET
 
     missing = [
         name
         for name, val in (
             ("R2_ENDPOINT_URL", endpoint_url),
-            ("R2_ACCESS_KEY_ID", access_key),
-            ("R2_SECRET_ACCESS_KEY", secret_key),
+            ("ML_R2_ACCESS_KEY_ID", access_key),
+            ("ML_R2_SECRET_ACCESS_KEY", secret_key),
         )
         if not val
     ]

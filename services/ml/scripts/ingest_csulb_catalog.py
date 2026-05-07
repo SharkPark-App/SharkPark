@@ -693,15 +693,15 @@ def _upsert_sections(
 
     now = datetime.now(timezone.utc)
     source_counts: dict[str, int] = defaultdict(int)
-    rows_to_insert: list[tuple] = []
+    rows_by_key: dict[tuple[str, str, str, str, str], tuple[tuple, str]] = {}
 
     for s in sections:
         building_id = building_ids.get(s.building_code) if s.building_code else None
         cap, enrollment, source = _resolve_enrollment(
             s, overrides, room_capacities, building_profiles
         )
-        source_counts[source] += 1
-        rows_to_insert.append(
+        key = (school_id, term, s.subject_code, s.course_code, s.section)
+        rows_by_key[key] = (
             (
                 _generate_cuid(),
                 school_id,
@@ -726,8 +726,19 @@ def _upsert_sections(
                 cap,
                 now,
                 now,
-            )
+            ),
+            source,
         )
+
+    if len(rows_by_key) != len(sections):
+        logger.warning(
+            "Deduplicated %s duplicate section rows before upsert",
+            len(sections) - len(rows_by_key),
+        )
+
+    rows_to_insert = [row for row, _ in rows_by_key.values()]
+    for _, source in rows_by_key.values():
+        source_counts[source] += 1
 
     sql = """
     INSERT INTO course_meetings (

@@ -745,6 +745,19 @@ def bulk_insert(conn, rows: list[dict], *, batch_size: int = 5_000) -> int:
     """
     if not rows:
         return 0
+    deduped: dict[tuple[str, datetime, str], dict] = {}
+    for row in rows:
+        key = (row["lot_id"], row["timestamp"], row["generator_version"])
+        deduped[key] = row
+
+    if len(deduped) != len(rows):
+        log.warning(
+            "Deduplicated %d synthetic rows before bulk insert",
+            len(rows) - len(deduped),
+        )
+
+    rows = list(deduped.values())
+
     columns = (
         "id",
         "school_id",

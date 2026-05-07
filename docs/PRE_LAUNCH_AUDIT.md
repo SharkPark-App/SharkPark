@@ -171,7 +171,7 @@ The "30 vs 90" suspicion likely reflected confusion between **30d events** (raw 
 ### 🔴 HIGH — must fix before deployment
 
 1. **`restore-test.yml` graceful-skip gates** ([.github/workflows/restore-test.yml](../.github/workflows/restore-test.yml)). ✅ **Fixed.**
-   - Removed `if: ${{ vars.NEON_PROJECT_ID != '' }}` and the `R2_*` env-check exit-0 path. The workflow now requires `NEON_PROJECT_ID`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BACKUPS_BUCKET` and fails loudly when any are missing.
+   - Removed `if: ${{ vars.NEON_PROJECT_ID != '' }}` and the R2 env-check exit-0 path. The workflow now requires `NEON_PROJECT_ID`, `R2_ACCOUNT_ID`, `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`, `R2_BACKUPS_BUCKET` and fails loudly when any are missing.
 
 2. **`.env.example` placeholder secrets.** ✅ **Fixed.**
    - Removed all placeholder values (`replace-me-with-openssl-rand-hex-32`, blanks) for `DEVICE_HASH_SALT`, `DEVICE_EVENT_SECRET`, `WS_CONNECT_SECRET`, `ADMIN_API_KEY`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `DATABASE_URL`, `DIRECT_URL`. Added `ADMIN_API_KEY` placeholder slot. Production must set via `flyctl secrets set ...` (see §10 checklist) — there is no fallback.
@@ -196,7 +196,7 @@ The "30 vs 90" suspicion likely reflected confusion between **30d events** (raw 
 
 10. ML hyperparameters hardcoded (n_estimators=200, max_depth=6, lr=0.1). Optuna sweep deferred until ≥6 months of real data.
 11. Weather "commute hour" windows (7–9, 16–18) are hand-picked. Calibrate against arrival/departure logs once available.
-12. `predict_short_term.py` baseline boto3 test failures (6 reported pre-existing). Confirm root cause: missing R2 credentials in the test environment. Add `pytest -m "not r2"` to CI default and a separate gated job that runs R2 tests only when `R2_ACCESS_KEY_ID` is present (not as a graceful skip — as a separate matrix entry).
+12. `predict_short_term.py` baseline boto3 test failures (6 reported pre-existing). Confirm root cause: missing ML R2 credentials in the test environment. Add `pytest -m "not r2"` to CI default and a separate gated job that runs R2 tests only when `ML_R2_ACCESS_KEY_ID` is present (not as a graceful skip — as a separate matrix entry).
 13. No automated rollback for ML model promotion. Manual via `--run-id`.
 14. Cross-semester baseline lookup for long-term model (planned in `Model_Design.md`).
 
@@ -273,9 +273,9 @@ All 29 jobs:
 
 See [SYSTEM_OVERVIEW.md §6](SYSTEM_OVERVIEW.md#6-environment-variables-and-secrets) for the full table. Quick map:
 
-**Backend (Fly secrets):** `DATABASE_URL`, `DIRECT_URL`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `DEVICE_HASH_SALT`, `DEVICE_EVENT_SECRET`, `WS_CONNECT_SECRET`, `ADMIN_API_KEY`, `SENTRY_DSN`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BACKUPS_BUCKET`, `MLFLOW_TRACKING_URI`, `MLFLOW_ARTIFACT_LOCATION`, `R2_ENDPOINT_URL`.
+**Backend (Fly secrets):** `DATABASE_URL`, `DIRECT_URL`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `DEVICE_HASH_SALT`, `DEVICE_EVENT_SECRET`, `WS_CONNECT_SECRET`, `ADMIN_API_KEY`, `SENTRY_DSN`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `R2_ACCOUNT_ID`, `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`, `R2_BACKUPS_BUCKET`, `ML_R2_ACCESS_KEY_ID`, `ML_R2_SECRET_ACCESS_KEY`, `MLFLOW_TRACKING_URI`, `MLFLOW_ARTIFACT_LOCATION`, `R2_ENDPOINT_URL`.
 
-**ML pipeline (GitHub Actions secrets):** `NEON_DATABASE_URL`, `ML_DATABASE_URL` (optional read replica), `MLFLOW_TRACKING_URI`, `MLFLOW_ARTIFACT_LOCATION`, `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
+**ML pipeline (GitHub Actions secrets):** `NEON_DATABASE_URL`, `ML_DATABASE_URL` (optional read replica), `MLFLOW_TRACKING_URI`, `MLFLOW_ARTIFACT_LOCATION`, `R2_ENDPOINT_URL`, `ML_R2_ACCESS_KEY_ID`, `ML_R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
 
 **Deploy + CI (GitHub Actions secrets):** `FLY_API_TOKEN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `NEON_API_KEY`, `NEON_PROJECT_ID` (var), `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CODECOV_TOKEN` (optional).
 
@@ -375,10 +375,12 @@ flyctl secrets set \
   FIREBASE_CLIENT_EMAIL="..." \
   FIREBASE_PRIVATE_KEY="..." \
   R2_ACCOUNT_ID="..." \
-  R2_ACCESS_KEY_ID="..." \
-  R2_SECRET_ACCESS_KEY="..." \
+  BACKUP_R2_ACCESS_KEY_ID="..." \
+  BACKUP_R2_SECRET_ACCESS_KEY="..." \
   R2_BACKUPS_BUCKET="sharkpark-backups" \
   R2_ENDPOINT_URL="https://<account-id>.r2.cloudflarestorage.com" \
+  ML_R2_ACCESS_KEY_ID="..." \
+  ML_R2_SECRET_ACCESS_KEY="..." \
   MLFLOW_TRACKING_URI="postgresql+psycopg2://..." \
   MLFLOW_ARTIFACT_LOCATION="s3://sharkpark-ml-exports/mlflow-artifacts" \
   WEATHER_USER_AGENT="SharkPark/1.0 (ops@sharkpark.app)" \
@@ -391,7 +393,7 @@ Verify: `flyctl secrets list`. There should be no `replace-me-*` placeholders.
 
 Required (deploy will fail without these — that is intentional):
 
-`FLY_API_TOKEN`, `NEON_DATABASE_URL`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `NEON_API_KEY` + `NEON_PROJECT_ID` (var), `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BACKUPS_BUCKET`, `R2_ENDPOINT_URL`, `R2_BUCKET`, `MLFLOW_TRACKING_URI`, `MLFLOW_ARTIFACT_LOCATION`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+`FLY_API_TOKEN`, `NEON_DATABASE_URL`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `NEON_API_KEY` + `NEON_PROJECT_ID` (var), `R2_ACCOUNT_ID`, `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`, `R2_BACKUPS_BUCKET`, `R2_ENDPOINT_URL`, `R2_BUCKET`, `ML_R2_ACCESS_KEY_ID`, `ML_R2_SECRET_ACCESS_KEY`, `MLFLOW_TRACKING_URI`, `MLFLOW_ARTIFACT_LOCATION`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 
 Optional: `CODECOV_TOKEN`, `ML_DATABASE_URL`.
 
