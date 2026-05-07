@@ -13,6 +13,7 @@ Run from services/ml/:
 import tempfile
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from src.models.short_term import ShortTermModel
@@ -214,3 +215,42 @@ class TestShortTermModel:
         model = ShortTermModel()
         with pytest.raises(RuntimeError, match="No trained model"):
             model.save_mlflow(metrics={"mae": 0.0})
+
+    def test_prepare_xy_handles_nullable_bool_and_object_with_nan(self):
+        """_prepare_xy should coerce bool/object columns without crashing on NaN."""
+        model = ShortTermModel()
+        model.feature_columns = ["is_raining", "temperature_f"]
+
+        df = pd.DataFrame(
+            {
+                "is_raining": pd.Series([True, False, None], dtype="boolean"),
+                "temperature_f": [70.2, "71.5", None],
+                "target_occupancy_rate": [0.3, 0.4, 0.5],
+            }
+        )
+
+        X, y = model._prepare_xy(df)
+
+        assert y is not None and len(y) == 3
+        assert pd.api.types.is_float_dtype(X["is_raining"])
+        assert pd.api.types.is_numeric_dtype(X["temperature_f"])
+        assert np.isnan(X.loc[2, "is_raining"])
+
+    def test_weather_severity_still_encoded_after_fit(self):
+        """weather_severity should remain a categorical feature in normal flow."""
+        model = ShortTermModel()
+        df = pd.DataFrame(
+            {
+                "lot_id": ["G1", "G2", "G1"],
+                "semester": ["spring", "spring", "spring"],
+                "academic_period": ["regular", "regular", "regular"],
+                "weather_severity": ["clear", "rain", "clear"],
+                "is_raining": [0, 1, 0],
+            }
+        )
+
+        model._fit_category_mappings(df)
+        encoded = model._encode_categoricals(df)
+
+        assert "weather_severity_encoded" in encoded.columns
+        assert pd.api.types.is_integer_dtype(encoded["weather_severity_encoded"])

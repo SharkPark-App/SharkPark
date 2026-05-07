@@ -15,17 +15,17 @@
  * dependency — parent simply conditionally renders this screen.
  */
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
   FlatList,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
   Platform,
   StatusBar,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -33,8 +33,6 @@ import { Text } from '../components/CustomText';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { LOCATION_DATA_POINTS, DataPoint } from '../constants/permissions';
 import sharkParkLogo from '../assets/images/SharkParkV4.webp';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ─── slide data ────────────────────────────────────────────────────────────
 
@@ -87,6 +85,11 @@ interface OnboardingScreenProps {
 export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList<Slide>>(null);
+  const { width: screenWidth } = useWindowDimensions();
+
+  useEffect(() => {
+    flatListRef.current?.scrollToIndex({ index: activeIndex, animated: false });
+  }, [screenWidth, activeIndex]);
 
   const isLast = activeIndex === SLIDES.length - 1;
 
@@ -105,7 +108,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   }, [onComplete]);
 
   const renderSlide = useCallback(({ item }: { item: Slide }) => (
-    <View style={styles.slide}>
+    <View style={[styles.slide, { width: screenWidth }]}>
       <ScrollView
         contentContainerStyle={styles.slideContent}
         showsVerticalScrollIndicator={false}
@@ -144,7 +147,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         ) : null}
       </ScrollView>
     </View>
-  ), []);
+  ), [screenWidth]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -153,7 +156,12 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
       {/* Skip button — hidden on last slide */}
       <View style={styles.skipRow}>
         {!isLast ? (
-          <TouchableOpacity onPress={handleSkip} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <TouchableOpacity
+            onPress={handleSkip}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Skip onboarding"
+          >
             <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
         ) : (
@@ -172,18 +180,24 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         showsHorizontalScrollIndicator={false}
         scrollEnabled={false}  // controlled programmatically
         getItemLayout={(_, index) => ({
-          length: SCREEN_WIDTH,
-          offset: SCREEN_WIDTH * index,
+          length: screenWidth,
+          offset: screenWidth * index,
           index,
         })}
       />
 
       {/* Dot indicators */}
-      <View style={styles.dotsRow}>
+      <View
+        style={styles.dotsRow}
+        accessibilityLabel={`Slide ${activeIndex + 1} of ${SLIDES.length}`}
+        accessibilityRole="progressbar"
+        accessible={true}
+      >
         {SLIDES.map((_, i) => (
           <View
             key={i}
             style={[styles.dot, i === activeIndex ? styles.dotActive : styles.dotInactive]}
+            accessible={false}
           />
         ))}
       </View>
@@ -193,6 +207,8 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         style={styles.ctaButton}
         onPress={handleNext}
         activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={isLast ? 'Get started' : 'Next slide'}
       >
         <Text style={styles.ctaText}>
           {isLast ? 'Get Started' : 'Next'}
@@ -224,7 +240,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   slide: {
-    width: SCREEN_WIDTH,
     flex: 1,
   },
   slideContent: {
