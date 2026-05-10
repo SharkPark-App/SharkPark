@@ -12,6 +12,7 @@ jest.mock('../src/auth/AzureAuth', () => ({
 import {
   registerPushToken,
   unregisterPushToken,
+  sendDebugPushNotification,
 } from '../src/services/api/notifications';
 import { apiService } from '../src/services/api/base';
 import { loadAuth } from '../src/auth/AzureAuth';
@@ -70,6 +71,54 @@ describe('notifications API', () => {
       mockDelete.mockRejectedValueOnce(new Error('500 boom'));
 
       await expect(unregisterPushToken('fcm-xyz')).rejects.toThrow('500 boom');
+    });
+  });
+
+  describe('sendDebugPushNotification', () => {
+    it('returns a safe default when there is no active session', async () => {
+      mockLoadAuth.mockResolvedValueOnce(null);
+
+      await expect(sendDebugPushNotification('surge')).resolves.toEqual({
+        sent: false,
+        pushConfigured: false,
+        tokenCount: 0,
+      });
+      expect(mockPost).not.toHaveBeenCalled();
+    });
+
+    it('POSTs type and optional lotId with bearer auth when authenticated', async () => {
+      mockLoadAuth.mockResolvedValueOnce({ accessToken: 'AT-2' });
+      mockPost.mockResolvedValueOnce({
+        data: {
+          sent: true,
+          pushConfigured: true,
+          tokenCount: 2,
+        },
+      });
+
+      const result = await sendDebugPushNotification('favorites_filling', 'G1');
+
+      expect(mockPost).toHaveBeenCalledWith(
+        '/users/me/push-test',
+        { type: 'favorites_filling', lotId: 'G1' },
+        { headers: { Authorization: 'Bearer AT-2' } },
+      );
+      expect(result).toEqual({
+        sent: true,
+        pushConfigured: true,
+        tokenCount: 2,
+      });
+    });
+
+    it('falls back to a safe default when API returns no data payload', async () => {
+      mockLoadAuth.mockResolvedValueOnce({ accessToken: 'AT-3' });
+      mockPost.mockResolvedValueOnce(undefined);
+
+      await expect(sendDebugPushNotification('events')).resolves.toEqual({
+        sent: false,
+        pushConfigured: false,
+        tokenCount: 0,
+      });
     });
   });
 });
