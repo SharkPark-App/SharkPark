@@ -21,6 +21,7 @@ import { useContributorState } from '../services/api/contributor';
 import { ParkingLotResponse } from '../services';
 import { COLORS, TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
+import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import type { MapStackParamList } from '../types/navigation';
 import useFavorites from '../hooks/useFavorites';
 import { useTransitData } from '../hooks/useTransitData';
@@ -54,13 +55,16 @@ function hexWithAlpha(hex: string, alpha: number): string {
   return `${clean}${a}`;
 }
 
+const PARKED_LOT_COLOR = '#2563EB';
+
 // Interactive lot component
 const InteractiveLot: React.FC<{
   lot: ParkingLotResponse;
   onPress: (lot: ParkingLotResponse) => void;
   colors: ThemeColors;
   isContributor: boolean;
-}> = ({ lot, onPress, colors, isContributor }) => {
+  isParkedLot?: boolean;
+}> = ({ lot, onPress, colors, isContributor, isParkedLot = false }) => {
   // Pin lock state is driven by live OS contributor permission, not by
   // whether the most recent fetch returned null fields. The redactor in
   // lots.ts will eventually null out non-contributor data, but until that
@@ -77,10 +81,12 @@ const InteractiveLot: React.FC<{
         (lot.occupancy_rate ?? liveOccupancy / Math.max(lot.capacity, 1)) * 100,
       );
   const occupancyColor = isRedacted ? colors.neutralPin : getOccupancyColorGradient(pct!);
+  const parkedColor = PARKED_LOT_COLOR;
   // White text washes out on the green/yellow end of the gradient; flip
   // to dark text against light pin colors so the lot label stays legible
   // at every band. Redacted pins keep white over the neutral fill.
   const labelColor = isRedacted ? colors.white : getReadableTextColor(occupancyColor);
+  const parkedLabelColor = colors.white;
   const isSingleWord = !lot.lot_name.trim().includes(' ');
   const a11yLabel = isRedacted
     ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
@@ -95,9 +101,9 @@ const InteractiveLot: React.FC<{
       <React.Fragment>
         <Polygon
           coordinates={coords}
-          strokeColor={occupancyColor}
-          strokeWidth={2}
-          fillColor={hexWithAlpha(occupancyColor, 0.35)}
+          strokeColor={isParkedLot ? parkedColor : occupancyColor}
+          strokeWidth={isParkedLot ? 4 : 2}
+          fillColor={hexWithAlpha(isParkedLot ? parkedColor : occupancyColor, isParkedLot ? 0.4 : 0.35)}
           tappable
           onPress={() => onPress(lot)}
           accessible={false}
@@ -114,13 +120,13 @@ const InteractiveLot: React.FC<{
           <View
             style={[
               styles.lotLabel,
-              { backgroundColor: occupancyColor, borderColor: colors.white },
+              { backgroundColor: isParkedLot ? parkedColor : occupancyColor, borderColor: colors.white },
             ]}
           >
             <Text
-              style={[styles.lotText, { color: labelColor }]}
-              adjustsFontSizeToFit={true}
+              style={[styles.lotText, { color: isParkedLot ? parkedLabelColor : labelColor }]}
               numberOfLines={isSingleWord ? 1 : 2}
+              ellipsizeMode="tail"
               accessible={false}
             >
               {lot.lot_name}
@@ -145,7 +151,7 @@ const InteractiveLot: React.FC<{
         style={[
           styles.lotCircle,
           {
-            backgroundColor: occupancyColor,
+            backgroundColor: isParkedLot ? parkedColor : occupancyColor,
             borderColor: colors.white,
             shadowColor: colors.shadowDark,
           }
@@ -153,9 +159,9 @@ const InteractiveLot: React.FC<{
         accessible={false}
       >
         <Text
-          style={[styles.lotText, { color: labelColor }]}
-          adjustsFontSizeToFit={true}
+          style={[styles.lotText, { color: isParkedLot ? parkedLabelColor : labelColor }]}
           numberOfLines={isSingleWord ? 1 : 3}
+          ellipsizeMode="tail"
           accessible={false}
         >
           {lot.lot_name}
@@ -213,6 +219,7 @@ const MapScreen: React.FC = () => {
   // contributor pub-sub triggering an immediate refetch in useLotsList.
   const contributorState = useContributorState();
   const isContributor = contributorState === 'granted';
+  const { parkedLotId, carpoolPassengerMode, carpoolPassengerCount } = useEnhancedGeofencing();
 
   // Apple App Review 5.1.1: never push the user into the permission screen
   // automatically. The redacted UI (neutral pins + per-lot "Unlock live
@@ -272,6 +279,28 @@ const MapScreen: React.FC = () => {
   const selectedShuttle = selectedShuttleId
     ? shuttles?.find((s) => s.id === selectedShuttleId) ?? null
     : null;
+
+  const parkedLot = useMemo(
+    () => (parkedLotId ? lots.find((lot) => lot.lot_id === parkedLotId) ?? null : null),
+    [lots, parkedLotId],
+  );
+
+  const handleFindMyCarPress = useCallback(() => {
+    if (!parkedLotId) return;
+    const polygon = LOT_POLYGONS[parkedLotId];
+    if (!polygon || polygon.length === 0 || !mapRef.current) return;
+
+    const center = centroid(polygon);
+    mapRef.current.animateToRegion(
+      {
+        latitude: center.latitude,
+        longitude: center.longitude,
+        latitudeDelta: 0.004,
+        longitudeDelta: 0.004,
+      },
+      600,
+    );
+  }, [parkedLotId]);
 
   const handleLotPress = (lot: ParkingLotResponse) => {
     // Navigate to ShortTermForecastScreen with lot data
@@ -369,6 +398,32 @@ const MapScreen: React.FC = () => {
       <Header />
 
       <View style={styles.mapContainer}>
+        {parkedLot && (
+          <TouchableOpacity
+            style={[styles.findMyCarBanner, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}
+            onPress={handleFindMyCarPress}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`Find my car in ${parkedLot.lot_name}`}
+          >
+            <View style={[styles.findMyCarDot, { backgroundColor: PARKED_LOT_COLOR }]} />
+            <View style={styles.findMyCarTextWrap}>
+              <View style={styles.findMyCarHeaderRow}>
+                <Text style={[styles.findMyCarTitle, { color: colors.textPrimary }]}>Find my car</Text>
+                <View style={styles.parkedChip}>
+                  <Text style={[styles.parkedChipText, { color: colors.white }]}>Parked</Text>
+                </View>
+              </View>
+              <Text style={[styles.findMyCarSubtitle, { color: colors.gray }]}>Parked in {parkedLot.lot_name}</Text>
+              {carpoolPassengerMode && (
+                <Text style={[styles.findMyCarSubtitle, { color: colors.gray }]}>
+                  Passenger mode active{carpoolPassengerCount > 0 ? ` · ${carpoolPassengerCount} riders marked` : ''}
+                </Text>
+              )}
+            </View>
+            <Icon name="locate-outline" size={18} color={PARKED_LOT_COLOR} accessible={false} />
+          </TouchableOpacity>
+        )}
         <MapView
           ref={mapRef}
           key={isDark ? 'dark-map' : 'light-map'} // Android (Google Maps) requires a forced re-render
@@ -402,13 +457,16 @@ const MapScreen: React.FC = () => {
                 : Math.round(
                     (lot.occupancy_rate ?? liveOcc / Math.max(lot.capacity, 1)) * 20,
                   ) * 5;
+            const parkedKey = lot.lot_id === parkedLotId ? 'parked' : 'unparked';
+            const contributorKey = isContributor ? 'contrib' : 'locked';
             return (
               <InteractiveLot
-                key={`${lot.lot_id}:${visualKey}`}
+                key={`${lot.lot_id}:${contributorKey}:${parkedKey}:${visualKey}`}
                 lot={lot}
                 onPress={handleLotPress}
                 colors={colors}
                 isContributor={isContributor}
+                isParkedLot={lot.lot_id === parkedLotId}
               />
             );
           })}
@@ -519,18 +577,65 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
   },
+  findMyCarBanner: {
+    position: 'absolute',
+    top: SPACING.md,
+    left: SPACING.md,
+    right: SPACING.md,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderRadius: SPACING.lg,
+    ...SHADOWS.card,
+  },
+  findMyCarDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  findMyCarTextWrap: {
+    flex: 1,
+  },
+  findMyCarHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  findMyCarTitle: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  parkedChip: {
+    backgroundColor: PARKED_LOT_COLOR,
+    borderRadius: 999,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 3,
+  },
+  parkedChipText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  findMyCarSubtitle: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: 2,
+  },
   map: {
     width: screenWidth,
     height: screenHeight,
   },
   lotLabel: {
-    paddingHorizontal: SPACING.xs,
-    paddingVertical: 2,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    minWidth: 56,
+    minHeight: 30,
     borderRadius: 4,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    maxWidth: 52,
+    maxWidth: 72,
   },
   lotCircle: {
     width: 40,
@@ -548,7 +653,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   lotText: {
-    fontSize: TYPOGRAPHY.fontSize.xxs,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     textAlign: 'center',
   },

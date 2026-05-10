@@ -16,11 +16,11 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81A422252FA70C78004C53DF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 81A422242FA70C78004C53DF /* GoogleService-Info.plist */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		9151924713B14FECA309C911 /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4D5B5B8AB06F4260805E431B /* BootSplash.storyboard */; };
 		BE967F942B1C4A3A87CCDA24 /* CarBluetoothModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 084D61FD6E89423095EF2227 /* CarBluetoothModuleBridge.m */; };
+		C85747B93CCA46CF83D79BC1 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5B1F2B3EC4C94E2A87730EED /* Colors.xcassets */; };
 		C8FA6CE1548E46FFAD330F8F /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2F2C92CB4B7C4D1695DFD989 /* Inter-Medium.ttf */; };
 		E5062972636EBDB094C75882 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
-		9151924713B14FECA309C911 /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4D5B5B8AB06F4260805E431B /* BootSplash.storyboard */; };
-		C85747B93CCA46CF83D79BC1 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5B1F2B3EC4C94E2A87730EED /* Colors.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,9 +31,11 @@
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = mobile/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		2F2C92CB4B7C4D1695DFD989 /* Inter-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Medium.ttf"; path = "../assets/fonts/Inter-Medium.ttf"; sourceTree = "<group>"; };
 		3B4392A12AC88292D35C810B /* Pods-mobile.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-mobile.debug.xcconfig"; path = "Target Support Files/Pods-mobile/Pods-mobile.debug.xcconfig"; sourceTree = "<group>"; };
+		4D5B5B8AB06F4260805E431B /* BootSplash.storyboard */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = BootSplash.storyboard; path = mobile/BootSplash.storyboard; sourceTree = "<group>"; };
 		504DA9ACE42147C59E5A39D1 /* Inter-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Bold.ttf"; path = "../assets/fonts/Inter-Bold.ttf"; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-mobile.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-mobile.release.xcconfig"; path = "Target Support Files/Pods-mobile/Pods-mobile.release.xcconfig"; sourceTree = "<group>"; };
 		5748CDB7AA6947018E4DBE10 /* Inter-SemiBold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-SemiBold.ttf"; path = "../assets/fonts/Inter-SemiBold.ttf"; sourceTree = "<group>"; };
+		5B1F2B3EC4C94E2A87730EED /* Colors.xcassets */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = folder.assetcatalog; name = Colors.xcassets; path = mobile/Colors.xcassets; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-mobile.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-mobile.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = mobile/AppDelegate.swift; sourceTree = "<group>"; };
 		81A422242FA70C78004C53DF /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
@@ -41,8 +43,6 @@
 		870DFBDF32FA42C181C05B52 /* Inter-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Regular.ttf"; path = "../assets/fonts/Inter-Regular.ttf"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F7A675A988BC4C3A90ABE19A /* CarBluetoothModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CarBluetoothModule.swift; path = mobile/CarBluetoothModule.swift; sourceTree = "<group>"; };
-		4D5B5B8AB06F4260805E431B /* BootSplash.storyboard */ = {isa = PBXFileReference; name = "BootSplash.storyboard"; path = "mobile/BootSplash.storyboard"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
-		5B1F2B3EC4C94E2A87730EED /* Colors.xcassets */ = {isa = PBXFileReference; name = "Colors.xcassets"; path = "mobile/Colors.xcassets"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = folder.assetcatalog; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */

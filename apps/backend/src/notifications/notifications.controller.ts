@@ -7,11 +7,13 @@ import {
   HttpCode,
   HttpStatus,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { NotificationsService } from './notifications.service';
 import { RegisterPushTokenDto } from './dto/register-push-token.dto';
 import { UnregisterPushTokenDto } from './dto/unregister-push-token.dto';
+import { DebugSendPushDto } from './dto/debug-send-push.dto';
 
 interface AuthenticatedRequest extends Request {
   user?: { email?: string };
@@ -55,6 +57,29 @@ export class NotificationsController {
       throw new UnauthorizedException('Authenticated user email missing');
     }
     await this.notificationsService.unregisterPushTokenByEmail(email, dto.token);
+  }
+
+  /**
+   * Dev-only endpoint: trigger a real backend -> FCM push send for the
+   * authenticated user, useful for validating delivery and tap routing.
+   */
+  @Post('me/push-test')
+  @HttpCode(HttpStatus.OK)
+  async sendPushTest(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: DebugSendPushDto,
+  ): Promise<{ sent: boolean; pushConfigured: boolean; tokenCount: number }> {
+    const debugPushEnabled = process.env.ENABLE_DEBUG_PUSH_TEST === 'true';
+    if (process.env.NODE_ENV === 'production' || !debugPushEnabled) {
+      throw new ForbiddenException('Push test endpoint is disabled (set ENABLE_DEBUG_PUSH_TEST=true in non-production environments)');
+    }
+
+    const email = req.user?.email;
+    if (!email) {
+      throw new UnauthorizedException('Authenticated user email missing');
+    }
+
+    return this.notificationsService.debugPushTestByEmail(email, dto);
   }
 }
 

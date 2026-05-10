@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
 import { NotificationType } from '@prisma/client';
 import { PrismaService } from '../database/database.module';
+import { DebugPushType, type DebugSendPushDto } from './dto/debug-send-push.dto';
 
 export interface PushPayload {
   title: string;
@@ -54,6 +55,75 @@ export class NotificationsService implements OnModuleInit {
       select: { id: true },
     });
     await this.registerPushToken(user.id, token, platform);
+  }
+
+  async sendDebugPushByEmail(email: string, dto: DebugSendPushDto): Promise<boolean> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { email },
+      select: { id: true },
+    });
+
+    const payload = this.buildDebugPayload(dto);
+    return this.sendPush(user.id, payload);
+  }
+
+  async debugPushTestByEmail(
+    email: string,
+    dto: DebugSendPushDto,
+  ): Promise<{ sent: boolean; pushConfigured: boolean; tokenCount: number }> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { email },
+      select: { id: true },
+    });
+
+    const tokenCount = await this.prisma.pushToken.count({
+      where: { user_id: user.id },
+    });
+    const pushConfigured = admin.apps.length > 0;
+
+    if (!pushConfigured || tokenCount === 0) {
+      return { sent: false, pushConfigured, tokenCount };
+    }
+
+    const payload = this.buildDebugPayload(dto);
+    const sent = await this.sendPush(user.id, payload);
+    return { sent, pushConfigured, tokenCount };
+  }
+
+  private buildDebugPayload(dto: DebugSendPushDto): PushPayload {
+    const lotId = dto.lotId ?? 'G1';
+
+    switch (dto.type) {
+      case DebugPushType.FAVORITES_FILLING:
+        return {
+          title: 'Favorite Lot Filling Up',
+          body: `${lotId} just passed 80% occupancy.`,
+          data: { type: 'favorites_filling', lotId },
+        };
+      case DebugPushType.FAVORITES_CLEARING:
+        return {
+          title: 'Favorite Lot Clearing Up',
+          body: `${lotId} dropped below 30% occupancy.`,
+          data: { type: 'favorites_clearing', lotId },
+        };
+      case DebugPushType.SURGE:
+        return {
+          title: 'Campus Surge Alert',
+          body: 'Multiple lots are over 90% full right now.',
+          data: { type: 'surge', lotId },
+        };
+      case DebugPushType.EVENTS:
+        return {
+          title: 'Campus Event Reminder',
+          body: 'A campus event starts in about 2 hours.',
+          data: { type: 'events' },
+        };
+      default:
+        return {
+          title: 'SharkPark Notification Test',
+          body: 'Debug push was triggered.',
+        };
+    }
   }
 
   /**

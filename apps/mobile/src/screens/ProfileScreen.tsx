@@ -11,11 +11,10 @@ import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootTabParamList, MapStackParamList } from '../types/navigation';
-// Dev-only components: loaded conditionally so Metro strips them from production bundles
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const GeofencingTestButton = __DEV__ ? require('../components/GeofencingTestButton').GeofencingTestButton : null;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ParkingValidationDebug = __DEV__ ? require('../components/ParkingValidationDebug').default : null;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const LeaveDetectionDebug = __DEV__ ? require('../components/LeaveDetectionDebug').LeaveDetectionDebug : null;
 import useLocationService from '../hooks/useLocationService';
 import { useEnhancedGeofencing } from '../context/EnhancedGeofencingProvider';
 import { TYPOGRAPHY, SPACING, COLORS } from '../constants/theme';
@@ -23,6 +22,9 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { deleteMyAccount, getUserProfile, updateNotificationPreferences } from '../services/api/users';
 import type { NotificationPreferences } from '../services/api/users';
+import locationService from '../services/locationService';
+import { simulateForegroundPushMessage } from '../services/pushNotifications';
+import { sendDebugPushNotification } from '../services/api/notifications';
 
 const ProfileScreen: React.FC = () => {
   const { themeMode, setThemeMode, colors } = useTheme();
@@ -54,7 +56,24 @@ const ProfileScreen: React.FC = () => {
   } = useLocationService();
 
   // Geofencing status from enhanced provider
-  const { isGeofencingActive, currentLotId, currentValidationStatus, currentLeaveIntent, debugInfo } = useEnhancedGeofencing();
+  const {
+    isGeofencingActive,
+    currentLotId,
+    parkedLotId,
+    currentValidationStatus,
+    currentLeaveIntent,
+    carpoolPassengerMode,
+    carpoolPassengerCount,
+    setCarpoolPassengerMode,
+    setCarpoolPassengerCount,
+    latestCarpoolDetectionResult,
+    debugInfo,
+  } = useEnhancedGeofencing();
+  const [showValidationDebug, setShowValidationDebug] = useState(false);
+  const [showLeaveDebug, setShowLeaveDebug] = useState(false);
+
+  // Track if we've already processed the latest carpool detection result
+  const [lastProcessedResultTimestamp, setLastProcessedResultTimestamp] = useState<string | null>(null);
 
   // Initialize permissions check
   useEffect(() => {
@@ -86,6 +105,51 @@ const ProfileScreen: React.FC = () => {
       cancelled = true;
     };
   }, [userEmail, isAuthenticated, isGuest]);
+
+  // Handle carpool detection results: auto-toggle at high confidence, prompt at medium
+  useEffect(() => {
+    if (!latestCarpoolDetectionResult || latestCarpoolDetectionResult.timestamp === lastProcessedResultTimestamp) {
+      return; // Already processed this result
+    }
+
+    setLastProcessedResultTimestamp(latestCarpoolDetectionResult.timestamp);
+
+    if (latestCarpoolDetectionResult.action === 'auto_toggle' && !carpoolPassengerMode) {
+      // High confidence carpool detected - auto-enable passenger mode
+      void setCarpoolPassengerMode(true);
+      if (__DEV__) {
+        Alert.alert(
+          'Carpool Detected',
+          `High confidence carpool (${Math.round(latestCarpoolDetectionResult.confidence * 100)}%). ` +
+          `Passenger mode enabled automatically with ${latestCarpoolDetectionResult.estimatedPassengers} riders.`,
+          [{ text: 'OK' }]
+        );
+      }
+    } else if (latestCarpoolDetectionResult.action === 'prompt_user' && !carpoolPassengerMode) {
+      // Medium confidence - ask user
+      Alert.alert(
+        'Add Passenger?',
+        `Possible carpool detected (${Math.round(latestCarpoolDetectionResult.confidence * 100)}% confidence). ` +
+        `Enable passenger mode to exclude this phone from occupancy counts?`,
+        [
+          {
+            text: 'No',
+            onPress: () => {
+              if (__DEV__) console.log('[ProfileScreen] User declined carpool prompt');
+            },
+            style: 'cancel',
+          },
+          {
+            text: 'Yes',
+            onPress: () => {
+              void setCarpoolPassengerMode(true);
+              void setCarpoolPassengerCount(latestCarpoolDetectionResult.estimatedPassengers);
+            },
+          },
+        ]
+      );
+    }
+  }, [latestCarpoolDetectionResult, lastProcessedResultTimestamp, carpoolPassengerMode, setCarpoolPassengerMode, setCarpoolPassengerCount]);
 
   // Show geofencing status to user
   const getGeofencingStatusText = () => {
@@ -191,6 +255,103 @@ const ProfileScreen: React.FC = () => {
       ],
     );
   };
+
+  const triggerDevGeofence = (eventType: 'ENTER' | 'EXIT') => {
+    locationService.triggerTestGeofenceEvent('G1', eventType);
+  };
+
+  const simulateNotification = useCallback(
+    (
+      kind: 'favorites_filling' | 'favorites_clearing' | 'surge' | 'events',
+    ) => {
+      const lotId = parkedLotId ?? currentLotId ?? 'G1';
+      if (kind === 'favorites_filling') {
+        simulateForegroundPushMessage({
+          title: 'Favorite Lot Filling Up',
+          body: `G1 just passed 80% occupancy.`,
+          data: { type: 'favorites_filling', lotId },
+        });
+        return;
+      }
+      if (kind === 'favorites_clearing') {
+        simulateForegroundPushMessage({
+          title: 'Favorite Lot Clearing Up',
+          body: `G1 dropped below 30% occupancy.`,
+          data: { type: 'favorites_clearing', lotId },
+        });
+        return;
+      }
+      if (kind === 'surge') {
+        simulateForegroundPushMessage({
+          title: 'Campus Surge Alert',
+          body: 'Multiple lots are over 90% full right now.',
+          data: { type: 'surge', lotId },
+        });
+        return;
+      }
+      simulateForegroundPushMessage({
+        title: 'Campus Event Reminder',
+        body: 'A campus event starts in about 2 hours.',
+        data: { type: 'events' },
+      });
+    },
+    [currentLotId, parkedLotId],
+  );
+
+  const sendRemoteNotificationTest = useCallback(
+    async (kind: 'favorites_filling' | 'favorites_clearing' | 'surge' | 'events') => {
+      try {
+        const lotId = parkedLotId ?? currentLotId ?? 'G1';
+        const result = await sendDebugPushNotification(
+          kind,
+          kind === 'events' ? undefined : lotId,
+        );
+        if (result.sent) {
+          Alert.alert(
+            'Push sent',
+            'Backend accepted the request and at least one registered device token received the push send attempt.',
+          );
+        } else if (!result.pushConfigured) {
+          Alert.alert(
+            'Push not configured',
+            'Backend Firebase push credentials are missing in this environment. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY on the backend.',
+          );
+        } else if (result.tokenCount === 0) {
+          Alert.alert(
+            'No device token registered',
+            'This account has no push tokens yet. On this device: enable notifications, then sign out and sign in to force token registration.',
+          );
+        } else {
+          Alert.alert(
+            'No push sent',
+            'Push was configured and tokens exist, but FCM did not accept delivery for this request. Check backend logs for FCM errors and token cleanup warnings.',
+          );
+        }
+      } catch (error) {
+        Alert.alert(
+          'Push test failed',
+          error instanceof Error ? error.message : 'Could not trigger backend push test.',
+        );
+      }
+    },
+    [currentLotId, parkedLotId],
+  );
+
+  const openGeofencePolygonViewer = () => {
+    navigation.navigate('Map', { screen: 'GeofenceDebug' });
+  };
+
+  const handleTogglePassengerMode = useCallback(() => {
+    if (currentLotId || parkedLotId) {
+      Alert.alert(
+        'Finish Current Session First',
+        'For accurate occupancy counts, change Passenger mode before entering a lot or after fully leaving it.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+    void setCarpoolPassengerMode(!carpoolPassengerMode);
+  }, [carpoolPassengerMode, currentLotId, parkedLotId, setCarpoolPassengerMode]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
@@ -349,10 +510,255 @@ const ProfileScreen: React.FC = () => {
           </View>
         </SectionCard>
 
-        {/* Parking Validation Debug - Development Only */}
-        {__DEV__ && ParkingValidationDebug && (
-          <SectionCard title="Parking Validation Debug">
-            <ParkingValidationDebug />
+        <SectionCard title="Carpool Assistance">
+          <View style={styles.settingsList}>
+            <View style={styles.settingItem}>
+              <View style={styles.settingText}>
+                <Text style={[styles.settingLabel, { color: colors.black }]}>Passenger mode</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Suppresses occupancy updates from this phone so shared rides do not inflate the lot.</Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleTogglePassengerMode}
+                accessibilityRole="switch"
+                accessibilityLabel="Passenger mode"
+                accessibilityHint="When enabled, this phone does not contribute parking occupancy"
+                accessibilityState={{ checked: carpoolPassengerMode }}
+              >
+                <ToggleSwitch value={carpoolPassengerMode} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
+
+            <View style={styles.settingItem}>
+              <View style={styles.settingText}>
+                <Text style={[styles.settingLabel, { color: colors.black }]}>Other riders</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Optional manual count for demoing a shared ride.</Text>
+              </View>
+              <View style={styles.carpoolStepper}>
+                <TouchableOpacity
+                  onPress={() => void setCarpoolPassengerCount(Math.max(0, carpoolPassengerCount - 1))}
+                  style={[styles.carpoolStepButton, { backgroundColor: colors.lightGray, borderColor: colors.borderGray }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Decrease carpool riders"
+                >
+                  <Icon name="remove" size={18} color={colors.textPrimary} accessible={false} />
+                </TouchableOpacity>
+                <View style={[styles.carpoolCountPill, { backgroundColor: colors.yellowLight, borderColor: colors.borderGray }]}>
+                  <Text style={[styles.carpoolCountText, { color: colors.textPrimary }]}>{carpoolPassengerCount}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => void setCarpoolPassengerCount(Math.min(8, carpoolPassengerCount + 1))}
+                  style={[styles.carpoolStepButton, { backgroundColor: colors.lightGray, borderColor: colors.borderGray }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Increase carpool riders"
+                >
+                  <Icon name="add" size={18} color={colors.textPrimary} accessible={false} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <Text style={[styles.settingDescription, { color: colors.gray }]}>When passenger mode is on, the map still highlights your parked lot locally, but this device will not send occupancy updates.</Text>
+
+                        {latestCarpoolDetectionResult && (
+                          <View style={[styles.detectionResultCard, {
+                            backgroundColor: latestCarpoolDetectionResult.action === 'auto_toggle' ? '#ecfdf5' : '#fef3c7',
+                            borderColor: latestCarpoolDetectionResult.action === 'auto_toggle' ? '#10b981' : '#f59e0b'
+                          }]}>
+                            <View style={styles.detectionResultHeader}>
+                              <Icon
+                                name={latestCarpoolDetectionResult.action === 'auto_toggle' ? 'checkmark-circle' : 'alert-circle'}
+                                size={20}
+                                color={latestCarpoolDetectionResult.action === 'auto_toggle' ? '#059669' : '#d97706'}
+                              />
+                              <Text style={[styles.detectionResultTitle, {
+                                color: latestCarpoolDetectionResult.action === 'auto_toggle' ? '#059669' : '#d97706'
+                              }]}>
+                                {latestCarpoolDetectionResult.action === 'auto_toggle' ? 'Carpool Detected' : 'Possible Carpool'}
+                              </Text>
+                            </View>
+                            <Text style={[styles.detectionResultConfidence, { color: colors.gray }]}>
+                              Confidence: {Math.round(latestCarpoolDetectionResult.confidence * 100)}%
+                            </Text>
+                            {latestCarpoolDetectionResult.estimatedPassengers > 0 && (
+                              <Text style={[styles.detectionResultPassengers, { color: colors.textPrimary }]}>
+                                Estimated passengers: {latestCarpoolDetectionResult.estimatedPassengers}
+                              </Text>
+                            )}
+                            {__DEV__ && latestCarpoolDetectionResult.reasoning.length > 0 && (
+                              <Text style={[styles.detectionResultReasoning, { color: colors.gray }]}>
+                                {latestCarpoolDetectionResult.reasoning.join(' • ')}
+                              </Text>
+                            )}
+                          </View>
+                        )}
+            {parkedLotId && (
+              <Text style={[styles.settingDescription, { color: colors.gray }]}>Current parked lot: {parkedLotId}</Text>
+            )}
+          </View>
+        </SectionCard>
+
+        {__DEV__ && (
+          <SectionCard title="Dev Demo Toolkit">
+            <View style={styles.settingsList}>
+              <Text style={[styles.settingDescription, { color: colors.gray }]}>Use this section in order during your class demo: simulate enter, validate parking, inspect lot/building polygons, then simulate exit.</Text>
+
+              <View style={styles.devActionRow}>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#22c55e' }]}
+                  onPress={() => triggerDevGeofence('ENTER')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Simulate geofence enter for lot G1"
+                >
+                  <Text style={styles.devActionButtonText}>ENTER G1</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#ef4444' }]}
+                  onPress={() => triggerDevGeofence('EXIT')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Simulate geofence exit for lot G1"
+                >
+                  <Text style={styles.devActionButtonText}>EXIT G1</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.devWideButton, { backgroundColor: colors.lightGray, borderColor: colors.borderGray }]}
+                onPress={openGeofencePolygonViewer}
+                accessibilityRole="button"
+                accessibilityLabel="Open lot and building polygon viewer"
+              >
+                <Icon name="map-outline" size={18} color={colors.textPrimary} accessible={false} />
+                <Text style={[styles.devWideButtonText, { color: colors.textPrimary }]}>Open Lot/Building Polygon Viewer</Text>
+              </TouchableOpacity>
+
+              <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
+
+              <View style={styles.devChecklist}>
+                <Text style={[styles.settingLabel, { color: colors.black }]}>Notification simulation</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Triggers the same foreground push handler used by real FCM messages.</Text>
+              </View>
+
+              <View style={styles.devActionRow}>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#2563eb' }]}
+                  onPress={() => simulateNotification('favorites_filling')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Simulate favorite lot filling up notification"
+                >
+                  <Text style={styles.devActionButtonText}>Fill Up Alert</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#0891b2' }]}
+                  onPress={() => simulateNotification('favorites_clearing')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Simulate favorite lot clearing up notification"
+                >
+                  <Text style={styles.devActionButtonText}>Clearing Alert</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.devActionRow}>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#7c3aed' }]}
+                  onPress={() => simulateNotification('surge')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Simulate campus surge notification"
+                >
+                  <Text style={styles.devActionButtonText}>Surge Alert</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#ea580c' }]}
+                  onPress={() => simulateNotification('events')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Simulate campus event notification"
+                >
+                  <Text style={styles.devActionButtonText}>Event Alert</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: colors.borderGray }]} />
+
+              <View style={styles.devChecklist}>
+                <Text style={[styles.settingLabel, { color: colors.black }]}>Real remote push (backend → FCM)</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Use when validating true push delivery behavior in foreground, background, and app-closed states.</Text>
+              </View>
+
+              <View style={styles.devActionRow}>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#1d4ed8' }]}
+                  onPress={() => void sendRemoteNotificationTest('favorites_filling')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send real favorite lot filling push notification"
+                >
+                  <Text style={styles.devActionButtonText}>Send Fill-Up Push</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#0e7490' }]}
+                  onPress={() => void sendRemoteNotificationTest('favorites_clearing')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send real favorite lot clearing push notification"
+                >
+                  <Text style={styles.devActionButtonText}>Send Clearing Push</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.devActionRow}>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#6d28d9' }]}
+                  onPress={() => void sendRemoteNotificationTest('surge')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send real campus surge push notification"
+                >
+                  <Text style={styles.devActionButtonText}>Send Surge Push</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.devActionButton, { backgroundColor: '#c2410c' }]}
+                  onPress={() => void sendRemoteNotificationTest('events')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send real event push notification"
+                >
+                  <Text style={styles.devActionButtonText}>Send Event Push</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.devChecklist}>
+                <Text style={[styles.settingLabel, { color: colors.black }]}>Live checklist</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Geofencing active: {isGeofencingActive ? 'Yes' : 'No'}</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Current lot: {currentLotId ?? 'None'}</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Parked lot: {parkedLotId ?? 'None'}</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Validation sessions: {debugInfo.activeSessions}</Text>
+                <Text style={[styles.settingDescription, { color: colors.gray }]}>Leave-monitor sessions: {debugInfo.activeLeaveMonitoring}</Text>
+              </View>
+
+              {ParkingValidationDebug && (
+                <TouchableOpacity
+                  style={[styles.devWideButton, { backgroundColor: colors.yellowLight, borderColor: colors.borderGray }]}
+                  onPress={() => setShowValidationDebug((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Toggle parking validation debug panel"
+                >
+                  <Text style={[styles.devWideButtonText, { color: colors.textPrimary }]}>
+                    {showValidationDebug ? 'Hide Parking Validation Panel' : 'Show Parking Validation Panel'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {showValidationDebug && ParkingValidationDebug && <ParkingValidationDebug />}
+
+              {LeaveDetectionDebug && (
+                <TouchableOpacity
+                  style={[styles.devWideButton, { backgroundColor: colors.yellowLight, borderColor: colors.borderGray }]}
+                  onPress={() => setShowLeaveDebug((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Toggle leave detection debug panel"
+                >
+                  <Text style={[styles.devWideButtonText, { color: colors.textPrimary }]}>
+                    {showLeaveDebug ? 'Hide Leave Detection Panel' : 'Show Leave Detection Panel'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {showLeaveDebug && LeaveDetectionDebug && <LeaveDetectionDebug />}
+            </View>
           </SectionCard>
         )}
 
@@ -444,21 +850,7 @@ const ProfileScreen: React.FC = () => {
             </Text>
           </TouchableOpacity>
 
-        {/* Development Test Button */}
-        {__DEV__ && GeofencingTestButton && <GeofencingTestButton />}
-        {__DEV__ && (
-          <TouchableOpacity
-            style={[styles.deleteAccountButton, { backgroundColor: colors.lightGray, borderColor: colors.borderGray }]}
-            onPress={() => navigation.navigate('Map', { screen: 'GeofenceDebug' })}
-            accessibilityLabel="Open geofence debug screen"
-          >
-            <Icon name="map-outline" size={18} color={colors.textPrimary} />
-            <Text style={[styles.deleteAccountText, { color: colors.textPrimary }]}>
-              Geofence Debug (dev)
-            </Text>
-          </TouchableOpacity>
-        )}
-        
+
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -504,6 +896,64 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     backgroundColor: COLORS.black,
     borderRadius: SPACING.sm,
+  },
+  carpoolStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  carpoolStepButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  carpoolCountPill: {
+    minWidth: 44,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.sm,
+  },
+  carpoolCountText: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  devActionRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  devActionButton: {
+    flex: 1,
+    borderRadius: SPACING.sm,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
+  devActionButtonText: {
+    color: COLORS.white,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  devWideButton: {
+    borderRadius: SPACING.sm,
+    borderWidth: 1,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  devWideButtonText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  devChecklist: {
+    gap: SPACING.xs,
   },
   statusText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
@@ -610,6 +1060,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     textDecorationLine: 'underline',
+  },
+  detectionResultCard: {
+    marginTop: SPACING.lg,
+    padding: SPACING.md,
+    borderRadius: SPACING.md,
+    borderWidth: 1,
+  },
+  detectionResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  detectionResultTitle: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  detectionResultConfidence: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginBottom: SPACING.xs,
+  },
+  detectionResultPassengers: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginBottom: SPACING.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+  detectionResultReasoning: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    marginTop: SPACING.sm,
+    fontStyle: 'italic',
   },
 });
 

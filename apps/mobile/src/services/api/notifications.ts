@@ -9,6 +9,18 @@
 import { apiService } from './base';
 import { loadAuth } from '../../auth/AzureAuth';
 
+export type DebugPushType =
+  | 'favorites_filling'
+  | 'favorites_clearing'
+  | 'surge'
+  | 'events';
+
+export interface DebugPushTestResult {
+  sent: boolean;
+  pushConfigured: boolean;
+  tokenCount: number;
+}
+
 /**
  * Register (or refresh) the device push token for the currently signed-in
  * user.  Silently no-ops if there is no active session so call sites don't
@@ -51,4 +63,36 @@ export async function unregisterPushToken(token: string): Promise<void> {
     },
     body: JSON.stringify({ token }),
   });
+}
+
+/**
+ * Dev-only endpoint for end-to-end remote push testing.
+ * Sends a real backend -> FCM push to the authenticated user's devices.
+ */
+export async function sendDebugPushNotification(
+  type: DebugPushType,
+  lotId?: string,
+): Promise<DebugPushTestResult> {
+  const auth = await loadAuth();
+  if (!auth?.accessToken) {
+    return { sent: false, pushConfigured: false, tokenCount: 0 };
+  }
+
+  const response = await apiService.post<DebugPushTestResult>(
+    '/users/me/push-test',
+    { type, ...(lotId ? { lotId } : {}) },
+    {
+      headers: {
+        Authorization: `Bearer ${auth.accessToken}`,
+      },
+    },
+  );
+
+  return (
+    response?.data ?? {
+      sent: false,
+      pushConfigured: false,
+      tokenCount: 0,
+    }
+  );
 }

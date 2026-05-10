@@ -565,6 +565,44 @@ class LeaveDetectionService {
     };
   }
 
+  async debugSetSessionAge(lotId: string, minutesAgo: number): Promise<boolean> {
+    await this.initPromise;
+    const session = this.findActiveSessionByLotId(lotId);
+    if (!session) return false;
+
+    session.startTime = new Date(Date.now() - Math.max(0, minutesAgo) * 60 * 1000);
+    this.debouncedPersistSession(session.sessionId);
+    return true;
+  }
+
+  async debugInjectSignal(
+    lotId: string,
+    signal: Omit<LeaveIntentSignal, 'timestamp'> & { timestamp?: Date }
+  ): Promise<LeaveIntentAnalysis | null> {
+    await this.initPromise;
+    const session = this.findActiveSessionByLotId(lotId);
+    if (!session || session.status !== 'MONITORING') {
+      return null;
+    }
+
+    const signalWithTimestamp: LeaveIntentSignal = {
+      ...signal,
+      timestamp: signal.timestamp ?? new Date(),
+    };
+
+    session.signals.push(signalWithTimestamp);
+
+    const analysis = this.analyzeLeaveIntent(session);
+    session.lastAnalysis = analysis;
+
+    if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
+      session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+    }
+
+    this.debouncedPersistSession(session.sessionId);
+    return analysis;
+  }
+
   /**
    * Update location data for behavioral analysis.
    * Stores the latest position for movement direction analysis (haversine TOWARD_CAR).
