@@ -1,6 +1,5 @@
 module.exports = {
   preset: '@react-native/jest-preset',
-  forceExit: true,
 
   // Setup file to mock native modules
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],

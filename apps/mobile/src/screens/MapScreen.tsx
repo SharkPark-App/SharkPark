@@ -11,8 +11,9 @@ import { Text } from '../components/CustomText';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/Ionicons';
-import MapView, { Marker, Polygon, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polygon, Polyline, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import { getOccupancyColorGradient, getReadableTextColor } from '../utils/parkingUtils';
+import { haversineDistance } from '../utils/geoHelpers';
 import { Header } from '../components';
 import { LotFilterModal } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
@@ -30,24 +31,26 @@ import { ShuttleMarker } from '../components/Map/ShuttleMarker';
 import { SegmentedCircle } from '../components/Map/SegmentedCircle';
 import { StopModal } from '../components/Modals/StopModal';
 import { ShuttleModal } from '../components/Modals/ShuttleModal';
+import { MapSelectModal } from '../components/Modals/MapSelectModal';
 import type { MapStop } from '../types/transit';
-import { LOT_POLYGONS, type LatLng } from '../data/lotPolygons'
+import { LOT_POLYGONS } from '../data/lotPolygons'
+import { isPointInsidePolygon, polygonCentroid } from '../utils/lotGeometry';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
-function centroid(ring: LatLng[]): { latitude: number; longitude: number } {
-  const pts =
-    ring.length > 1 &&
-    ring[0].lat === ring[ring.length - 1].lat &&
-    ring[0].lng === ring[ring.length - 1].lng
-      ? ring.slice(0, -1)
-      : ring;
-  const sum = pts.reduce(
-    (acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }),
-    { lat: 0, lng: 0 },
-  );
-  return { latitude: sum.lat / pts.length, longitude: sum.lng / pts.length };
-}
+const CAMPUS_REGION = {
+  latitude: 33.78195,
+  longitude: -118.11486,
+  latitudeDelta: 0.018,
+  longitudeDelta: 0.018,
+};
+const CAMPUS_RECENTER_THRESHOLD_METERS = 1200;
+const CAMPUS_VISUAL_CENTER_BIAS = 0.2;
+const CAMPUS_VISUAL_HORIZONTAL_BIAS = 0.2;
+const CAMPUS_EDGE_PADDING_TOP = 64;
+const CAMPUS_EDGE_PADDING_TOP_WITH_PARKED = 100;
+const CAMPUS_EDGE_PADDING_RIGHT = 50;
+const CAMPUS_EDGE_PADDING_LEFT = 36;
+const CAMPUS_EDGE_PADDING_BOTTOM_BASE = 290;
 
 function hexWithAlpha(hex: string, alpha: number): string {
   const clean = hex.startsWith('#') ? hex : `#${hex}`;
@@ -96,7 +99,10 @@ const InteractiveLot: React.FC<{
 
   if (polygon) {
     const coords = polygon.map((p) => ({ latitude: p.lat, longitude: p.lng }));
-    const center = centroid(polygon);
+    const computedCenter = polygonCentroid(polygon);
+    const center = isPointInsidePolygon(computedCenter.latitude, computedCenter.longitude, polygon)
+      ? computedCenter
+      : { latitude: lot.center_lat, longitude: lot.center_lng };
     return (
       <React.Fragment>
         <Polygon
@@ -219,7 +225,7 @@ const MapScreen: React.FC = () => {
   // contributor pub-sub triggering an immediate refetch in useLotsList.
   const contributorState = useContributorState();
   const isContributor = contributorState === 'granted';
-  const { parkedLotId, carpoolPassengerMode, carpoolPassengerCount } = useEnhancedGeofencing();
+  const { parkedLotId, lastParkedLocation, carpoolPassengerMode, carpoolPassengerCount } = useEnhancedGeofencing();
 
   // Apple App Review 5.1.1: never push the user into the permission screen
   // automatically. The redacted UI (neutral pins + per-lot "Unlock live
@@ -239,6 +245,8 @@ const MapScreen: React.FC = () => {
   const [filtersHydrated, setFiltersHydrated] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     AsyncStorage.multiGet(['filter:selectedLots', 'filter:hiddenRouteIds'])
       .then(([lots, routes]) => {
         // Parse each entry independently — a single corrupted key shouldn't
@@ -246,7 +254,7 @@ const MapScreen: React.FC = () => {
         if (lots[1]) {
           try {
             const parsed = JSON.parse(lots[1]);
-            if (Array.isArray(parsed)) setSelectedLots(parsed);
+            if (isMounted && Array.isArray(parsed)) setSelectedLots(parsed);
           } catch {
             // Corrupted entry — drop it so a subsequent setItem rewrites cleanly.
             AsyncStorage.removeItem('filter:selectedLots').catch(() => {});
@@ -255,21 +263,32 @@ const MapScreen: React.FC = () => {
         if (routes[1]) {
           try {
             const parsed = JSON.parse(routes[1]);
-            if (Array.isArray(parsed)) setHiddenRouteIds(parsed);
+            if (isMounted && Array.isArray(parsed)) setHiddenRouteIds(parsed);
           } catch {
             AsyncStorage.removeItem('filter:hiddenRouteIds').catch(() => {});
           }
         }
       })
       .catch(() => {})
-      .finally(() => setFiltersHydrated(true));
+      .finally(() => {
+        if (isMounted) setFiltersHydrated(true);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
   const [isRecommendationModalOpen, setIsRecommendationModalOpen] = useState(false);
   const [selectedStop, setSelectedStop] = useState<MapStop | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
   const [selectedShuttleId, setSelectedShuttleId] = useState<string | null>(null);
   const [mapBearing, setMapBearing] = useState(0);
+  const [isFindCarDirectionsOpen, setIsFindCarDirectionsOpen] = useState(false);
+  const [isMapAwayFromCampus, setIsMapAwayFromCampus] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
   const mapRef = useRef<MapView>(null);
+  const hasAppliedInitialCampusViewportRef = useRef(false);
+  const lastAppliedCampusViewportKeyRef = useRef<string | null>(null);
   const { arrivals, isLoading: stopLoading } = useStopETAs(selectedStop?.id);
 
   // Re-derive the selected shuttle from the live `shuttles` array on every
@@ -285,22 +304,125 @@ const MapScreen: React.FC = () => {
     [lots, parkedLotId],
   );
 
-  const handleFindMyCarPress = useCallback(() => {
-    if (!parkedLotId) return;
-    const polygon = LOT_POLYGONS[parkedLotId];
-    if (!polygon || polygon.length === 0 || !mapRef.current) return;
+  const campusFitCoordinates = useMemo(() => {
+    const coords: Array<{ latitude: number; longitude: number }> = [];
 
-    const center = centroid(polygon);
+    for (const lot of lots) {
+      coords.push({ latitude: lot.center_lat, longitude: lot.center_lng });
+
+      const polygon = LOT_POLYGONS[lot.lot_id];
+      if (polygon && polygon.length > 0) {
+        for (const point of polygon) {
+          coords.push({ latitude: point.lat, longitude: point.lng });
+        }
+      }
+    }
+
+    return coords;
+  }, [lots]);
+
+  const campusReference = useMemo(() => {
+    if (campusFitCoordinates.length === 0) return CAMPUS_REGION;
+
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+
+    for (const point of campusFitCoordinates) {
+      minLat = Math.min(minLat, point.latitude);
+      maxLat = Math.max(maxLat, point.latitude);
+      minLng = Math.min(minLng, point.longitude);
+      maxLng = Math.max(maxLng, point.longitude);
+    }
+
+    return {
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLng + maxLng) / 2,
+      latitudeDelta: Math.max((maxLat - minLat) * 1.15, 0.012),
+      longitudeDelta: Math.max((maxLng - minLng) * 1.15, 0.012),
+    };
+  }, [campusFitCoordinates]);
+
+  const campusBiasedRegion = useMemo(
+    () => ({
+      ...campusReference,
+      // Move camera slightly south so campus content sits higher on screen.
+      latitude: campusReference.latitude - campusReference.latitudeDelta * CAMPUS_VISUAL_CENTER_BIAS,
+      // Move camera slightly east so campus content sits less right-shifted.
+      longitude: campusReference.longitude + campusReference.longitudeDelta * CAMPUS_VISUAL_HORIZONTAL_BIAS,
+    }),
+    [campusReference],
+  );
+
+  const parkedTarget = useMemo(() => {
+    const parkedLotForFallback = parkedLotId
+      ? lots.find((lot) => lot.lot_id === parkedLotId) ?? null
+      : null;
+
+    if (
+      lastParkedLocation &&
+      parkedLotForFallback &&
+      lastParkedLocation.lotId === parkedLotForFallback.lot_id
+    ) {
+      const polygon = LOT_POLYGONS[parkedLotForFallback.lot_id];
+      const insidePolygon = polygon && polygon.length >= 3
+        ? isPointInsidePolygon(lastParkedLocation.latitude, lastParkedLocation.longitude, polygon)
+        : true;
+      const metersFromCenter = haversineDistance(
+        lastParkedLocation.latitude,
+        lastParkedLocation.longitude,
+        parkedLotForFallback.center_lat,
+        parkedLotForFallback.center_lng,
+      );
+
+      if (insidePolygon && metersFromCenter <= 250) {
+        return {
+          latitude: lastParkedLocation.latitude,
+          longitude: lastParkedLocation.longitude,
+          exact: true,
+        };
+      }
+    }
+
+    if (!parkedLotForFallback) return null;
+
+    const fallbackPolygon = LOT_POLYGONS[parkedLotForFallback.lot_id];
+    if (fallbackPolygon && fallbackPolygon.length >= 3) {
+      const centroid = polygonCentroid(fallbackPolygon);
+      if (isPointInsidePolygon(centroid.latitude, centroid.longitude, fallbackPolygon)) {
+        return {
+          latitude: centroid.latitude,
+          longitude: centroid.longitude,
+          exact: false,
+        };
+      }
+    }
+
+    return {
+      latitude: parkedLotForFallback.center_lat,
+      longitude: parkedLotForFallback.center_lng,
+      exact: false,
+    };
+  }, [lastParkedLocation, parkedLotId, lots]);
+
+  const handleFindMyCarPress = useCallback(() => {
+    if (!parkedTarget || !mapRef.current) return;
     mapRef.current.animateToRegion(
       {
-        latitude: center.latitude,
-        longitude: center.longitude,
+        latitude: parkedTarget.latitude,
+        longitude: parkedTarget.longitude,
         latitudeDelta: 0.004,
         longitudeDelta: 0.004,
       },
       600,
     );
-  }, [parkedLotId]);
+  }, [parkedTarget]);
+
+  const handleFindMyCarDirectionsPress = useCallback(() => {
+    if (!parkedTarget) return;
+    setIsFindCarDirectionsOpen(true);
+  }, [parkedTarget]);
 
   const handleLotPress = (lot: ParkingLotResponse) => {
     // Navigate to ShortTermForecastScreen with lot data
@@ -344,8 +466,17 @@ const MapScreen: React.FC = () => {
     });
   };
 
-  const handleRegionChangeComplete = useCallback(async () => {
+  const handleRegionChangeComplete = useCallback(async (region: Region) => {
     if (!mapRef.current) return;
+
+    const distanceFromCampus = haversineDistance(
+      region.latitude,
+      region.longitude,
+      campusReference.latitude,
+      campusReference.longitude,
+    );
+    setIsMapAwayFromCampus(distanceFromCampus > CAMPUS_RECENTER_THRESHOLD_METERS);
+
     const camera = await mapRef.current.getCamera();
     const next = camera.heading ?? 0;
     // Only push state if the bearing meaningfully changed — sub-1° deltas
@@ -357,7 +488,51 @@ const MapScreen: React.FC = () => {
       const wrapped = Math.min(delta, 360 - delta);
       return wrapped >= 1 ? next : prev;
     });
-  }, []);
+  }, [campusReference.latitude, campusReference.longitude]);
+
+  const campusEdgePaddingTop = parkedLot ? CAMPUS_EDGE_PADDING_TOP_WITH_PARKED : CAMPUS_EDGE_PADDING_TOP;
+  const campusEdgePaddingBottom = CAMPUS_EDGE_PADDING_BOTTOM_BASE + insets.bottom;
+  const campusViewportKey = `${campusEdgePaddingTop}:${CAMPUS_EDGE_PADDING_RIGHT}:${campusEdgePaddingBottom}:${CAMPUS_EDGE_PADDING_LEFT}:${campusFitCoordinates.length}`;
+
+  const applyCampusViewport = useCallback((animated: boolean) => {
+    if (!mapRef.current) return;
+
+    if (campusFitCoordinates.length >= 2) {
+      mapRef.current.fitToCoordinates(campusFitCoordinates, {
+        edgePadding: {
+          top: campusEdgePaddingTop,
+          right: CAMPUS_EDGE_PADDING_RIGHT,
+          bottom: campusEdgePaddingBottom,
+          left: CAMPUS_EDGE_PADDING_LEFT,
+        },
+        animated,
+      });
+    } else {
+      mapRef.current.animateToRegion(campusBiasedRegion, animated ? 700 : 0);
+    }
+  }, [campusBiasedRegion, campusEdgePaddingBottom, campusEdgePaddingTop, campusFitCoordinates]);
+
+  const handleReturnToCampusPress = useCallback(() => {
+    applyCampusViewport(true);
+
+    setIsMapAwayFromCampus(false);
+  }, [applyCampusViewport]);
+
+  useEffect(() => {
+    if (!isMapReady) return;
+    if (campusFitCoordinates.length < 2) return;
+    if (
+      hasAppliedInitialCampusViewportRef.current &&
+      lastAppliedCampusViewportKeyRef.current === campusViewportKey
+    ) {
+      return;
+    }
+
+    applyCampusViewport(false);
+    hasAppliedInitialCampusViewportRef.current = true;
+    lastAppliedCampusViewportKeyRef.current = campusViewportKey;
+    setIsMapAwayFromCampus(false);
+  }, [applyCampusViewport, campusFitCoordinates.length, campusViewportKey, isMapReady]);
 
   const openRecommendationModal = useCallback(() => {
     refreshFavorites();
@@ -383,14 +558,6 @@ const MapScreen: React.FC = () => {
   const filteredShuttles = hiddenRouteIds.length > 0
     ? shuttles?.filter(s => !hiddenRouteIds.includes(s.routeId))
     : shuttles;
-
-  // Intial map display centered around CSULB
-  const initialRegion = {
-    latitude: 33.7828,
-    longitude: -118.1151,
-    latitudeDelta: 0.015,
-    longitudeDelta: 0.015,
-  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.backgroundLight }]}>
@@ -421,20 +588,52 @@ const MapScreen: React.FC = () => {
                 </Text>
               )}
             </View>
-            <Icon name="locate-outline" size={18} color={PARKED_LOT_COLOR} accessible={false} />
+            <View style={styles.findMyCarActionRow}>
+              <TouchableOpacity
+                style={[styles.findMyCarActionButton, { borderColor: PARKED_LOT_COLOR }]}
+                onPress={handleFindMyCarDirectionsPress}
+                accessibilityRole="button"
+                accessibilityLabel="Get directions to parked car"
+              >
+                <Icon name="navigate-outline" size={16} color={PARKED_LOT_COLOR} accessible={false} />
+              </TouchableOpacity>
+              <Icon name="locate-outline" size={18} color={PARKED_LOT_COLOR} accessible={false} />
+            </View>
           </TouchableOpacity>
         )}
+
+        {isMapAwayFromCampus && (
+          <TouchableOpacity
+            style={[
+              styles.returnToCampusButton,
+              {
+                backgroundColor: colors.white,
+                shadowColor: colors.shadowDark,
+                top: parkedLot ? 92 : SPACING.md,
+              },
+            ]}
+            onPress={handleReturnToCampusPress}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Return map to CSULB campus"
+          >
+            <Icon name="compass-outline" size={16} color={COLORS.primary} accessible={false} />
+            <Text style={[styles.returnToCampusText, { color: colors.textPrimary }]}>Back to CSULB</Text>
+          </TouchableOpacity>
+        )}
+
         <MapView
           ref={mapRef}
           key={isDark ? 'dark-map' : 'light-map'} // Android (Google Maps) requires a forced re-render
           provider={PROVIDER_DEFAULT} // Apple Maps for iOS, Google Maps for Android
           style={styles.map}
-          initialRegion={initialRegion}
+          initialRegion={CAMPUS_REGION}
           showsUserLocation={true}
           showsMyLocationButton={true}
           pitchEnabled={false}
           moveOnMarkerPress={false}
           userInterfaceStyle={isDark ? 'dark' : 'light'}
+          onMapReady={() => setIsMapReady(true)}
           onRegionChangeComplete={handleRegionChangeComplete}
         >
           {filtersHydrated && filteredParkingLots?.map((lot) => {
@@ -470,6 +669,20 @@ const MapScreen: React.FC = () => {
               />
             );
           })}
+
+          {parkedTarget?.exact && (
+            <Marker
+              coordinate={{ latitude: parkedTarget.latitude, longitude: parkedTarget.longitude }}
+              tracksViewChanges={false}
+              zIndex={5}
+              accessibilityRole="image"
+              accessibilityLabel="Last parked car location"
+            >
+              <View style={[styles.parkedCarMarkerOuter, { borderColor: colors.white }]}>
+                <Icon name="car-sport" size={14} color={colors.white} accessible={false} />
+              </View>
+            </Marker>
+          )}
           
           {/* Draw route paths — static, no isFocused guard to avoid unmount on nav transitions */}
           {filtersHydrated && filteredRoutes?.map((route) => (
@@ -565,6 +778,16 @@ const MapScreen: React.FC = () => {
         shuttle={selectedShuttle}
         colors={colors}
       />
+
+      {parkedTarget && (
+        <MapSelectModal
+          isVisible={isFindCarDirectionsOpen}
+          onClose={() => setIsFindCarDirectionsOpen(false)}
+          lat={parkedTarget.latitude}
+          lon={parkedTarget.longitude}
+          title={parkedLot?.lot_name ?? 'Parked Car'}
+        />
+      )}
     </View>
   );
 };
@@ -622,6 +845,36 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     marginTop: 2,
   },
+  findMyCarActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  findMyCarActionButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff6ff',
+  },
+  returnToCampusButton: {
+    position: 'absolute',
+    right: SPACING.md,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 999,
+    ...SHADOWS.card,
+  },
+  returnToCampusText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
   map: {
     width: screenWidth,
     height: screenHeight,
@@ -656,6 +909,15 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     textAlign: 'center',
+  },
+  parkedCarMarkerOuter: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: PARKED_LOT_COLOR,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stopCircle: {
     width: 20,

@@ -148,6 +148,11 @@ export function ShortTermForecastScreen() {
   const [, setRelTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setRelTick((t) => t + 1), 60_000);
+
+    // In Node/Jest, unref prevents this interval from keeping the process
+    // alive while preserving runtime behavior in React Native.
+    (id as { unref?: () => void }).unref?.();
+
     return () => clearInterval(id);
   }, []);
 

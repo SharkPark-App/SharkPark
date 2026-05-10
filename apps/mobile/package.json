@@ -11,6 +11,7 @@
     "start": "react-native start",
     "dev": "react-native start",
     "test": "jest",
+    "test:hygiene": "jest --runInBand --detectOpenHandles",
     "postinstall": "test -n \"$CI\" || (cd ios && pod install && cd ..)"
   },
   "dependencies": {

@@ -26,11 +26,20 @@ import { registerContributorGrant, revokeContributorGrant, refreshLotsForPermiss
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
+import { LOT_POLYGONS } from '../data/lotPolygons';
+import { isPointInsidePolygon } from '../utils/lotGeometry';
 
 interface EnhancedGeofencingContextType {
   isGeofencingActive: boolean;
   currentLotId: string | null;
   parkedLotId: string | null;
+  lastParkedLocation: {
+    lotId: string;
+    latitude: number;
+    longitude: number;
+    accuracy: number | null;
+    timestamp: string;
+  } | null;
   currentValidationStatus: ValidationAnalysis | null;
   currentLeaveIntent: LeaveIntentAnalysis | null;
   carpoolPassengerMode: boolean;
@@ -48,6 +57,14 @@ interface EnhancedGeofencingContextType {
 
 const EnhancedGeofencingContext = createContext<EnhancedGeofencingContextType | undefined>(undefined);
 
+interface ParkedLocationSnapshot {
+  lotId: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  timestamp: string;
+}
+
 export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Track current parking state
   const currentZones = useRef<Set<string>>(new Set());
@@ -55,6 +72,8 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   const currentLotIdRef = useRef<string | null>(null);
   const [parkedLotId, setParkedLotId] = useState<string | null>(null);
   const parkedLotIdRef = useRef<string | null>(null);
+  const [lastParkedLocation, setLastParkedLocation] = useState<ParkedLocationSnapshot | null>(null);
+  const latestLocationSampleRef = useRef<ParkedLocationSnapshot | null>(null);
   const [currentValidationStatus, setCurrentValidationStatus] = useState<ValidationAnalysis | null>(null);
   const [currentLeaveIntent, setCurrentLeaveIntent] = useState<LeaveIntentAnalysis | null>(null);
   const [carpoolPassengerMode, setCarpoolPassengerModeState] = useState(false);
@@ -63,6 +82,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   const appState = useRef<AppStateStatus>(AppState.currentState);
 
   const PARKING_STATE_KEY = '@SharkPark:lotParkingState';
+  const LAST_PARKED_LOCATION_KEY = '@SharkPark:lastParkedLocation';
   const CARPOOL_MODE_KEY = '@SharkPark:carpoolPassengerMode';
   const CARPOOL_COUNT_KEY = '@SharkPark:carpoolPassengerCount';
 
@@ -178,6 +198,102 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       if (__DEV__) console.error('[EnhancedGeofencing] Failed to restore carpool preferences:', e);
     }
   }, []);
+
+  const setAndPersistLastParkedLocation = useCallback(async (snapshot: ParkedLocationSnapshot) => {
+    setLastParkedLocation(snapshot);
+    try {
+      await AsyncStorage.setItem(LAST_PARKED_LOCATION_KEY, JSON.stringify(snapshot));
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to persist last parked location:', e);
+    }
+  }, []);
+
+  const clearLastParkedLocation = useCallback(async (lotId?: string) => {
+    setLastParkedLocation((prev) => {
+      if (!prev) return null;
+      if (lotId && prev.lotId !== lotId) return prev;
+      return null;
+    });
+    try {
+      const existing = await AsyncStorage.getItem(LAST_PARKED_LOCATION_KEY);
+      if (!existing) return;
+      const parsed = JSON.parse(existing) as ParkedLocationSnapshot;
+      if (!lotId || parsed.lotId === lotId) {
+        await AsyncStorage.removeItem(LAST_PARKED_LOCATION_KEY);
+      }
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to clear parked location:', e);
+    }
+  }, []);
+
+  const restoreLastParkedLocation = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(LAST_PARKED_LOCATION_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as ParkedLocationSnapshot;
+      const parsedTime = new Date(parsed.timestamp).getTime();
+      const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+      if (!Number.isFinite(parsedTime) || Date.now() - parsedTime > MAX_AGE_MS) {
+        await AsyncStorage.removeItem(LAST_PARKED_LOCATION_KEY);
+        return;
+      }
+      setLastParkedLocation(parsed);
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to restore parked location:', e);
+    }
+  }, []);
+
+  const captureLastParkedLocation = useCallback(async (lotId: string) => {
+    let snapshot: ParkedLocationSnapshot | null = null;
+
+    try {
+      const current = await locationService.getCurrentPosition();
+      snapshot = {
+        lotId,
+        latitude: current.coords.latitude,
+        longitude: current.coords.longitude,
+        accuracy: current.coords.accuracy ?? null,
+        timestamp: new Date().toISOString(),
+      };
+    } catch {
+      const sample = latestLocationSampleRef.current;
+      if (sample) {
+        snapshot = {
+          lotId,
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          accuracy: sample.accuracy,
+          timestamp: new Date().toISOString(),
+        };
+      }
+    }
+
+    if (snapshot) {
+      // Reject obviously invalid captures (simulator/global mock location).
+      if (!isOnCampus(snapshot.latitude, snapshot.longitude)) {
+        if (__DEV__) {
+          console.log(`[EnhancedGeofencing] Ignored off-campus parked coordinate for ${lotId}`);
+        }
+        return;
+      }
+
+      const polygon = LOT_POLYGONS[lotId];
+      if (polygon && polygon.length >= 3) {
+        const inside = isPointInsidePolygon(snapshot.latitude, snapshot.longitude, polygon);
+        if (!inside) {
+          if (__DEV__) {
+            console.log(`[EnhancedGeofencing] Ignored parked coordinate outside lot polygon for ${lotId}`);
+          }
+          return;
+        }
+      }
+
+      await setAndPersistLastParkedLocation(snapshot);
+      if (__DEV__) {
+        console.log('[EnhancedGeofencing] Saved parked location:', snapshot);
+      }
+    }
+  }, [setAndPersistLastParkedLocation]);
 
   const setCarpoolPassengerMode = useCallback(async (enabled: boolean) => {
     setCarpoolPassengerModeState(enabled);
@@ -433,6 +549,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         // (activity→still in handleActivityChange, or DWELL backup below).
         const enterState = lotParkingState.current.get(event.regionId);
         if (enterState === 'CONFIRMED_PARKED') {
+          await captureLastParkedLocation(event.regionId);
           const occupancyBefore = await resolveOccupancyBaseline(event.regionId);
           // Start carpool detection on this lot before sending occupancy
           await startCarpoolDetection(event.regionId, occupancyBefore);
@@ -472,6 +589,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       const state = lotParkingState.current.get(event.regionId);
       if (state === 'PENDING_VEHICLE_ENTRY' || state === 'UNKNOWN_ENTRY') {
         setLotParkingState(event.regionId, 'CONFIRMED_PARKED');
+        await captureLastParkedLocation(event.regionId);
         const occupancyBefore = await resolveOccupancyBaseline(event.regionId);
         
         // Start carpool detection on this lot before sending occupancy
@@ -589,6 +707,9 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         if (wasConfirmedParked && !isVehicleExit) {
           // Walking to class — car still parked. Keep CONFIRMED_PARKED for re-entry.
         } else {
+          if (wasConfirmedParked && isVehicleExit) {
+            await clearLastParkedLocation(event.regionId);
+          }
           clearLotParkingState(event.regionId);
           testLots.current.delete(event.regionId);
           lotOccupancyBeforeEnter.current.delete(event.regionId);
@@ -619,7 +740,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     // Persist parking state after every geofence event (covers all set/delete paths above)
     await persistParkingState();
-  }, [clearLotParkingState, persistParkingState, resolveOccupancyBaseline, sendValidatedOccupancyEvent, setLotParkingState, startCarpoolDetection]);
+  }, [captureLastParkedLocation, clearLastParkedLocation, clearLotParkingState, persistParkingState, resolveOccupancyBaseline, sendValidatedOccupancyEvent, setLotParkingState, startCarpoolDetection]);
 
   // Keep ref in sync for the setup effect
   useLayoutEffect(() => {
@@ -639,6 +760,14 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     const { latitude, longitude, speed, accuracy, altitude, heading } = location.coords;
     const safeSpeed = speed != null ? speed : -1;
+
+    latestLocationSampleRef.current = {
+      lotId: currentLotIdRef.current,
+      latitude,
+      longitude,
+      accuracy: accuracy ?? null,
+      timestamp: new Date().toISOString(),
+    };
 
     leaveDetectionService.updateLocation({
       latitude,
@@ -709,6 +838,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
       if (shouldConfirm) {
         setLotParkingState(lotId, 'CONFIRMED_PARKED');
+        await captureLastParkedLocation(lotId);
         await sendValidatedOccupancyEvent(lotId, 'ENTER');
         anyConfirmed = true;
 
@@ -746,7 +876,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     if (anyConfirmed) {
       await persistParkingState();
     }
-  }, [persistParkingState, sendValidatedOccupancyEvent, setLotParkingState]);
+  }, [captureLastParkedLocation, persistParkingState, sendValidatedOccupancyEvent, setLotParkingState]);
 
   // Feed SDK motion change events to leave detection + behavioral collector
   const handleMotionChange = useCallback((event: MotionChangeEvent) => {
@@ -767,6 +897,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     for (const [lotId, parkState] of lotParkingState.current.entries()) {
       if (parkState === 'PENDING_VEHICLE_ENTRY' || parkState === 'UNKNOWN_ENTRY') {
         setLotParkingState(lotId, 'CONFIRMED_PARKED');
+        await captureLastParkedLocation(lotId);
         await sendValidatedOccupancyEvent(lotId, 'ENTER');
         anyConfirmed = true;
 
@@ -784,7 +915,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     if (anyConfirmed) {
       await persistParkingState();
     }
-  }, [sendValidatedOccupancyEvent, persistParkingState]);
+  }, [captureLastParkedLocation, sendValidatedOccupancyEvent, persistParkingState]);
 
   const handleCarBluetoothConnect = useCallback(() => {
     sharedBehavioralCollector.updateCarBluetoothState(true);
@@ -973,6 +1104,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         // Restore parking state BEFORE event listeners fire so
         // geofenceInitialTriggerEntry sees existing CONFIRMED_PARKED state.
         await restoreParkingState();
+        await restoreLastParkedLocation();
         await restoreCarpoolPreferences();
 
         await locationService.initialize();
@@ -1125,6 +1257,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       isGeofencingActive: true,
       currentLotId,
       parkedLotId,
+      lastParkedLocation,
       currentValidationStatus,
       currentLeaveIntent,
       carpoolPassengerMode,
@@ -1139,7 +1272,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         isMonitoringLeave: ldDebug.isMonitoring,
       },
     };
-  }, [currentLotId, parkedLotId, currentValidationStatus, currentLeaveIntent, carpoolPassengerMode, carpoolPassengerCount, latestCarpoolDetectionResult, setCarpoolPassengerMode, setCarpoolPassengerCount]);
+  }, [currentLotId, parkedLotId, lastParkedLocation, currentValidationStatus, currentLeaveIntent, carpoolPassengerMode, carpoolPassengerCount, latestCarpoolDetectionResult, setCarpoolPassengerMode, setCarpoolPassengerCount]);
 
   return (
     <EnhancedGeofencingContext.Provider value={contextValue}>
@@ -1155,6 +1288,7 @@ export const useEnhancedGeofencing = (): EnhancedGeofencingContextType => {
       isGeofencingActive: false,
       currentLotId: null,
       parkedLotId: null,
+      lastParkedLocation: null,
       currentValidationStatus: null,
       currentLeaveIntent: null,
       carpoolPassengerMode: false,

@@ -453,7 +453,7 @@ class LeaveDetectionService {
   private debouncedPersistSession(sessionId: string): void {
     this.pendingPersistSessionIds.add(sessionId);
     if (this.persistDebounceTimer) return; // already scheduled
-    this.persistDebounceTimer = setTimeout(() => {
+    const timer = setTimeout(() => {
       this.persistDebounceTimer = null;
       const ids = [...this.pendingPersistSessionIds];
       this.pendingPersistSessionIds.clear();
@@ -462,6 +462,11 @@ class LeaveDetectionService {
         if (session) this.persistSession(session);
       }
     }, this.PERSIST_DEBOUNCE_MS);
+
+    // In Node/Jest, unref prevents this debounce timer from keeping the
+    // process alive while preserving runtime behavior in React Native.
+    (timer as { unref?: () => void }).unref?.();
+    this.persistDebounceTimer = timer;
   }
 
   private async persistSession(session: LeaveSession): Promise<void> {
