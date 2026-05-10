@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/CustomText';
@@ -37,20 +38,40 @@ import { LOT_POLYGONS } from '../data/lotPolygons'
 import { isPointInsidePolygon, polygonCentroid } from '../utils/lotGeometry';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-const CAMPUS_REGION = {
-  latitude: 33.78195,
-  longitude: -118.11486,
-  latitudeDelta: 0.018,
-  longitudeDelta: 0.018,
-};
-const CAMPUS_RECENTER_THRESHOLD_METERS = 1200;
-const CAMPUS_VISUAL_CENTER_BIAS = 0.2;
-const CAMPUS_VISUAL_HORIZONTAL_BIAS = 0.2;
-const CAMPUS_EDGE_PADDING_TOP = 64;
-const CAMPUS_EDGE_PADDING_TOP_WITH_PARKED = 100;
-const CAMPUS_EDGE_PADDING_RIGHT = 50;
-const CAMPUS_EDGE_PADDING_LEFT = 36;
-const CAMPUS_EDGE_PADDING_BOTTOM_BASE = 290;
+// const CAMPUS_REGION = {
+//   latitude: 33.78195,
+//   longitude: -118.11486,
+//   latitudeDelta: 0.018,
+//   longitudeDelta: 0.018,
+// };
+// const CAMPUS_RECENTER_THRESHOLD_METERS = 1200;
+// const CAMPUS_VISUAL_CENTER_BIAS = 0.2;
+// const CAMPUS_VISUAL_HORIZONTAL_BIAS = 0.2;
+// const CAMPUS_EDGE_PADDING_TOP = 64;
+// const CAMPUS_EDGE_PADDING_TOP_WITH_PARKED = 100;
+// const CAMPUS_EDGE_PADDING_RIGHT = 50;
+// const CAMPUS_EDGE_PADDING_LEFT = 36;
+// const CAMPUS_EDGE_PADDING_BOTTOM_BASE = 290;
+
+function centroid(ring: LatLng[]): { latitude: number; longitude: number } {
+  const pts =
+    ring.length > 1 &&
+    ring[0].lat === ring[ring.length - 1].lat &&
+    ring[0].lng === ring[ring.length - 1].lng
+      ? ring.slice(0, -1)
+      : ring;
+  const n = pts.length;
+  let area = 0, lat = 0, lng = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const cross = pts[i].lat * pts[j].lng - pts[j].lat * pts[i].lng;
+    area += cross;
+    lat  += (pts[i].lat + pts[j].lat) * cross;
+    lng  += (pts[i].lng + pts[j].lng) * cross;
+  }
+  area /= 2;
+  return { latitude: lat / (6 * area), longitude: lng / (6 * area) };
+}
 
 function hexWithAlpha(hex: string, alpha: number): string {
   const clean = hex.startsWith('#') ? hex : `#${hex}`;
@@ -89,8 +110,17 @@ const InteractiveLot: React.FC<{
   // to dark text against light pin colors so the lot label stays legible
   // at every band. Redacted pins keep white over the neutral fill.
   const labelColor = isRedacted ? colors.white : getReadableTextColor(occupancyColor);
-  const parkedLabelColor = colors.white;
-  const isSingleWord = !lot.lot_name.trim().includes(' ');
+  // const parkedLabelColor = colors.white;
+  // const isSingleWord = !lot.lot_name.trim().includes(' ');
+  // adjustsFontSizeToFit is broken in Android map markers (bitmap rendering
+  // skips multi-pass layout), so manually pick a size based on the longest word.
+  const androidFontSize = Platform.OS === 'android' ? (() => {
+    const len = lot.lot_name.trim().length;
+    if (len <= 12)  return TYPOGRAPHY.fontSize.sm;   // 12px
+    if (len <= 16) return TYPOGRAPHY.fontSize.xs;   // 10px
+    return TYPOGRAPHY.fontSize.xxs;                  // 9px
+  })() : undefined;
+
   const a11yLabel = isRedacted
     ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
     : `${lot.lot_name} parking lot, ${pct} percent full`;
@@ -130,9 +160,14 @@ const InteractiveLot: React.FC<{
             ]}
           >
             <Text
-              style={[styles.lotText, { color: isParkedLot ? parkedLabelColor : labelColor }]}
-              numberOfLines={isSingleWord ? 1 : 2}
-              ellipsizeMode="tail"
+              // style={[styles.lotText, { color: isParkedLot ? parkedLabelColor : labelColor }]}
+              // numberOfLines={isSingleWord ? 1 : 2}
+              // ellipsizeMode="tail"
+              style={[styles.lotText, { color: colors.white }, androidFontSize != null && { fontSize: androidFontSize }]}
+              adjustsFontSizeToFit={Platform.OS === 'ios'}
+              // minimumFontScale={0.75}
+              allowFontScaling={Platform.OS === 'ios'}
+              numberOfLines={3}
               accessible={false}
             >
               {lot.lot_name}
@@ -165,9 +200,14 @@ const InteractiveLot: React.FC<{
         accessible={false}
       >
         <Text
-          style={[styles.lotText, { color: isParkedLot ? parkedLabelColor : labelColor }]}
-          numberOfLines={isSingleWord ? 1 : 3}
-          ellipsizeMode="tail"
+          // style={[styles.lotText, { color: isParkedLot ? parkedLabelColor : labelColor }]}
+          // numberOfLines={isSingleWord ? 1 : 3}
+          // ellipsizeMode="tail"
+          style={[styles.lotText, { color: labelColor }, androidFontSize != null && { fontSize: androidFontSize }]}
+          adjustsFontSizeToFit={Platform.OS === 'ios'}
+          // minimumFontScale={0.75}
+          allowFontScaling={Platform.OS === 'ios'}
+          numberOfLines={3}
           accessible={false}
         >
           {lot.lot_name}
@@ -888,7 +928,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    maxWidth: 72,
+    // maxWidth: 72,
+    maxWidth: 40,
   },
   lotCircle: {
     width: 40,
@@ -909,6 +950,8 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   parkedCarMarkerOuter: {
     width: 28,
