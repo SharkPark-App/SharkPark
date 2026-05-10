@@ -114,7 +114,10 @@ describe('carBluetooth service', () => {
       const listener = jest.fn();
       const handle = svc.onConnect(listener);
 
-      expect(mockAddListener).toHaveBeenCalledWith('onCarBluetoothConnect', listener);
+      expect(mockAddListener).toHaveBeenCalledWith('onCarBluetoothConnect', expect.any(Function));
+      const wrappedListener = mockAddListener.mock.calls[0][1] as (event: unknown) => void;
+      wrappedListener({ timestamp: '2026-05-10T00:00:00.000Z' });
+      expect(listener).toHaveBeenCalled();
       handle.remove();
       expect(mockRemove).toHaveBeenCalled();
     });
@@ -142,7 +145,10 @@ describe('carBluetooth service', () => {
       const listener = jest.fn();
       const handle = svc.onDisconnect(listener);
 
-      expect(mockAddListener).toHaveBeenCalledWith('onCarBluetoothDisconnect', listener);
+      expect(mockAddListener).toHaveBeenCalledWith('onCarBluetoothDisconnect', expect.any(Function));
+      const wrappedListener = mockAddListener.mock.calls[0][1] as (event: unknown) => void;
+      wrappedListener({ timestamp: '2026-05-10T00:00:00.000Z' });
+      expect(listener).toHaveBeenCalled();
       handle.remove();
       expect(mockRemove).toHaveBeenCalled();
     });

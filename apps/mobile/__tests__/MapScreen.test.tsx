@@ -91,6 +91,13 @@ jest.mock('../src/hooks/useStopETAs', () => ({
   }),
 }));
 
+jest.mock('react-native-device-info', () => ({
+  getBrand: jest.fn().mockResolvedValue('Apple'),
+  getModel: jest.fn().mockResolvedValue('iPhone'),
+  getSystemVersion: jest.fn().mockResolvedValue('17.0'),
+  getVersion: jest.fn().mockResolvedValue('1.0.0'),
+}));
+
 // Mock react-native-maps
 jest.mock('react-native-maps', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports

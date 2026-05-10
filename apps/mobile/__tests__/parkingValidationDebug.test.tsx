@@ -47,6 +47,7 @@ jest.mock('../src/services/locationService', () => ({
   __esModule: true,
   default: {
     triggerTestGeofenceEvent: jest.fn(),
+    triggerTestActivityChange: jest.fn(),
   },
 }));
 
@@ -117,9 +118,9 @@ describe('ParkingValidationDebug Component', () => {
       const { getByText } = render(<ParkingValidationDebug />);
       
       expect(getByText('Parking Validation Debug')).toBeTruthy();
-      expect(getByText('Test Controls')).toBeTruthy();
-      expect(getByText('ENTER Lot')).toBeTruthy();
-      expect(getByText('EXIT Lot')).toBeTruthy();
+      expect(getByText('Parking Scenarios')).toBeTruthy();
+      expect(getByText('Drive In And Park')).toBeTruthy();
+      expect(getByText('Quick Drive-Through')).toBeTruthy();
       
       expect(getByText('Loading...')).toBeTruthy();
     });
@@ -342,46 +343,34 @@ describe('ParkingValidationDebug Component', () => {
         jest.advanceTimersByTime(100);
       });
       
-      expect(getByText('ENTER Lot')).toBeTruthy();
-      expect(getByText('EXIT Lot')).toBeTruthy();
-      expect(getByText('Stationary')).toBeTruthy();
-      expect(getByText('Walking')).toBeTruthy();
-      expect(getByText('Driving')).toBeTruthy();
-      expect(getByText('Bluetooth')).toBeTruthy();
+      expect(getByText('Drive In And Park')).toBeTruthy();
+      expect(getByText('Quick Drive-Through')).toBeTruthy();
+      expect(getByText('Already Parked On App Open')).toBeTruthy();
+      expect(getByText('Walk Through Lot')).toBeTruthy();
       
       await waitFor(() => {
         expect(getByText('Refresh Sensors')).toBeTruthy();
       });
     });
 
-    it('should handle geofence event buttons', () => {
+    it('should handle scenario buttons without crashing', () => {
       const { getByText } = render(<ParkingValidationDebug />);
       
-      // Test ENTER button (should not throw error)
-      fireEvent.press(getByText('ENTER Lot'));
+      fireEvent.press(getByText('Drive In And Park'));
+      fireEvent.press(getByText('Quick Drive-Through'));
       
-      // Test EXIT button (should not throw error)
-      fireEvent.press(getByText('EXIT Lot'));
-      
-      // Expect no errors - buttons should work
-      expect(getByText('ENTER Lot')).toBeTruthy();
-      expect(getByText('EXIT Lot')).toBeTruthy();
+      expect(getByText('Drive In And Park')).toBeTruthy();
+      expect(getByText('Quick Drive-Through')).toBeTruthy();
     });
 
-    it('should handle behavioral event buttons', () => {
+    it('should handle remaining scenario buttons without crashing', () => {
       const { getByText } = render(<ParkingValidationDebug />);
       
-      // Test all behavioral event buttons
-      fireEvent.press(getByText('Stationary'));
-      fireEvent.press(getByText('Walking'));
-      fireEvent.press(getByText('Driving'));
-      fireEvent.press(getByText('Bluetooth'));
+      fireEvent.press(getByText('Already Parked On App Open'));
+      fireEvent.press(getByText('Walk Through Lot'));
       
-      // Buttons should still be present after press
-      expect(getByText('Stationary')).toBeTruthy();
-      expect(getByText('Walking')).toBeTruthy();
-      expect(getByText('Driving')).toBeTruthy();
-      expect(getByText('Bluetooth')).toBeTruthy();
+      expect(getByText('Already Parked On App Open')).toBeTruthy();
+      expect(getByText('Walk Through Lot')).toBeTruthy();
     });
   });
 
@@ -466,7 +455,7 @@ describe('ParkingValidationDebug Component', () => {
       });
       
       // Should not crash and handle gracefully
-      expect(getByText('Test Controls')).toBeTruthy();
+      expect(getByText('Parking Scenarios')).toBeTruthy();
     });
   });
 });
