@@ -4,6 +4,7 @@ permissions:
   contents: read
 
 on:
+  pull_request:
   schedule:
     # 11:00 UTC daily
     - cron: '0 11 * * *'

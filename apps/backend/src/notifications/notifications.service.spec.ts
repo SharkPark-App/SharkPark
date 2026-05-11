@@ -367,6 +367,22 @@ describe('NotificationsService', () => {
         data: { type: 'events' },
       });
     });
+
+    it('maps surge payload without lotId', async () => {
+      mockApps.push({});
+      prisma.pushToken.count.mockResolvedValue(1);
+      const sendSpy = jest.spyOn(service, 'sendPush').mockResolvedValue(true);
+
+      await service.debugPushTestByEmail('student@csulb.edu', {
+        type: DebugPushType.SURGE,
+      });
+
+      expect(sendSpy).toHaveBeenCalledWith('user-cuid', {
+        title: 'Campus Surge Alert',
+        body: 'Multiple lots are over 90% full right now.',
+        data: { type: 'surge' },
+      });
+    });
   });
 
   // ─── hasRecentLog ──────────────────────────────────────────────────────

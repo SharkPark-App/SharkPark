@@ -178,9 +178,11 @@ async function flushEffects(): Promise<void> {
 }
 
 async function waitForProviderReady(): Promise<void> {
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 20; i += 1) {
     await flushEffects();
+    if (mockLotsApi.getAllLots.mock.calls.length > 0) return;
   }
+  throw new Error('waitForProviderReady: provider did not complete initialization');
 }
 
 async function emitGeofence(event: GeofenceEvent): Promise<void> {

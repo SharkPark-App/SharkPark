@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { DebugPushType, DebugSendPushDto } from './dto/debug-send-push.dto';
@@ -12,26 +13,28 @@ const mockNotificationsService = {
   debugPushTestByEmail: jest.fn(),
 };
 
+const mockConfigService = {
+  get: jest.fn(),
+};
+
 describe('NotificationsController', () => {
   let controller: NotificationsController;
-  const originalNodeEnv = process.env.NODE_ENV;
-  const originalDebugPushFlag = process.env.ENABLE_DEBUG_PUSH_TEST;
 
   beforeEach(async () => {
+    mockConfigService.get.mockReset();
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [NotificationsController],
-      providers: [{ provide: NotificationsService, useValue: mockNotificationsService }],
+      providers: [
+        { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: ConfigService, useValue: mockConfigService },
+      ],
     }).compile();
 
     controller = module.get(NotificationsController);
   });
 
   afterEach(() => jest.clearAllMocks());
-
-  afterAll(() => {
-    process.env.NODE_ENV = originalNodeEnv;
-    process.env.ENABLE_DEBUG_PUSH_TEST = originalDebugPushFlag;
-  });
 
   describe('POST me/push-token', () => {
     const dto: RegisterPushTokenDto = { token: 'fcm-abc123', platform: 'ios' };
@@ -90,8 +93,11 @@ describe('NotificationsController', () => {
     const dto: DebugSendPushDto = { type: DebugPushType.SURGE, lotId: 'G1' };
 
     it('throws ForbiddenException in production even when flag is true', async () => {
-      process.env.NODE_ENV = 'production';
-      process.env.ENABLE_DEBUG_PUSH_TEST = 'true';
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') return 'production';
+        if (key === 'ENABLE_DEBUG_PUSH_TEST') return 'true';
+        return undefined;
+      });
       const req = { user: { email: 'student@csulb.edu' } } as any;
 
       await expect(controller.sendPushTest(req, dto)).rejects.toThrow(ForbiddenException);
@@ -99,8 +105,11 @@ describe('NotificationsController', () => {
     });
 
     it('throws ForbiddenException when debug flag is not enabled', async () => {
-      process.env.NODE_ENV = 'development';
-      process.env.ENABLE_DEBUG_PUSH_TEST = 'false';
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') return 'development';
+        if (key === 'ENABLE_DEBUG_PUSH_TEST') return 'false';
+        return undefined;
+      });
       const req = { user: { email: 'student@csulb.edu' } } as any;
 
       await expect(controller.sendPushTest(req, dto)).rejects.toThrow(ForbiddenException);
@@ -108,8 +117,11 @@ describe('NotificationsController', () => {
     });
 
     it('throws UnauthorizedException when debug endpoint is enabled but email is missing', async () => {
-      process.env.NODE_ENV = 'development';
-      process.env.ENABLE_DEBUG_PUSH_TEST = 'true';
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') return 'development';
+        if (key === 'ENABLE_DEBUG_PUSH_TEST') return 'true';
+        return undefined;
+      });
       const req = { user: {} } as any;
 
       await expect(controller.sendPushTest(req, dto)).rejects.toThrow(UnauthorizedException);
@@ -117,8 +129,11 @@ describe('NotificationsController', () => {
     });
 
     it('delegates to debugPushTestByEmail when endpoint is enabled and email is present', async () => {
-      process.env.NODE_ENV = 'development';
-      process.env.ENABLE_DEBUG_PUSH_TEST = 'true';
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') return 'development';
+        if (key === 'ENABLE_DEBUG_PUSH_TEST') return 'true';
+        return undefined;
+      });
       const req = { user: { email: 'student@csulb.edu' } } as any;
       mockNotificationsService.debugPushTestByEmail.mockResolvedValue({
         sent: true,
