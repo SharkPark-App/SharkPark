@@ -39,7 +39,7 @@ export function useAllLotsData(): UseAllLotsDataReturn {
       setLots(allLots);
     } catch (err) {
       if (!isLatest()) return;
-      console.error('[useAllLotsData] Error fetching lots:', err);
+      if (__DEV__) console.error('[useAllLotsData] Error fetching lots:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch parking lots');
     } finally {
       if (isLatest()) setLoading(false);

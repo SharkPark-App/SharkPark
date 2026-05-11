@@ -32,10 +32,10 @@ export const GeofencingTestButton: React.FC<GeofencingTestButtonProps> = ({
     locationService.getCurrentPosition()
       .then((position: any) => {
         const { latitude, longitude } = position.coords;
-        console.log(`Current coordinates: ${latitude}, ${longitude} (accuracy: ${position.coords.accuracy}m)`);
+        if (__DEV__) console.log(`Current coordinates: ${latitude}, ${longitude} (accuracy: ${position.coords.accuracy}m)`);
       })
       .catch((error: any) => {
-        console.error('[GeofencingTestButton] Failed to get current position:', error);
+        if (__DEV__) console.error('[GeofencingTestButton] Failed to get current position:', error);
       });
   };
 
@@ -52,7 +52,7 @@ export const GeofencingTestButton: React.FC<GeofencingTestButtonProps> = ({
     // Restore the API after 3 seconds
     setTimeout(() => {
       require('../services/api').lotsApi.recordOccupancyEvent = originalRecordOccupancyEvent;
-      console.log('Network connection restored');
+      if (__DEV__) console.log('Network connection restored');
     }, 3000);
   };
 

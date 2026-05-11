@@ -22,7 +22,7 @@ export function useNearbyStopETAs(
   useEffect(() => {
     TransitService.getRoutesAndStops()
       .then((data) => setStops(data.stops))
-      .catch((err) => console.warn(`${LOG_TAG} Failed to load stops — nearby transit card will be hidden`, err));
+      .catch((err) => { if (__DEV__) console.warn(`${LOG_TAG} Failed to load stops — nearby transit card will be hidden`, err); });
   }, []);
 
   const nearby = useMemo(

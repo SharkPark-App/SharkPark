@@ -228,13 +228,6 @@ const getStyles = (
     alignItems: 'center',
     padding: 16,
   },
-  backdropTouchable: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
 
   // Actual Modal
   modal: {

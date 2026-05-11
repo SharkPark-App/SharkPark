@@ -27,7 +27,7 @@ export const useTransitData = () => {
         setRoutes(data.routes);
         setStops(data.stops);
       } catch (error) {
-        console.error('Error loading static transit data:', error);
+        if (__DEV__) console.error('Error loading static transit data:', error);
       }
     };
     loadRoutesAndStops();
@@ -56,7 +56,7 @@ export const useTransitData = () => {
         return merged;
       });
     } catch (error) {
-      console.error('Error loading initial shuttles:', error);
+      if (__DEV__) console.error('Error loading initial shuttles:', error);
     }
   }, []);
 

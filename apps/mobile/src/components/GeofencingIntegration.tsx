@@ -66,7 +66,7 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
       setIsInitialized(true);
       // Geofencing initialized successfully
     } catch (error) {
-      console.error('[GeofencingIntegration] Failed to initialize geofencing:', error);
+      if (__DEV__) console.error('[GeofencingIntegration] Failed to initialize geofencing:', error);
     }
   };
 
@@ -119,7 +119,7 @@ export const GeofencingIntegration: React.FC<GeofencingIntegrationProps> = ({
       
       // Successfully sent occupancy event
     } catch (error) {
-      console.error('[GeofencingIntegration] Failed to send occupancy event:', error);
+      if (__DEV__) console.error('[GeofencingIntegration] Failed to send occupancy event:', error);
     }
   };
 

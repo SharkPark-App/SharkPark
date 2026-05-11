@@ -66,7 +66,7 @@ export const PolygonGeofenceTest: React.FC = () => {
       );
 
     } catch (error) {
-      console.error('Failed to start polygon testing:', error);
+      if (__DEV__) console.error('Failed to start polygon testing:', error);
       Alert.alert('Error', 'Failed to start polygon geofence testing');
       setIsTestingPolygons(false);
     }

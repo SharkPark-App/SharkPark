@@ -146,7 +146,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
         ? `${err.message} (${err.status})`
         : 'Failed to fetch lot data';
       setError(errorMessage);
-      console.error('Error fetching lot data:', err);
+      if (__DEV__) console.error('Error fetching lot data:', err);
     } finally {
       if (isLatest()) {
         setLoading(false);
@@ -200,7 +200,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
       // Forecast errors are non-fatal — leave the previous bins in place
       // and let the next poll retry. Don't surface to the screen-level
       // error banner; that's reserved for lot-fetch failures.
-      console.error('Error fetching forecast:', err);
+      if (__DEV__) console.error('Error fetching forecast:', err);
       setForecastLoading(false);
     }
   }, [lotId]);
@@ -236,7 +236,7 @@ export function useLotData(lotId: string): UseLotDataReturn {
       });
       setHistory(historyData);
     } catch (err) {
-      console.error('Error fetching lot history:', err);
+      if (__DEV__) console.error('Error fetching lot history:', err);
       // Don't set error state for history as it's secondary data
     }
   }, [lotId]);
@@ -385,7 +385,7 @@ export function useLotsList(filters?: {
         ? `${err.message} (${err.status})`
         : 'Failed to fetch lots data';
       setError(errorMessage);
-      console.error('Error fetching lots:', err);
+      if (__DEV__) console.error('Error fetching lots:', err);
     } finally {
       if (isLatest()) setLoading(false);
     }

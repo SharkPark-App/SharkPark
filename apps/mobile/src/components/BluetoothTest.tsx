@@ -21,7 +21,7 @@ export const BluetoothTest: React.FC = () => {
         [{ text: 'OK' }]
       );
     } catch (error) {
-      console.error('Error checking car Bluetooth state:', error);
+      if (__DEV__) console.error('Error checking car Bluetooth state:', error);
       Alert.alert('Error', 'Failed to check car Bluetooth state');
       setIsCarConnected(null);
     } finally {

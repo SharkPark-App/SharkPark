@@ -57,7 +57,7 @@ export const useLocationService = (): UseLocationServiceReturn => {
     try {
       return await locationService.requestPermissions();
     } catch (error) {
-      console.error('[useLocationService] Permission request failed:', error);
+      if (__DEV__) console.error('[useLocationService] Permission request failed:', error);
       return false;
     }
   }, []);
@@ -68,7 +68,7 @@ export const useLocationService = (): UseLocationServiceReturn => {
       setIsTracking(true);
       setTrackingMode('geofences');
     } catch (error) {
-      console.error('[useLocationService] Start geofence monitoring failed:', error);
+      if (__DEV__) console.error('[useLocationService] Start geofence monitoring failed:', error);
     }
   }, []);
 
@@ -78,7 +78,7 @@ export const useLocationService = (): UseLocationServiceReturn => {
       setIsTracking(false);
       setTrackingMode('off');
     } catch (error) {
-      console.error('[useLocationService] Stop tracking failed:', error);
+      if (__DEV__) console.error('[useLocationService] Stop tracking failed:', error);
     }
   }, []);
 
@@ -88,7 +88,7 @@ export const useLocationService = (): UseLocationServiceReturn => {
       const count = await locationService.getMonitoredRegionsCount();
       setMonitoredRegions(count);
     } catch (error) {
-      console.error('[useLocationService] Register geofences failed:', error);
+      if (__DEV__) console.error('[useLocationService] Register geofences failed:', error);
     }
   }, []);
 
