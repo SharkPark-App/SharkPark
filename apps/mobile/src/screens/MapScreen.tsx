@@ -908,7 +908,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    // maxWidth: 72,
     maxWidth: 40,
   },
   lotCircle: {
