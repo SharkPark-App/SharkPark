@@ -142,6 +142,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Run unit tests
+        timeout-minutes: 15
         run: pnpm test -- --coverage
 
       - name: Backend E2E tests

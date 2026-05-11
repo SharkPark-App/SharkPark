@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
   ForbiddenException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { NotificationsService } from './notifications.service';
 import { RegisterPushTokenDto } from './dto/register-push-token.dto';
@@ -21,7 +22,10 @@ interface AuthenticatedRequest extends Request {
 
 @Controller('users')
 export class NotificationsController {
-  constructor(private readonly notificationsService: NotificationsService) {}
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * Register/refresh a device push token for the authenticated user.
@@ -69,8 +73,9 @@ export class NotificationsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: DebugSendPushDto,
   ): Promise<{ sent: boolean; pushConfigured: boolean; tokenCount: number }> {
-    const debugPushEnabled = process.env.ENABLE_DEBUG_PUSH_TEST === 'true';
-    if (process.env.NODE_ENV === 'production' || !debugPushEnabled) {
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    const debugPushEnabled = this.configService.get<string>('ENABLE_DEBUG_PUSH_TEST') === 'true';
+    if (isProduction || !debugPushEnabled) {
       throw new ForbiddenException('Push test endpoint is disabled (set ENABLE_DEBUG_PUSH_TEST=true in non-production environments)');
     }
 

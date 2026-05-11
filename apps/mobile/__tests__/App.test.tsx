@@ -108,6 +108,14 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
+// Mock the min-version fetch so App.tsx doesn't hit the network during render.
+// Without this, the real apiService retries against ECONNREFUSED and the
+// late rejection bleeds past test teardown -> jest exit 1 under
+// --detectOpenHandles in the mobile-test-hygiene workflow.
+jest.mock('../src/services/api/version', () => ({
+  fetchMinVersion: jest.fn().mockResolvedValue({ minSupportedVersion: '0.0.0' }),
+}));
+
 // Mock EnhancedGeofencingProvider — the provider App.tsx actually mounts
 jest.mock('../src/context/EnhancedGeofencingProvider', () => ({
   EnhancedGeofencingProvider: ({ children }: { children: React.ReactNode }) => children,

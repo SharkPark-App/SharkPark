@@ -57,16 +57,6 @@ export class NotificationsService implements OnModuleInit {
     await this.registerPushToken(user.id, token, platform);
   }
 
-  async sendDebugPushByEmail(email: string, dto: DebugSendPushDto): Promise<boolean> {
-    const user = await this.prisma.user.findUniqueOrThrow({
-      where: { email },
-      select: { id: true },
-    });
-
-    const payload = this.buildDebugPayload(dto);
-    return this.sendPush(user.id, payload);
-  }
-
   async debugPushTestByEmail(
     email: string,
     dto: DebugSendPushDto,
@@ -110,7 +100,7 @@ export class NotificationsService implements OnModuleInit {
         return {
           title: 'Campus Surge Alert',
           body: 'Multiple lots are over 90% full right now.',
-          data: { type: 'surge', lotId },
+          data: { type: 'surge' },
         };
       case DebugPushType.EVENTS:
         return {
