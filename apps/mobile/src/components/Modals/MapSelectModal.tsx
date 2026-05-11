@@ -62,7 +62,7 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
                   try {
                     await Linking.openURL(url);
                   } catch (err) {
-                    console.error('Failed to open Apple Maps:', err);
+                    if (__DEV__) console.error('Failed to open Apple Maps:', err);
                     Alert.alert(
                       'Could not open Apple Maps',
                       'Please try a different navigation app.',
@@ -76,7 +76,7 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
 
           setAvailableApps(apps);
         } catch (error) {
-          console.error("Failed to fetch map apps:", error);
+          if (__DEV__) console.error("Failed to fetch map apps:", error);
         }
       };
 
@@ -136,7 +136,7 @@ export const MapSelectModal = ({ isVisible, onClose, lat, lon, title }: MapSelec
                   try {
                     await item.open();
                   } catch (error) {
-                    console.error(`[MapSelectModal] Failed to open map app (${item.name}):`, error);
+                    if (__DEV__) console.error(`[MapSelectModal] Failed to open map app (${item.name}):`, error);
                     
                     Alert.alert(
                       'Map Open Error',
