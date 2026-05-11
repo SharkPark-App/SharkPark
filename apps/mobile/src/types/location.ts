@@ -36,6 +36,7 @@ export interface GeofenceEvent {
   regionId: string;
   eventType: 'ENTER' | 'EXIT' | 'DWELL';
   timestamp: string;
+  isTest?: boolean;
   // NO location coordinates — privacy first!
   // Activity + speed are included for parking detection heuristics:
   // they determine if the user drove in vs walked in (occupancy gating).

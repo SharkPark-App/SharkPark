@@ -169,5 +169,7 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
 
-// Silence console warnings during tests
+// Silence noisy console output during tests.
+jest.spyOn(console, 'log').mockImplementation(() => {});
 jest.spyOn(console, 'warn').mockImplementation(() => {});
+jest.spyOn(console, 'error').mockImplementation(() => {});

@@ -22,6 +22,9 @@ import { registerPushToken, unregisterPushToken } from './api/notifications';
 
 export type PushMessage = FirebaseMessagingTypes.RemoteMessage;
 
+type ForegroundMessageHandler = (message: PushMessage) => void;
+const devForegroundHandlers = new Set<ForegroundMessageHandler>();
+
 /**
  * Storage key written by `PermissionGateScreen` (see `useOnboarding`).
  * Its presence means the user has already been given an explicit chance to
@@ -136,7 +139,43 @@ export async function initPushNotifications(): Promise<() => void> {
 export function subscribeForegroundMessages(
   onMessage: (message: PushMessage) => void,
 ): () => void {
-  return messaging().onMessage(onMessage);
+  const unsubscribeFirebase = messaging().onMessage(onMessage);
+  if (__DEV__) {
+    devForegroundHandlers.add(onMessage);
+  }
+  return () => {
+    unsubscribeFirebase();
+    if (__DEV__) {
+      devForegroundHandlers.delete(onMessage);
+    }
+  };
+}
+
+/**
+ * Dev-only helper: inject a synthetic foreground push message so the app can
+ * test notification UI and deep-link behavior without waiting for backend sends.
+ */
+export function simulateForegroundPushMessage(params: {
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+}): void {
+  if (!__DEV__) return;
+  const message = {
+    messageId: `dev-${Date.now()}`,
+    notification: {
+      title: params.title,
+      body: params.body,
+    },
+    data: params.data,
+  } as PushMessage;
+  devForegroundHandlers.forEach((handler) => {
+    try {
+      handler(message);
+    } catch (e) {
+      if (__DEV__) console.warn('[Push] simulateForegroundPushMessage handler failed:', e);
+    }
+  });
 }
 
 /**

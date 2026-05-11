@@ -167,8 +167,27 @@ class ParkingValidationService {
   async getCurrentValidationStatus(lotId: string): Promise<ValidationAnalysis | null> {
     await this.initPromise;
     const session = this.findActiveSessionByLotId(lotId);
-    if (!session || session.events.length < 3) {
-      return null; // Need minimum events for analysis
+    if (!session) {
+      return null;
+    }
+
+    if (session.events.length < 3) {
+      return {
+        status: 'INSUFFICIENT_DATA',
+        confidenceScore: 0,
+        contributesToOccupancy: false,
+        speedTransitionScore: 0,
+        dwellTimeScore: 0,
+        movementPatternScore: 0,
+        bluetoothScore: 0,
+        activityRecognitionScore: 0,
+        metadata: {
+          event_count: session.events.length,
+          time_span_minutes: Math.max(0, (Date.now() - new Date(session.startTime).getTime()) / 60000),
+          speed_range: null,
+          analysis_timestamp: new Date().toISOString(),
+        },
+      };
     }
 
     try {

@@ -91,6 +91,13 @@ jest.mock('../src/hooks/useStopETAs', () => ({
   }),
 }));
 
+jest.mock('react-native-device-info', () => ({
+  getBrand: jest.fn().mockResolvedValue('Apple'),
+  getModel: jest.fn().mockResolvedValue('iPhone'),
+  getSystemVersion: jest.fn().mockResolvedValue('17.0'),
+  getVersion: jest.fn().mockResolvedValue('1.0.0'),
+}));
+
 // Mock react-native-maps
 jest.mock('react-native-maps', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -209,35 +216,35 @@ const mockApiLots = [
 // ────────────────────── Tests ──────────────────────
 
 describe('MapScreen', () => {
+  const renderMapScreen = async (): Promise<ReactTestRenderer.ReactTestRenderer> => {
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      tree = ReactTestRenderer.create(<MapScreen />);
+      await Promise.resolve();
+    });
+    return tree;
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseLotsList.mockReturnValue({ lots: mockApiLots, loading: false, error: null, refreshLots: jest.fn() });
   });
 
   describe('rendering', () => {
-    it('renders without crashing', () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
-      expect(tree!.toJSON()).toBeTruthy();
+    it('renders without crashing', async () => {
+      const tree = await renderMapScreen();
+      expect(tree.toJSON()).toBeTruthy();
     });
 
-    it('renders the header with logo', () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
-      const json = JSON.stringify(tree!.toJSON());
+    it('renders the header with logo', async () => {
+      const tree = await renderMapScreen();
+      const json = JSON.stringify(tree.toJSON());
       expect(json).toContain('header-logo');
     });
 
     it('renders parking lot markers correctly', async () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      await ReactTestRenderer.act(async () => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
-      const json = JSON.stringify(tree!.toJSON());
+      const tree = await renderMapScreen();
+      const json = JSON.stringify(tree.toJSON());
       expect(json).toContain('Lot G1');
       expect(json).toContain('Lot G2');
     });
@@ -245,12 +252,9 @@ describe('MapScreen', () => {
 
   describe('transit mapping', () => {
     it('renders transit routes, stops, and shuttles', async () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      await ReactTestRenderer.act(async () => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
+      const tree = await renderMapScreen();
       
-      const json = JSON.stringify(tree!.toJSON());
+      const json = JSON.stringify(tree.toJSON());
       expect(json).toContain('polyline'); // Route paths
       expect(json).toContain('Shuttle stop: Student Union'); // Stop accessibility label
       expect(json).toContain('shuttle-marker'); // Shuttle custom component
@@ -259,17 +263,14 @@ describe('MapScreen', () => {
 
   describe('interactions', () => {
     it('opens StopModal when a shuttle stop marker is pressed', async () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      await ReactTestRenderer.act(async () => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
+      const tree = await renderMapScreen();
 
       // Verify modal is closed initially
-      let json = JSON.stringify(tree!.toJSON());
+      let json = JSON.stringify(tree.toJSON());
       expect(json).not.toContain('StopModal Open');
 
       // Find the stop marker
-      const stopMarkers = tree!.root.findAllByProps({ accessibilityLabel: 'Shuttle stop: Student Union' });
+      const stopMarkers = tree.root.findAllByProps({ accessibilityLabel: 'Shuttle stop: Student Union' });
 
       // Press the first element in the matched array
       let touchable = stopMarkers[0];
@@ -282,18 +283,15 @@ describe('MapScreen', () => {
       });
 
       // Verify modal is now open
-      json = JSON.stringify(tree!.toJSON());
+      json = JSON.stringify(tree.toJSON());
       expect(json).toContain('StopModal Open');
     });
 
     it('navigates to Short Term Forecast when a lot is pressed', async () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      await ReactTestRenderer.act(async () => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
+      const tree = await renderMapScreen();
 
       // Find the Marker that wraps "Lot G1" text
-      const g1TextNodes = tree!.root.findAllByProps({ children: 'Lot G1' });
+      const g1TextNodes = tree.root.findAllByProps({ children: 'Lot G1' });
       let touchable = g1TextNodes[0].parent;
       
       // Traverse up to find the Marker onPress prop
@@ -313,26 +311,20 @@ describe('MapScreen', () => {
   });
 
   describe('buttons and modals', () => {
-    it('renders the filter button', () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      ReactTestRenderer.act(() => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
+    it('renders the filter button', async () => {
+      const tree = await renderMapScreen();
 
-      const filterIcons = tree!.root.findAllByProps({ name: 'filter' });
+      const filterIcons = tree.root.findAllByProps({ name: 'filter' });
       expect(filterIcons.length).toBeGreaterThan(0);
     });
 
     it('renders the favorites button and opens RecommendationModal', async () => {
-      let tree: ReactTestRenderer.ReactTestRenderer;
-      await ReactTestRenderer.act(async () => {
-        tree = ReactTestRenderer.create(<MapScreen />);
-      });
+      const tree = await renderMapScreen();
 
-      let json = JSON.stringify(tree!.toJSON());
+      let json = JSON.stringify(tree.toJSON());
       expect(json).not.toContain('RecommendationModal Open');
 
-      const navIcons = tree!.root.findAllByProps({ name: 'star' });
+      const navIcons = tree.root.findAllByProps({ name: 'star' });
       let touchable = navIcons[0].parent;
       while (touchable && !touchable.props.onPress) {
         touchable = touchable.parent;
@@ -342,7 +334,7 @@ describe('MapScreen', () => {
         touchable!.props.onPress();
       });
 
-      json = JSON.stringify(tree!.toJSON());
+      json = JSON.stringify(tree.toJSON());
       expect(json).toContain('RecommendationModal Open');
       expect(mockRefreshFavorites).toHaveBeenCalled();
     });

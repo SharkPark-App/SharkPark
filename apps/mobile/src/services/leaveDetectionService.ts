@@ -453,7 +453,7 @@ class LeaveDetectionService {
   private debouncedPersistSession(sessionId: string): void {
     this.pendingPersistSessionIds.add(sessionId);
     if (this.persistDebounceTimer) return; // already scheduled
-    this.persistDebounceTimer = setTimeout(() => {
+    const timer = setTimeout(() => {
       this.persistDebounceTimer = null;
       const ids = [...this.pendingPersistSessionIds];
       this.pendingPersistSessionIds.clear();
@@ -462,6 +462,11 @@ class LeaveDetectionService {
         if (session) this.persistSession(session);
       }
     }, this.PERSIST_DEBOUNCE_MS);
+
+    // In Node/Jest, unref prevents this debounce timer from keeping the
+    // process alive while preserving runtime behavior in React Native.
+    (timer as { unref?: () => void }).unref?.();
+    this.persistDebounceTimer = timer;
   }
 
   private async persistSession(session: LeaveSession): Promise<void> {
@@ -563,6 +568,44 @@ class LeaveDetectionService {
         status: session.status
       }))
     };
+  }
+
+  async debugSetSessionAge(lotId: string, minutesAgo: number): Promise<boolean> {
+    await this.initPromise;
+    const session = this.findActiveSessionByLotId(lotId);
+    if (!session) return false;
+
+    session.startTime = new Date(Date.now() - Math.max(0, minutesAgo) * 60 * 1000);
+    this.debouncedPersistSession(session.sessionId);
+    return true;
+  }
+
+  async debugInjectSignal(
+    lotId: string,
+    signal: Omit<LeaveIntentSignal, 'timestamp'> & { timestamp?: Date }
+  ): Promise<LeaveIntentAnalysis | null> {
+    await this.initPromise;
+    const session = this.findActiveSessionByLotId(lotId);
+    if (!session || session.status !== 'MONITORING') {
+      return null;
+    }
+
+    const signalWithTimestamp: LeaveIntentSignal = {
+      ...signal,
+      timestamp: signal.timestamp ?? new Date(),
+    };
+
+    session.signals.push(signalWithTimestamp);
+
+    const analysis = this.analyzeLeaveIntent(session);
+    session.lastAnalysis = analysis;
+
+    if (analysis.should_notify_occupancy && analysis.confidence_level !== 'LOW') {
+      session.callbacks?.onLeaveIntentDetected(analysis, session.lotId);
+    }
+
+    this.debouncedPersistSession(session.sessionId);
+    return analysis;
   }
 
   /**

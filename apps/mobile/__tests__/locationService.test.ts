@@ -193,11 +193,11 @@ describe('LocationService (SDK Wrapper)', () => {
 
       if (callback.mock.calls.length > 0) {
         const event = callback.mock.calls[0][0];
-        expect(event).toEqual({
+        expect(event).toEqual(expect.objectContaining({
           regionId: expect.any(String),
           eventType: expect.stringMatching(/^(ENTER|EXIT)$/),
           timestamp: expect.any(String),
-        });
+        }));
         expect(event).not.toHaveProperty('latitude');
         expect(event).not.toHaveProperty('longitude');
       }

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { NotificationType } from '@prisma/client';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../database/database.module';
+import { DebugPushType } from './dto/debug-send-push.dto';
 import * as admin from 'firebase-admin';
 
 // mockApps and mockSendEachForMulticast are used inside the jest.mock() factory below
@@ -26,6 +27,7 @@ describe('NotificationsService', () => {
       upsert: jest.Mock;
       findMany: jest.Mock;
       deleteMany: jest.Mock;
+      count: jest.Mock;
     };
     notificationLog: {
       count: jest.Mock;
@@ -51,6 +53,7 @@ describe('NotificationsService', () => {
         upsert: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        count: jest.fn().mockResolvedValue(0),
       },
       notificationLog: {
         count: jest.fn().mockResolvedValue(0),
@@ -285,6 +288,84 @@ describe('NotificationsService', () => {
       expect(mockSendEachForMulticast).toHaveBeenCalledWith(
         expect.objectContaining({ data: { type: 'favorites_filling', lotId: 'lot-cuid' } }),
       );
+    });
+  });
+
+  describe('debugPushTestByEmail', () => {
+    beforeEach(() => {
+      prisma.user.findUniqueOrThrow.mockResolvedValue({ id: 'user-cuid' });
+    });
+
+    it('returns pushConfigured=false and does not attempt send when Firebase is not initialized', async () => {
+      prisma.pushToken.count.mockResolvedValue(2);
+      const sendSpy = jest.spyOn(service, 'sendPush').mockResolvedValue(true);
+
+      const result = await service.debugPushTestByEmail('student@csulb.edu', {
+        type: DebugPushType.SURGE,
+        lotId: 'G1',
+      });
+
+      expect(result).toEqual({ sent: false, pushConfigured: false, tokenCount: 2 });
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns tokenCount=0 and does not attempt send when user has no tokens', async () => {
+      mockApps.push({});
+      prisma.pushToken.count.mockResolvedValue(0);
+      const sendSpy = jest.spyOn(service, 'sendPush').mockResolvedValue(true);
+
+      const result = await service.debugPushTestByEmail('student@csulb.edu', {
+        type: DebugPushType.SURGE,
+      });
+
+      expect(result).toEqual({ sent: false, pushConfigured: true, tokenCount: 0 });
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+
+    it('attempts send and returns sent status when configured and token count is positive', async () => {
+      mockApps.push({});
+      prisma.pushToken.count.mockResolvedValue(3);
+      const sendSpy = jest.spyOn(service, 'sendPush').mockResolvedValue(false);
+
+      const result = await service.debugPushTestByEmail('student@csulb.edu', {
+        type: DebugPushType.EVENTS,
+      });
+
+      expect(result).toEqual({ sent: false, pushConfigured: true, tokenCount: 3 });
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('maps favorites_filling payload with lotId', async () => {
+      mockApps.push({});
+      prisma.pushToken.count.mockResolvedValue(1);
+      const sendSpy = jest.spyOn(service, 'sendPush').mockResolvedValue(true);
+
+      await service.debugPushTestByEmail('student@csulb.edu', {
+        type: DebugPushType.FAVORITES_FILLING,
+        lotId: 'G4',
+      });
+
+      expect(sendSpy).toHaveBeenCalledWith('user-cuid', {
+        title: 'Favorite Lot Filling Up',
+        body: 'G4 just passed 80% occupancy.',
+        data: { type: 'favorites_filling', lotId: 'G4' },
+      });
+    });
+
+    it('maps events payload without lotId', async () => {
+      mockApps.push({});
+      prisma.pushToken.count.mockResolvedValue(1);
+      const sendSpy = jest.spyOn(service, 'sendPush').mockResolvedValue(true);
+
+      await service.debugPushTestByEmail('student@csulb.edu', {
+        type: DebugPushType.EVENTS,
+      });
+
+      expect(sendSpy).toHaveBeenCalledWith('user-cuid', {
+        title: 'Campus Event Reminder',
+        body: 'A campus event starts in about 2 hours.',
+        data: { type: 'events' },
+      });
     });
   });
 

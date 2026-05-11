@@ -84,12 +84,15 @@ const makeLot = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-function renderComponent(props: { onGeofenceEvent?: (e: { lotId: string; eventType: 'ENTER' | 'EXIT' }) => void } = {}) {
-  let root: ReactTestRenderer.ReactTestRenderer;
-  act(() => {
+async function renderComponent(
+  props: { onGeofenceEvent?: (e: { lotId: string; eventType: 'ENTER' | 'EXIT' }) => void } = {},
+) {
+  let root!: ReactTestRenderer.ReactTestRenderer;
+  await act(async () => {
     root = ReactTestRenderer.create(<GeofencingIntegration {...props} />);
+    await Promise.resolve();
   });
-  return root!;
+  return root;
 }
 
 // ────────────────────── Tests ──────────────────────
@@ -105,9 +108,9 @@ describe('GeofencingIntegration', () => {
 
   // ── Loading & Error ────────────────────────────────
 
-  it('renders loading state', () => {
+  it('renders loading state', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [], loading: true, error: null });
-    const root = renderComponent();
+    const root = await renderComponent();
     const json = root.toJSON() as ReactTestRenderer.ReactTestRendererJSON;
 
     // Look for "Loading parking lot data..."
@@ -115,9 +118,9 @@ describe('GeofencingIntegration', () => {
     expect(textNodes).toContain('Loading parking lot data...');
   });
 
-  it('renders error state', () => {
+  it('renders error state', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [], loading: false, error: 'Network fail' });
-    const root = renderComponent();
+    const root = await renderComponent();
     const text = JSON.stringify(root.toJSON());
     expect(text).toContain('Error loading parking lots');
     expect(text).toContain('Network fail');
@@ -125,9 +128,9 @@ describe('GeofencingIntegration', () => {
 
   // ── Normal render ──────────────────────────────────
 
-  it('renders title, status, privacy info and stats', () => {
+  it('renders title, status, privacy info and stats', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
-    const root = renderComponent();
+    const root = await renderComponent();
     const text = JSON.stringify(root.toJSON());
 
     expect(text).toContain('Smart Parking Detection');
@@ -136,54 +139,54 @@ describe('GeofencingIntegration', () => {
     expect(text).toContain('0 of 1'); // monitored 0 of 1
   });
 
-  it('shows "Active" when isTracking is true', () => {
+  it('shows "Active" when isTracking is true', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
     mockLocationState = { ...defaultLocationState, isTracking: true };
-    const root = renderComponent();
+    const root = await renderComponent();
     const text = JSON.stringify(root.toJSON());
     expect(text).toContain('Active');
   });
 
-  it('shows enable button when not tracking', () => {
+  it('shows enable button when not tracking', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
-    const root = renderComponent();
+    const root = await renderComponent();
     const text = JSON.stringify(root.toJSON());
     expect(text).toContain('Enable Smart Parking Detection');
   });
 
-  it('hides enable button when tracking', () => {
+  it('hides enable button when tracking', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
     mockLocationState = { ...defaultLocationState, isTracking: true };
-    const root = renderComponent();
+    const root = await renderComponent();
     const text = JSON.stringify(root.toJSON());
     expect(text).not.toContain('Enable Smart Parking Detection');
   });
 
-  it('displays lastError when present', () => {
+  it('displays lastError when present', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
     mockLocationState = { ...defaultLocationState, lastError: { message: 'GPS failure' } };
-    const root = renderComponent();
+    const root = await renderComponent();
     const text = JSON.stringify(root.toJSON());
     expect(text).toContain('GPS failure');
   });
 
-  it('displays permission status as Granted', () => {
+  it('displays permission status as Granted', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
     mockLocationState = { ...defaultLocationState, isTracking: true };
-    const root = renderComponent();
+    const root = await renderComponent();
     const text = JSON.stringify(root.toJSON());
     expect(text).toContain('Active');
   });
 
   // ── Geofence initialisation ────────────────────────
 
-  it('initializes geofencing when lots are available', () => {
+  it('initializes geofencing when lots are available', async () => {
     const lots = [makeLot()];
     const regions = [{ identifier: 'G1', latitude: 33, longitude: -118, radius: 50, notifyOnEntry: true, notifyOnExit: true }];
     mockCreateSDKGeofencesFromLots.mockReturnValue(regions);
     mockUseAllLotsData.mockReturnValue({ lots, loading: false, error: null });
 
-    renderComponent();
+    await renderComponent();
 
     expect(mockCreateSDKGeofencesFromLots).toHaveBeenCalledWith(lots);
     expect(mockRegisterGeofences).toHaveBeenCalledWith(regions);
@@ -198,7 +201,7 @@ describe('GeofencingIntegration', () => {
     // First render – lots loaded, no event yet
     mockLocationState = { ...defaultLocationState };
     mockUseAllLotsData.mockReturnValue({ lots, loading: false, error: null });
-    const root = renderComponent({ onGeofenceEvent: onEvent });
+    const root = await renderComponent({ onGeofenceEvent: onEvent });
 
     // Second render – fire ENTER event
     mockLocationState = {
@@ -230,7 +233,7 @@ describe('GeofencingIntegration', () => {
 
     mockLocationState = { ...defaultLocationState };
     mockUseAllLotsData.mockReturnValue({ lots, loading: false, error: null });
-    const root = renderComponent({ onGeofenceEvent: onEvent });
+    const root = await renderComponent({ onGeofenceEvent: onEvent });
 
     mockLocationState = {
       ...defaultLocationState,
@@ -264,7 +267,7 @@ describe('GeofencingIntegration', () => {
     };
 
     await act(async () => {
-      renderComponent();
+      await renderComponent();
     });
 
     expect(Alert.alert).toHaveBeenCalledWith(
@@ -278,7 +281,7 @@ describe('GeofencingIntegration', () => {
 
   it('starts geofencing when button pressed and permissions granted', async () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
-    const root = renderComponent();
+    const root = await renderComponent();
 
     // Find Button by title
     const button = root.root.findByProps({ title: 'Enable Smart Parking Detection' });
@@ -293,7 +296,7 @@ describe('GeofencingIntegration', () => {
   it('shows alert when permissions denied', async () => {
     mockRequestPermissions.mockResolvedValue(false);
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
-    const root = renderComponent();
+    const root = await renderComponent();
 
     const button = root.root.findByProps({ title: 'Enable Smart Parking Detection' });
     await act(async () => {
@@ -311,7 +314,7 @@ describe('GeofencingIntegration', () => {
   it('shows alert when tracking fails to start', async () => {
     mockStartGeofenceMonitoring.mockRejectedValue(new Error('tracking failed'));
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
-    const root = renderComponent();
+    const root = await renderComponent();
 
     const button = root.root.findByProps({ title: 'Enable Smart Parking Detection' });
     await act(async () => {
@@ -388,7 +391,7 @@ describe('GeofencingIntegration', () => {
     };
 
     await act(async () => {
-      renderComponent();
+      await renderComponent();
     });
 
     // Alert still fires even though API failed
@@ -407,7 +410,7 @@ describe('GeofencingIntegration', () => {
     mockUseAllLotsData.mockReturnValue({ lots: [makeLot()], loading: false, error: null });
 
     // Should not crash
-    const root = renderComponent();
+    const root = await renderComponent();
     expect(root.toJSON()).toBeTruthy();
 
     consoleErrorSpy.mockRestore();

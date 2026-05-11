@@ -300,13 +300,18 @@ describe('ParkingValidationService', () => {
       expect(status).toBeNull();
     });
 
-    it('should return null for sessions with insufficient events', async () => {
+    it('should return INSUFFICIENT_DATA for sessions with insufficient events', async () => {
       await parkingValidationService.startParkingSession(mockGeofenceEvent);
       
       // Only has GEOFENCE_ENTER event (1 event < 3 minimum)
       const status = await parkingValidationService.getCurrentValidationStatus('test-lot-1');
       
-      expect(status).toBeNull();
+      expect(status).toEqual(expect.objectContaining({
+        status: 'INSUFFICIENT_DATA',
+        confidenceScore: 0,
+        contributesToOccupancy: false,
+      }));
+      expect(status?.metadata.event_count).toBe(1);
     });
   });
 
@@ -369,6 +374,10 @@ describe('ParkingValidationService', () => {
 
     it('should handle analysis errors gracefully', async () => {
       await parkingValidationService.startParkingSession(mockGeofenceEvent);
+
+      // Ensure we pass the insufficient-data guard and exercise analyzer errors.
+      parkingValidationService.recordBehavioralEvent('STATIONARY', { speed_mph: 0 });
+      parkingValidationService.recordBehavioralEvent('WALKING', { speed_mph: 2 });
       
       (ParkingValidator.analyzeEventPatterns as jest.Mock).mockImplementation(() => {
         throw new Error('Analysis error');
@@ -376,6 +385,7 @@ describe('ParkingValidationService', () => {
       
       const status = await parkingValidationService.getCurrentValidationStatus('test-lot-1');
       expect(status).toBeNull();
+      expect(ParkingValidator.analyzeEventPatterns).toHaveBeenCalled();
     });
   });
 

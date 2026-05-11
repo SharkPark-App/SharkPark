@@ -416,6 +416,7 @@ class LocationService {
       regionId,
       eventType,
       timestamp: new Date().toISOString(),
+      isTest: true,
       activity,
       speed,
     };
@@ -424,6 +425,26 @@ class LocationService {
         cb(event);
       } catch (e) {
         console.error('[LocationService] Error in geofence callback:', e);
+      }
+    });
+  }
+
+  /**
+   * Trigger a test activity-change event (development only).
+   */
+  triggerTestActivityChange(activity: string, confidence = 90) {
+    if (!__DEV__) return;
+
+    const event = {
+      activity,
+      confidence,
+    } as MotionActivityEvent;
+
+    this.activityCallbacks.forEach((cb) => {
+      try {
+        cb(event);
+      } catch (e) {
+        console.error('[LocationService] Error in activity callback:', e);
       }
     });
   }

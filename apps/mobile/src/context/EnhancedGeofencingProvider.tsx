@@ -17,6 +17,7 @@ import { GeofenceEvent } from '../types/location';
 import locationService from '../services/locationService';
 import parkingValidationService from '../services/parkingValidationService';
 import leaveDetectionService, { LeaveIntentAnalysis } from '../services/leaveDetectionService';
+import carpoolDetectionService, { CarpoolDetectionResult } from '../services/carpoolDetectionService';
 import { sharedBehavioralCollector } from '../services/behavioralDataCollector';
 import carBluetooth from '../services/carBluetooth';
 import { isOnCampus } from '../utils/geoHelpers';
@@ -25,12 +26,27 @@ import { registerContributorGrant, revokeContributorGrant, refreshLotsForPermiss
 import { TEST_CONSTANTS } from '../constants/geofencing';
 import { ValidationAnalysis } from '../validation';
 import { createSDKGeofencesFromLots } from '../utils/geofenceUtils';
+import { LOT_POLYGONS } from '../data/lotPolygons';
+import { isPointInsidePolygon } from '../utils/lotGeometry';
 
 interface EnhancedGeofencingContextType {
   isGeofencingActive: boolean;
   currentLotId: string | null;
+  parkedLotId: string | null;
+  lastParkedLocation: {
+    lotId: string;
+    latitude: number;
+    longitude: number;
+    accuracy: number | null;
+    timestamp: string;
+  } | null;
   currentValidationStatus: ValidationAnalysis | null;
   currentLeaveIntent: LeaveIntentAnalysis | null;
+  carpoolPassengerMode: boolean;
+  carpoolPassengerCount: number;
+  latestCarpoolDetectionResult: CarpoolDetectionResult | null;
+  setCarpoolPassengerMode: (enabled: boolean) => Promise<void>;
+  setCarpoolPassengerCount: (count: number) => Promise<void>;
   debugInfo: {
     activeSessions: number;
     isCollectingData: boolean;
@@ -41,14 +57,34 @@ interface EnhancedGeofencingContextType {
 
 const EnhancedGeofencingContext = createContext<EnhancedGeofencingContextType | undefined>(undefined);
 
+interface ParkedLocationSnapshot {
+  lotId: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  timestamp: string;
+}
+
 export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Track current parking state
   const currentZones = useRef<Set<string>>(new Set());
   const [currentLotId, setCurrentLotId] = useState<string | null>(null);
   const currentLotIdRef = useRef<string | null>(null);
+  const [parkedLotId, setParkedLotId] = useState<string | null>(null);
+  const parkedLotIdRef = useRef<string | null>(null);
+  const [lastParkedLocation, setLastParkedLocation] = useState<ParkedLocationSnapshot | null>(null);
+  const latestLocationSampleRef = useRef<ParkedLocationSnapshot | null>(null);
   const [currentValidationStatus, setCurrentValidationStatus] = useState<ValidationAnalysis | null>(null);
   const [currentLeaveIntent, setCurrentLeaveIntent] = useState<LeaveIntentAnalysis | null>(null);
+  const [carpoolPassengerMode, setCarpoolPassengerModeState] = useState(false);
+  const [carpoolPassengerCount, setCarpoolPassengerCountState] = useState(0);
+  const [latestCarpoolDetectionResult, setLatestCarpoolDetectionResult] = useState<CarpoolDetectionResult | null>(null);
   const appState = useRef<AppStateStatus>(AppState.currentState);
+
+  const PARKING_STATE_KEY = '@SharkPark:lotParkingState';
+  const LAST_PARKED_LOCATION_KEY = '@SharkPark:lastParkedLocation';
+  const CARPOOL_MODE_KEY = '@SharkPark:carpoolPassengerMode';
+  const CARPOOL_COUNT_KEY = '@SharkPark:carpoolPassengerCount';
 
   // Mutex: serialise geofence event processing so rapid ENTER/EXIT pairs
   // cannot interleave (e.g. EXIT resolving before ENTER's startParkingSession).
@@ -74,10 +110,20 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
   type ParkingSessionState = 'PENDING_VEHICLE_ENTRY' | 'UNKNOWN_ENTRY' | 'CONFIRMED_PARKED' | 'WALK_IN';
   const lotParkingState = useRef<Map<string, ParkingSessionState>>(new Map());
 
-  // ── Persistence for lotParkingState ──
-  // Survives app restarts so geofenceInitialTriggerEntry sees existing
-  // CONFIRMED_PARKED state and skips re-sending +1.
-  const PARKING_STATE_KEY = '@SharkPark:lotParkingState';
+  // Carpool detection: map lot ID → detection session ID
+  const lotCarpoolDetectionSessions = useRef<Map<string, string>>(new Map());
+
+  // Latest carpool detection result per lot (for UI)
+  const lotCarpoolDetectionResults = useRef<Map<string, CarpoolDetectionResult>>(new Map());
+
+  // Track occupancy before ENTER for carpool signal correlation
+  const lotOccupancyBeforeEnter = useRef<Map<string, number>>(new Map());
+
+  // Bluetooth subscriptions per lot (to watch for new device connections)
+  const lotBluetoothSubscriptions = useRef<Map<string, { remove: () => void }>>(new Map());
+
+  // Lots currently driven by dev/test geofence events (skip backend occupancy POSTs)
+  const testLots = useRef<Set<string>>(new Set());
 
   const persistParkingState = useCallback(async () => {
     try {
@@ -90,6 +136,31 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     }
   }, []);
 
+  const syncParkedLotFromState = useCallback(() => {
+    const confirmedLot = Array.from(lotParkingState.current.entries()).find(
+      ([, state]) => state === 'CONFIRMED_PARKED'
+    )?.[0] ?? null;
+    parkedLotIdRef.current = confirmedLot;
+    setParkedLotId(confirmedLot);
+  }, []);
+
+  const setLotParkingState = useCallback((lotId: string, state: ParkingSessionState) => {
+    lotParkingState.current.set(lotId, state);
+    if (state === 'CONFIRMED_PARKED') {
+      parkedLotIdRef.current = lotId;
+      setParkedLotId(lotId);
+    } else if (parkedLotIdRef.current === lotId) {
+      syncParkedLotFromState();
+    }
+  }, [syncParkedLotFromState]);
+
+  const clearLotParkingState = useCallback((lotId: string) => {
+    lotParkingState.current.delete(lotId);
+    if (parkedLotIdRef.current === lotId) {
+      syncParkedLotFromState();
+    }
+  }, [syncParkedLotFromState]);
+
   const restoreParkingState = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(PARKING_STATE_KEY);
@@ -97,17 +168,149 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       const entries: { lotId: string; state: ParkingSessionState; ts: number }[] = JSON.parse(raw);
       const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
       const now = Date.now();
+      let latestConfirmed: { lotId: string; ts: number } | null = null;
       for (const { lotId, state, ts } of entries) {
         if (now - ts < MAX_AGE_MS) {
           lotParkingState.current.set(lotId, state);
           if (state === 'CONFIRMED_PARKED') {
             currentZones.current.add(lotId);
+            if (!latestConfirmed || ts > latestConfirmed.ts) {
+              latestConfirmed = { lotId, ts };
+            }
           }
         }
       }
+      parkedLotIdRef.current = latestConfirmed?.lotId ?? null;
+      setParkedLotId(latestConfirmed?.lotId ?? null);
       if (__DEV__) console.log(`[EnhancedGeofencing] Restored parking state for ${lotParkingState.current.size} lots`);
     } catch (e) {
       if (__DEV__) console.error('[EnhancedGeofencing] Failed to restore parking state:', e);
+    }
+  }, []);
+
+  const restoreCarpoolPreferences = useCallback(async () => {
+    try {
+      const [[, modeRaw], [, countRaw]] = await AsyncStorage.multiGet([CARPOOL_MODE_KEY, CARPOOL_COUNT_KEY]);
+      setCarpoolPassengerModeState(modeRaw === 'true');
+      const count = Number.parseInt(countRaw ?? '0', 10);
+      setCarpoolPassengerCountState(Number.isFinite(count) && count > 0 ? Math.min(count, 8) : 0);
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to restore carpool preferences:', e);
+    }
+  }, []);
+
+  const setAndPersistLastParkedLocation = useCallback(async (snapshot: ParkedLocationSnapshot) => {
+    setLastParkedLocation(snapshot);
+    try {
+      await AsyncStorage.setItem(LAST_PARKED_LOCATION_KEY, JSON.stringify(snapshot));
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to persist last parked location:', e);
+    }
+  }, []);
+
+  const clearLastParkedLocation = useCallback(async (lotId?: string) => {
+    setLastParkedLocation((prev) => {
+      if (!prev) return null;
+      if (lotId && prev.lotId !== lotId) return prev;
+      return null;
+    });
+    try {
+      const existing = await AsyncStorage.getItem(LAST_PARKED_LOCATION_KEY);
+      if (!existing) return;
+      const parsed = JSON.parse(existing) as ParkedLocationSnapshot;
+      if (!lotId || parsed.lotId === lotId) {
+        await AsyncStorage.removeItem(LAST_PARKED_LOCATION_KEY);
+      }
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to clear parked location:', e);
+    }
+  }, []);
+
+  const restoreLastParkedLocation = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(LAST_PARKED_LOCATION_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as ParkedLocationSnapshot;
+      const parsedTime = new Date(parsed.timestamp).getTime();
+      const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+      if (!Number.isFinite(parsedTime) || Date.now() - parsedTime > MAX_AGE_MS) {
+        await AsyncStorage.removeItem(LAST_PARKED_LOCATION_KEY);
+        return;
+      }
+      setLastParkedLocation(parsed);
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to restore parked location:', e);
+    }
+  }, []);
+
+  const captureLastParkedLocation = useCallback(async (lotId: string) => {
+    let snapshot: ParkedLocationSnapshot | null = null;
+
+    try {
+      const current = await locationService.getCurrentPosition();
+      snapshot = {
+        lotId,
+        latitude: current.coords.latitude,
+        longitude: current.coords.longitude,
+        accuracy: current.coords.accuracy ?? null,
+        timestamp: new Date().toISOString(),
+      };
+    } catch {
+      const sample = latestLocationSampleRef.current;
+      if (sample) {
+        snapshot = {
+          lotId,
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          accuracy: sample.accuracy,
+          timestamp: new Date().toISOString(),
+        };
+      }
+    }
+
+    if (snapshot) {
+      // Reject obviously invalid captures (simulator/global mock location).
+      if (!isOnCampus(snapshot.latitude, snapshot.longitude)) {
+        if (__DEV__) {
+          console.log(`[EnhancedGeofencing] Ignored off-campus parked coordinate for ${lotId}`);
+        }
+        return;
+      }
+
+      const polygon = LOT_POLYGONS[lotId];
+      if (polygon && polygon.length >= 3) {
+        const inside = isPointInsidePolygon(snapshot.latitude, snapshot.longitude, polygon);
+        if (!inside) {
+          if (__DEV__) {
+            console.log(`[EnhancedGeofencing] Ignored parked coordinate outside lot polygon for ${lotId}`);
+          }
+          return;
+        }
+      }
+
+      await setAndPersistLastParkedLocation(snapshot);
+      if (__DEV__) {
+        console.log('[EnhancedGeofencing] Saved parked location:', snapshot);
+      }
+    }
+  }, [setAndPersistLastParkedLocation]);
+
+  const setCarpoolPassengerMode = useCallback(async (enabled: boolean) => {
+    setCarpoolPassengerModeState(enabled);
+    try {
+      await AsyncStorage.setItem(CARPOOL_MODE_KEY, String(enabled));
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to persist carpool mode:', e);
+    }
+  }, []);
+
+  const setCarpoolPassengerCount = useCallback(async (count: number) => {
+    const safeCount = Number.isFinite(count) ? Math.max(0, Math.min(8, Math.floor(count))) : 0;
+    setCarpoolPassengerCountState(safeCount);
+    try {
+      await AsyncStorage.setItem(CARPOOL_COUNT_KEY, String(safeCount));
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to persist carpool passenger count:', e);
     }
   }, []);
 
@@ -116,6 +319,14 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     lotId: string,
     eventType: 'ENTER' | 'EXIT'
   ) => {
+    if (carpoolPassengerMode) {
+      if (__DEV__) console.log(`[EnhancedGeofencing] Suppressed ${eventType} for ${lotId} (passenger carpool mode)`);
+      return;
+    }
+    if (__DEV__ && testLots.current.has(lotId)) {
+      console.log(`[EnhancedGeofencing] Suppressed backend ${eventType} for ${lotId} (test simulation)`);
+      return;
+    }
     const occupancyEventData = {
       lotId,
       eventType,
@@ -125,6 +336,66 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       await lotsApi.recordOccupancyEvent(occupancyEventData);
     } catch (error) {
       if (__DEV__) console.error(`[EnhancedGeofencing] Failed to send occupancy event:`, error);
+    }
+  }, [carpoolPassengerMode]);
+
+  const resolveOccupancyBaseline = useCallback(async (lotId: string): Promise<number> => {
+    const cached = lotOccupancyBeforeEnter.current.get(lotId);
+    if (typeof cached === 'number' && Number.isFinite(cached)) {
+      return cached;
+    }
+
+    try {
+      const lot = await lotsApi.getLotDetails(lotId, { forceRefresh: true });
+      const baseline = lot.estimated_occupancy ?? lot.current_occupancy ?? 0;
+      const safeBaseline = Number.isFinite(baseline) ? Math.max(0, baseline) : 0;
+      lotOccupancyBeforeEnter.current.set(lotId, safeBaseline);
+      return safeBaseline;
+    } catch (e) {
+      if (__DEV__) {
+        console.error('[EnhancedGeofencing] Failed to resolve occupancy baseline:', e);
+      }
+      lotOccupancyBeforeEnter.current.set(lotId, 0);
+      return 0;
+    }
+  }, []);
+
+  // Start carpool detection when occupancy increases due to a vehicle ENTER
+  const startCarpoolDetection = useCallback(async (lotId: string, occupancyBefore: number) => {
+    try {
+      // Create a synthetic ENTER event for the detection service
+      const detectionEvent: GeofenceEvent = {
+        eventType: 'ENTER',
+        regionId: lotId,
+        timestamp: new Date().toISOString(),
+        speed: 0,
+        activity: { type: 'still', confidence: 100 },
+      };
+
+      const knownDevices = carBluetooth.getKnownDeviceIds();
+      const sessionId = await carpoolDetectionService.startDetectionSession(
+        detectionEvent,
+        occupancyBefore,
+        knownDevices
+      );
+
+      lotCarpoolDetectionSessions.current.set(lotId, sessionId);
+
+      // Subscribe to Bluetooth connects for this session
+      const existingSub = lotBluetoothSubscriptions.current.get(lotId);
+      if (existingSub) existingSub.remove();
+
+      const btSub = carBluetooth.onConnect((event) => {
+        carpoolDetectionService.recordBluetoothDevice(sessionId, event.deviceAddress || event.deviceId || '');
+      });
+
+      lotBluetoothSubscriptions.current.set(lotId, btSub);
+
+      if (__DEV__) {
+        console.log(`[EnhancedGeofencing] Started carpool detection for ${lotId} (session: ${sessionId})`);
+      }
+    } catch (e) {
+      if (__DEV__) console.error('[EnhancedGeofencing] Failed to start carpool detection:', e);
     }
   }, []);
 
@@ -149,10 +420,18 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     if (event.eventType === 'ENTER') {
       if (!currentZones.current.has(event.regionId)) {
+        if (event.isTest) {
+          testLots.current.add(event.regionId);
+          lotOccupancyBeforeEnter.current.set(event.regionId, 0);
+        }
         currentZones.current.add(event.regionId);
         enterTimestamps.current.set(event.regionId, Date.now());
         setCurrentLotId(event.regionId);
         currentLotIdRef.current = event.regionId;
+
+        if (!event.isTest) {
+          void resolveOccupancyBaseline(event.regionId);
+        }
 
         // ── Determine parking session state based on how the user entered ──
         const existingState = lotParkingState.current.get(event.regionId);
@@ -188,7 +467,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         } else if (isPedestrianActivity) {
           // Walking into lot (e.g. shortcut through lot, or returning to car without
           // an existing session). Don't count for occupancy.
-          lotParkingState.current.set(event.regionId, 'WALK_IN');
+          setLotParkingState(event.regionId, 'WALK_IN');
           if (__DEV__) {
             Alert.alert(
               '[DEV] Walked Into Lot',
@@ -201,7 +480,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
           // just pulled in and stopped). Require stronger confirmation — only 'still' or
           // DWELL may promote to CONFIRMED_PARKED. This prevents the phantom +1 path:
           //   unknown ENTER → SDK fires on_foot → would falsely confirm parking.
-          lotParkingState.current.set(event.regionId, 'UNKNOWN_ENTRY');
+          setLotParkingState(event.regionId, 'UNKNOWN_ENTRY');
           if (__DEV__) {
             Alert.alert(
               '[DEV] Entered Lot (Unknown)',
@@ -213,14 +492,14 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         } else {
           // Vehicle entry (explicit in_vehicle, or ambiguous activity with driving speed).
           // Start confirmation — occupancy sent when activity transitions to 'still' or DWELL fires.
-          lotParkingState.current.set(event.regionId, 'PENDING_VEHICLE_ENTRY');
+          setLotParkingState(event.regionId, 'PENDING_VEHICLE_ENTRY');
 
           // Special case: ENTER with activity=still and near-zero speed means the user
           // is ALREADY stationary inside the lot (e.g. geofenceInitialTriggerEntry fired
           // on app launch while parked). Confirm immediately — onActivityChange won't
           // fire again for still→still.
           if (eventActivity === 'still' && eventSpeed < 1) {
-            lotParkingState.current.set(event.regionId, 'CONFIRMED_PARKED');
+            setLotParkingState(event.regionId, 'CONFIRMED_PARKED');
             // Send +1 after setup completes (below)
           }
 
@@ -270,7 +549,27 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         // (activity→still in handleActivityChange, or DWELL backup below).
         const enterState = lotParkingState.current.get(event.regionId);
         if (enterState === 'CONFIRMED_PARKED') {
+          await captureLastParkedLocation(event.regionId);
+          const occupancyBefore = await resolveOccupancyBaseline(event.regionId);
+          // Start carpool detection on this lot before sending occupancy
+          await startCarpoolDetection(event.regionId, occupancyBefore);
           await sendValidatedOccupancyEvent(event.regionId, 'ENTER');
+          
+          // Trigger carpool analysis after a short delay to collect Bluetooth signals
+          setTimeout(async () => {
+            const sessionId = lotCarpoolDetectionSessions.current.get(event.regionId);
+            if (sessionId) {
+              const result = await carpoolDetectionService.analyzeCarpool(sessionId, occupancyBefore + 1);
+              if (result) {
+                setLatestCarpoolDetectionResult(result);
+                lotCarpoolDetectionResults.current.set(event.regionId, result);
+                
+                if (__DEV__) {
+                  console.log(`[EnhancedGeofencing] Carpool analysis: ${result.action} (confidence: ${result.confidence.toFixed(2)})`);
+                }
+              }
+            }
+          }, 3000); // 3s delay to collect signals
         }
       }
     } else if (event.eventType === 'DWELL') {
@@ -289,8 +588,29 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
       // This catches edge cases where activity recognition missed the still transition.
       const state = lotParkingState.current.get(event.regionId);
       if (state === 'PENDING_VEHICLE_ENTRY' || state === 'UNKNOWN_ENTRY') {
-        lotParkingState.current.set(event.regionId, 'CONFIRMED_PARKED');
+        setLotParkingState(event.regionId, 'CONFIRMED_PARKED');
+        await captureLastParkedLocation(event.regionId);
+        const occupancyBefore = await resolveOccupancyBaseline(event.regionId);
+        
+        // Start carpool detection on this lot before sending occupancy
+        await startCarpoolDetection(event.regionId, occupancyBefore);
         await sendValidatedOccupancyEvent(event.regionId, 'ENTER');
+
+        // Trigger carpool analysis after a short delay to collect Bluetooth signals
+        setTimeout(async () => {
+          const sessionId = lotCarpoolDetectionSessions.current.get(event.regionId);
+          if (sessionId) {
+            const result = await carpoolDetectionService.analyzeCarpool(sessionId, occupancyBefore + 1);
+            if (result) {
+              setLatestCarpoolDetectionResult(result);
+              lotCarpoolDetectionResults.current.set(event.regionId, result);
+              
+              if (__DEV__) {
+                console.log(`[EnhancedGeofencing] Carpool analysis (DWELL): ${result.action} (confidence: ${result.confidence.toFixed(2)})`);
+              }
+            }
+          }
+        }, 3000); // 3s delay to collect signals
 
         if (__DEV__) {
           Alert.alert(
@@ -387,7 +707,24 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         if (wasConfirmedParked && !isVehicleExit) {
           // Walking to class — car still parked. Keep CONFIRMED_PARKED for re-entry.
         } else {
-          lotParkingState.current.delete(event.regionId);
+          if (wasConfirmedParked && isVehicleExit) {
+            await clearLastParkedLocation(event.regionId);
+          }
+          clearLotParkingState(event.regionId);
+          testLots.current.delete(event.regionId);
+          lotOccupancyBeforeEnter.current.delete(event.regionId);
+        }
+
+        // Clean up carpool detection session and Bluetooth subscription
+        const carpoolSessionId = lotCarpoolDetectionSessions.current.get(event.regionId);
+        if (carpoolSessionId) {
+          carpoolDetectionService.endDetectionSession(carpoolSessionId);
+          lotCarpoolDetectionSessions.current.delete(event.regionId);
+        }
+        const btSub = lotBluetoothSubscriptions.current.get(event.regionId);
+        if (btSub) {
+          btSub.remove();
+          lotBluetoothSubscriptions.current.delete(event.regionId);
         }
 
         // Downgrade back to geofence-only (low power) if no lots active
@@ -403,7 +740,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     // Persist parking state after every geofence event (covers all set/delete paths above)
     await persistParkingState();
-  }, [sendValidatedOccupancyEvent, persistParkingState]);
+  }, [captureLastParkedLocation, clearLastParkedLocation, clearLotParkingState, persistParkingState, resolveOccupancyBaseline, sendValidatedOccupancyEvent, setLotParkingState, startCarpoolDetection]);
 
   // Keep ref in sync for the setup effect
   useLayoutEffect(() => {
@@ -423,6 +760,14 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
 
     const { latitude, longitude, speed, accuracy, altitude, heading } = location.coords;
     const safeSpeed = speed != null ? speed : -1;
+
+    latestLocationSampleRef.current = {
+      lotId: currentLotIdRef.current,
+      latitude,
+      longitude,
+      accuracy: accuracy ?? null,
+      timestamp: new Date().toISOString(),
+    };
 
     leaveDetectionService.updateLocation({
       latitude,
@@ -492,7 +837,8 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         (parkState === 'UNKNOWN_ENTRY' && isStill);
 
       if (shouldConfirm) {
-        lotParkingState.current.set(lotId, 'CONFIRMED_PARKED');
+        setLotParkingState(lotId, 'CONFIRMED_PARKED');
+        await captureLastParkedLocation(lotId);
         await sendValidatedOccupancyEvent(lotId, 'ENTER');
         anyConfirmed = true;
 
@@ -530,7 +876,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     if (anyConfirmed) {
       await persistParkingState();
     }
-  }, [sendValidatedOccupancyEvent, persistParkingState]);
+  }, [captureLastParkedLocation, persistParkingState, sendValidatedOccupancyEvent, setLotParkingState]);
 
   // Feed SDK motion change events to leave detection + behavioral collector
   const handleMotionChange = useCallback((event: MotionChangeEvent) => {
@@ -550,7 +896,8 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     let anyConfirmed = false;
     for (const [lotId, parkState] of lotParkingState.current.entries()) {
       if (parkState === 'PENDING_VEHICLE_ENTRY' || parkState === 'UNKNOWN_ENTRY') {
-        lotParkingState.current.set(lotId, 'CONFIRMED_PARKED');
+        setLotParkingState(lotId, 'CONFIRMED_PARKED');
+        await captureLastParkedLocation(lotId);
         await sendValidatedOccupancyEvent(lotId, 'ENTER');
         anyConfirmed = true;
 
@@ -568,7 +915,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     if (anyConfirmed) {
       await persistParkingState();
     }
-  }, [sendValidatedOccupancyEvent, persistParkingState]);
+  }, [captureLastParkedLocation, sendValidatedOccupancyEvent, persistParkingState]);
 
   const handleCarBluetoothConnect = useCallback(() => {
     sharedBehavioralCollector.updateCarBluetoothState(true);
@@ -757,6 +1104,8 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         // Restore parking state BEFORE event listeners fire so
         // geofenceInitialTriggerEntry sees existing CONFIRMED_PARKED state.
         await restoreParkingState();
+        await restoreLastParkedLocation();
+        await restoreCarpoolPreferences();
 
         await locationService.initialize();
         await locationService.requestPermissions();
@@ -869,14 +1218,53 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
     // effect runs once on mount.
   }, []);
 
+  useEffect(() => {
+    if (!currentLotId) {
+      setCurrentValidationStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshValidationStatus = async () => {
+      try {
+        const analysis = await parkingValidationService.getCurrentValidationStatus(currentLotId);
+        if (!cancelled) {
+          setCurrentValidationStatus(analysis);
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.error('[EnhancedGeofencing] Failed to refresh validation status:', error);
+        }
+      }
+    };
+
+    void refreshValidationStatus();
+    const interval = setInterval(() => {
+      void refreshValidationStatus();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentLotId]);
+
   const contextValue: EnhancedGeofencingContextType = useMemo(() => {
     const pvDebug = parkingValidationService.getDebugInfo();
     const ldDebug = leaveDetectionService.getDebugInfo();
     return {
       isGeofencingActive: true,
       currentLotId,
+      parkedLotId,
+      lastParkedLocation,
       currentValidationStatus,
       currentLeaveIntent,
+      carpoolPassengerMode,
+      carpoolPassengerCount,
+      latestCarpoolDetectionResult,
+      setCarpoolPassengerMode,
+      setCarpoolPassengerCount,
       debugInfo: {
         activeSessions: pvDebug.activeSessions,
         isCollectingData: pvDebug.isCollectingData,
@@ -884,7 +1272,7 @@ export const EnhancedGeofencingProvider: React.FC<{ children: ReactNode }> = ({ 
         isMonitoringLeave: ldDebug.isMonitoring,
       },
     };
-  }, [currentLotId, currentValidationStatus, currentLeaveIntent]);
+  }, [currentLotId, parkedLotId, lastParkedLocation, currentValidationStatus, currentLeaveIntent, carpoolPassengerMode, carpoolPassengerCount, latestCarpoolDetectionResult, setCarpoolPassengerMode, setCarpoolPassengerCount]);
 
   return (
     <EnhancedGeofencingContext.Provider value={contextValue}>
@@ -899,8 +1287,15 @@ export const useEnhancedGeofencing = (): EnhancedGeofencingContextType => {
     return {
       isGeofencingActive: false,
       currentLotId: null,
+      parkedLotId: null,
+      lastParkedLocation: null,
       currentValidationStatus: null,
       currentLeaveIntent: null,
+      carpoolPassengerMode: false,
+      carpoolPassengerCount: 0,
+      latestCarpoolDetectionResult: null,
+      setCarpoolPassengerMode: async () => {},
+      setCarpoolPassengerCount: async () => {},
       debugInfo: {
         activeSessions: 0,
         isCollectingData: false,
