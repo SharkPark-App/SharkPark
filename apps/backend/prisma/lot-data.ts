@@ -430,9 +430,6 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 8,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
-    // Beachside (G14) wasn't returned in the 2026-05 ParkMobile zone search
-    // for the campus area. Zone 3992 sits ~1.3mi off-campus and may map to
-    // Beachside Village at 4835 PCH — verify on the next drift check.
     park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
@@ -691,5 +688,4 @@ export const parkingLots: LotSeed[] = [
 // currently mapped to any lot above:
 //   - 3938: user-supplied as "G15/S1" but no such lot exists in this seed
 //   - 3940, 3943, 3983, 3934: unidentified (possibly Carpenter Center or event)
-//   - 3992: ~1.3mi off-campus — candidate for Beachside (G14) if confirmed
 // Re-check on each drift-detection pass and update this list.
