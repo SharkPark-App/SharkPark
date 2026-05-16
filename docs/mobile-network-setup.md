@@ -8,7 +8,7 @@ This guide helps team members configure the mobile app to connect to the local b
 ### 1. Start Backend Services
 ```bash
 # From project root
-docker-compose -f docker/docker-compose.yml up -d  # Start PostgreSQL 17 + MinIO
+docker compose -f docker/docker-compose.yml up -d  # Start PostgreSQL 17 + MinIO
 pnpm db:setup     # Create database tables (first time only)
 pnpm db:seed      # Seed with test data (first time only)
 cd apps/backend && pnpm dev  # Start backend API
@@ -62,7 +62,7 @@ curl http://localhost:3000/api/v1/lots
 4. ✅ Check your phone and computer are on same WiFi network
 
 ### Backend can't connect to database
-1. ✅ Start Docker services: `docker-compose -f docker/docker-compose.yml up -d`
+1. ✅ Start Docker services: `docker compose -f docker/docker-compose.yml up -d`
 2. ✅ Run setup: `pnpm db:setup && pnpm db:seed`
 
 ### IP changed after switching networks

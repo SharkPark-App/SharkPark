@@ -30,8 +30,8 @@ platform:
 |----------|------------------|
 | iOS simulator | `http://localhost:3000` |
 | Android emulator | `http://10.0.2.2:3000` |
-| Physical device (dev) | LAN IP (set via `API_BASE_URL` env or `src/config/api.config.ts`) |
-| Production | `https://api.sharkpark.csulb.edu` |
+| Physical device (dev) | LAN IP (set via `API_BASE_URL` env or `src/services/api/config.ts`) |
+| Production | `https://api.sharkpark.app` |
 
 ## Tech stack
 
@@ -71,7 +71,7 @@ end-to-end picture; the short version from the mobile side is:
 SafeAreaProvider
   └─ ThemeProvider          // colors, dark/light mode
      └─ AuthProvider         // Azure AD SSO state, JWT refresh
-        └─ SimpleGeofencingProvider  // opt-in presence detection
+        └─ EnhancedGeofencingProvider  // opt-in presence detection + parking validation
            └─ NavigationContainer
               └─ Root navigator
 ```
@@ -90,7 +90,7 @@ SafeAreaProvider
 | `LocationPermissionScreen` | Background-location explainer + request |
 | `ForceUpdateScreen` | Blocks the app when below the backend's minimum supported version |
 
-### API client (`src/services/`, `src/config/api.config.ts`)
+### API client (`src/services/api/`, `src/services/api/config.ts`)
 
 Thin `axios`/`fetch` wrappers that:
 
@@ -107,7 +107,7 @@ device Keychain. The backend (`apps/backend`) validates these JWTs with the
 Passport Azure AD strategy using JWKS — the mobile app never sees client
 secrets.
 
-### Geofencing (`src/utils/geofencing/`, `src/context/SimpleGeofencingProvider.tsx`)
+### Geofencing (`src/utils/geofencing/`, `src/context/EnhancedGeofencingProvider.tsx`)
 
 - Opt-in: requires the user to grant background-location and accept the
   presence-collection consent in onboarding.
@@ -174,7 +174,7 @@ files via `fileMock.js`).
 - **`pod install` fails with Ruby errors** — your shell is using system Ruby.
   Install Ruby 3.3.11 via `rbenv install 3.3.11 && rbenv local 3.3.11`.
 - **Android emulator can't reach the backend** — the emulator host alias is
-  `10.0.2.2`, not `localhost`. This is already handled by `api.config.ts`.
+  `10.0.2.2`, not `localhost`. This is already handled by `src/services/api/config.ts`.
 - **Forecast screen shows "heuristic" badge** — backend has not returned an
   ML-backed forecast for that lot (cold-start window, ML job has not yet run,
   or upstream failure). Check backend logs / Sentry. This is expected during

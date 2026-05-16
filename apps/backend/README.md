@@ -24,8 +24,8 @@ container start by the entry-point file:
 
 | Process | Entry | Fly process group | Purpose |
 |---------|-------|-------------------|---------|
-| HTTP API | [`src/main.ts`](src/main.ts) | `app` | Serves `/api/v1/*` REST + the `/shuttles` socket.io namespace. Autostop min=0; readiness gate at `/api/v1/health/ready`. |
-| Cron / scheduler | [`src/scheduler-main.ts`](src/scheduler-main.ts) | `cron` | Boots a Nest standalone application context (no HTTP listener) that owns all 35 `@nestjs/schedule` jobs. Sentry Cron check-ins + Postgres advisory locks per job. |
+| HTTP API | [`src/main.ts`](src/main.ts) | `app` | Serves `/api/v1/*` REST + the `/shuttles` socket.io namespace. Kept warm with `min_machines_running=1` (cold boot is ~10–15s); readiness gate at `/api/v1/health/ready`. 512 MB VM. |
+| Cron / scheduler | [`src/scheduler-main.ts`](src/scheduler-main.ts) | `cron` | Boots a Nest standalone application context (no HTTP listener) that owns all 29 `@nestjs/schedule` jobs. Sentry Cron check-ins + Postgres advisory locks per job. 1 GB VM (sized for transient ~700 MB spikes from spawned Python ML predictors). |
 
 Both processes share the same module graph, Prisma client, Redis client, and
 Sentry SDK — only what's mounted at boot differs. The split lets us scale and
@@ -49,7 +49,7 @@ src/
 ├── redis/            # Global ioredis cache module (shared shuttle state across instances)
 ├── reliability/      # 5-factor weighted reliability scoring (penetration, freshness, frequency, sample size, history)
 ├── reports/          # User-submitted lot status reports
-├── scheduler/        # Standalone cron app + 35 @nestjs/schedule jobs
+├── scheduler/        # Standalone cron app + 29 @nestjs/schedule jobs
 ├── shuttle-tracker/  # PassioGO WS client + /shuttles socket.io gateway
 ├── users/            # Profiles, favorites, notification prefs, account deletion, /me/data export
 ├── weather/          # NWS api.weather.gov client + /weather/impact
@@ -65,7 +65,7 @@ files. Domain types shared with the mobile app live in
 
 ## Cron jobs
 
-All 35 jobs are defined under [`src/scheduler/jobs/`](src/scheduler/jobs/) and
+All 29 jobs are defined under [`src/scheduler/jobs/`](src/scheduler/jobs/) and
 registered through [`cron-runner.service.ts`](src/scheduler/cron-runner.service.ts),
 which provides:
 

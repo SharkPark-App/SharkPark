@@ -68,8 +68,8 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 | **Backend** | NestJS 11 (Node.js) | TypeScript-native framework with built-in support for modules, dependency injection, guards, pipes, and scheduled tasks. The modular architecture maps cleanly to our domain (lots, users, events, weather, reliability). Comes with first-class testing support. |
 | **ORM** | Prisma 7 | Type-safe database queries generated from a schema file (`prisma/schema.prisma`). Catches query errors at compile time instead of runtime, auto-generates migrations, and provides a visual data browser (`prisma studio`). Uses the `@prisma/adapter-pg` driver adapter for direct PostgreSQL connection pooling. |
 | **Database** | PostgreSQL 17 (local) / Neon PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events are linked to nearby lots for the in-app notification surface). We run standard PostgreSQL 17 in Docker for local development. In production we use Neon serverless Postgres (us-west-2): branchable, autoscaling, point-in-time recovery up to 7 days. The runtime always connects through Neon's pooled endpoint (`-pooler.`) with `pgbouncer=true` so we survive transaction-mode pooling. The only change between environments is the `DATABASE_URL` connection string. |
-| **Hosting** | Fly.io (sharkpark-api, region=lax) | Two-process model on a single Fly app: an `app` process running the HTTP NestJS API (autostop min=0) and a `cron` process running a standalone Nest application context (`scheduler-main.ts`) that owns all 35 `@nestjs/schedule` jobs. Sized at 512 MB each. Rolling deploys gated by `/api/v1/health/ready`. |
-| **Object storage** | MinIO (local) / Cloudflare R2 (production) | S3-compatible. Used for nightly `pg_dump` backups (35-day lifecycle) and future ML artifact exports. R2 has zero egress fees — ideal for bandwidth-heavy backup verification. |
+| **Hosting** | Fly.io (sharkpark-api, region=lax) | Two-process model on a single Fly app: an `app` process running the HTTP NestJS API (kept warm with `min_machines_running=1` because cold boot is ~10–15s end-to-end — Fly boot + Node + Nest module graph + Prisma→Neon connect — which is unacceptable for the mobile UX) and a `cron` process running a standalone Nest application context (`scheduler-main.ts`) that owns all 29 `@nestjs/schedule` jobs. The `app` VM is sized at 512 MB; the `cron` VM is sized at 1 GB to absorb transient ~700 MB spikes from spawned Python ML predictors. Rolling deploys gated by `/api/v1/health/ready`. |
+| **Object storage** | MinIO (local) / Cloudflare R2 (production) | S3-compatible. Used for nightly `pg_dump` backups (written to `daily/YYYY-MM-DD.dump.gz`; retention is managed by an R2 bucket lifecycle rule, not by application code) and ML artifact exports. R2 has zero egress fees — ideal for bandwidth-heavy backup verification and model artifact downloads. |
 | **Observability** | Sentry (errors + Crons) + nestjs-pino logs | Sentry owns errors, performance, and cron monitor check-ins for every scheduled job. nestjs-pino emits structured JSON logs with the process tag (`app` vs `scheduler`) for log-drain filtering. |
 | **Security** | Helmet, Throttler, CORS, Passport JWT | Helmet sets security HTTP headers. The throttler rate-limits to 20 requests per 10 seconds per IP. CORS is locked down in production. Passport validates Azure AD JWTs against Microsoft's JWKS endpoint with automatic key rotation. |
 | **Monorepo** | pnpm 10 workspaces + Turborepo | pnpm's strict dependency resolution prevents phantom dependencies. Turborepo parallelizes builds, tests, and lints across workspaces with caching. Shared packages (`packages/types`, `packages/utils`) are consumed by both the backend and mobile app. |
@@ -80,26 +80,68 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 ## Architecture
 
 ```
-┌──────────────────┐   REST / WS   ┌──────────────────────┐
-│  React Native    │ ────────────> │  NestJS API (Fly)    │
-│  iOS / Android   │ <──────────── │  /api/v1/*           │
-│  (apps/mobile)   │  socket.io    │  app process (HTTP)  │
-└──────────────────┘               │  cron process        │
-                                   │  (scheduler-main.ts) │
-                                   └──┬───────────────┬───┘
-                                      │ Prisma ORM    │
-                              ┌───────▼───────┐  ┌────▼──────────┐
-                              │  PostgreSQL   │  │  Redis        │
-                              │  (Docker dev) │  │  (Fly Redis   │
-                              │  (Neon prod)  │  │   prod cache) │
-                              └───────────────┘  └───────────────┘
-                                      ▲                  ▲
-                              ┌───────┴───────┐  ┌───────┴────────┐
-                              │  Cloudflare   │  │  PassioGO WS   │
-                              │  R2 backups   │  │  (live shuttle │
-                              │  + ML exports │  │   positions)   │
-                              └───────────────┘  └────────────────┘
+                        ┌───────────────────────┐
+                        │  Cloudflare proxy     │  TLS 1.3, HSTS, edge cache
+                        │  api.sharkpark.app    │
+                        └──────────┬────────────┘
+                                   │  REST / socket.io
+┌──────────────────┐               ▼
+│  React Native    │   ┌───────────────────────────────────┐
+│  iOS / Android   │◀─▶│  Fly.io app: sharkpark-api (lax)  │
+│  (apps/mobile)   │   │  ┌─────────────────────────────┐  │
+└──────────────────┘   │  │ app process  (512 MB)       │  │
+        ▲              │  │   NestJS HTTP /api/v1/*     │  │
+        │ FCM push     │  │   /shuttles socket.io ns    │  │
+        │              │  │   min_machines_running = 1  │  │
+┌───────┴────────┐     │  └─────────────────────────────┘  │
+│  Firebase FCM  │◀────│  ┌─────────────────────────────┐  │
+└────────────────┘     │  │ cron process  (1 GB)        │  │
+                       │  │   scheduler-main.ts         │  │
+┌────────────────┐     │  │   29 @nestjs/schedule jobs  │──┼──┐ spawn
+│  Azure AD      │◀───▶│  │   _ml-runner.ts             │  │  │ python -m
+│  (Entra ID)    │     │  └─────────────────────────────┘  │  │ scripts.predict_*
+└────────────────┘     └────┬────────────┬─────────────┬───┘  │
+                            │ Prisma     │ ioredis     │ S3   ▼
+                            ▼            ▼             │  ┌───────────────────────┐
+                  ┌──────────────────┐ ┌────────┐      │  │  sharkpark-ml (Python)│
+                  │  PostgreSQL 17   │ │ Redis  │      │  │  services/ml/         │
+                  │  Docker (dev)    │ │ (prod) │      │  │  ┌─────────────────┐  │
+                  │  Neon us-west-2  │ │        │      │  │  │ predict_short_  │  │
+                  │  pooled endpoint │ └────────┘      │  │  │  term (15 min)  │  │
+                  └────────┬─────────┘                 │  │  │ predict_long_   │  │
+                           │ ▲                         │  │  │  term (daily)   │  │
+                           │ │ features + writes       │  │  │ train_*         │  │
+                           │ └─────────────────────────┼──│  │  (notebooks/CI) │  │
+                           ▼                           ▼  │  └────────┬────────┘  │
+                  ┌──────────────────┐         ┌─────────────┐ │ MLflow│           │
+                  │  Cloudflare R2   │◀────────│  artifacts  │◀┼───────┘           │
+                  │  daily pg_dumps  │         │  + parquet  │ │  model registry   │
+                  │  + ML artifacts  │         │  exports    │ │  (mlflow.db,      │
+                  └──────────────────┘         └─────────────┘ │   mlruns/)        │
+                            ▲                                  └───────────────────┘
+            ┌───────────────┼───────────────┬───────────────┐
+            │               │               │               │
+   ┌────────┴──────┐ ┌──────┴───────┐ ┌─────┴────────┐ ┌────┴─────────┐
+   │  PassioGO WS  │ │  NWS API     │ │  LBSU sports │ │  Sentry      │
+   │  (live shuttle│ │  (forecasts) │ │  + events    │ │  (errors +   │
+   │   positions)  │ │              │ │   scrapers   │ │  cron checks)│
+   └───────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
 ```
+
+The ML service is **not a long-running daemon**. It's a Python package
+(`services/ml/`, installed into the cron container's `/opt/venv`) that the
+NestJS `cron` process invokes as short-lived `python -m` subprocesses via
+[`_ml-runner.ts`](apps/backend/src/scheduler/jobs/_ml-runner.ts). Each
+predictor reads recent occupancy + weather + event features from Neon, loads
+the current production model from the local MLflow registry, writes
+predictions back to Postgres, and exits — which is why the cron VM is sized
+at 1 GB to absorb the ~700 MB transient spike from a Python+joblib+pandas
+process holding a fitted gradient-boosting model in memory. Training runs
+out-of-band (notebooks + a scripted CI job) and publishes new model versions
+to the same MLflow registry; the backend's `model-version-drift` cron flags
+when a newer registered model is available than what production is loading.
+
+
 
 Observability is wired through Sentry (errors + cron monitor check-ins for every
 scheduled job) and structured JSON logs (nestjs-pino) tagged with the originating
@@ -117,7 +159,7 @@ The backend is organized into feature modules, each with its own controller, ser
 - **Reliability** — Real-time confidence scoring for each lot's occupancy estimate, computed from the five-factor weighted model described above.
 - **Weather** — Current conditions and 7-day forecast (NWS api.weather.gov), used as ML features and exposed via the `/weather/impact` endpoint.
 - **Shuttle Tracker** — Live shuttle tracking via a persistent PassioGO WebSocket connection. Routes, stops, and shuttle metadata are refreshed daily.
-- **Scheduler** — Standalone Nest application context (`src/scheduler-main.ts`) that owns all 35 `@nestjs/schedule` jobs (snapshots, weather, transit, backups, retention prune, push fan-out, ML inference, drift checks, model-version drift detection, etc.). Runs in its own Fly process group with Sentry Cron check-ins and Postgres advisory locks for safe concurrency.
+- **Scheduler** — Standalone Nest application context (`src/scheduler-main.ts`) that owns all 29 `@nestjs/schedule` jobs (snapshots, weather, transit, backups, retention prune, push fan-out, ML inference, drift checks, model-version drift detection, etc.). Runs in its own Fly process group with Sentry Cron check-ins and Postgres advisory locks for safe concurrency.
 - **Admin** — Operator endpoints under `/api/v1/admin/*` for ML-pipeline status, snapshot consensus inspection, and per-lot penetration-rate diagnostics.
 - **Min-Version** — `/api/v1/min-version` endpoint that the mobile app polls on launch to enforce the minimum supported client version (force-update gate).
 - **Health** — `/api/v1/health/live` (process up) and `/api/v1/health/ready` (DB reachable) probes used by Fly's rolling-deploy health checks.
@@ -128,9 +170,9 @@ The backend is organized into feature modules, each with its own controller, ser
 The mobile app uses a provider-based architecture:
 
 - **AuthContext** — Manages Azure AD login state and token refresh.
-- **SimpleGeofencingProvider** — Initializes GPS tracking, monitors geofence regions, fires anonymous events to the backend, and prevents duplicate alerts via an in-memory set.
+- **EnhancedGeofencingProvider** — Initializes GPS tracking via `react-native-background-geolocation`, monitors geofence regions, fires anonymous events to the backend, and prevents duplicate alerts via an in-memory set. Pairs with `parkingValidationService` for confirming actual parking events vs drive-throughs.
 - **ThemeContext** — Light/dark mode support.
-- **API service layer** — Centralized HTTP client with platform-aware URL resolution (Android emulator uses `10.0.2.2`, iOS simulator uses `localhost`, production uses `api.sharkpark.csulb.edu`).
+- **API service layer** — Centralized HTTP client with platform-aware URL resolution (Android emulator uses `10.0.2.2`, iOS simulator uses `localhost`, production uses `api.sharkpark.app`).
 
 ### How the pieces connect
 
@@ -138,7 +180,7 @@ It helps to read the system as four concentric loops, each writing the data
 the next loop reads:
 
 1. **Presence loop (mobile → backend → DB).** The mobile app's
-   `SimpleGeofencingProvider` watches GPS via `react-native-background-geolocation`
+   `EnhancedGeofencingProvider` watches GPS via `react-native-background-geolocation`
    and runs the polygon ray-cast in [`apps/mobile/src/utils/geofencing`](apps/mobile/src/utils/geofencing).
    On a transition it `POST /api/v1/occupancy-events` with the lot ID, an
    anonymous device UUID, and an HMAC-SHA256 signature (key:
@@ -527,7 +569,7 @@ SharkPark/
 │   │   │   ├── redis/            # Global ioredis cache module (shared shuttle state)
 │   │   │   ├── reliability/      # Multi-factor weighted reliability scoring
 │   │   │   ├── reports/          # User-submitted lot status reports
-│   │   │   ├── scheduler/        # Standalone cron process: 35 @nestjs/schedule jobs
+│   │   │   ├── scheduler/        # Standalone cron process: 29 @nestjs/schedule jobs
 │   │   │   ├── shuttle-tracker/  # Live shuttle tracking (PassioGO WS + socket.io gateway)
 │   │   │   ├── users/            # Profiles, favorites, notification preferences
 │   │   │   ├── weather/          # Weather data for demand correlation

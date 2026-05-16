@@ -3,7 +3,7 @@
 Marketing + legal site for SharkPark, served at <https://sharkpark.app>.
 
 Built with [Astro](https://astro.build) (static output) and Tailwind CSS v4.
-Deployed to Cloudflare Pages.
+Deployed to **Cloudflare Workers** using the [Static Assets](https://developers.cloudflare.com/workers/static-assets/) pattern (Worker name `sharkpark-marketing`, configured in [`wrangler.jsonc`](wrangler.jsonc)).
 
 ## Why this exists
 
@@ -56,46 +56,52 @@ pnpm --filter @sharkpark/marketing preview
 
 ## Things you MUST update before going to production
 
-1. **Release-keystore SHA-256 fingerprint** in
-   [`public/.well-known/assetlinks.json`](public/.well-known/assetlinks.json)
-   — replace the `REPLACE_WITH_...` placeholder.
-2. **App Store and Play Store URLs** in [`src/consts.ts`](src/consts.ts) — set
+1. **App Store and Play Store URLs** in [`src/consts.ts`](src/consts.ts) — set
    `appStoreUrl` and `playStoreUrl` once the listings go live. Until then both
    buttons render as inert anchors (`#`).
-3. **Mailing address** in `privacy.astro` — required by some store reviewers
+2. **Mailing address** in `privacy.astro` — required by some store reviewers
    for a fully compliant privacy policy.
-4. **Status page URL** in `src/consts.ts` — point at the real Better Stack /
-   status page when it's ready.
+3. **Release-keystore SHA-256 fingerprint** in
+   [`public/.well-known/assetlinks.json`](public/.well-known/assetlinks.json)
+   — already populated for the current release keystore. If the keystore is
+   rotated, regenerate via `keytool -list -v -keystore release.keystore` and
+   replace the value in `sha256_cert_fingerprints`.
 
 ## Deploying
 
 Production deploys happen automatically from `main` via the GitHub Actions
-workflow at [`.github/workflows/deploy-marketing.yml`](../../.github/workflows/deploy-marketing.yml).
+workflow at [`.github/workflows/deploy-marketing.yml`](../../.github/workflows/deploy-marketing.yml),
+which builds with Astro and ships to Cloudflare via `wrangler deploy`.
 
-Pull-request preview deploys are handled directly by the Cloudflare Pages
-GitHub integration (no workflow needed).
+To deploy manually from a local checkout (requires `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` in your shell environment):
+
+```bash
+pnpm --filter @sharkpark/marketing build
+cd apps/marketing && pnpm exec wrangler deploy
+```
+
+There is no separate preview-deploy pipeline today — PR previews can be tested
+locally with `pnpm --filter @sharkpark/marketing preview`.
 
 ### Required GitHub Actions secrets
 
 | Secret | Where to get it |
 |--------|----------------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens. Use the **Cloudflare Pages: Edit** template. |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens. Use the **Edit Cloudflare Workers** template (needs `Workers Scripts: Edit` and `Account: Read`). |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → right sidebar. |
 
-### One-time Cloudflare Pages setup
+### One-time Cloudflare Workers setup
 
-1. Cloudflare dashboard → **Workers & Pages** → **Create application** →
-   **Pages** → **Connect to Git**.
-2. Pick this repo. Set:
-   - **Project name:** `sharkpark-marketing`
-   - **Production branch:** `main`
-   - **Build command:** _leave blank_ (we use the GH Action).
-   - **Build output directory:** `apps/marketing/dist`
-3. After the first deploy, go to the project's **Custom domains** tab and add
-   `sharkpark.app` and `www.sharkpark.app`. Cloudflare auto-issues the certs
-   and (for the apex) configures CNAME flattening.
-4. Update DNS for the apex if it isn't already pointed: a CNAME from
-   `sharkpark.app` → `sharkpark-marketing.pages.dev` (CF flattens).
+The Worker is created on the first successful `wrangler deploy` — no
+click-ops in the Cloudflare dashboard is required. After the first deploy:
+
+1. Cloudflare dashboard → **Workers & Pages** → `sharkpark-marketing` →
+   **Settings** → **Domains & Routes**.
+2. Add custom domains `sharkpark.app` and `www.sharkpark.app`. Cloudflare
+   auto-issues the certs and wires the route.
+3. Confirm `wrangler.jsonc`'s `assets.not_found_handling = "404-page"` is
+   serving the Astro-built `dist/404.html`.
 
 ### Verifying the well-known files after first production deploy
 
