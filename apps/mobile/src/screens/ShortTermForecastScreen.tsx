@@ -24,6 +24,7 @@ import { useAuth } from '../context/AuthContext';
 import {getOccupancyColorGradient, getReadableTextColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
 import { LotAmenities } from '../components/LotAmenities';
+import { VisitorPricingCard } from '../components/VisitorPricingCard';
 import { EventBanner } from '../components/EventBanner';
 import { useEvents } from '../hooks/useEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
@@ -394,6 +395,9 @@ export function ShortTermForecastScreen() {
 
         {/* Nearby shuttle stop ETAs */}
         <NearbyTransitCard nearbyStops={nearbyStops} colors={colors} />
+
+        {/* Visitor pricing + ParkMobile deep link */}
+        <VisitorPricingCard lot={lot} />
 
         {/* Lot Amenities & Details */}
         <LotAmenities lot={lot} />

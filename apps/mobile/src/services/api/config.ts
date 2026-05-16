@@ -71,6 +71,7 @@ export const API_CONFIG = {
     WEATHER: '/weather',
     EVENTS_FOR_LOT: (lotId: string) => `/events/for-lot/${lotId}`,
     LOT_NEARBY_EVENTS: (lotId: string) => `/lots/${lotId}/nearby-events`,
+    PERMIT_FEES: '/permit-fees',
   },
 
   // Default headers for all requests.

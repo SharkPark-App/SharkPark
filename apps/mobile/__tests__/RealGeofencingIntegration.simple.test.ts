@@ -65,6 +65,13 @@ describe('Real Geofencing Integration (Simple)', () => {
       metadata_confidence: 'MEDIUM' as const,
       timestamp: '2024-01-01T00:00:00Z',
       advisories: [],
+      park_mobile_zones: [],
+      applied_fees: {
+        short_term: null,
+        daily: null,
+        evening_weekend: { price: 10, conditions: 'After 5:30 PM Mon–Fri; all day Sat–Sun' },
+        overnight: null,
+      },
     },
     {
       id: 'cltest000000000002',
@@ -116,6 +123,13 @@ describe('Real Geofencing Integration (Simple)', () => {
       metadata_confidence: 'HIGH' as const,
       timestamp: '2024-01-01T00:00:00Z',
       advisories: [],
+      park_mobile_zones: [],
+      applied_fees: {
+        short_term: null,
+        daily: null,
+        evening_weekend: { price: 10, conditions: 'After 5:30 PM Mon–Fri; all day Sat–Sun' },
+        overnight: null,
+      },
     },
   ];
 

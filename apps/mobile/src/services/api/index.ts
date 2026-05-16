@@ -11,7 +11,7 @@ export { apiService, ApiError, BackgroundLocationRequiredError } from './base';
 export type { ApiResponse } from './base';
 
 // Lots service
-export { lotsApi } from './lots';
+export { lotsApi, pickPreferredParkMobileZone, UMBRELLA_PARKMOBILE_ZONES } from './lots';
 export type {
   ParkingLot,
   ParkingLotResponse,
@@ -20,6 +20,8 @@ export type {
   GetLotsParams,
   GetHistoryParams,
   LotRecommendation,
+  AppliedFees,
+  CsulbPermitFees,
 } from './lots';
 
 // Events service

@@ -116,6 +116,10 @@ jest.mock('../src/components/LotAmenities', () => ({
   LotAmenities: () => null,
 }));
 
+jest.mock('../src/components/VisitorPricingCard', () => ({
+  VisitorPricingCard: () => null,
+}));
+
 jest.mock('../src/components/EventBanner', () => ({
   EventBanner: () => null,
 }));
