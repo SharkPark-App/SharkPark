@@ -246,6 +246,18 @@ export const CRON_MONITORS = {
     maxRuntime: 10,
     track: true,
   },
+  // CSULB freezes parking fees per fiscal year (Sep 1 → Aug 31). Mondays
+  // at 09:00 PT during July and August this fetches the permit-information
+  // page, normalises + SHA-256s the body, and fires a Sentry warning when
+  // the hash diverges from EXPECTED_PERMIT_SOURCE_HASH_SHA256 in
+  // `apps/backend/src/lots/permit-fees.ts`. Engineer then reviews the page,
+  // updates the constants + hash, and ships a PR. Runs outside the July-Aug
+  // window are a no-op (cron expression filters by month).
+  'check-permit-fee-drift': {
+    schedule: '0 9 * 7-8 1',
+    checkinMargin: 30,
+    maxRuntime: 5,
+  },
 } as const satisfies Record<string, CronMonitorConfig>;
 
 export type CronJobName = keyof typeof CRON_MONITORS;

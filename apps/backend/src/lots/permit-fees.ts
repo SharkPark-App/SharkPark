@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * CSULB Parking Permit Fee Schedule (FY 2025-26).
  *
@@ -6,7 +8,8 @@
  * CSULB freezes fees per fiscal year (Sep 1 → Aug 31). The
  * `check-permit-fee-drift` cron pings the source URL weekly during July and
  * August (when the new schedule typically posts) and opens a Sentry warning
- * when the page-body hash changes, prompting a manual PR to update this file.
+ * when the page-body hash changes, prompting a manual PR to update this file
+ * AND `EXPECTED_PERMIT_SOURCE_HASH_SHA256` below.
  *
  * Lives alongside `csulb-eligibility.ts` and `academic-calendar.ts` as
  * static CSULB domain knowledge — NOT in the database. Fees do not vary
@@ -137,4 +140,51 @@ export function buildAppliedFees(lot: {
     evening_weekend: CSULB_PERMIT_FEES.visitor.evening_weekend,
     overnight: isOvernightLot ? CSULB_PERMIT_FEES.visitor.overnight : null,
   };
+}
+
+/**
+ * SHA-256 of the normalised CSULB permit-information page body, captured at
+ * the time the fees above were last verified by a human. The
+ * `check-permit-fee-drift` cron recomputes the hash weekly during July and
+ * August (when CSULB typically publishes the new fiscal-year schedule) and
+ * fires a Sentry warning when it diverges, prompting a manual review.
+ *
+ * To update after auditing the page:
+ *   1. Update the fee constants above to match the new schedule.
+ *   2. Bump `CSULB_PERMIT_FEES.effective_through` to the new Aug 31.
+ *   3. Replace this hash with the value printed by the drift cron's
+ *      Sentry alert (the `actual_hash` extra), or recompute locally with
+ *      `computePermitSourceHash(await (await fetch(CSULB_PERMIT_FEES.source_url)).text())`.
+ */
+export const EXPECTED_PERMIT_SOURCE_HASH_SHA256 =
+  '366fc4a474e6484a75839a3f303f6e52f0f648eb4d2a9d8ddc51bebf7c3d51a3';
+
+/**
+ * Normalises the CSULB permit-information page HTML and returns a SHA-256
+ * digest of the result. Designed to be stable across cache-buster query
+ * params, analytics blob updates, and whitespace reformatting — only an
+ * actual content change (a new fee, a removed lot, a reworded policy line)
+ * should flip the hash.
+ *
+ * Pipeline:
+ *   1. Extract the `<main>` element (falls back to `<body>` if absent).
+ *   2. Drop `<script>`, `<style>`, `<svg>`, and HTML comments.
+ *   3. Collapse all whitespace runs to a single space and trim.
+ *   4. SHA-256 the resulting UTF-8 string.
+ *
+ * Pure function — exported so the cron job AND its tests can call it.
+ */
+export function computePermitSourceHash(html: string): string {
+  const mainMatch =
+    html.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ??
+    html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const region = mainMatch ? mainMatch[1] : html;
+  const stripped = region
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return createHash('sha256').update(stripped, 'utf8').digest('hex');
 }
