@@ -34,6 +34,10 @@ from src.config import (
 )
 from src.features.short_term import prepare_inference_features
 from src.models.short_term import ShortTermModel
+from src.postprocess.cold_start_floor import (
+    apply_cold_start_floor,
+    is_cold_start_window,
+)
 from src.postprocess.weather_adjustment import apply_weather_adjustment
 from src.postprocess.low_activity_scaling import apply_low_activity_scaling
 from src.utils.mlflow_setup import configure_mlflow
@@ -104,6 +108,22 @@ def predict(
 
     if features.empty:
         logger.info("No prediction hours remaining for today. Exiting.")
+        # Emit a structured SKIPPED marker so the cron-runner records the
+        # reason in ml_cron_runs.metadata instead of leaving the row with
+        # an empty payload that's indistinguishable from a parse failure.
+        print(
+            "ML_RESULT: "
+            + json.dumps(
+                {
+                    "horizon": "short_term",
+                    "status": "SKIPPED",
+                    "reason": "no_prediction_hours_remaining",
+                    "model_version": model_version,
+                    "predictions_written": 0,
+                    "lots": 0,
+                }
+            )
+        )
         return pd.DataFrame()
 
     # Attach per-target-hour weather forecast (E3). The inference feature
@@ -200,7 +220,17 @@ def predict(
     # per-row target date from the freshly-built predictions DataFrame
     # so a forecast that crosses midnight still picks up the correct
     # academic period for each row.
-    pred_target_dates = pd.to_datetime(predictions["target_time"]).dt.date.tolist()
+    #
+    # `target_time` is stored as a tz-naive UTC string (see
+    # _build_prediction_df). Re-attach UTC and convert to campus-local
+    # time so the date/hour we hand to the post-processors matches the
+    # academic calendar and operating-hours windows (both campus-local).
+    target_time_local = (
+        pd.to_datetime(predictions["target_time"])
+        .dt.tz_localize("UTC")
+        .dt.tz_convert(CAMPUS_TZ)
+    )
+    pred_target_dates = target_time_local.dt.date.tolist()
     capped_med, capped_lo, capped_hi, low_activity_reasons = apply_low_activity_scaling(
         predictions["predicted_occupancy"].to_numpy(),
         predictions["confidence_lower"].to_numpy(),
@@ -215,6 +245,31 @@ def predict(
         logger.info(
             "Low-activity scaling: %s (rows=%d)",
             ", ".join(f"{k}={v}" for k, v in sorted(low_activity_counts.items())),
+            len(predictions),
+        )
+
+    # Cold-start floor. Mirrors the live tile's MIN_FLOOR_RATE so users
+    # don't see contradictory "live = 15%, ML next-bin = 2%" UI during the
+    # pre-launch window with zero contributors. Self-disables the moment a
+    # single real-device snapshot lands in the lookback window.
+    cold_start = is_cold_start_window(df)
+    target_hours_local = target_time_local.dt.hour.tolist()
+    floored_med, floored_lo, floored_hi, floor_reasons = apply_cold_start_floor(
+        predictions["predicted_occupancy"].to_numpy(),
+        predictions["confidence_lower"].to_numpy(),
+        predictions["confidence_upper"].to_numpy(),
+        pred_target_dates,
+        target_hours_local,
+        is_cold_start=cold_start,
+    )
+    predictions["predicted_occupancy"] = floored_med
+    predictions["confidence_lower"] = floored_lo
+    predictions["confidence_upper"] = floored_hi
+    if cold_start:
+        floor_counts = Counter(floor_reasons)
+        logger.info(
+            "Cold-start floor: %s (rows=%d)",
+            ", ".join(f"{k}={v}" for k, v in sorted(floor_counts.items())),
             len(predictions),
         )
 
@@ -250,9 +305,11 @@ def predict(
         + json.dumps(
             {
                 "horizon": "short_term",
+                "status": "SUCCESS",
                 "model_version": model_version,
                 "predictions_written": int(n),
                 "lots": int(predictions["lot_id"].nunique()),
+                "cold_start_floor_active": bool(cold_start),
             }
         )
     )
