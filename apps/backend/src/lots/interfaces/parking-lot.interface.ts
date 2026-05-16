@@ -1,4 +1,5 @@
 import type { Lot as PrismaLot, AdvisorySeverity, AdvisorySource, BuildingCategory } from '@prisma/client';
+import type { AppliedFees } from '../permit-fees';
 
 /**
  * Re-export Prisma's Lot type for convenience.
@@ -67,6 +68,14 @@ export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'curr
   buildings: LotBuildingResponse[];
   /** Active operational notices (closures, construction). Empty when none. */
   advisories: LotAdvisoryResponse[];
+  /**
+   * Visitor-facing fee block derived from the static CSULB schedule
+   * (`CSULB_PERMIT_FEES`) and lot-specific eligibility flags. Always present
+   * — never contributor-gated — so the mobile Visitor Pricing card can
+   * render without a second round-trip. Fields inside may be null when the
+   * lot is not eligible for that fee type (e.g. no short-term spaces).
+   */
+  applied_fees: AppliedFees;
 }
 
 export interface GetLotsQueryParams {

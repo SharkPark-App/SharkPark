@@ -6,6 +6,7 @@ import { PenetrationEstimationService, PenetrationEstimate } from './penetration
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
 import { studentEligibleLotTypes } from './csulb-eligibility';
+import { buildAppliedFees } from './permit-fees';
 import { polygonToPolygonMeters } from './derive-lot-buildings';
 
 /** Shape of `Lot.geofence_polygon` rows in the DB (stored as Prisma Json). */
@@ -574,6 +575,11 @@ export class LotsService {
       updated_at: a.updated_at.toISOString(),
     }));
 
+    // Fee block is static metadata (never contributor-gated) — attach to both
+    // the redacted and live branches so the mobile Visitor Pricing card always
+    // has data, including for App Store reviewers and location-denied users.
+    const applied_fees = buildAppliedFees(meta);
+
     if (redactLive) {
       return {
         ...meta,
@@ -588,6 +594,7 @@ export class LotsService {
         effective_penetration_rate: null,
         buildings,
         advisories,
+        applied_fees,
       };
     }
 
@@ -625,6 +632,7 @@ export class LotsService {
         : 1,
       buildings,
       advisories,
+      applied_fees,
     };
   }
 

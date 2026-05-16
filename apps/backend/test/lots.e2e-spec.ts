@@ -195,6 +195,30 @@ describe('LotsController (e2e)', () => {
           expect(res.headers['cache-control']).toContain('private');
         });
     });
+
+    it('attaches applied_fees with evening_weekend present and overnight omitted for G1', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G1')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.data.applied_fees).toBeDefined();
+          expect(res.body.data.applied_fees.evening_weekend.price).toBe(10);
+          // G1 is not the overnight lot
+          expect(res.body.data.applied_fees.overnight).toBeNull();
+        });
+    });
+
+    it('exposes the overnight fee block only for G2 (Walter Pyramid)', () => {
+      return request(app.getHttpServer())
+        .get('/api/v1/lots/G2')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.data.applied_fees.overnight).toBeDefined();
+          expect(res.body.data.applied_fees.overnight).not.toBeNull();
+          expect(res.body.data.applied_fees.overnight.available_at_lots).toContain('G2');
+          expect(res.body.data.applied_fees.overnight.increments_hours).toEqual([24, 48, 72]);
+        });
+    });
   });
 
   describe('/api/v1/lots/:id/history (GET)', () => {
@@ -458,6 +482,18 @@ describe('LotsController (e2e)', () => {
 
     it('GET /lots/:id (404 path) does not require auth', () =>
       noAuth('/api/v1/lots/INVALID').expect(404));
+
+    it('GET /permit-fees is public and edge-cacheable', () =>
+      noAuth('/api/v1/permit-fees')
+        .expect(200)
+        .expect((res: Response) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.visitor.daily).toBe(15);
+          expect(res.body.data.visitor.overnight.available_at_lots).toContain('G2');
+          expect(res.body.data.parkmobile.umbrella_zones.general).toBe('3993');
+          expect(res.headers['cache-control']).toContain('public');
+          expect(res.headers['cache-control']).toContain('max-age=86400');
+        }));
   });
 
   // ACCESS-2: lock the contributor-gated tier.
