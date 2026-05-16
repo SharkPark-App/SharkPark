@@ -202,6 +202,14 @@ export interface LotSeed {
   low_emission_spaces: number;
   /** Number of pay stations physically located in this lot. */
   pay_stations: number;
+  /**
+   * ParkMobile zone IDs that cover this lot. Mobile clients deep-link the
+   * first non-umbrella zone (lot-specific) and fall back to the umbrella
+   * zone (3993 = any G lot, 3975 = any E lot) so users can pay without
+   * leaving the campus map. Empty array = no ParkMobile coverage known.
+   * Source: ParkMobile zone search around CSULB (manually curated 2026-05).
+   */
+  park_mobile_zones: string[];
   has_lighting: boolean;
   has_cameras: boolean;
   has_emergency_phone: boolean;
@@ -248,6 +256,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 4, accessible_spaces: 8,
     short_term_parking_spaces: 19, low_emission_spaces: 32, pay_stations: 1,
+    park_mobile_zones: ['3921', '3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
@@ -263,6 +272,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 12,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: false,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
@@ -277,6 +287,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 1, accessible_spaces: 9,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 0,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -292,6 +303,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 7,
     short_term_parking_spaces: 8, low_emission_spaces: 0, pay_stations: 2,
+    park_mobile_zones: ['3967', '3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
@@ -306,6 +318,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 7,
     short_term_parking_spaces: 4, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3963', '3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -321,6 +334,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 31, motorcycle_spaces: 0, accessible_spaces: 4,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 0,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: true, has_emergency_phone: false,
     is_covered: false, is_paved: true,
     has_solar_canopy: true, metadata_confidence: ConfidenceLevel.HIGH,
@@ -335,6 +349,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 2, motorcycle_spaces: 0, accessible_spaces: 9,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: true, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -350,6 +365,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 4,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 0,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
@@ -365,6 +381,9 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 3,
     short_term_parking_spaces: 6, low_emission_spaces: 0, pay_stations: 0,
+    // G10 is listed as a short-term/visitor lot in CSULB regs but no specific
+    // ParkMobile zone was found in the 2026-05 zone search — umbrella only.
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: false,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -379,6 +398,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 34,
     short_term_parking_spaces: 3, low_emission_spaces: 0, pay_stations: 3,
+    park_mobile_zones: ['3958', '3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.LOW,
@@ -393,6 +413,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 14, motorcycle_spaces: 1, accessible_spaces: 19,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 2,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.LOW,
@@ -409,6 +430,10 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 8,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    // Beachside (G14) wasn't returned in the 2026-05 ParkMobile zone search
+    // for the campus area. Zone 3992 sits ~1.3mi off-campus and may map to
+    // Beachside Village at 4835 PCH — verify on the next drift check.
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -424,6 +449,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 12,
     short_term_parking_spaces: 16, low_emission_spaces: 0, pay_stations: 3,
+    park_mobile_zones: ['3970', '3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
@@ -438,6 +464,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 2, accessible_spaces: 21,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
@@ -452,6 +479,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 1, accessible_spaces: 3,
     short_term_parking_spaces: 0, low_emission_spaces: 1, pay_stations: 0,
+    park_mobile_zones: ['3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: false,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
@@ -467,6 +495,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 4,
     short_term_parking_spaces: 2, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3936', '3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
@@ -481,6 +510,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 4,
     short_term_parking_spaces: 7, low_emission_spaces: 4, pay_stations: 1,
+    park_mobile_zones: ['3949', '3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: false,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -495,6 +525,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 1, accessible_spaces: 14,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -509,6 +540,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 8,
     short_term_parking_spaces: 6, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3925', '3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.LOW,
@@ -524,6 +556,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 7,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: true, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -538,6 +571,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 5,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.LOW,
@@ -552,6 +586,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 13, motorcycle_spaces: 1, accessible_spaces: 7,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: true, metadata_confidence: ConfidenceLevel.LOW,
@@ -566,6 +601,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 1, accessible_spaces: 13,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: false,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.LOW,
@@ -580,6 +616,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 2, accessible_spaces: 22,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.LOW,
@@ -594,6 +631,7 @@ export const parkingLots: LotSeed[] = [
     hours_saturday: { open: '00:00', close: '23:59' }, hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 5,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3975'],
     has_lighting: true, has_cameras: false, has_emergency_phone: true,
     is_covered: false, is_paved: true,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -610,6 +648,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 0, motorcycle_spaces: 0, accessible_spaces: 32,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 2,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
     is_covered: true, is_paved: true, is_structure: true, levels: 5,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -625,6 +664,7 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 2, motorcycle_spaces: 2, accessible_spaces: 10,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 1,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
     is_covered: true, is_paved: true, is_structure: true, levels: 5,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.MEDIUM,
@@ -640,8 +680,16 @@ export const parkingLots: LotSeed[] = [
     hours_sunday: { open: '00:00', close: '23:59' },
     ev_charging_stations: 2, motorcycle_spaces: 2, accessible_spaces: 7,
     short_term_parking_spaces: 0, low_emission_spaces: 0, pay_stations: 2,
+    park_mobile_zones: ['3993'],
     has_lighting: true, has_cameras: true, has_emergency_phone: true,
     is_covered: true, is_paved: true, is_structure: true, levels: 5,
     has_solar_canopy: false, metadata_confidence: ConfidenceLevel.HIGH,
   },
 ];
+
+// ParkMobile zones surfaced by the 2026-05 zone search around CSULB but NOT
+// currently mapped to any lot above:
+//   - 3938: user-supplied as "G15/S1" but no such lot exists in this seed
+//   - 3940, 3943, 3983, 3934: unidentified (possibly Carpenter Center or event)
+//   - 3992: ~1.3mi off-campus — candidate for Beachside (G14) if confirmed
+// Re-check on each drift-detection pass and update this list.
