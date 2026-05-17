@@ -135,15 +135,29 @@ describe('VisitorPricingCard', () => {
   });
 
   it('prefers a specific zone over umbrella zones (3993 / 3975)', () => {
+    // Multi-zone lot — both buttons render, but the lot-specific zone is
+    // listed FIRST so it's the most prominent CTA.
     const tree = renderCard(makeLot({ park_mobile_zones: ['3993', '3921'] }));
     const texts = collectTexts(tree.root);
     expect(texts).toContain('Pay with ParkMobile (Zone 3921)');
+    expect(texts).toContain('Pay with ParkMobile (Zone 3993)');
+    const specificIdx = texts.indexOf('Pay with ParkMobile (Zone 3921)');
+    const umbrellaIdx = texts.indexOf('Pay with ParkMobile (Zone 3993)');
+    expect(specificIdx).toBeLessThan(umbrellaIdx);
   });
 
   it('falls back to umbrella zone when no specific zone is available', () => {
     const tree = renderCard(makeLot({ park_mobile_zones: ['3993'] }));
     const texts = collectTexts(tree.root);
     expect(texts).toContain('Pay with ParkMobile (Zone 3993)');
+  });
+
+  it('renders descriptive coverage labels for umbrella vs lot-specific zones', () => {
+    const tree = renderCard(makeLot({ park_mobile_zones: ['3921', '3993', '3975'] }));
+    const texts = collectTexts(tree.root);
+    expect(texts).toContain('Designated green spaces in this lot');
+    expect(texts).toContain('General spaces (any G lot)');
+    expect(texts).toContain('Employee spaces (after 5:30 PM / weekends)');
   });
 
   it('opens ParkMobile deep link with selected zone on button press', async () => {
@@ -165,6 +179,8 @@ describe('VisitorPricingCard', () => {
       await button.props.onPress();
     });
 
-    expect(openSpy).toHaveBeenCalledWith('https://app.parkmobile.io/?zone=3921');
+    // ParkMobile's CSULB site prefix is `932`, so published zone 3921
+    // resolves to URL zone 9323921.
+    expect(openSpy).toHaveBeenCalledWith('https://app.parkmobile.io/zone/9323921');
   });
 });

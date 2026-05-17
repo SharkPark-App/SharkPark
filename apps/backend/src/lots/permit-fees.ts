@@ -65,7 +65,10 @@ export const CSULB_PERMIT_FEES = {
       general: '3993',
       employee: '3975',
     },
-    deep_link_template: 'https://app.parkmobile.io/?zone={zone}',
+    // ParkMobile's CSULB-site zones resolve via `932` + the published zone
+    // number (e.g. signed zone `3993` becomes URL zone `9323993`).
+    // Confirmed by tapping live CSULB ParkMobile signage on-device.
+    deep_link_template: 'https://app.parkmobile.io/zone/932{zone}',
   },
 } as const;
 

@@ -2,8 +2,8 @@
  * VisitorPricingCard
  *
  * Renders the visitor-facing fee block for a lot (short-term tiers, daily,
- * evening/weekend, and overnight where eligible) and offers a one-tap
- * deep-link into the ParkMobile app for paying remotely.
+ * evening/weekend, and overnight where eligible) and offers one-tap
+ * deep-links into the ParkMobile app for paying remotely.
  *
  * Data source: the `applied_fees` field on `ParkingLotResponse`, populated
  * on the backend from `CSULB_PERMIT_FEES` + per-lot eligibility (see
@@ -12,11 +12,14 @@
  * that case never happens today (every lot honours evening/weekend), but
  * the guard keeps the card defensive against backend additions.
  *
- * Deep link strategy: prefer a lot-specific zone over the umbrella zone
- * (3993 / 3975) via `pickPreferredParkMobileZone`, then open
- * `https://app.parkmobile.io/?zone={zone}` — the universal-link target
- * resolves to the native ParkMobile app if installed, otherwise the
- * mobile web flow. We never silently swallow `Linking` rejections —
+ * Deep link strategy: ParkMobile's universal-link format is
+ * `https://app.parkmobile.io/zone/932{zone}` — the leading `932` is
+ * ParkMobile's CSULB site prefix (verified by tapping zones on-device).
+ * The universal link resolves to the native ParkMobile app if installed,
+ * otherwise the mobile web flow. We render ONE button per published zone
+ * (lots commonly have a lot-specific zone + the umbrella zone) labelled
+ * with what the zone covers, so users can pick the right one for their
+ * parking situation. We never silently swallow `Linking` rejections —
  * the user gets an Alert so they know to install ParkMobile.
  */
 import React from 'react';
@@ -26,13 +29,30 @@ import { Text } from './CustomText';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import type { ParkingLotResponse } from '../services/api/lots';
-import { pickPreferredParkMobileZone } from '../services/api/lots';
+import { UMBRELLA_PARKMOBILE_ZONES } from '../services/api/lots';
 
 interface VisitorPricingCardProps {
   lot: Pick<ParkingLotResponse, 'lot_id' | 'applied_fees' | 'park_mobile_zones'>;
 }
 
-const PARKMOBILE_DEEP_LINK = (zone: string) => `https://app.parkmobile.io/?zone=${zone}`;
+/**
+ * ParkMobile's CSULB-site zones are addressed in the universal link as
+ * `932` + the publicly-posted zone number (e.g. published zone `3993`
+ * resolves to URL zone `9323993`). Confirmed by tapping live signage
+ * links on-device.
+ */
+const PARKMOBILE_DEEP_LINK = (zone: string) => `https://app.parkmobile.io/zone/932${zone}`;
+
+/**
+ * Human-readable description of what a given ParkMobile zone covers.
+ * The two umbrella zones have CSULB-wide semantics; all other zones are
+ * lot-specific designated ("green") spaces.
+ */
+function zoneCoverageLabel(zone: string): string {
+  if (zone === '3993') return 'General spaces (any G lot)';
+  if (zone === '3975') return 'Employee spaces (after 5:30 PM / weekends)';
+  return 'Designated green spaces in this lot';
+}
 
 function formatMinutes(min: number): string {
   if (min < 60) return `${min} min`;
@@ -57,7 +77,15 @@ async function openParkMobile(zone: string) {
 export function VisitorPricingCard({ lot }: VisitorPricingCardProps) {
   const { colors } = useTheme();
   const fees = lot.applied_fees;
-  const preferredZone = pickPreferredParkMobileZone(lot.park_mobile_zones);
+  // Order zones so lot-specific zones come first (they're usually the
+  // user's intent when standing in front of a designated green space);
+  // umbrella zones (3993, 3975) fall to the bottom.
+  const orderedZones = [...lot.park_mobile_zones].sort((a, b) => {
+    const aUmbrella = UMBRELLA_PARKMOBILE_ZONES.has(a) ? 1 : 0;
+    const bUmbrella = UMBRELLA_PARKMOBILE_ZONES.has(b) ? 1 : 0;
+    return aUmbrella - bUmbrella;
+  });
+  const hasZones = orderedZones.length > 0;
 
   // Defensive: skip rendering when there's truly nothing to show.
   // evening_weekend is always present today, so this branch should never
@@ -67,7 +95,7 @@ export function VisitorPricingCard({ lot }: VisitorPricingCardProps) {
     fees.daily == null &&
     !fees.overnight &&
     !fees.evening_weekend &&
-    !preferredZone
+    !hasZones
   ) {
     return null;
   }
@@ -160,21 +188,31 @@ export function VisitorPricingCard({ lot }: VisitorPricingCardProps) {
         </View>
       )}
 
-      {preferredZone && (
-        <Pressable
-          onPress={() => openParkMobile(preferredZone)}
-          accessibilityRole="button"
-          accessibilityLabel={`Pay with ParkMobile, zone ${preferredZone}`}
-          style={({ pressed }) => [
-            styles.button,
-            { backgroundColor: pressed ? '#0b8f4a' : '#10b981' },
-          ]}
-        >
-          <Icon name="card-outline" size={18} color="#ffffff" />
-          <Text style={styles.buttonText}>
-            Pay with ParkMobile (Zone {preferredZone})
-          </Text>
-        </Pressable>
+      {hasZones && (
+        <View style={styles.zoneButtons}>
+          {orderedZones.map((zone) => (
+            <Pressable
+              key={zone}
+              onPress={() => openParkMobile(zone)}
+              accessibilityRole="button"
+              accessibilityLabel={`Pay with ParkMobile, zone ${zone}`}
+              style={({ pressed }) => [
+                styles.button,
+                { backgroundColor: pressed ? '#0b8f4a' : '#10b981' },
+              ]}
+            >
+              <Icon name="card-outline" size={18} color="#ffffff" />
+              <View style={styles.buttonTextWrap}>
+                <Text style={styles.buttonText}>
+                  Pay with ParkMobile (Zone {zone})
+                </Text>
+                <Text style={styles.buttonSubtext}>
+                  {zoneCoverageLabel(zone)}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
       )}
     </View>
   );
@@ -228,16 +266,28 @@ const styles = StyleSheet.create({
   button: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: SPACING.sm,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
     borderRadius: SPACING.md,
     marginTop: SPACING.sm,
   },
+  buttonTextWrap: {
+    flex: 1,
+  },
   buttonText: {
     color: '#ffffff',
     fontSize: TYPOGRAPHY.fontSize.md,
     fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  buttonSubtext: {
+    color: '#ffffff',
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    opacity: 0.9,
+    marginTop: 2,
+  },
+  zoneButtons: {
+    marginTop: SPACING.sm,
   },
 });
