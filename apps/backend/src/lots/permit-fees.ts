@@ -179,12 +179,20 @@ export function computePermitSourceHash(html: string): string {
     html.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ??
     html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const region = mainMatch ? mainMatch[1] : html;
-  const stripped = region
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  // Apply noise-stripping patterns to a fixpoint so nested or overlapping
+  // injections (e.g. `<scr<script>ipt>`) can't slip past the regex. The
+  // `\b...[^>]*>` end-tag forms also catch `</script >` style closings that
+  // a naive `</script>` literal would miss.
+  let stripped = region;
+  let previous: string;
+  do {
+    previous = stripped;
+    stripped = stripped
+      .replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, '')
+      .replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, '')
+      .replace(/<svg\b[\s\S]*?<\/svg\b[^>]*>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '');
+  } while (stripped !== previous);
+  stripped = stripped.replace(/\s+/g, ' ').trim();
   return createHash('sha256').update(stripped, 'utf8').digest('hex');
 }
