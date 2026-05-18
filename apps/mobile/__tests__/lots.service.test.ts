@@ -2,16 +2,46 @@
  * Lots Service Tests
  */
 import lotsApi, { type ParkingLotResponse } from '../src/services/api/lots';
-import { apiService } from '../src/services/api/base';
+import { apiService, BackgroundLocationRequiredError } from '../src/services/api/base';
 import { cacheService } from '../src/services/api/cache';
+import { getContributorStateSync } from '../src/services/api/contributor';
 
-// Mock the API service
-jest.mock('../src/services/api/base');
+// Mock the API service — keep the real error classes (ApiError,
+// BackgroundLocationRequiredError) so `rejects.toThrow(/regex/)` can match
+// their real `.message`, while still stubbing the network surface.
+jest.mock('../src/services/api/base', () => {
+  const actual = jest.requireActual('../src/services/api/base');
+  return {
+    ...actual,
+    apiService: {
+      get: jest.fn(),
+      post: jest.fn(),
+      put: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+    },
+  };
+});
 const mockApiService = apiService as jest.Mocked<typeof apiService>;
 
 // Mock the cache service — pass-through by default (calls fetcher, wraps result)
 jest.mock('../src/services/api/cache');
 const mockCacheService = cacheService as jest.Mocked<typeof cacheService>;
+
+// Mock contributor so tests can flip eligibility synchronously without
+// going through the real grant/revoke flow (which depends on AsyncStorage
+// and cache invalidation). Default: 'granted' so the redactor passes lots
+// through unchanged for the bulk of the existing assertions.
+jest.mock('../src/services/api/contributor', () => ({
+  getContributorStateSync: jest.fn(() => 'granted'),
+  subscribeContributorState: jest.fn(() => () => {}),
+  useContributorState: jest.fn(() => 'granted'),
+  registerContributorGrant: jest.fn(),
+  revokeContributorGrant: jest.fn(),
+  refreshLotsForPermissionChange: jest.fn(),
+  __resetContributorGrantStateForTests: jest.fn(),
+}));
+const mockGetContributorStateSync = getContributorStateSync as jest.Mock;
 
 describe('LotsService', () => {
   beforeEach(() => {
@@ -508,6 +538,198 @@ describe('LotsService', () => {
 
       await lotsApi.getLongTermForecast(lot, { days: 999 });
       expect(mockApiService.get).toHaveBeenCalledWith('/lots/G1/predictions/long-term?days=7');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // ParkMobile zone picker
+  // ──────────────────────────────────────────────────────────────────
+
+  describe('pickPreferredParkMobileZone', () => {
+    // Import here to avoid polluting the top-of-file namespace; the function
+    // is a pure helper and doesn't need the LotsApiService instance.
+    const { pickPreferredParkMobileZone, UMBRELLA_PARKMOBILE_ZONES } =
+      jest.requireActual('../src/services/api/lots') as typeof import('../src/services/api/lots');
+
+    it('returns null when the lot has no published zones', () => {
+      expect(pickPreferredParkMobileZone([])).toBeNull();
+    });
+
+    it('returns the only zone when there is exactly one', () => {
+      expect(pickPreferredParkMobileZone(['3921'])).toBe('3921');
+    });
+
+    it('prefers a specific zone over an umbrella zone (specificity wins)', () => {
+      // Order shouldn't matter — umbrella may come first or last.
+      expect(pickPreferredParkMobileZone(['3993', '3921'])).toBe('3921');
+      expect(pickPreferredParkMobileZone(['3921', '3993'])).toBe('3921');
+    });
+
+    it('falls back to the first zone when every option is umbrella', () => {
+      expect(pickPreferredParkMobileZone(['3993', '3975'])).toBe('3993');
+      expect(pickPreferredParkMobileZone(['3975'])).toBe('3975');
+    });
+
+    it('exposes the umbrella set so the UI can render zone-coverage copy', () => {
+      expect(UMBRELLA_PARKMOBILE_ZONES.has('3993')).toBe(true);
+      expect(UMBRELLA_PARKMOBILE_ZONES.has('3975')).toBe(true);
+      expect(UMBRELLA_PARKMOBILE_ZONES.has('3921')).toBe(false);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Permit fees (static schedule, 24h cache)
+  // ──────────────────────────────────────────────────────────────────
+
+  describe('getPermitFees', () => {
+    const mockFees = {
+      effective_through: '2026-08-31',
+      source_url: 'https://parking.csulb.edu/fees',
+      visitor: {
+        short_term: [{ max_minutes: 30, price: 1 }],
+        daily: 12,
+        evening_weekend: { price: 4, conditions: 'After 4pm or weekends' },
+        overnight: {
+          available_at_lots: ['G2'],
+          increments_hours: [4, 8],
+          price_note: '$4 per increment',
+        },
+      },
+      permits: { semester_student: 207 },
+      parkmobile: {
+        umbrella_zones: { general: '3993', employee: '3975' },
+        deep_link_template: 'https://app.parkmobile.io/?zone={zone}',
+      },
+    };
+
+    it('hits /permit-fees and returns the parsed schedule', async () => {
+      mockApiService.get.mockResolvedValueOnce({ success: true, data: mockFees });
+
+      const result = await lotsApi.getPermitFees();
+
+      expect(mockApiService.get).toHaveBeenCalledWith('/permit-fees');
+      expect(result).toEqual(mockFees);
+    });
+
+    it('routes through cache under the "lots:permitFees" key with a 24h TTL', async () => {
+      mockApiService.get.mockResolvedValueOnce({ success: true, data: mockFees });
+
+      await lotsApi.getPermitFees();
+
+      expect(mockCacheService.getOrFetch).toHaveBeenCalledWith(
+        'lots:permitFees',
+        expect.any(Function),
+        expect.objectContaining({ ttl: 24 * 60 * 60 * 1000 }),
+      );
+    });
+
+    it('forwards forceRefresh to the cache layer', async () => {
+      mockApiService.get.mockResolvedValueOnce({ success: true, data: mockFees });
+
+      await lotsApi.getPermitFees({ forceRefresh: true });
+
+      expect(mockCacheService.getOrFetch).toHaveBeenCalledWith(
+        'lots:permitFees',
+        expect.any(Function),
+        expect.objectContaining({ forceRefresh: true }),
+      );
+    });
+
+    it('propagates network errors (no local fallback for the static schedule)', async () => {
+      mockApiService.get.mockRejectedValueOnce(new Error('Network down'));
+
+      await expect(lotsApi.getPermitFees()).rejects.toThrow('Network down');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Contributor redaction on the way out of every detail/list response
+  // ──────────────────────────────────────────────────────────────────
+
+  describe('redactLotIfRevoked', () => {
+    afterEach(() => {
+      mockGetContributorStateSync.mockReturnValue('granted');
+    });
+
+    const liveLot = {
+      id: 'cuid_g1',
+      lot_id: 'G1',
+      lot_name: 'Lot G1',
+      capacity: 100,
+      current_occupancy: 42,
+      available: 58,
+      occupancy_rate: 0.42,
+      fill_status: 'FILLING',
+      estimated_occupancy: 50,
+      estimated_available: 50,
+      raw_occupancy: 30,
+      effective_penetration_rate: 0.7,
+    };
+
+    it('returns live occupancy verbatim when contributor state is granted', async () => {
+      mockGetContributorStateSync.mockReturnValue('granted');
+      mockApiService.get.mockResolvedValueOnce({ success: true, data: liveLot });
+
+      const result = await lotsApi.getLotDetails('G1');
+
+      expect(result.current_occupancy).toBe(42);
+      expect(result.available).toBe(58);
+      expect(result.fill_status).toBe('FILLING');
+    });
+
+    it('redacts every live-occupancy field to null when contributor state is revoked', async () => {
+      mockGetContributorStateSync.mockReturnValue('revoked');
+      mockApiService.get.mockResolvedValueOnce({ success: true, data: liveLot });
+
+      const result = await lotsApi.getLotDetails('G1');
+
+      expect(result.current_occupancy).toBeNull();
+      expect(result.available).toBeNull();
+      expect(result.occupancy_rate).toBeNull();
+      expect(result.fill_status).toBeNull();
+      expect(result.estimated_occupancy).toBeNull();
+      expect(result.estimated_available).toBeNull();
+      expect(result.raw_occupancy).toBeNull();
+      expect(result.effective_penetration_rate).toBeNull();
+      // Non-occupancy fields survive — locked screens still need the name/id.
+      expect(result.lot_id).toBe('G1');
+      expect(result.capacity).toBe(100);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Forecast endpoints: BG_LOCATION pre-check fast-fail
+  // ──────────────────────────────────────────────────────────────────
+
+  describe('forecast BG_LOCATION pre-check', () => {
+    afterEach(() => {
+      mockGetContributorStateSync.mockReturnValue('granted');
+    });
+
+    const lot = { lot_id: 'G1', metadata_confidence: 'HIGH' as const };
+
+    it('short-term: throws BackgroundLocationRequiredError without hitting the network', async () => {
+      mockGetContributorStateSync.mockReturnValue('revoked');
+
+      await expect(lotsApi.getForecast(lot)).rejects.toBeInstanceOf(
+        BackgroundLocationRequiredError,
+      );
+      await expect(lotsApi.getForecast(lot)).rejects.toThrow(
+        /location permission is revoked/,
+      );
+      expect(mockApiService.get).not.toHaveBeenCalled();
+    });
+
+    it('long-term: throws BackgroundLocationRequiredError without hitting the network', async () => {
+      mockGetContributorStateSync.mockReturnValue('revoked');
+
+      await expect(lotsApi.getLongTermForecast(lot)).rejects.toBeInstanceOf(
+        BackgroundLocationRequiredError,
+      );
+      await expect(lotsApi.getLongTermForecast(lot)).rejects.toThrow(
+        /location permission is revoked/,
+      );
+      expect(mockApiService.get).not.toHaveBeenCalled();
     });
   });
 });

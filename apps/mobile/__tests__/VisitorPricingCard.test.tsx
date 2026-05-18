@@ -12,7 +12,7 @@
  */
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import { Linking } from 'react-native';
+import { Linking, Alert } from 'react-native';
 
 // ────────────────────── Mocks ──────────────────────
 
@@ -78,6 +78,7 @@ function renderCard(lot: CardLot) {
 describe('VisitorPricingCard', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
+    jest.clearAllMocks();
   });
 
   it('renders section title', () => {
@@ -182,5 +183,81 @@ describe('VisitorPricingCard', () => {
     // ParkMobile's CSULB site prefix is `932`, so published zone 3921
     // resolves to URL zone 9323921.
     expect(openSpy).toHaveBeenCalledWith('https://app.parkmobile.io/zone/9323921');
+  });
+
+  it('alerts and refuses to open Linking when the zone fails the numeric guard', async () => {
+    // Defense-in-depth: backend should never emit a non-numeric zone, but if
+    // it ever did, we MUST NOT pass it into Linking.openURL (would let a
+    // malformed value inject path/query/fragment).
+    const openSpy = jest
+      .spyOn(Linking, 'openURL')
+      .mockResolvedValue(true as unknown as void);
+    const alertSpy = jest.spyOn(Alert, 'alert')
+      .mockImplementation(() => {});
+
+    const tree = renderCard(makeLot({ park_mobile_zones: ['abc'] }));
+    const button = tree.root.findAll(
+      node =>
+        node.props?.accessibilityLabel === 'Pay with ParkMobile, zone abc' &&
+        typeof node.props?.onPress === 'function',
+    )[0];
+    expect(button).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => {
+      await button.props.onPress();
+    });
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Could not open ParkMobile',
+      expect.stringMatching(/invalid ParkMobile zone/),
+    );
+  });
+
+  it('alerts the user when Linking.openURL rejects (ParkMobile app not installed)', async () => {
+    // Simulates the iOS/Android case where the universal link can't resolve
+    // (ParkMobile not installed and no browser handler) — the user gets a
+    // helpful Alert instead of a silent failure.
+    jest
+      .spyOn(Linking, 'openURL')
+      .mockRejectedValue(new Error('no handler'));
+    const alertSpy = jest.spyOn(Alert, 'alert')
+      .mockImplementation(() => {});
+
+    const tree = renderCard(makeLot({ park_mobile_zones: ['3921'] }));
+    const button = tree.root.findAll(
+      node =>
+        node.props?.accessibilityLabel === 'Pay with ParkMobile, zone 3921' &&
+        typeof node.props?.onPress === 'function',
+    )[0];
+
+    await ReactTestRenderer.act(async () => {
+      await button.props.onPress();
+    });
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Could not open ParkMobile',
+      expect.stringMatching(/Install the ParkMobile app/),
+    );
+  });
+
+  it('renders nothing when the lot has no eligible fees AND no ParkMobile zones', () => {
+    // Defensive null-render branch. evening_weekend is normally always
+    // present (every lot honours evening/weekend), but we cast through
+    // `null as any` here to exercise the guard that protects against
+    // future backend additions removing the field.
+    const tree = renderCard(
+      makeLot({
+        park_mobile_zones: [],
+        applied_fees: {
+          short_term: null,
+          daily: null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          evening_weekend: null as any,
+          overnight: null,
+        },
+      }),
+    );
+    expect(tree.toJSON()).toBeNull();
   });
 });
