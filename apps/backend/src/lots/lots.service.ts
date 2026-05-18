@@ -13,7 +13,13 @@ import { polygonToPolygonMeters } from './derive-lot-buildings';
 type LatLng = { lat: number; lng: number };
 
 const LOT_WITH_BUILDINGS_INCLUDE = {
-  lot_buildings: { include: { building: { select: { name: true, category: true } } } },
+  lot_buildings: {
+    include: {
+      building: {
+        select: { name: true, category: true, center_lat: true, center_lng: true },
+      },
+    },
+  },
   // Only active advisories make it onto the response — historical/closed ones
   // remain in the table for audit but aren't user-facing.
   lot_advisories: {
@@ -407,9 +413,11 @@ export class LotsService {
       parts.push('very close by');
     } else if (distanceMeters < 600) {
       parts.push('nearby');
-    } else {
-      parts.push(`~${Math.round(distanceMeters / 100) * 100}m away`);
     }
+    // For distances ≥ 600m we omit a qualitative phrase here — the client
+    // renders the exact distance using the device's locale-appropriate
+    // units (miles vs. metres), so embedding units server-side would be
+    // wrong for non-US users.
 
     return parts.join(' · ');
   }
@@ -558,6 +566,8 @@ export class LotsService {
     const buildings = lot_buildings.map(lb => ({
       name: lb.building.name,
       category: lb.building.category,
+      center_lat: lb.building.center_lat,
+      center_lng: lb.building.center_lng,
     }));
     // Coerce DateTime fields to ISO strings for transport. Advisories are
     // static metadata (not contributor-gated) — every caller, including App

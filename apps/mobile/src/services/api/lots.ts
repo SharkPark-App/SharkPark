@@ -91,7 +91,13 @@ export interface ParkingLot {
   current_occupancy: number | null;
   location_description: string;
   /** Buildings this lot serves, with category for grouped display in lot info. */
-  buildings: Array<{ name: string; category: BuildingCategory }>;
+  buildings: Array<{
+    name: string;
+    category: BuildingCategory;
+    /** Building centerpoint (WGS84). Used to render distance from the lot. */
+    center_lat: number;
+    center_lng: number;
+  }>;
   center_lat: number;
   center_lng: number;
   geofence_polygon: Array<{ lat: number; lng: number }>;

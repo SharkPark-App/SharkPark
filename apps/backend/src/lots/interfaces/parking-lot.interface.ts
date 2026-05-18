@@ -26,10 +26,15 @@ export interface LotAdvisoryResponse {
 }
 
 /** Building reference attached to a lot. Includes category so the mobile UI
- *  can group nearby buildings (Academic, Housing, Athletic, etc.). */
+ *  can group nearby buildings (Academic, Housing, Athletic, etc.) and the
+ *  building's centerpoint so the client can render lot→building distance
+ *  in the user's preferred units (miles vs. metres). */
 export interface LotBuildingResponse {
   name: string;
   category: BuildingCategory;
+  /** Approximate centerpoint (WGS84). Used for haversine distance from the lot. */
+  center_lat: number;
+  center_lng: number;
 }
 
 export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'current_occupancy'> {

@@ -10,7 +10,62 @@
  * The backend retains a `user_type` column for audit metadata only.
  */
 
+import { NativeModules, Platform } from 'react-native';
 import { DYNAMIC_GEOFENCE, TEST_CONSTANTS } from '../constants/geofencing';
+
+// Regions that use imperial units for road/short distances.
+// US, Liberia, Myanmar are fully imperial; UK uses miles for road distances.
+const IMPERIAL_REGIONS = new Set(['US', 'LR', 'MM', 'GB']);
+
+/**
+ * Best-effort detection of the device's BCP-47 locale (e.g. "en-US", "fr-FR")
+ * without pulling in an extra native dependency. Falls back to "en-US" if the
+ * native module isn't available (e.g. in unit tests).
+ */
+export function getDeviceLocale(): string {
+  try {
+    if (Platform.OS === 'ios') {
+      const settings = NativeModules.SettingsManager?.settings;
+      return (
+        settings?.AppleLocale ||
+        settings?.AppleLanguages?.[0] ||
+        'en-US'
+      );
+    }
+    return NativeModules.I18nManager?.localeIdentifier || 'en-US';
+  } catch {
+    return 'en-US';
+  }
+}
+
+/** True when the device locale's region uses imperial distance units. */
+export function usesImperialUnits(locale: string = getDeviceLocale()): boolean {
+  const region = locale.split(/[-_]/)[1]?.toUpperCase();
+  return region ? IMPERIAL_REGIONS.has(region) : false;
+}
+
+/**
+ * Format a distance in metres for display, using the device's locale to pick
+ * miles/feet vs. kilometres/metres. Examples:
+ *   formatDistance(45)    → "150 ft"   (imperial) or "50 m"   (metric)
+ *   formatDistance(800)   → "0.5 mi"   (imperial) or "800 m"  (metric)
+ *   formatDistance(5400)  → "3.4 mi"   (imperial) or "5.4 km" (metric)
+ */
+export function formatDistance(meters: number, locale?: string): string {
+  if (usesImperialUnits(locale)) {
+    const miles = meters / 1609.344;
+    if (miles < 0.1) {
+      // Round feet to the nearest 10 for a less jittery readout.
+      const feet = Math.round((meters * 3.28084) / 10) * 10;
+      return `${feet} ft`;
+    }
+    return `${miles.toFixed(1)} mi`;
+  }
+  if (meters < 1000) {
+    return `${Math.round(meters / 10) * 10} m`;
+  }
+  return `${(meters / 1000).toFixed(1)} km`;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -405,7 +405,7 @@ export function ShortTermForecastScreen() {
 
       {/* Report Button */}
       <TouchableOpacity
-        style={[styles.fab, { bottom: SPACING.xxl + insets.bottom }]}
+        style={[styles.fab, { bottom: insets.bottom }]}
         onPress={() => {
           if (isGuest || !isAuthenticated) {
             Alert.alert('Sign in required', 'Please sign in to submit a report.');
@@ -428,7 +428,7 @@ export function ShortTermForecastScreen() {
 
       {/* Navigate Button (bottom right, symmetric to report button) */}
       <TouchableOpacity
-        style={[styles.fabNavigate, { backgroundColor: navigateFabBg, bottom: SPACING.xxl + insets.bottom }]}
+        style={[styles.fabNavigate, { backgroundColor: navigateFabBg, bottom: insets.bottom }]}
         onPress={() => setIsMapModalOpen(true)}
         activeOpacity={0.8}
         accessibilityRole="button"

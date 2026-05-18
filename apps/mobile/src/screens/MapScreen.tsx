@@ -15,7 +15,7 @@ import MapView, { Marker, Polygon, Polyline, PROVIDER_DEFAULT, Region } from 're
 import { getOccupancyColorGradient, getReadableTextColor } from '../utils/parkingUtils';
 import { haversineDistance } from '../utils/geoHelpers';
 import { Header } from '../components';
-import { LotFilterModal } from '../components/Modals/FilterModal';
+import { LotFilterModal, matchesAttributes } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
 import { useContributorState } from '../services/api/contributor';
@@ -180,7 +180,7 @@ const InteractiveLot: React.FC<{
 // Filter button component
 const FilterButton: React.FC<{ onPress: () => void; insetBottom?: number }> = ({ onPress, insetBottom = 0 }) => (
   <TouchableOpacity
-    style={[styles.fab, styles.filterButton, { backgroundColor: COLORS.primary, shadowColor: COLORS.shadowDark, bottom: SPACING.xxl + insetBottom }]}
+    style={[styles.fab, styles.filterButton, { backgroundColor: COLORS.primary, shadowColor: COLORS.shadowDark, bottom: insetBottom }]}
     onPress={onPress}
     activeOpacity={0.8}
     accessibilityRole="button"
@@ -239,6 +239,7 @@ const MapScreen: React.FC = () => {
 
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
+  const [selectedAttributes, setSelectedAttributes] = useState<string[]>([]);
   const [hiddenRouteIds, setHiddenRouteIds] = useState<string[]>([]);
   // Gate map content rendering on AsyncStorage hydration so the persisted
   // filter snaps in before the user sees an unfiltered flash.
@@ -247,8 +248,8 @@ const MapScreen: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
 
-    AsyncStorage.multiGet(['filter:selectedLots', 'filter:hiddenRouteIds'])
-      .then(([lots, routes]) => {
+    AsyncStorage.multiGet(['filter:selectedLots', 'filter:hiddenRouteIds', 'filter:attributes'])
+      .then(([lots, routes, attrs]) => {
         // Parse each entry independently — a single corrupted key shouldn't
         // wipe the other persisted filter.
         if (lots[1]) {
@@ -266,6 +267,14 @@ const MapScreen: React.FC = () => {
             if (isMounted && Array.isArray(parsed)) setHiddenRouteIds(parsed);
           } catch {
             AsyncStorage.removeItem('filter:hiddenRouteIds').catch(() => {});
+          }
+        }
+        if (attrs[1]) {
+          try {
+            const parsed = JSON.parse(attrs[1]);
+            if (isMounted && Array.isArray(parsed)) setSelectedAttributes(parsed);
+          } catch {
+            AsyncStorage.removeItem('filter:attributes').catch(() => {});
           }
         }
       })
@@ -458,6 +467,11 @@ const MapScreen: React.FC = () => {
     // Geofences are registered for all lots at startup based on user type (see geoHelpers).
   };
 
+  const handleApplyAttributeFilter = (attrs: string[]) => {
+    setSelectedAttributes(attrs);
+    AsyncStorage.setItem('filter:attributes', JSON.stringify(attrs)).catch(() => {});
+  };
+
   // Redirect to Short-Term Forecast Screen of the lot selected within the navigation modal
   const handleLotNavigation = (id: string, name: string) => {
     navigation.navigate('Short Term Forecast', {
@@ -539,10 +553,14 @@ const MapScreen: React.FC = () => {
     setIsRecommendationModalOpen(true);
   }, [refreshFavorites]);
 
-  // Filter parking lots based on selected filter
-  const filteredParkingLots = selectedLots.length > 0
-    ? lots.filter(lot => selectedLots.includes(lot.lot_id))
+  // Filter parking lots based on selected filter. Apply attribute predicate
+  // first so the explicit lot-ID filter only narrows within attribute matches.
+  const attributeFilteredLots = selectedAttributes.length > 0
+    ? lots.filter(lot => matchesAttributes(lot, selectedAttributes))
     : lots;
+  const filteredParkingLots = selectedLots.length > 0
+    ? attributeFilteredLots.filter(lot => selectedLots.includes(lot.lot_id))
+    : attributeFilteredLots;
 
   const filteredRoutes = hiddenRouteIds.length > 0
     ? routes?.filter(r => !hiddenRouteIds.includes(r.id))
@@ -732,7 +750,7 @@ const MapScreen: React.FC = () => {
       <FilterButton onPress={handleFilterPress} insetBottom={insets.bottom} />
 
       {/* Navigate button FAB - bottom right */}
-      <View style={[styles.navigateButtonContainer, { bottom: SPACING.xxl + insets.bottom }]}>
+      <View style={[styles.navigateButtonContainer, { bottom: insets.bottom }]}>
         <FavoritesButton onPress={openRecommendationModal} isDark={isDark} />
       </View>
 
@@ -743,6 +761,8 @@ const MapScreen: React.FC = () => {
         lots={lots ?? []}
         selectedLots={selectedLots}
         onApplyFilter={handleApplyFilter}
+        selectedAttributes={selectedAttributes}
+        onApplyAttributeFilter={handleApplyAttributeFilter}
         routes={routes ?? []}
         hiddenRouteIds={hiddenRouteIds}
         onApplyTransitFilter={(ids) => {
@@ -942,12 +962,12 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     position: 'absolute',
-    bottom: SPACING.xxl,
+    bottom: SPACING.md,
     left: SPACING.xxl,
   },
   navigateButtonContainer: {
     position: 'absolute',
-    bottom: SPACING.xxl,
+    bottom: SPACING.md,
     right: SPACING.xxl,
   },
 });

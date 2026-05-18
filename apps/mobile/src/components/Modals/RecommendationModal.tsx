@@ -12,6 +12,7 @@ import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { useLotsList } from '../../hooks/useLotData';
 import { getOccupancyColorGradient, getReadableTextColor } from '../../utils/parkingUtils';
+import { formatDistance } from '../../utils/geoHelpers';
 import { LockedOccupancyBadge } from '..';
 import { lotsApi, LotRecommendation, BackgroundLocationRequiredError } from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
@@ -317,7 +318,7 @@ export function RecommendationModal({
                   ~{rec.estimated_occupancy ?? rec.current_occupancy} / {rec.capacity} spots taken
                 </Text>
                 <Text style={styles.reasonText}>
-                  {rec.reason}
+                  {formatDistance(rec.distance_meters)} away · {rec.reason}
                 </Text>
                 <View style={styles.progressBarBg}>
                   <View

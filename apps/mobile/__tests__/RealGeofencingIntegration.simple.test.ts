@@ -25,7 +25,7 @@ describe('Real Geofencing Integration (Simple)', () => {
       capacity: 500,
       current_occupancy: 250,
       location_description: 'Near Engineering Building',
-      buildings: [{ name: 'Engineering', category: 'ACADEMIC' }],
+      buildings: [{ name: 'Engineering', category: 'ACADEMIC', center_lat: 33.7838, center_lng: -118.1089 }],
       center_lat: 33.7838,
       center_lng: -118.1141,
       geofence_polygon: [
@@ -83,7 +83,7 @@ describe('Real Geofencing Integration (Simple)', () => {
       capacity: 300,
       current_occupancy: 150,
       location_description: 'Near Library',
-      buildings: [{ name: 'Library', category: 'ACADEMIC' }],
+      buildings: [{ name: 'Library', category: 'ACADEMIC', center_lat: 33.7840, center_lng: -118.1095 }],
       center_lat: 33.7840,
       center_lng: -118.1145,
       geofence_polygon: [

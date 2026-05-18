@@ -10,6 +10,8 @@ import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import type { ParkingLotResponse, BuildingCategory } from '../services/api/lots';
 import { formatTime } from '../utils/formatTime';
+import { haversineDistance, formatDistance } from '../utils/geoHelpers';
+import { MapSelectModal } from './Modals/MapSelectModal';
 
 interface LotAmenitiesProps {
   lot: ParkingLotResponse;
@@ -150,22 +152,44 @@ function AmenityChip({
  */
 function NearbyBuildings({
   buildings,
+  lotLat,
+  lotLng,
 }: {
   buildings: ParkingLotResponse['buildings'];
+  lotLat: number;
+  lotLng: number;
 }) {
   const { colors } = useTheme();
 
-  // Bucket by category once.
+  // When a user taps a building pill we hand off to the user's preferred
+  // maps app via MapSelectModal — same UX as the lot navigation button.
+  const [navTarget, setNavTarget] = React.useState<
+    { name: string; lat: number; lng: number } | null
+  >(null);
+
+  // Bucket by category once. Each entry carries its name + pre-computed
+  // straight-line distance from the lot's centerpoint (haversine, metres)
+  // and the building's coordinates so the pill can launch turn-by-turn
+  // directions. Distance formatting to mi/km happens at render time so it
+  // honours the device's locale via formatDistance().
   const grouped = React.useMemo(() => {
-    const map = new Map<BuildingCategory, string[]>();
+    const map = new Map<
+      BuildingCategory,
+      Array<{ name: string; distanceM: number; lat: number; lng: number }>
+    >();
     for (const b of buildings) {
+      const distanceM = haversineDistance(lotLat, lotLng, b.center_lat, b.center_lng);
       const list = map.get(b.category) ?? [];
-      list.push(b.name);
+      list.push({ name: b.name, distanceM, lat: b.center_lat, lng: b.center_lng });
       map.set(b.category, list);
     }
-    for (const list of map.values()) list.sort((a, b) => a.localeCompare(b));
+    // Sort nearest-first within each category so the most useful buildings
+    // surface at the top of each group.
+    for (const list of map.values()) {
+      list.sort((a, b) => a.distanceM - b.distanceM);
+    }
     return map;
-  }, [buildings]);
+  }, [buildings, lotLat, lotLng]);
 
   const total = buildings.length;
   const [expanded, setExpanded] = React.useState(
@@ -212,8 +236,8 @@ function NearbyBuildings({
       {expanded && (
         <View style={buildingStyles.groups}>
           {BUILDING_CATEGORY_GROUPS.map(({ key, label, icon }) => {
-            const names = grouped.get(key);
-            if (!names || names.length === 0) return null;
+            const entries = grouped.get(key);
+            if (!entries || entries.length === 0) return null;
             return (
               <View key={key} style={buildingStyles.group}>
                 <View style={buildingStyles.groupHeader}>
@@ -222,28 +246,35 @@ function NearbyBuildings({
                     {label}
                   </Text>
                   <Text style={[buildingStyles.groupCount, { color: colors.gray }]}>
-                    {names.length}
+                    {entries.length}
                   </Text>
                 </View>
                 <View style={buildingStyles.pillRow}>
-                  {names.map(name => (
-                    <View
+                  {entries.map(({ name, distanceM, lat, lng }) => (
+                    <Pressable
                       key={name}
-                      style={[
+                      onPress={() => setNavTarget({ name, lat, lng })}
+                      style={({ pressed }) => [
                         buildingStyles.pill,
                         {
                           backgroundColor: colors.lightGray,
                           borderColor: colors.borderGray,
+                          opacity: pressed ? 0.7 : 1,
                         },
                       ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Navigate to ${name}, ${formatDistance(distanceM)} from the lot`}
                     >
                       <Text
                         style={[buildingStyles.pillText, { color: colors.textPrimary }]}
                         numberOfLines={1}
                       >
                         {name}
+                        <Text style={[buildingStyles.pillDistance, { color: colors.gray }]}>
+                          {'  · '}{formatDistance(distanceM)}
+                        </Text>
                       </Text>
-                    </View>
+                    </Pressable>
                   ))}
                 </View>
               </View>
@@ -251,6 +282,14 @@ function NearbyBuildings({
           })}
         </View>
       )}
+
+      <MapSelectModal
+        isVisible={navTarget !== null}
+        onClose={() => setNavTarget(null)}
+        lat={navTarget?.lat ?? 0}
+        lon={navTarget?.lng ?? 0}
+        title={navTarget?.name ?? ''}
+      />
     </View>
   );
 }
@@ -333,31 +372,24 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
           value={lot.location_description}
         />
         {lot.buildings.length > 0 && (
-          <NearbyBuildings buildings={lot.buildings} />
+          <NearbyBuildings
+            buildings={lot.buildings}
+            lotLat={lot.center_lat}
+            lotLng={lot.center_lng}
+          />
         )}
       </View>
 
-      {/* ── Permits & Rates ── */}
+      {/* ── Permits ── */}
       <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
         <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-          Permits & Rates
+          Permits
         </Text>
 
         <AmenityRow
           icon="pricetag-outline"
           label="Permits"
           value={lot.permit_types.join(', ')}
-        />
-        <AmenityRow
-          icon="cash-outline"
-          label="Daily Permit"
-          value={
-            lot.daily_permit_allowed
-              ? lot.daily_rate != null && Number.isFinite(Number(lot.daily_rate))
-                ? `$${Number(lot.daily_rate).toFixed(2)}`
-                : 'Available'
-              : 'Not Available'
-          }
         />
       </View>
 
@@ -498,7 +530,6 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
-    paddingBottom: SPACING.xxxl * 2, // extra room above FAB buttons
     gap: SPACING.lg,
   },
   card: {
@@ -654,5 +685,9 @@ const buildingStyles = StyleSheet.create({
   pillText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+  pillDistance: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
   },
 });
