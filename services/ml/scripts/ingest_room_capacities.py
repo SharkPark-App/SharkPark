@@ -574,9 +574,14 @@ def _dedup(rows: Iterable[CapacityRow]) -> list[CapacityRow]:
 
 
 def _resolve_school_id(conn) -> str:
-    """Look up the (single, for now) CSULB school row's id."""
+    """Look up the (single, for now) CSULB school row's id.
+
+    The ``schools`` table uses ``short_name`` (Prisma field) for the
+    school code; an earlier draft of this script queried ``acronym``,
+    which never existed in the production schema.
+    """
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM schools WHERE acronym = 'CSULB' LIMIT 1")
+        cur.execute("SELECT id FROM schools WHERE short_name = 'CSULB' LIMIT 1")
         row = cur.fetchone()
     if not row:
         raise RuntimeError("No CSULB school row found in `schools` table")

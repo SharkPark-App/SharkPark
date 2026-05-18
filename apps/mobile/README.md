@@ -1,128 +1,184 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# SharkPark Mobile
 
-# Getting Started
+The SharkPark mobile app: a React Native client that shows real-time CSULB
+parking-lot occupancy, short- and long-term forecasts, and contributes
+anonymous device-presence signals back to the backend to keep the live tile
+accurate.
 
-> First-time setup is run from the **monorepo root**, not here. See the [root README](../../README.md#getting-started) for the full flow.
+For project-wide context (architecture, services, data flow) see the
+[repository README](../../README.md).
 
-Quick path on a fresh clone:
+## Quick start
 
-```sh
+This app is part of the SharkPark monorepo and depends on workspace packages
+(`@sharkpark/types`, `@sharkpark/utils`). Always install from the repo root:
+
+```bash
 # from repo root
-pnpm bootstrap   # installs rbenv + Ruby (macOS) + bundler + CocoaPods, links backend .env
-pnpm install     # workspace deps + Docker + migrations + seed
+pnpm install
+
+# then, from this directory
+pnpm ios       # iOS simulator (runs `pod install` automatically via postinstall)
+pnpm android   # Android emulator
+pnpm start     # Metro bundler only (pair with a connected device/emulator)
 ```
 
-Then to run the iOS app:
+The backend must be reachable. By default the API base URL is resolved per
+platform:
 
-```sh
-cd apps/mobile
-pnpm ios
+| Platform | Default base URL |
+|----------|------------------|
+| iOS simulator | `http://localhost:3000` |
+| Android emulator | `http://10.0.2.2:3000` |
+| Physical device (dev) | LAN IP (set via `API_BASE_URL` env or `src/services/api/config.ts`) |
+| Production | `https://api.sharkpark.app` |
+
+## Tech stack
+
+- React Native 0.85.2, React 19.2.3
+- React Navigation 7 (`@react-navigation/native`, `bottom-tabs`, `stack`)
+- `react-native-maps` for the campus map
+- `react-native-app-auth` for Azure AD SSO (PKCE)
+- `react-native-keychain` for secure token storage
+- `react-native-background-geolocation` for opt-in presence telemetry
+- `@react-native-firebase/messaging` + `@notifee` for push notifications
+- `socket.io-client` for the real-time `/shuttles` WebSocket namespace
+- `@sentry/react-native` for crash + performance monitoring
+
+## Architecture
+
+### Where mobile fits in the system
+
+This app is one of three runtimes in the SharkPark monorepo. The
+[root README](../../README.md#how-the-pieces-connect) has the full
+end-to-end picture; the short version from the mobile side is:
+
+- **What we send up:** anonymous geofence ENTER/EXIT events to
+  `POST /api/v1/occupancy-events` (HMAC-signed with `DEVICE_EVENT_SECRET`),
+  plus an FCM push token to `POST /api/v1/users/me/push-token`.
+- **What we read down:** lot list + live occupancy from `/lots`, ML
+  predictions from `/lots/:id/predictions/{short,long}-term` (tagged
+  `source: 'ml' | 'heuristic'`), live shuttles from the `/shuttles`
+  socket.io namespace, weather/event impact from `/weather/*` and
+  `/events/*`, and the version floor from `/min-version`.
+- **What we never send:** raw GPS coordinates or anything that could
+  identify the user. The polygon ray-cast happens **on-device** and only
+  the lot ID + an opaque per-install UUID leave the phone.
+
+### Provider hierarchy (top of `App.tsx`)
+
+```
+SafeAreaProvider
+  └─ ThemeProvider          // colors, dark/light mode
+     └─ AuthProvider         // Azure AD SSO state, JWT refresh
+        └─ EnhancedGeofencingProvider  // opt-in presence detection + parking validation
+           └─ NavigationContainer
+              └─ Root navigator
 ```
 
-Or to run the Android app:
+### Screens (`src/screens/`)
 
-```sh
-cd apps/mobile
-pnpm android
+| Screen | Purpose |
+|--------|---------|
+| `MapScreen` | Live campus map with per-lot occupancy pins and shuttle overlay |
+| `ShortTermForecastScreen` | Next few hours of occupancy with confidence band; shows ML vs heuristic source badge |
+| `LongTermForecastScreen` | Multi-day forecast with calendar awareness |
+| `ProfileScreen` | Account, push-notification toggle, data export, sign-out |
+| `LoginScreen` | Azure AD SSO entry |
+| `OnboardingScreen` | First-run feature tour |
+| `PermissionGateScreen` | Aggregates required permission prompts |
+| `LocationPermissionScreen` | Background-location explainer + request |
+| `ForceUpdateScreen` | Blocks the app when below the backend's minimum supported version |
+
+### API client (`src/services/api/`, `src/services/api/config.ts`)
+
+Thin `axios`/`fetch` wrappers that:
+
+- Resolve the base URL per platform (see table above).
+- Inject the Azure AD access token from Keychain on every authenticated request.
+- Surface backend's `source: 'ml' | 'heuristic'` field on `/predictions` responses
+  so forecast screens can render a small badge indicating whether the user is
+  seeing an ML-backed prediction or the time-of-day heuristic fallback.
+
+### Auth (`src/auth/`)
+
+Azure AD SSO via `react-native-app-auth` with PKCE. Tokens are stored in the
+device Keychain. The backend (`apps/backend`) validates these JWTs with the
+Passport Azure AD strategy using JWKS — the mobile app never sees client
+secrets.
+
+### Geofencing (`src/utils/geofencing/`, `src/context/EnhancedGeofencingProvider.tsx`)
+
+- Opt-in: requires the user to grant background-location and accept the
+  presence-collection consent in onboarding.
+- Uses `react-native-background-geolocation` to receive coarse location updates.
+- A pure-TypeScript ray-casting algorithm tests whether the device sits inside a
+  lot polygon (the polygons are served by the backend, not embedded).
+- Each transition (enter/exit) is sent to the backend as an HMAC-signed event
+  keyed by an anonymous per-install UUID. The backend salts and SHA-256-hashes
+  the UUID server-side (`DEVICE_HASH_SALT`) before persisting — the raw UUID
+  never lands in the database.
+
+### Force-update gate
+
+On launch, the app calls `GET /api/v1/min-version`. If the installed build is
+below the returned floor, navigation is locked to `ForceUpdateScreen` until the
+user updates from the App Store / Play Store. This lets the backend retire
+clients with bad behavior (e.g. a buggy presence-event sender) without waiting
+for organic updates.
+
+### Push notifications
+
+FCM token is obtained via `@react-native-firebase/messaging` and registered
+with the backend through `POST /api/v1/users/me/push-token`. Users can revoke
+from `ProfileScreen` (which calls `DELETE /api/v1/users/me/push-token`).
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `pnpm ios` | Build & launch on the iOS simulator |
+| `pnpm android` | Build & launch on an Android emulator/device |
+| `pnpm start` / `pnpm dev` | Metro bundler |
+| `pnpm test` | Jest test suite (824 tests / 73 suites) |
+| `pnpm test:hygiene` | Jest with `--runInBand --detectOpenHandles` for CI |
+| `pnpm lint` | ESLint (flat config) |
+| `pnpm typecheck` | `tsc --noEmit` |
+
+A `postinstall` hook runs `pod install` automatically on macOS unless `$CI` is
+set. To force a clean reinstall:
+
+```bash
+cd ios && pod deintegrate && pod install && cd ..
 ```
 
-> **macOS Ruby note:** the project pins Ruby in `apps/mobile/.ruby-version` and bundler in `Gemfile.lock`. `pnpm setup` installs both via `rbenv`. Don't run `gem install` or `bundle install` against the system Ruby (2.6) — it's too old.
+## Testing
 
-## Re-installing CocoaPods after pulling native changes
+Jest + React Native Testing Library. Tests live in `__tests__/`. Native
+modules and platform-specific APIs are mocked under `__mocks__/`
+(`react-native-background-geolocation`, `@react-native-community/*`, image
+files via `fileMock.js`).
 
-```sh
-cd apps/mobile
-bundle exec pod install --project-directory=ios
-```
+## Local dev requirements
 
-## Step 1: Start Metro
+- Node 22+ and pnpm 10.20.0 (managed at the repo root via `packageManager`).
+- Xcode 16+ with iOS 17 SDK.
+- Android Studio with API level 35 build tools.
+- Ruby pinned to 3.3.11 (see [`.ruby-version`](.ruby-version)) for CocoaPods.
+  macOS system Ruby is too old; use `rbenv` or `asdf`.
+- Run the backend locally first (`pnpm --filter backend start:dev` from the
+  repo root) so the app has something to talk to.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Troubleshooting
 
-To start the Metro dev server, run the following command from the root of your React Native project:
-
-```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- **`pod install` fails with Ruby errors** — your shell is using system Ruby.
+  Install Ruby 3.3.11 via `rbenv install 3.3.11 && rbenv local 3.3.11`.
+- **Android emulator can't reach the backend** — the emulator host alias is
+  `10.0.2.2`, not `localhost`. This is already handled by `src/services/api/config.ts`.
+- **Forecast screen shows "heuristic" badge** — backend has not returned an
+  ML-backed forecast for that lot (cold-start window, ML job has not yet run,
+  or upstream failure). Check backend logs / Sentry. This is expected during
+  the cold-start phase described in [`services/ml/README.md`](../../services/ml/README.md).
+- **Sign-in opens then immediately bounces** — usually a JWT clock-skew issue
+  or the backend cannot reach Azure AD JWKS. Verify backend `AZURE_AD_*`
+  environment variables.

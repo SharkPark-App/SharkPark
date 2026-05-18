@@ -639,6 +639,7 @@ export class LotsService {
    */
   async getShortTermPredictions(lotId: string): Promise<{
     lot_id: string;
+    source: 'ml' | 'heuristic';
     predictions: Array<{
       target_time: string;
       predicted_occupancy: number;
@@ -677,23 +678,40 @@ export class LotsService {
       this.weatherService.getCurrent(),
     ]);
 
+    const weatherPayload = weather
+      ? {
+          conditions: weather.conditions,
+          temperature_f: weather.temperature_f,
+          is_raining: weather.is_raining,
+          precipitation_probability: weather.precipitation_probability,
+        }
+      : null;
+
+    if (predictions.length > 0) {
+      return {
+        lot_id: lotId,
+        source: 'ml',
+        predictions: predictions.map((p) => ({
+          target_time: p.target_time.toISOString(),
+          predicted_occupancy: p.predicted_occupancy,
+          confidence_lower: p.confidence_lower,
+          confidence_upper: p.confidence_upper,
+          model_version: p.model_version,
+        })),
+        weather: weatherPayload,
+      };
+    }
+
+    // Fallback: same heuristic family as the long-term endpoint, but
+    // restricted to the remaining hourly bins of the current campus day.
+    // Keeps the contract symmetric with `getLongTermPredictions` so the
+    // mobile app can always render a `source` badge instead of having to
+    // distinguish "empty list" from "no ML model yet".
     return {
       lot_id: lotId,
-      predictions: predictions.map((p) => ({
-        target_time: p.target_time.toISOString(),
-        predicted_occupancy: p.predicted_occupancy,
-        confidence_lower: p.confidence_lower,
-        confidence_upper: p.confidence_upper,
-        model_version: p.model_version,
-      })),
-      weather: weather
-        ? {
-            conditions: weather.conditions,
-            temperature_f: weather.temperature_f,
-            is_raining: weather.is_raining,
-            precipitation_probability: weather.precipitation_probability,
-          }
-        : null,
+      source: 'heuristic',
+      predictions: this.generateHeuristicShortTermPredictions(new Date()),
+      weather: weatherPayload,
     };
   }
 
@@ -858,6 +876,64 @@ export class LotsService {
     }
 
     return predictions;
+  }
+
+  /**
+   * Heuristic short-term fallback: same per-hour pattern as the long-term
+   * heuristic, restricted to the remaining hourly bins of the current day.
+   * Used when `predictions_short_term` has no recent rows for this lot
+   * (e.g. cron not yet caught up after a deploy, or pre-launch with no
+   * trained model). Mirrors the hourly cadence the production model
+   * emits (`scripts/predict_short_term.py` writes one row per
+   * `OPERATING_START_HOUR..OPERATING_END_HOUR` slot).
+   */
+  private generateHeuristicShortTermPredictions(now: Date): Array<{
+    target_time: string;
+    predicted_occupancy: number;
+    confidence_lower: number;
+    confidence_upper: number;
+    model_version: string;
+  }> {
+    const CAMPUS_OPEN = 6;
+    const CAMPUS_CLOSE = 22;
+
+    const hourlyPattern: Record<number, number> = {
+      6: 0.10, 7: 0.25, 8: 0.50, 9: 0.70, 10: 0.80,
+      11: 0.85, 12: 0.82, 13: 0.78, 14: 0.75, 15: 0.65,
+      16: 0.55, 17: 0.45, 18: 0.35, 19: 0.25, 20: 0.15,
+      21: 0.10,
+    };
+
+    const dayOfWeek = now.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const dayMultiplier = isWeekend ? 0.30 : 1.0;
+
+    // Start from the next on-the-hour slot — the live tile already covers
+    // the current bin, so the forecast should begin one hour ahead.
+    const firstHour = Math.max(CAMPUS_OPEN, now.getHours() + 1);
+    const out: Array<{
+      target_time: string;
+      predicted_occupancy: number;
+      confidence_lower: number;
+      confidence_upper: number;
+      model_version: string;
+    }> = [];
+
+    for (let hour = firstHour; hour < CAMPUS_CLOSE; hour++) {
+      const baseRate = (hourlyPattern[hour] ?? 0.10) * dayMultiplier;
+      const margin = 0.12;
+      const slot = new Date(now);
+      slot.setHours(hour, 0, 0, 0);
+      out.push({
+        target_time: slot.toISOString(),
+        predicted_occupancy: baseRate,
+        confidence_lower: Math.max(0, baseRate - margin),
+        confidence_upper: Math.min(1, baseRate + margin),
+        model_version: 'heuristic-v1',
+      });
+    }
+
+    return out;
   }
 }
 

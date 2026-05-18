@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../database/database.module';
 import { withAdvisoryLock } from './advisory-lock';
@@ -125,6 +125,13 @@ export class CronRunnerService {
           duration_ms: elapsedMs,
           metadata: this._toJsonValue(metadata),
         });
+        // Drift detection: if the current run's model_version differs from
+        // the previous SUCCESS run for this job, surface a Sentry warning.
+        // A model_version change is intentional during a deploy, but a
+        // silent change between deploys (e.g. a stale artifact, a typo, or
+        // an unexpected MLflow promotion) is exactly the kind of thing we
+        // want to know about. Best-effort — never fail the run.
+        await this._checkModelVersionDrift(jobName, metadata);
       }
 
       if (checkInId) {
@@ -143,7 +150,10 @@ export class CronRunnerService {
       await this._finalizeTrackedRun(trackedRunId, {
         status: 'FAILED',
         duration_ms: elapsedMs,
-        error_message: message.slice(0, 4000),
+        // 16000 chars: schema column is unconstrained TEXT and Python ML
+        // tracebacks regularly exceed 4 KB. Keep an upper bound so a
+        // pathological error string can't bloat the audit table.
+        error_message: message.slice(0, 16000),
       });
 
       if (checkInId) {
@@ -192,6 +202,52 @@ export class CronRunnerService {
       // Surface a warning so an operator notices the audit gap.
       this.logger.warn(
         `[cron] failed to finalize ml_cron_runs row ${runId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Compare the current run's `model_version` against the previous
+   * SUCCESS run for the same job. Emits a Sentry warning when they
+   * differ so an operator can confirm the change was intentional.
+   * Silent on first run (no prior SUCCESS), missing model_version, or
+   * any DB/Sentry error — drift detection must never fail a job.
+   */
+  private async _checkModelVersionDrift(
+    jobName: string,
+    metadata: CronWorkMetadata | undefined,
+  ): Promise<void> {
+    const current = metadata?.['model_version'];
+    if (typeof current !== 'string' || current.length === 0) return;
+    try {
+      const previous = await this.prisma.mlCronRun.findFirst({
+        where: {
+          job_name: jobName,
+          status: 'SUCCESS',
+          metadata: { path: ['model_version'], not: Prisma.AnyNull },
+        },
+        orderBy: { completed_at: 'desc' },
+        // skip:1 because the row we just wrote is the freshest SUCCESS.
+        skip: 1,
+        select: { metadata: true },
+      });
+      if (!previous?.metadata) return;
+      const prev = (previous.metadata as Record<string, unknown>)[
+        'model_version'
+      ];
+      if (typeof prev !== 'string' || prev === current) return;
+      const msg = `[cron:${jobName}] model_version drift: was "${prev}", now "${current}"`;
+      this.logger.warn(msg);
+      Sentry.captureMessage(msg, {
+        level: 'warning',
+        tags: { job: jobName, kind: 'model_version_drift' },
+        extra: { previous_version: prev, current_version: current },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[cron:${jobName}] model_version drift check failed: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

@@ -59,8 +59,8 @@ flyctl ssh console -a sharkpark-api -C "node -e 'console.log(process.env.SENTRY_
                             │
                             ▼
               Fly.io  (sharkpark-api, region=lax)
-              ├─ app process     (HTTP, autostop min=0)
-              └─ cron process    (NestJS scheduler, always-on 1x@512MB)
+              ├─ app process     (HTTP, min_machines_running=1, 512MB)
+              └─ cron process    (NestJS scheduler, always-on, 1GB)
                             │
                             ▼
               Neon Postgres (us-west-2)
@@ -69,16 +69,16 @@ flyctl ssh console -a sharkpark-api -C "node -e 'console.log(process.env.SENTRY_
                             │
                             ▼
               Cloudflare R2
-              ├─ sharkpark-backups       (35-day lifecycle, daily dumps)
+              ├─ sharkpark-backups       (daily dumps; retention via R2 bucket lifecycle)
               └─ sharkpark-ml-exports    (parquet snapshots, future)
 ```
 
-Process group memory: app=512MB, cron=512MB. The cron process is a single
+Process group memory: app=512MB, cron=1GB. The cron process is a single
 long-lived Nest application context (`node dist/scheduler-main.js`) that owns
 all 29 scheduled jobs via `@nestjs/schedule` decorators — see
 [apps/backend/src/scheduler/](../../apps/backend/src/scheduler/). Steady RSS
-≈ 230–260 MB; 512 MB gives headroom for `pg_dump` spikes during the nightly
-backup job.
+≈ 230–260 MB; the 1 GB ceiling absorbs transient ~700 MB spikes from spawned
+Python ML predictor subprocesses (and `pg_dump` during the nightly backup).
 
 ---
 

@@ -142,8 +142,8 @@ AWS. Two top-level prefixes:
 
 | Prefix | Producer | Consumer |
 |--------|----------|----------|
-| `backups/postgres/YYYY-MM-DD/` | `backup-db.job.ts` (nightly) | `verify-latest-backup.job.ts` (nightly checksum), [`docs/runbooks/restore.md`](../docs/runbooks/restore.md), [`.github/workflows/restore-test.yml`](../.github/workflows/restore-test.yml) (nightly) |
-| `ml/models/{short,long}/<model_version>/` | `services/ml/scripts/promote_*.py` | `predict-all-lots.job.ts` (cached locally on first read) |
+| `daily/YYYY-MM-DD.dump.gz` | `backup-db.job.ts` (nightly) | `verify-latest-backup.job.ts` (nightly checksum), [`docs/runbooks/restore.md`](../docs/runbooks/restore.md), [`.github/workflows/restore-test.yml`](../.github/workflows/restore-test.yml) (nightly) |
+| `ml/models/{short,long}/<model_version>/` | `services/ml/scripts/promote_*.py` | `predict-short-term.job.ts` and `predict-long-term.job.ts` (cached locally on first read) |
 
 Credentials live in two places (must stay in sync):
 - Fly secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_ENDPOINT`,

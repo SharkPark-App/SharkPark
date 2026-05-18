@@ -190,3 +190,10 @@ vite.config.ts.timestamp-*
 # Local development configurations (don't commit personal network IPs)
 **/api/config.local.*
 **/.env.local
+
+# MLflow tracking artifacts (Python ML workspace)
+# services/ml has its own .gitignore covering its local mlruns/, but stray
+# top-level mlruns/ directories should never be committed either.
+mlruns/
+**/mlruns/
+mlflow.db

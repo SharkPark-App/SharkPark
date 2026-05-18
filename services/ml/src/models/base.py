@@ -408,8 +408,16 @@ class BaseXGBoostModel:
         """
         df = self._encode_categoricals(df)
 
+        # Only list encoded cats whose encoded column was actually produced.
+        # `_encode_categoricals` skips columns missing from `category_mappings`
+        # (e.g. a model trained before a new categorical was added), and we
+        # must not require those columns at inference time — otherwise an
+        # older registered model breaks the moment a new categorical is
+        # appended to `CATEGORICAL_FEATURES` in code.
         encoded_cats = [
-            f"{col}_encoded" for col in self.CATEGORICAL_FEATURES if col in df.columns
+            f"{col}_encoded"
+            for col in self.CATEGORICAL_FEATURES
+            if f"{col}_encoded" in df.columns
         ]
         self.feature_columns = list(self.NUMERIC_FEATURES) + encoded_cats
 
