@@ -249,7 +249,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G1', lot_name: 'Lot G1', display_name: 'Lot G1 - East Campus', lot_number: 'G1',
     lot_type: LotType.STUDENT, capacity: 231, current_occupancy: 27,
-    location_description: 'East Campus - Near Japanese Garden',
+    location_description: 'West Campus - Near Visitor Information Center & International House',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'ShortTerm', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -264,7 +264,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G2', lot_name: 'Lot G2', display_name: 'Lot G2 - Walter Pyramid', lot_number: 'G2',
     lot_type: LotType.STUDENT, capacity: 419, current_occupancy: 55,
-    location_description: 'East Campus - Walter Pyramid',
+    location_description: 'Northwest Campus - Hillside residence area, near Japanese Garden',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'OvernightGuest', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -280,7 +280,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G3', lot_name: 'Lot G3', display_name: 'Lot G3 - East Campus', lot_number: 'G3',
     lot_type: LotType.STUDENT, capacity: 230, current_occupancy: 21,
-    location_description: 'East Campus',
+    location_description: 'West Campus - Near Student Health Services & Anna W. Ngai Alumni Center',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -295,7 +295,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G4', lot_name: 'Lot G4', display_name: 'Lot G4 - Central Campus', lot_number: 'G4',
     lot_type: LotType.STUDENT, capacity: 463, current_occupancy: 66,
-    location_description: 'Central Campus',
+    location_description: 'West Campus - Near Los Alamitos Hall & Japanese Garden',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'ShortTerm', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -311,7 +311,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G5', lot_name: 'Lot G5', display_name: 'Lot G5 - West Campus', lot_number: 'G5',
     lot_type: LotType.STUDENT, capacity: 120, current_occupancy: 8,
-    location_description: 'West Campus',
+    location_description: 'West Campus - Near College of Business & Parking and Transportation Services',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -326,7 +326,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G7', lot_name: 'Lot G7', display_name: 'Lot G7 - Engineering', lot_number: 'G7',
     lot_type: LotType.STUDENT, capacity: 751, current_occupancy: 98,
-    location_description: 'East Campus - Engineering Complex',
+    location_description: 'Northwest Campus - Near Parkside Village residence halls',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -342,7 +342,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G8', lot_name: 'Lot G8', display_name: 'Lot G8 - Student Health', lot_number: 'G8',
     lot_type: LotType.STUDENT, capacity: 720, current_occupancy: 77,
-    location_description: 'West Campus - Student Health Center',
+    location_description: 'Northwest Campus - Near Parkside North & Parkside College housing',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -357,7 +357,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G9', lot_name: 'Lot G9', display_name: 'Lot G9 - Library', lot_number: 'G9',
     lot_type: LotType.STUDENT, capacity: 405, current_occupancy: 66,
-    location_description: 'West Campus - University Library',
+    location_description: 'North Campus - Near Parkside North housing, off E Atherton St',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -373,7 +373,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G10', lot_name: 'Lot G10', display_name: 'Lot G10 - South Campus', lot_number: 'G10',
     lot_type: LotType.STUDENT, capacity: 19, current_occupancy: 2,
-    location_description: 'South Campus',
+    location_description: 'Northwest Campus - Adjacent to Parkside North housing & Child Development Center',
     // G10 is restricted: NO Resident permits valid here.
     permit_types: ['Student', 'Employee', 'Daily', 'ShortTerm', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
@@ -391,7 +391,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G11', lot_name: 'Lot G11', display_name: 'Lot G11 - Palo Verde', lot_number: 'G11',
     lot_type: LotType.STUDENT, capacity: 319, current_occupancy: 21,
-    location_description: 'East Campus - Palo Verde',
+    location_description: 'North Campus - Near Walter Pyramid & Barrett Athletic Admin, on E Atherton St & Merriam Way',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -406,7 +406,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G12', lot_name: 'Lot G12', display_name: 'Lot G12 - North Campus', lot_number: 'G12',
     lot_type: LotType.STUDENT, capacity: 628, current_occupancy: 36,
-    location_description: 'North Campus',
+    location_description: 'Northeast Campus - Adjacent to Carpenter Performing Arts Center & University Music Center (Conservatory)',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -421,7 +421,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G14', lot_name: 'Lot G14', display_name: 'Lot G14 - Beachside', lot_number: 'G14',
     lot_type: LotType.STUDENT, capacity: 262, current_occupancy: 26,
-    location_description: 'West Campus - Near PCH',
+    location_description: 'East Campus - Adjacent to Student Recreation & Wellness Center, just south of George Allen Field',
     // Beachside: Resident + BeachsideResident (Beachside Village residents) + ShortTerm
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'BeachsideResident', 'ShortTerm', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
@@ -439,7 +439,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E1', lot_name: 'Lot E1', display_name: 'Lot E1 - Faculty/Staff', lot_number: 'E1',
     lot_type: LotType.EMPLOYEE, capacity: 440, current_occupancy: 79,
-    location_description: 'Central Campus - Admin Area',
+    location_description: 'West Campus - Faculty/Staff, near College of Business & Brotman Hall',
     permit_types: ['Employee', 'Daily', 'ShortTerm', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -454,7 +454,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E2', lot_name: 'Lot E2', display_name: 'Lot E2 - Faculty/Staff', lot_number: 'E2',
     lot_type: LotType.EMPLOYEE, capacity: 269, current_occupancy: 55,
-    location_description: 'East Campus - Faculty',
+    location_description: 'Central Campus - Faculty/Staff, near Horn Center & University Student Union',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -469,7 +469,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E3', lot_name: 'Lot E3', display_name: 'Lot E3 - Faculty/Staff', lot_number: 'E3',
     lot_type: LotType.EMPLOYEE, capacity: 65, current_occupancy: 10,
-    location_description: 'West Campus - Faculty',
+    location_description: 'Central Campus - Faculty/Staff, adjacent to Ken Lindgren Aquatics Center & Kinesiology',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -484,7 +484,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E4', lot_name: 'Lot E4', display_name: 'Lot E4 - Faculty/Staff', lot_number: 'E4',
     lot_type: LotType.EMPLOYEE, capacity: 81, current_occupancy: 20,
-    location_description: 'Central Campus - Faculty',
+    location_description: 'Central Campus - Faculty/Staff, between Ken Lindgren Aquatics Center & Rhodes Tennis Center',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -500,7 +500,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E5', lot_name: 'Lot E5', display_name: 'Lot E5 - Faculty/Staff', lot_number: 'E5',
     lot_type: LotType.EMPLOYEE, capacity: 66, current_occupancy: 15,
-    location_description: 'North Campus - Faculty',
+    location_description: 'East Campus - Faculty/Staff, near University Police & Corporation Yard, by Student Recreation & Wellness Center',
     permit_types: ['Employee', 'Daily', 'ShortTerm', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -515,7 +515,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E6', lot_name: 'Lot E6', display_name: 'Lot E6 - Faculty/Staff', lot_number: 'E6',
     lot_type: LotType.EMPLOYEE, capacity: 240, current_occupancy: 35,
-    location_description: 'Central Campus - Faculty',
+    location_description: 'East Campus - Faculty/Staff, near Engineering Technology & Beach Building Services',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -530,7 +530,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E7', lot_name: 'Lot E7', display_name: 'Lot E7 - Faculty/Staff', lot_number: 'E7',
     lot_type: LotType.EMPLOYEE, capacity: 91, current_occupancy: 11,
-    location_description: 'South Campus - Faculty',
+    location_description: 'South Campus - Faculty/Staff, near Hall of Science & Molecular & Life Sciences',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -546,7 +546,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G6', lot_name: 'Lot G6', display_name: 'Lot G6 - South Campus', lot_number: 'G6',
     lot_type: LotType.STUDENT, capacity: 793, current_occupancy: 66,
-    location_description: 'South Campus',
+    location_description: 'West Campus - Near Parking and Transportation Services',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -561,7 +561,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'G13', lot_name: 'Lot G13', display_name: 'Lot G13 - Upper Campus', lot_number: 'G13',
     lot_type: LotType.STUDENT, capacity: 304, current_occupancy: 18,
-    location_description: 'Upper Campus',
+    location_description: 'Northeast Campus - Off Palo Verde Ave, near George Allen Field & Student Recreation & Wellness Center',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -576,7 +576,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E8', lot_name: 'Lot E8', display_name: 'Lot E8 - Faculty/Staff', lot_number: 'E8',
     lot_type: LotType.EMPLOYEE, capacity: 380, current_occupancy: 57,
-    location_description: 'North Campus - Faculty',
+    location_description: 'South Campus - Faculty/Staff, near University Theatre & Cinematic Arts',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -591,7 +591,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E9', lot_name: 'Lot E9', display_name: 'Lot E9 - Faculty/Staff', lot_number: 'E9',
     lot_type: LotType.EMPLOYEE, capacity: 167, current_occupancy: 4,
-    location_description: 'North Campus - Faculty',
+    location_description: 'Southwest Campus - Faculty/Staff, behind the University Library',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -606,7 +606,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E10', lot_name: 'Lot E10', display_name: 'Lot E10 - Faculty/Staff', lot_number: 'E10',
     lot_type: LotType.EMPLOYEE, capacity: 183, current_occupancy: 5,
-    location_description: 'South Campus - Faculty',
+    location_description: 'South Campus - Faculty/Staff, near Bookstore & College of Liberal Arts',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -621,7 +621,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'E11', lot_name: 'Lot E11', display_name: 'Lot E11 - Faculty/Staff', lot_number: 'E11',
     lot_type: LotType.EMPLOYEE, capacity: 98, current_occupancy: 4,
-    location_description: 'Central Campus - Faculty',
+    location_description: 'West Campus - Faculty/Staff, near University Student Union & Bookstore',
     permit_types: ['Employee', 'Daily', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -637,7 +637,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'PVN', lot_name: 'Palo Verde North', display_name: 'Palo Verde North - North Campus', lot_number: 'PVN',
     lot_type: LotType.STUDENT, capacity: 1400, current_occupancy: 91,
-    location_description: 'North Campus - Palo Verde Structure',
+    location_description: 'Northeast Campus - Palo Verde Parking Structure, north building (Palo Verde Ave, near George Allen Field & Carpenter Center)',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -653,7 +653,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'PVS', lot_name: 'Palo Verde South', display_name: 'Palo Verde South - South Campus', lot_number: 'PVS',
     lot_type: LotType.STUDENT, capacity: 1410, current_occupancy: 82,
-    location_description: 'South Campus - Palo Verde Structure',
+    location_description: 'East Campus - Palo Verde Parking Structure, south building (adjacent to Student Recreation & Wellness Center)',
     permit_types: ['Student', 'Employee', 'Daily', 'Resident', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
@@ -669,7 +669,7 @@ export const parkingLots: LotSeed[] = [
   {
     lot_id: 'PYR', lot_name: 'Pyramid Parking Structure', display_name: 'Pyramid Structure - Event Parking', lot_number: 'PYR',
     lot_type: LotType.STUDENT, capacity: 3000, current_occupancy: 380,
-    location_description: 'East Campus - Near Walter Pyramid',
+    location_description: 'West-Central Campus - Pyramid Parking Structure, adjacent to Parking and Transportation Services & Barrett Athletic Admin',
     permit_types: ['Student', 'Employee', 'Daily', 'Event', 'Emeriti', 'BMAC'],
     daily_permit_allowed: true, daily_rate: 10.00,
     hours_weekday: { open: '00:00', close: '23:59' },
