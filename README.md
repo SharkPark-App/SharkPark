@@ -62,14 +62,14 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Mobile** | React Native 0.82, React 19 | Cross-platform (iOS and Android) from a single TypeScript codebase. React Native gives us native performance for GPS tracking and geofencing while sharing business logic across platforms. |
+| **Mobile** | React Native 0.85, React 19 | Cross-platform (iOS and Android) from a single TypeScript codebase. React Native gives us native performance for GPS tracking and geofencing while sharing business logic across platforms. |
 | **Navigation** | React Navigation 7 | Industry standard for React Native screen management. Bottom tab navigator gives students quick access to map, forecasts, and profile. |
 | **Auth** | Azure AD SSO via `react-native-app-auth` | CSULB uses Azure Active Directory for all student accounts. Using the university's existing SSO means students log in with their school credentials — no separate account creation, and we can verify they are actual CSULB students. |
 | **Backend** | NestJS 11 (Node.js) | TypeScript-native framework with built-in support for modules, dependency injection, guards, pipes, and scheduled tasks. The modular architecture maps cleanly to our domain (lots, users, events, weather, reliability). Comes with first-class testing support. |
 | **ORM** | Prisma 7 | Type-safe database queries generated from a schema file (`prisma/schema.prisma`). Catches query errors at compile time instead of runtime, auto-generates migrations, and provides a visual data browser (`prisma studio`). Uses the `@prisma/adapter-pg` driver adapter for direct PostgreSQL connection pooling. |
 | **Database** | PostgreSQL 17 (local) / Neon PostgreSQL (production) | Relational model fits our domain well (lots have many snapshots, users have many favorites, events are linked to nearby lots for the in-app notification surface). We run standard PostgreSQL 17 in Docker for local development. In production we use Neon serverless Postgres (us-west-2): branchable, autoscaling, point-in-time recovery up to 7 days. The runtime always connects through Neon's pooled endpoint (`-pooler.`) with `pgbouncer=true` so we survive transaction-mode pooling. The only change between environments is the `DATABASE_URL` connection string. |
-| **Hosting** | Fly.io (sharkpark-api, region=lax) | Two-process model on a single Fly app: an `app` process running the HTTP NestJS API (autostop min=0) and a `cron` process running a standalone Nest application context (`scheduler-main.ts`) that owns all 29 `@nestjs/schedule` jobs. Sized at 512 MB each. Rolling deploys gated by `/api/v1/health/ready`. |
-| **Object storage** | MinIO (local) / Cloudflare R2 (production) | S3-compatible. Used for nightly `pg_dump` backups (35-day lifecycle) and future ML artifact exports. R2 has zero egress fees — ideal for bandwidth-heavy backup verification. |
+| **Hosting** | Fly.io (sharkpark-api, region=lax) | Two-process model on a single Fly app: an `app` process running the HTTP NestJS API (kept warm with `min_machines_running=1` because cold boot is ~10–15s end-to-end — Fly boot + Node + Nest module graph + Prisma→Neon connect — which is unacceptable for the mobile UX) and a `cron` process running a standalone Nest application context (`scheduler-main.ts`) that owns all 29 `@nestjs/schedule` jobs. The `app` VM is sized at 512 MB; the `cron` VM is sized at 1 GB to absorb transient ~700 MB spikes from spawned Python ML predictors. Rolling deploys gated by `/api/v1/health/ready`. |
+| **Object storage** | MinIO (local) / Cloudflare R2 (production) | S3-compatible. Used for nightly `pg_dump` backups (written to `daily/YYYY-MM-DD.dump.gz`; retention is managed by an R2 bucket lifecycle rule, not by application code) and ML artifact exports. R2 has zero egress fees — ideal for bandwidth-heavy backup verification and model artifact downloads. |
 | **Observability** | Sentry (errors + Crons) + nestjs-pino logs | Sentry owns errors, performance, and cron monitor check-ins for every scheduled job. nestjs-pino emits structured JSON logs with the process tag (`app` vs `scheduler`) for log-drain filtering. |
 | **Security** | Helmet, Throttler, CORS, Passport JWT | Helmet sets security HTTP headers. The throttler rate-limits to 20 requests per 10 seconds per IP. CORS is locked down in production. Passport validates Azure AD JWTs against Microsoft's JWKS endpoint with automatic key rotation. |
 | **Monorepo** | pnpm 10 workspaces + Turborepo | pnpm's strict dependency resolution prevents phantom dependencies. Turborepo parallelizes builds, tests, and lints across workspaces with caching. Shared packages (`packages/types`, `packages/utils`) are consumed by both the backend and mobile app. |
@@ -80,26 +80,68 @@ Parking lots are not circles. CSULB has L-shaped structures, narrow rows between
 ## Architecture
 
 ```
-┌──────────────────┐   REST / WS   ┌──────────────────────┐
-│  React Native    │ ────────────> │  NestJS API (Fly)    │
-│  iOS / Android   │ <──────────── │  /api/v1/*           │
-│  (apps/mobile)   │  socket.io    │  app process (HTTP)  │
-└──────────────────┘               │  cron process        │
-                                   │  (scheduler-main.ts) │
-                                   └──┬───────────────┬───┘
-                                      │ Prisma ORM    │
-                              ┌───────▼───────┐  ┌────▼──────────┐
-                              │  PostgreSQL   │  │  Redis        │
-                              │  (Docker dev) │  │  (Fly Redis   │
-                              │  (Neon prod)  │  │   prod cache) │
-                              └───────────────┘  └───────────────┘
-                                      ▲                  ▲
-                              ┌───────┴───────┐  ┌───────┴────────┐
-                              │  Cloudflare   │  │  PassioGO WS   │
-                              │  R2 backups   │  │  (live shuttle │
-                              │  + ML exports │  │   positions)   │
-                              └───────────────┘  └────────────────┘
+                        ┌───────────────────────┐
+                        │  Cloudflare proxy     │  TLS 1.3, HSTS, edge cache
+                        │  api.sharkpark.app    │
+                        └──────────┬────────────┘
+                                   │  REST / socket.io
+┌──────────────────┐               ▼
+│  React Native    │   ┌───────────────────────────────────┐
+│  iOS / Android   │◀─▶│  Fly.io app: sharkpark-api (lax)  │
+│  (apps/mobile)   │   │  ┌─────────────────────────────┐  │
+└──────────────────┘   │  │ app process  (512 MB)       │  │
+        ▲              │  │   NestJS HTTP /api/v1/*     │  │
+        │ FCM push     │  │   /shuttles socket.io ns    │  │
+        │              │  │   min_machines_running = 1  │  │
+┌───────┴────────┐     │  └─────────────────────────────┘  │
+│  Firebase FCM  │◀────│  ┌─────────────────────────────┐  │
+└────────────────┘     │  │ cron process  (1 GB)        │  │
+                       │  │   scheduler-main.ts         │  │
+┌────────────────┐     │  │   29 @nestjs/schedule jobs  │──┼──┐ spawn
+│  Azure AD      │◀───▶│  │   _ml-runner.ts             │  │  │ python -m
+│  (Entra ID)    │     │  └─────────────────────────────┘  │  │ scripts.predict_*
+└────────────────┘     └────┬────────────┬─────────────┬───┘  │
+                            │ Prisma     │ ioredis     │ S3   ▼
+                            ▼            ▼             │  ┌───────────────────────┐
+                  ┌──────────────────┐ ┌────────┐      │  │  sharkpark-ml (Python)│
+                  │  PostgreSQL 17   │ │ Redis  │      │  │  services/ml/         │
+                  │  Docker (dev)    │ │ (prod) │      │  │  ┌─────────────────┐  │
+                  │  Neon us-west-2  │ │        │      │  │  │ predict_short_  │  │
+                  │  pooled endpoint │ └────────┘      │  │  │  term (15 min)  │  │
+                  └────────┬─────────┘                 │  │  │ predict_long_   │  │
+                           │ ▲                         │  │  │  term (daily)   │  │
+                           │ │ features + writes       │  │  │ train_*         │  │
+                           │ └─────────────────────────┼──│  │  (notebooks/CI) │  │
+                           ▼                           ▼  │  └────────┬────────┘  │
+                  ┌──────────────────┐         ┌─────────────┐ │ MLflow│           │
+                  │  Cloudflare R2   │◀────────│  artifacts  │◀┼───────┘           │
+                  │  daily pg_dumps  │         │  + parquet  │ │  model registry   │
+                  │  + ML artifacts  │         │  exports    │ │  (mlflow.db,      │
+                  └──────────────────┘         └─────────────┘ │   mlruns/)        │
+                            ▲                                  └───────────────────┘
+            ┌───────────────┼───────────────┬───────────────┐
+            │               │               │               │
+   ┌────────┴──────┐ ┌──────┴───────┐ ┌─────┴────────┐ ┌────┴─────────┐
+   │  PassioGO WS  │ │  NWS API     │ │  LBSU sports │ │  Sentry      │
+   │  (live shuttle│ │  (forecasts) │ │  + events    │ │  (errors +   │
+   │   positions)  │ │              │ │   scrapers   │ │  cron checks)│
+   └───────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
 ```
+
+The ML service is **not a long-running daemon**. It's a Python package
+(`services/ml/`, installed into the cron container's `/opt/venv`) that the
+NestJS `cron` process invokes as short-lived `python -m` subprocesses via
+[`_ml-runner.ts`](apps/backend/src/scheduler/jobs/_ml-runner.ts). Each
+predictor reads recent occupancy + weather + event features from Neon, loads
+the current production model from the local MLflow registry, writes
+predictions back to Postgres, and exits — which is why the cron VM is sized
+at 1 GB to absorb the ~700 MB transient spike from a Python+joblib+pandas
+process holding a fitted gradient-boosting model in memory. Training runs
+out-of-band (notebooks + a scripted CI job) and publishes new model versions
+to the same MLflow registry; the backend's `model-version-drift` cron flags
+when a newer registered model is available than what production is loading.
+
+
 
 Observability is wired through Sentry (errors + cron monitor check-ins for every
 scheduled job) and structured JSON logs (nestjs-pino) tagged with the originating
@@ -117,7 +159,9 @@ The backend is organized into feature modules, each with its own controller, ser
 - **Reliability** — Real-time confidence scoring for each lot's occupancy estimate, computed from the five-factor weighted model described above.
 - **Weather** — Current conditions and 7-day forecast (NWS api.weather.gov), used as ML features and exposed via the `/weather/impact` endpoint.
 - **Shuttle Tracker** — Live shuttle tracking via a persistent PassioGO WebSocket connection. Routes, stops, and shuttle metadata are refreshed daily.
-- **Scheduler** — Standalone Nest application context (`src/scheduler-main.ts`) that owns all 29 `@nestjs/schedule` jobs (snapshots, weather, transit, backups, retention prune, push fan-out, ML inference, drift checks, etc.). Runs in its own Fly process group with Sentry Cron check-ins and Postgres advisory locks for safe concurrency.
+- **Scheduler** — Standalone Nest application context (`src/scheduler-main.ts`) that owns all 29 `@nestjs/schedule` jobs (snapshots, weather, transit, backups, retention prune, push fan-out, ML inference, drift checks, model-version drift detection, etc.). Runs in its own Fly process group with Sentry Cron check-ins and Postgres advisory locks for safe concurrency.
+- **Admin** — Operator endpoints under `/api/v1/admin/*` for ML-pipeline status, snapshot consensus inspection, and per-lot penetration-rate diagnostics.
+- **Min-Version** — `/api/v1/min-version` endpoint that the mobile app polls on launch to enforce the minimum supported client version (force-update gate).
 - **Health** — `/api/v1/health/live` (process up) and `/api/v1/health/ready` (DB reachable) probes used by Fly's rolling-deploy health checks.
 - **Redis** — Global cache module. Provides shared state for shuttle data across multi-instance deployments.
 - **Database** — Global Prisma module with environment-aware connection pooling (pool size 5 locally, 20 in production, SSL required in production). Uses `@prisma/adapter-pg` for direct connection management.
@@ -126,9 +170,59 @@ The backend is organized into feature modules, each with its own controller, ser
 The mobile app uses a provider-based architecture:
 
 - **AuthContext** — Manages Azure AD login state and token refresh.
-- **SimpleGeofencingProvider** — Initializes GPS tracking, monitors geofence regions, fires anonymous events to the backend, and prevents duplicate alerts via an in-memory set.
+- **EnhancedGeofencingProvider** — Initializes GPS tracking via `react-native-background-geolocation`, monitors geofence regions, fires anonymous events to the backend, and prevents duplicate alerts via an in-memory set. Pairs with `parkingValidationService` for confirming actual parking events vs drive-throughs.
 - **ThemeContext** — Light/dark mode support.
-- **API service layer** — Centralized HTTP client with platform-aware URL resolution (Android emulator uses `10.0.2.2`, iOS simulator uses `localhost`, production uses `api.sharkpark.csulb.edu`).
+- **API service layer** — Centralized HTTP client with platform-aware URL resolution (Android emulator uses `10.0.2.2`, iOS simulator uses `localhost`, production uses `api.sharkpark.app`).
+
+### How the pieces connect
+
+It helps to read the system as four concentric loops, each writing the data
+the next loop reads:
+
+1. **Presence loop (mobile → backend → DB).** The mobile app's
+   `EnhancedGeofencingProvider` watches GPS via `react-native-background-geolocation`
+   and runs the polygon ray-cast in [`apps/mobile/src/utils/geofencing`](apps/mobile/src/utils/geofencing).
+   On a transition it `POST /api/v1/occupancy-events` with the lot ID, an
+   anonymous device UUID, and an HMAC-SHA256 signature (key:
+   `DEVICE_EVENT_SECRET`, baked into the build). The backend
+   `OccupancyEventsController` verifies the HMAC, the service hashes the UUID
+   with `DEVICE_HASH_SALT`, then a single Prisma `$transaction` writes the
+   `OccupancyEvent`, upserts the `DeviceState` (for dedup), and atomically
+   bumps `Lot.currentOccupancy`. Raw IDs and GPS coordinates never reach disk.
+
+2. **Snapshot loop (cron → DB).** Every 15 min the `cron` Fly process runs
+   `snapshot.job.ts`, which reads the live counters and writes a row per lot
+   into `LotSnapshot` along with reliability score, weather, academic period,
+   and a "consensus" feature derived from recent device agreement. These
+   snapshots are the **single source of training data** for ML and the
+   single source of historical truth for `/lots/:id/history` and `/trends`.
+
+3. **ML loop (cron → ML scripts → DB → backend).** Two more cron jobs
+   (`predict-short-term.job`, `predict-long-term.job`) shell out into the
+   Python ML service. Each script reads recent snapshots, runs the XGBoost
+   model loaded from MLflow, applies `postprocess/cold_start_floor.py`, and
+   writes results into `predictions_short_term` / `predictions_long_term`.
+   When the mobile app later hits `/lots/:id/predictions/short-term`, the
+   backend's `LotsService` simply reads the freshest matching row and tags
+   the response `source: 'ml'`. If no fresh row exists (model failed, lot
+   too new, off-hours), the same endpoint computes a time-of-day heuristic
+   in TS and returns it with `source: 'heuristic'` — the contract is
+   identical so the mobile UI just renders a small badge.
+
+4. **Auth + delivery loop (Azure AD → backend → mobile).** Login on mobile
+   goes through `react-native-app-auth` (PKCE) directly against Azure AD.
+   The returned JWT is stored in Keychain and attached to every
+   authenticated request. Backend's Passport JWT strategy validates the
+   token against Azure AD's JWKS endpoint with key rotation, then
+   `AuthService` upserts the `User` row keyed by Azure object ID. FCM tokens
+   registered through `/users/me/push-token` feed the four notification
+   fan-out cron jobs (favorites filling, favorites clearing, surge
+   warnings, event impact).
+
+End-to-end, an event from a student's phone becomes a snapshot, becomes a
+training row, becomes a prediction, becomes a colored pin in another
+student's map — all without the backend ever learning who either student
+was.
 
 ---
 
@@ -144,7 +238,9 @@ Each ENTER/EXIT event runs inside a Prisma `$transaction` that atomically: (1) c
 
 ### Forecasting (client + server)
 
-The mobile app falls back to a lightweight time-of-day heuristic (peak multipliers for 8–10 AM and 5–7 PM, low multipliers for 10 PM–6 AM, widened confidence intervals on low-reliability lots) so forecasts still render offline. The primary forecasts come from the ML service (`services/ml/`): a short-term model (next 1–2 h) and a long-term model (rest-of-day) are trained from the snapshot history, exported to MLflow + R2, and served via the backend's `GET /lots/:id/predictions/short-term` and `/predictions/long-term` endpoints. The mobile app prefers the server prediction when available and only falls back to the heuristic on network failure.
+The primary forecasts come from the ML service (`services/ml/`): a short-term model (next 1–2 h) and a long-term model (rest-of-day, 7 days out) are trained from the snapshot history, exported to MLflow + R2, and served via the backend's `GET /lots/:id/predictions/short-term` and `/predictions/long-term` endpoints. Each prediction response carries a `source` field — `'ml'` when ML rows are fresh, or `'heuristic'` when the backend falls back to its server-side time-of-day heuristic (peak multipliers for 8–10 AM and 5–7 PM, low multipliers overnight) so forecasts always render. The mobile app additionally has a thin offline heuristic for when the network itself fails.
+
+During the cold-start window (before enough students are running the app to drive penetration above the floor), both the live tile and the ML forecasts are clamped to a shared `MIN_FLOOR_RATE` so the displayed numbers stay consistent across endpoints. See [services/ml/src/postprocess/cold_start_floor.py](services/ml/src/postprocess/cold_start_floor.py).
 
 ### Multi-tenant schema
 
@@ -231,7 +327,7 @@ Run `pnpm dev` from root to start both backend and mobile in parallel.
 | `pnpm start` | `nest start` | Start server |
 | `pnpm start:prod` | `node dist/main` | Start production build |
 | `pnpm build` | `nest build` | Compile TypeScript |
-| `pnpm test` | `jest` | Run 664 unit tests (49 suites) |
+| `pnpm test` | `jest` | Run 929 unit tests (81 suites) |
 | `pnpm test:e2e` | `jest --config jest-e2e.js` | Run E2E tests |
 | `pnpm lint` | `eslint .` | Lint backend source |
 | `pnpm typecheck` | `tsc --noEmit` | Type-check without emitting |
@@ -243,7 +339,7 @@ Run `pnpm dev` from root to start both backend and mobile in parallel.
 | `pnpm ios` | `react-native run-ios` | Build and run on iOS simulator |
 | `pnpm android` | `react-native run-android` | Build and run on Android emulator |
 | `pnpm start` | `react-native start` | Start Metro bundler |
-| `pnpm test` | `jest` | Run 655 unit tests (54 suites) |
+| `pnpm test` | `jest` | Run 824 unit tests (73 suites) |
 | `pnpm lint` | `eslint .` | Lint mobile source |
 | `pnpm typecheck` | `tsc --noEmit` | Type-check without emitting |
 
@@ -332,6 +428,38 @@ All user endpoints require Azure AD authentication.
 | `GET` | `/api/v1/reliability/lots` | Reliability scores for all lots |
 | `GET` | `/api/v1/reliability/config` | Reliability computation config (weights and thresholds) |
 
+### Admin (operator-only)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/admin/ml-status` | ML pipeline status: latest cron runs, model versions, prediction freshness |
+| `GET` | `/api/v1/admin/ml-status/dashboard` | HTML dashboard for the ML pipeline |
+| `GET` | `/api/v1/admin/ml-status/synthetic-overlay.png` | Diagnostic chart overlay (synthetic vs real snapshots) |
+| `GET` | `/api/v1/admin/consensus/:lotId` | Snapshot consensus diagnostics for a lot |
+| `GET` | `/api/v1/admin/penetration-rate/:lotId` | Penetration-rate computation diagnostics for a lot |
+
+### Min-Version (force-update gate)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/min-version` | Minimum supported mobile-client version. Mobile app polls on launch and shows a force-update screen when below the floor. |
+
+### User Privacy & Self-service
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/users/me/data` | Export the authenticated user's data (privacy / GDPR-style request) |
+| `GET` | `/api/v1/users/me/forecast` | Personalized forecast based on the user's favorite lots |
+| `POST` | `/api/v1/users/me/push-test` | Send a test push notification to the authenticated user |
+| `DELETE` | `/api/v1/users/me/push-token` | De-register the current device's push token |
+
+### Lots (additional)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/lots/utilization` | Campus-wide utilization rollup |
+| `GET` | `/api/v1/lots/:id/trends` | Multi-day occupancy trend analytics for a lot |
+
 ### Transit
 
 | Method | Path | Description |
@@ -351,24 +479,27 @@ All user endpoints require Azure AD authentication.
 | Auth | Requires the `WS_CONNECT_SECRET` handshake token |
 | Event | `shuttle_update` → `ShuttleLocationUpdate[]` |
 
-**Total: 36 endpoints** (27 GET, 5 POST, 3 DELETE, 1 PATCH)
+**Total: ~49 REST endpoints across 14 controllers** plus the `/shuttles` socket.io namespace. Counts: ~38 GET, 6 POST, 4 DELETE, 1 PATCH.
 
 ---
 
 ## Testing
 
 ```bash
-# Run all 1,319 tests
+# Run all 1,753 tests across the JS/TS workspaces
 pnpm test
 
-# Backend only (664 tests, 49 suites)
+# Backend only (929 tests, 81 suites)
 pnpm --filter @sharkpark/backend test
 
-# Mobile only (655 tests, 54 suites)
+# Mobile only (824 tests, 73 suites)
 pnpm --filter mobile test
 
 # Backend E2E (requires running DB)
 pnpm --filter @sharkpark/backend test:e2e
+
+# ML service (Python)
+cd services/ml && uv run pytest -q
 ```
 
 ---

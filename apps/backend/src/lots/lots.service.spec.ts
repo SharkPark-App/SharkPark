@@ -649,6 +649,7 @@ describe('LotsService', () => {
       const result = await service.getShortTermPredictions('G1');
 
       expect(result.lot_id).toBe('G1');
+      expect(result.source).toBe('ml');
       expect(result.predictions).toHaveLength(1);
       // Per 2026-04-30 product decision, predictions response no longer carries event_impacts.
       expect(result).not.toHaveProperty('event_impacts');
@@ -664,7 +665,12 @@ describe('LotsService', () => {
       const result = await service.getShortTermPredictions('G1');
 
       expect(result.weather).toBeNull();
-      expect(result.predictions).toEqual([]);
+      // Empty ML rows trigger the heuristic fallback so the response is
+      // never silently empty (asymmetric vs long-term endpoint).
+      expect(result.source).toBe('heuristic');
+      expect(
+        result.predictions.every((p) => p.model_version === 'heuristic-v1'),
+      ).toBe(true);
     });
   });
 

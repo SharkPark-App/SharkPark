@@ -112,7 +112,14 @@ const InteractiveLot: React.FC<{
   // at every band. Redacted pins keep white over the neutral fill.
   const labelColor = isRedacted ? colors.white : getReadableTextColor(occupancyColor);
   const parkedLabelColor = colors.white;
-  const isSingleWord = !lot.lot_name.trim().includes(' ');
+  // adjustsFontSizeToFit is broken in Android map markers (bitmap rendering skips multi-pass layout)
+  const androidFontSize = Platform.OS === 'android' ? (() => {
+    const len = lot.lot_name.trim().length;
+    if (len <= 12)  return TYPOGRAPHY.fontSize.xs;
+    if (len <= 16) return TYPOGRAPHY.fontSize.xxs;
+    return TYPOGRAPHY.fontSize.xxxs;
+  })() : undefined;
+
   const a11yLabel = isRedacted
     ? `${lot.lot_name} parking lot, live occupancy locked. Grant background location to see live data.`
     : `${lot.lot_name} parking lot, ${pct} percent full`;
@@ -152,9 +159,15 @@ const InteractiveLot: React.FC<{
             ]}
           >
             <Text
-              style={[styles.lotText, { color: isParkedLot ? parkedLabelColor : labelColor }]}
-              numberOfLines={isSingleWord ? 1 : 2}
+              style={[
+                styles.lotText,
+                { color: isParkedLot ? parkedLabelColor : labelColor },
+                androidFontSize != null && { fontSize: androidFontSize }
+              ]}
               ellipsizeMode="tail"
+              adjustsFontSizeToFit={Platform.OS === 'ios'}
+              allowFontScaling={Platform.OS === 'ios'}
+              numberOfLines={3}
               accessible={false}
             >
               {lot.lot_name}
@@ -187,9 +200,15 @@ const InteractiveLot: React.FC<{
         accessible={false}
       >
         <Text
-          style={[styles.lotText, { color: isParkedLot ? parkedLabelColor : labelColor }]}
-          numberOfLines={isSingleWord ? 1 : 3}
+          style={[
+            styles.lotText,
+            { color: isParkedLot ? parkedLabelColor : labelColor },
+            androidFontSize != null && { fontSize: androidFontSize }
+          ]}
           ellipsizeMode="tail"
+          adjustsFontSizeToFit={Platform.OS === 'ios'}
+          allowFontScaling={Platform.OS === 'ios'}
+          numberOfLines={3}
           accessible={false}
         >
           {lot.lot_name}
@@ -1235,7 +1254,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    maxWidth: 72,
+    maxWidth: 56,
   },
   lotCircle: {
     width: 40,
@@ -1256,6 +1275,8 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   parkedCarMarkerOuter: {
     width: 28,

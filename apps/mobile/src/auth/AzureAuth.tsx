@@ -214,19 +214,19 @@ export const logoutFromAzure = async (idToken?: string): Promise<void> => {
       log('[AzureAuth] Azure AD logout successful');
     } catch (logoutError) {
       const errorMessage = (logoutError as Error).message || '';
-      
-      // Check if user explicitly cancelled the logout
-      if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
-        log('[AzureAuth] User cancelled logout');
-        userCancelled = true;
+
+      if (Platform.OS === 'android') {
+        // Android Chrome Custom Tabs always throws on end-session (even on success);
+        // the server-side session is still invalidated — continue to clear local state.
+        log('[AzureAuth] Android logout error (continuing with local cleanup):', errorMessage);
       } else if (errorMessage.includes('error -3') || errorMessage.includes('org.openid.appauth.general')) {
         // AppAuth error -3 (OIDErrorCodeUserCanceledAuthorizationFlow) is expected with Azure AD
         // on iOS. The logout endpoint clears the session but doesn't redirect back properly.
         log('[AzureAuth] Azure AD session cleared (browser dismissed - this is expected)');
-      } else if (Platform.OS === 'android') {
-        // Android Chrome Custom Tabs may throw on end-session; the server-side
-        // session is still invalidated — continue to clear local state.
-        log('[AzureAuth] Android logout error (continuing with local cleanup):', errorMessage);
+      } else if (errorMessage.includes('User cancelled') || errorMessage.includes('cancel')) {
+        // iOS only: user explicitly dismissed the browser before completing logout
+        log('[AzureAuth] User cancelled logout');
+        userCancelled = true;
       } else {
         if (__DEV__) {
           console.warn('[AzureAuth] Azure AD logout encountered an issue, clearing local state:', logoutError);

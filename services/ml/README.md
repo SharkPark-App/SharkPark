@@ -9,7 +9,6 @@ Parking occupancy prediction models for CSULB students.
 - [Setup](#setup)
 - [Workflow](#workflow)
 - [Local Development](#local-development)
-- [API Endpoints (planned)](#api-endpoints-planned)
 - [Data Flow](#data-flow)
 - [Integration](#integration)
 - [Metrics](#metrics)
@@ -36,7 +35,7 @@ See [Model_Design.md](Model_Design.md) for technical decisions and rationale.
 services/ml/
 ├── src/
 │   ├── academic_calendar.py   # Rule-based academic calendar
-│   ├── config.py              # Operating hours, snapshot settings
+│   ├── config.py              # Operating hours (7–21 PT), snapshot settings, CAMPUS_TZ
 │   ├── data/
 │   │   ├── synthetic.py       # Cold-start data generation
 │   │   └── db.py              # PostgreSQL read/write (snapshots, predictions)
@@ -48,10 +47,18 @@ services/ml/
 │   │   ├── short_term.py      # XGBoost regression with quantile CI
 │   │   ├── long_term.py       # Two-stage hybrid (baseline + XGBoost deviation)
 │   │   └── baselines.py       # Naive baselines for comparison
-│   ├── evaluation/
-│   │   ├── metrics.py         # MAE, RMSE, MAPE
-│   │   └── compare.py         # Model vs baseline vs production
-│   └── api/                   # (planned) FastAPI endpoints for local dev/debugging
+│   ├── postprocess/
+│   │   ├── cold_start_floor.py     # MIN_FLOOR_RATE clamp (mirrors backend constants)
+│   │   ├── low_activity_scaling.py # Scale-down during low-activity academic periods
+│   │   └── weather_adjustment.py   # Weather-driven demand modifier
+│   ├── promotion/             # Model-promotion helpers
+│   ├── utils/
+│   │   ├── mlflow_setup.py    # configure_mlflow() — call before any MLflow run/log
+│   │   ├── mlflow_utils.py    # MLflow run/artifact helpers
+│   │   └── promotion_guard.py # Production-promotion safety gates
+│   └── evaluation/
+│       ├── metrics.py         # MAE, RMSE, MAPE
+│       └── compare.py         # Model vs baseline vs production
 ├── scripts/
 │   ├── train_short_term.py             # Train a new short-term model
 │   ├── evaluate_short_term.py          # Evaluate short-term candidate vs baselines + production
@@ -62,13 +69,42 @@ services/ml/
 │   ├── evaluate_long_term.py           # Evaluate long-term candidate vs baselines + production
 │   ├── promote_long_term.py            # Register winning long-term model
 │   ├── predict_long_term.py            # Long-term batch inference, writes to PostgreSQL
-│   └── check_long_term_predictions.py  # Inspect predictions_long_term rows
+│   ├── check_long_term_predictions.py  # Inspect predictions_long_term rows
+│   ├── ingest_csulb_catalog.py         # Pull CSULB course catalog (academic-load features)
+│   ├── ingest_room_capacities.py       # Pull classroom capacities (academic-load features)
+│   ├── build_proximity_matrix.py       # Lot↔lot proximity used for nearby-event impact
+│   ├── recompute_penetration_rates.py  # Backfill penetration rates on snapshots
+│   ├── generate_synthetic_v2.py        # Newer synthetic-data generator
+│   ├── validate_synthetic_v2.py        # Validate generated synthetic data
+│   └── bootstrap_mlflow.py             # First-time MLflow store bootstrap
 ├── data/                      # Generated data artifacts (gitignored parquets)
 ├── tests/                     # Unit and integration tests
 ├── mlruns/                    # MLflow tracking (gitignored)
 ├── pyproject.toml
 └── README.md
 ```
+
+### How this service fits into SharkPark
+
+ML is invoked **by the backend cron**, not directly by the API or the
+mobile app. The data flow is:
+
+1. The backend `snapshot.job` writes a row per lot every 15 min into
+   `LotSnapshot` (Postgres). This is the only training input.
+2. Backend cron jobs `predict-short-term.job` and `predict-long-term.job`
+   shell out to `predict_short_term.py` / `predict_long_term.py` here.
+3. Those scripts read recent snapshots, run the XGBoost model loaded from
+   MLflow, apply [`postprocess/cold_start_floor.py`](src/postprocess/cold_start_floor.py),
+   and write rows into `predictions_short_term` / `predictions_long_term`.
+4. When the mobile app hits `/api/v1/lots/:id/predictions/short-term`, the
+   backend's `LotsService` reads the freshest matching row and tags the
+   response `source: 'ml'`. If no fresh row exists, it falls back to a
+   server-side time-of-day heuristic and tags `source: 'heuristic'`.
+
+So the contract between this service and the backend is simply:
+*snapshots in via shared Postgres, predictions out via shared Postgres,
+plus a single-line `ML_RESULT {...}` JSON marker on stdout that the cron
+runner parses for run metadata and drift detection*.
 
 ## Setup
 
@@ -116,7 +152,7 @@ uv run python -m src.data.synthetic --seed 123                             # Dif
 Requires PostgreSQL to be running with seeded lot data. 
 Set `DATABASE_URL` for local PostgreSQL (default: `postgresql://sharkpark:sharkpark@localhost:5433/sharkpark`).
 
-> Output includes an `is_cold_start: true` flag and a `source: "synthetic"` column. The `source` column is generator-only (absent in real Aurora data) and is used at training time to apply sample weights when blending synthetic and real data — rows without it are treated as real.
+> Output includes an `is_cold_start: true` flag and a `source: "synthetic"` column. The `source` column is generator-only (absent in real Postgres data) and is used at training time to apply sample weights when blending synthetic and real data — rows without it are treated as real.
 ----
 ### 1. Train a model
 
@@ -231,17 +267,6 @@ uv run mlflow ui
 
 > **Non-local tracking:** MLflow runs locally (`mlruns/`) and doesn't need a remote server until more people are working on ML and need to share experiments. When that happens, set `MLFLOW_TRACKING_URI` to a remote server — no code changes needed.
 
-## API Endpoints (planned)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/predict/short-term` | Get hourly predictions for a lot |
-| POST | `/predict/long-term` | Get 7-day predictions for a lot |
-| GET | `/health` | Health check |
-
-On-demand predictions during local development and testing. Useful for debugging individual lot predictions without running the full batch pipeline. 
-> Not required for production — batch scripts write predictions directly to PostgreSQL, and the backend reads from there.
-
 ## Data Flow
 
 ### Short-term
@@ -302,6 +327,49 @@ At launch with no historical data, the system transitions through three phases. 
 | Transitional (blended) | Blending synthetic + real data | Baseline uses accumulated real data; XGBoost learns real deviations; confidence = MED |
 | Mature (real data) | Full reliance on real data | Full reliance on accumulated real data; confidence = HIGH (if MAE meets targets) |
 
+### Cold-start floor (`postprocess/cold_start_floor.py`)
+
+During the cold-start window, both the backend's live tile and the ML
+forecasts are clamped to a shared `MIN_FLOOR_RATE` so the displayed numbers
+stay consistent across endpoints. The constants are mirrored exactly between
+the backend ([`apps/backend/src/constants.ts`](../../apps/backend/src/constants.ts))
+and this module:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `MIN_FLOOR_RATE` | `0.15` | Default occupancy floor during cold-start |
+| `LOW_ACTIVITY_FLOOR_RATE` | `0.05` | Reduced floor for low-activity academic periods (`winter_session`, `summer_session`, `break`) |
+
+Key functions:
+
+- `is_cold_start_window(snapshots)` — returns `True` for empty data, missing
+  `is_cold_start` column, or all rows flagged cold (NaN treated as cold).
+- `apply_cold_start_floor(median, lower, upper, target_dates, target_hours, *, is_cold_start)`
+  — no-op when not cold-start; otherwise clamps to the floor while preserving
+  the `lower ≤ median ≤ upper` invariant. Outside operating hours (7–21 PT)
+  the prediction is forced to `0.0` with reason `NORMAL`.
+
+Both `predict_short_term.py` and `predict_long_term.py` call this module
+before writing predictions. The short-term script converts UTC timestamps to
+`CAMPUS_TZ` (`America/Los_Angeles`) before deriving the operating-hour and
+floor-application date so late-evening PT predictions land in the correct
+campus-local window.
+
+### `ML_RESULT` markers
+
+Prediction scripts print a single `ML_RESULT {...}` JSON line that the backend
+cron runner parses to track ML run metadata. Statuses:
+
+| Status | When |
+|--------|------|
+| `SUCCESS` | Predictions written. Includes `model_version`, `predictions_written`, `lots`, `cold_start_floor_active`. |
+| `SKIPPED` | No prediction work to do (e.g. `no_prediction_hours_remaining` past end of operating day). Includes `reason`. |
+| `FAILURE` | Raised on uncaught exceptions; the cron runner surfaces this to Sentry. |
+
+The backend cron runner uses the `model_version` field to detect drift: every
+successful ML run is compared against the previous one for the same job, and a
+differing version emits a Sentry warning (without failing the job).
+
 ## Deployment (Future)
 
 | Concern | Local | Deployed |
@@ -310,9 +378,9 @@ At launch with no historical data, the system transitions through three phases. 
 | Trigger | Manual | Cron (every 15 min short-term, daily long-term) |
 | Model loaded from | `mlruns/` | Cloudflare R2 (via `production.json` pointer) |
 | Model tracking | MLflow (local) | MLflow (local) |
-| Training data source | PostgreSQL (Docker) | Aurora PostgreSQL Serverless v2 |
+| Training data source | PostgreSQL (Docker) | Neon Postgres 17 (pooled) |
 | Training data archive | Local files | S3 (Parquet, partitioned by date) |
-| Prediction output | PostgreSQL (Docker) | Aurora PostgreSQL Serverless v2 |
+| Prediction output | PostgreSQL (Docker) | Neon Postgres 17 (pooled) |
 
 The prediction logic (`src/models/`, `src/features/`) stays the same—only the entrypoint changes.
 
@@ -358,7 +426,7 @@ uv run pytest tests/ --cov=src --cov=scripts --cov-report=term-missing
 - Retraining: Weekly (manual for now, scheduled later)
 - Lot metadata pulled from PostgreSQL
 - Models stored locally in `mlruns/` during development; promoted versions also published to Cloudflare R2 via `--export-s3` (see [.env.example](.env.example) for required R2 credentials).
-- Database: PostgreSQL 16 (Docker) locally, Aurora PostgreSQL Serverless v2 in production — managed by Prisma ORM
+- Database: PostgreSQL 17 (Docker) locally, Neon Postgres 17 (pooled endpoint, `pgbouncer=true`) in production — managed by Prisma ORM
 - **Run ID handoff**: The workflow is sequential
     -  `train` outputs an MLflow run ID, which you manually pass to `evaluate`, then to `promote` (if applicable).
     - This will be automated once training runs on a schedule (train → evaluate → promote chained automatically).

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import * as Sentry from '@sentry/nestjs';
 
 import { OccupancyEventsService } from '../../occupancy-events/occupancy-events.service';
 import { ConsensusService } from '../../reliability/consensus.service';
@@ -40,6 +41,13 @@ export class SnapshotJob {
         this.logger.warn(
           `[cron:${NAME}] consensus tick failed: ${(err as Error).message}`,
         );
+        // Swallow-but-report: the snapshot tick itself succeeded, so we
+        // don't want to fail the cron run, but a recurring consensus
+        // failure is silent rot otherwise. Sentry tag distinguishes this
+        // from a top-level snapshot failure.
+        Sentry.captureException(err, {
+          tags: { job: NAME, phase: 'consensus' },
+        });
       }
     });
   }

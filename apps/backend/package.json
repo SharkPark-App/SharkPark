@@ -12,6 +12,7 @@
     "start:scheduler": "node dist/scheduler-main.js",
     "db:seed": "prisma db seed",
     "db:seed:prod": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed-prod.ts",
+    "db:seed:demo": "ts-node --project tsconfig.scripts.json --compiler-options '{\"module\":\"CommonJS\"}' src/scripts/seed-demo-bootstrap.ts",
     "audit:lots": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/audit-lots.ts",
     "backfill:consensus": "ts-node --project tsconfig.scripts.json --compiler-options '{\"module\":\"CommonJS\"}' src/scripts/backfill-consensus.ts",
     "lint": "eslint .",

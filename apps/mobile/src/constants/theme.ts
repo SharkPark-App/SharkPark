@@ -73,8 +73,8 @@ export const TYPOGRAPHY = {
     bold: 'Inter-Bold',
   },
   fontSize: {
+    xxxs: 8,
     xxs: 9,
-    xxs2: 11,
     xs: 10,
     sm: 12,
     md: 14,

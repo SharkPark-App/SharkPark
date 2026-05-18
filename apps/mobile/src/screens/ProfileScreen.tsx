@@ -27,7 +27,7 @@ import { simulateForegroundPushMessage } from '../services/pushNotifications';
 import { sendDebugPushNotification } from '../services/api/notifications';
 
 const ProfileScreen: React.FC = () => {
-  const { themeMode, setThemeMode, colors } = useTheme();
+  const { themeMode, setThemeMode, colors, isDark } = useTheme();
 
   // Notification preferences — keys match the backend DTO.
   const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
@@ -462,9 +462,13 @@ const ProfileScreen: React.FC = () => {
                   </Text>
                 </View>
                 <View style={styles.statusBadge}>
-                <Text style={[styles.statusBadgeText, { 
-                        color: isGeofencingActive ? '#10b981' : colors.gray,
-                  backgroundColor: isGeofencingActive ? '#ecfdf5' : colors.lightGray,
+                <Text style={[styles.statusBadgeText, {
+                  color: isGeofencingActive
+                    ? (isDark ? '#6ee7b7' : '#10b981')
+                    : colors.gray,
+                  backgroundColor: isGeofencingActive
+                    ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#ecfdf5')
+                    : colors.lightGray,
                 }]}>
                     {getGeofencingStatusText()}
                   </Text>
@@ -501,8 +505,11 @@ const ProfileScreen: React.FC = () => {
               </TouchableOpacity>
 
               {currentLotId && (
-              <View style={[styles.statusInfo, { backgroundColor: '#ecfdf5', borderColor: '#10b981' }]}>
-                <Text style={[styles.statusText, { color: '#059669' }]}>
+              <View style={[styles.statusInfo, {
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.18)' : '#ecfdf5',
+                borderColor: isDark ? 'rgba(16, 185, 129, 0.4)' : '#10b981',
+              }]}>
+                <Text style={[styles.statusText, { color: isDark ? '#6ee7b7' : '#059669' }]}>
                   📍 Currently in parking lot
                 </Text>
               </View>

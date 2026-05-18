@@ -33,7 +33,13 @@ from src.evaluation.compare import (
 from src.evaluation.metrics import compute_metrics
 from src.features.short_term import prepare_training_features
 from src.models.short_term import HOLDOUT_DAYS, ShortTermModel
+from src.utils.mlflow_setup import configure_mlflow
 from src.utils.mlflow_utils import get_production_run_id, load_run_data
+
+# Apply tracking-URI / experiment defaults at import time so any code path
+# that imports this module (CLI, tests, ad-hoc imports) talks to the same
+# MLflow backend the training jobs use. Mirrors train_short_term.py.
+configure_mlflow()
 
 logger = logging.getLogger(__name__)
 

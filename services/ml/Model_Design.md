@@ -53,7 +53,7 @@ Technical decisions and rationale for SharkPark's prediction models.
 
 ## PostgreSQL Schemas
 
-All data lives in a single PostgreSQL database (Aurora PostgreSQL Serverless v2 in production, Docker PostgreSQL 16 locally), managed by Prisma ORM v7. The schemas below match the Prisma models in `apps/backend/prisma/schema.prisma`.
+All data lives in a single PostgreSQL database (Neon Postgres in production, Docker PostgreSQL 17 locally), managed by Prisma ORM v7. The schemas below match the Prisma models in `apps/backend/prisma/schema.prisma`.
 
 ### Input: OccupancySnapshot
 
@@ -228,7 +228,7 @@ Week-ahead predictions answer "what will parking look like next Thursday at 10am
 
 ### Source Tagging & Sample Weighting
 
-Synthetic data includes a `source: "synthetic"` column that is **generator-only** — real Aurora snapshots do not have this column. When synthetic and real parquets are concatenated at training time, real rows will have `NaN` in the `source` column. This enables sample weighting to downweight synthetic data as real data accumulates (e.g., `{"synthetic": 0.3, "real": 1.0}`).
+Synthetic data includes a `source: "synthetic"` column that is **generator-only** — real Neon snapshots do not have this column. When synthetic and real parquets are concatenated at training time, real rows will have `NaN` in the `source` column. This enables sample weighting to downweight synthetic data as real data accumulates (e.g., `{"synthetic": 0.3, "real": 1.0}`).
 
 As of D5, training rows are classified into four tiers and weighted independently of row count (each tier's *total* contribution to XGBoost ∝ its tier weight): `real_clean` (real, non cold-start), `real_cold` (real, cold-start), `synthetic_v2` (catalog-driven, with per-row `sample_weight` mean-normalized within tier), and `synthetic_v1` (legacy heuristic generator). Per-lot decay `1 / (1 + n_real_for_lot / 100)` shrinks synthetic influence on lots that have accumulated real coverage, so well-instrumented lots converge toward real-only fitting without us having to drop synthetic globally. Spec ratios for the v2 launch are `--real-weight 10 --synthetic-v2-weight 1 --synthetic-weight 0.1`.
 
@@ -469,17 +469,17 @@ Cold-start lots get `confidence: LOW` and `is_cold_start: true` on their snapsho
 
 ### Database Architecture
 
-All data lives in a single PostgreSQL database (Aurora PostgreSQL Serverless v2 in production).
+All data lives in a single PostgreSQL database (Neon Postgres in production).
 
 | Table | Purpose | Retention |
 |-------|---------|----------|
 | `lots`, `users`, `campus_events`, etc. | Operational data | Permanent |
-| `occupancy_snapshots` | 15-min snapshots with ML feature columns | Permanent (archive older data to S3) |
+| `occupancy_snapshots` | 15-min snapshots with ML feature columns | Permanent (archive older data to R2) |
 | `occupancy_events` | Raw ENTER/EXIT events | 30 days (daily prune cron, see infrastructure/README.md) |
 | `predictions_short_term` | Short-term predictions (hourly by lot) | Append-only; full history retained for drift / MAPE |
 | `predictions_long_term` | Week-ahead predictions (7 days × hourly by lot) | Append-only; full history retained for drift / MAPE |
 
-> **Note:** Unlike DynamoDB's TTL-based cleanup, PostgreSQL data is retained permanently. For cost management at scale, older `occupancy_snapshots` and `occupancy_events` rows should be archived to S3 and pruned periodically.
+> **Note:** Unlike DynamoDB's TTL-based cleanup, PostgreSQL data is retained permanently. For cost management at scale, older `occupancy_snapshots` and `occupancy_events` rows should be archived to Cloudflare R2 and pruned periodically.
 
 **Volume estimates:**
 
@@ -491,16 +491,16 @@ All data lives in a single PostgreSQL database (Aurora PostgreSQL Serverless v2 
 
 **Current approach:** Training data (parquet) is logged as an MLflow artifact with each run, so any past run's exact dataset can be downloaded via `mlflow.artifacts.download_artifacts(run_id=..., artifact_path="data")`. This is fine while data is small (single-digit MBs). Once data grows past ~100MB, switch to versioned S3 storage and log a hash or version reference instead of the full file.
 
-PostgreSQL retains data permanently, but archiving older data to S3 reduces database size and enables efficient batch queries for model training.
+PostgreSQL retains data permanently, but archiving older data to Cloudflare R2 reduces database size and enables efficient batch queries for model training.
 
 | S3 Path                          | Source Table              | Retention | Purpose                              |
 |----------------------------------|---------------------------|-----------|--------------------------------------|
-| `s3://sharkpark-ml/occupancy/`   | `occupancy_snapshots`     | Permanent | Historical occupancy for retraining  |
-| `s3://sharkpark-ml/weather/`     | `weather`                 | Permanent | Weather correlation analysis         |
-| ~~`s3://sharkpark-ml/events/`~~      | ~~`campus_events` + `event_impacts`~~ | — | **Removed 2026-04-30:** events are a mobile display/notification context layer, not an ML feature. No archive needed. |
-| `s3://sharkpark-ml/raw-events/`  | `occupancy_events`        | Permanent | Raw ENTER/EXIT events for feature engineering |
+| `r2://sharkpark-ml-exports/occupancy/`   | `occupancy_snapshots`     | Permanent | Historical occupancy for retraining  |
+| `r2://sharkpark-ml-exports/weather/`     | `weather`                 | Permanent | Weather correlation analysis         |
+| ~~`r2://sharkpark-ml-exports/events/`~~      | ~~`campus_events` + `event_impacts`~~ | — | **Removed 2026-04-30:** events are a mobile display/notification context layer, not an ML feature. No archive needed. |
+| `r2://sharkpark-ml-exports/raw-events/`  | `occupancy_events`        | Permanent | Raw ENTER/EXIT events for feature engineering |
 
-**Archive schedule:** Daily export job writes new records to S3 in Parquet format, partitioned by date. This enables efficient queries for retraining (e.g., "all data from Fall 2025 semester").
+**Archive schedule:** Daily export job writes new records to R2 in Parquet format, partitioned by date. This enables efficient queries for retraining (e.g., "all data from Fall 2025 semester"). Note that R2 buckets are accessed via the S3-compatible API, so client code uses `s3://` URI schemes and the boto3/AWS SDK with R2 endpoint credentials.
 
 
 
@@ -612,7 +612,7 @@ For MVP, Lambda + EventBridge is recommended because:
 | Short-term inference  | Every 15 min   | Predictions for hours 7–21 (per lot)           |
 | Long-term inference   | Daily          | Predictions for next 7 days × hourly (per lot) |
 | Retraining            | Weekly         | Updated models registered to MLflow            |
-| S3 archive export     | Daily          | Training data backup to S3                     |
+| R2 archive export     | Daily          | Training data backup to Cloudflare R2          |
 
 ### Current vs Future
 > **Note:** "Now" reflects local development; "Later" reflects the deployed hybrid topology.

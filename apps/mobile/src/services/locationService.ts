@@ -109,6 +109,19 @@ class LocationService {
    * No active GPS tracking — only OS-level geofence ENTER/EXIT/DWELL events fire.
    */
   async startGeofenceMonitoring(): Promise<State> {
+    // On Android with startOnBoot:true the SDK auto-restores its running state
+    // before JS fires, so calling startGeofences() while it's already enabled
+    // throws "Waiting for previous start action to complete". Skip the call if
+    // the SDK reports it's already running.
+    const currentState = await BackgroundGeolocation.getState();
+    if (currentState.enabled) {
+      this.trackingMode = 'geofences';
+      if (__DEV__) {
+        console.log('[LocationService] SDK already running, skipping startGeofences()');
+      }
+      return currentState;
+    }
+
     const state = await BackgroundGeolocation.startGeofences();
     this.trackingMode = 'geofences';
 

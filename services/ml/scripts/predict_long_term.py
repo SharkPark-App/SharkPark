@@ -33,8 +33,18 @@ from src.config import (
 )
 from src.features.long_term import compute_baseline, prepare_inference_features
 from src.models.long_term import LongTermModel
+from src.postprocess.cold_start_floor import (
+    apply_cold_start_floor,
+    is_cold_start_window,
+)
 from src.postprocess.low_activity_scaling import apply_low_activity_scaling
 from src.postprocess.weather_adjustment import apply_weather_adjustment_long_term
+from src.utils.mlflow_setup import configure_mlflow
+
+# Mirror ML_R2_* Fly secrets → AWS_*/MLFLOW_S3_* env vars that boto3 needs
+# when MLflow downloads artifacts from Cloudflare R2. Must happen before any
+# mlflow.artifacts call. (Matches predict_short_term.py.)
+configure_mlflow()
 
 CAMPUS_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -103,6 +113,22 @@ def predict(
     )
     if features.empty:
         logger.info("No inference features generated. Exiting.")
+        # Emit a structured SKIPPED marker so the cron-runner records the
+        # reason in ml_cron_runs.metadata. See predict_short_term.py.
+        print(
+            "ML_RESULT: "
+            + json.dumps(
+                {
+                    "horizon": "long_term",
+                    "status": "SKIPPED",
+                    "reason": "no_inference_features",
+                    "model_version": model_version,
+                    "predictions_written": 0,
+                    "lots": 0,
+                    "days_ahead": int(days_ahead),
+                }
+            )
+        )
         return pd.DataFrame()
 
     median, lower, upper = model.predict_quantiles(features)
@@ -114,6 +140,27 @@ def predict(
     median, lower, upper, _ = apply_low_activity_scaling(
         median, lower, upper, pred_target_dates,
     )
+
+    # Cold-start floor. See predict_short_term.py for rationale; same
+    # symmetry argument applies to the 7-day forecast since both surfaces
+    # render in the mobile app and would otherwise disagree with the live tile.
+    cold_start = is_cold_start_window(df)
+    target_hours_list = features["target_hour"].astype(int).tolist()
+    median, lower, upper, floor_reasons = apply_cold_start_floor(
+        median,
+        lower,
+        upper,
+        pred_target_dates,
+        target_hours_list,
+        is_cold_start=cold_start,
+    )
+    if cold_start:
+        floor_counts = Counter(floor_reasons)
+        logger.info(
+            "Cold-start floor: %s (rows=%d)",
+            ", ".join(f"{k}={v}" for k, v in sorted(floor_counts.items())),
+            len(features),
+        )
 
     # Per-row weather adjustment using the upcoming NWS forecast. Each
     # prediction row spans its own (target_date, target_hour) slot, so we
@@ -141,7 +188,6 @@ def predict(
             )
             forecast_grid = {}
 
-        target_hours_list = features["target_hour"].astype(int).tolist()
         median, lower, upper, weather_reasons = apply_weather_adjustment_long_term(
             median, lower, upper, pred_target_dates, target_hours_list, forecast_grid,
         )
@@ -199,10 +245,12 @@ def predict(
         + json.dumps(
             {
                 "horizon": "long_term",
+                "status": "SUCCESS",
                 "model_version": model_version,
                 "predictions_written": int(n),
                 "lots": int(predictions_df["lot_id"].nunique()),
                 "days_ahead": int(days_ahead),
+                "cold_start_floor_active": bool(cold_start),
             }
         )
     )
