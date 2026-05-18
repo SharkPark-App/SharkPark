@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import * as cheerio from 'cheerio';
 
 /**
  * CSULB Parking Permit Fee Schedule (FY 2025-26).
@@ -160,7 +161,7 @@ export function buildAppliedFees(lot: {
  *      `computePermitSourceHash(await (await fetch(CSULB_PERMIT_FEES.source_url)).text())`.
  */
 export const EXPECTED_PERMIT_SOURCE_HASH_SHA256 =
-  '366fc4a474e6484a75839a3f303f6e52f0f648eb4d2a9d8ddc51bebf7c3d51a3';
+  '74944dd0cd9f9072cae87d87233ff29eb953a4eb1ee4638e266588872d5afd9a';
 
 /**
  * Normalises the CSULB permit-information page HTML and returns a SHA-256
@@ -178,24 +179,25 @@ export const EXPECTED_PERMIT_SOURCE_HASH_SHA256 =
  * Pure function — exported so the cron job AND its tests can call it.
  */
 export function computePermitSourceHash(html: string): string {
-  const mainMatch =
-    html.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ??
-    html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  const region = mainMatch ? mainMatch[1] : html;
-  // Apply noise-stripping patterns to a fixpoint so nested or overlapping
-  // injections (e.g. `<scr<script>ipt>`) can't slip past the regex. The
-  // `\b...[^>]*>` end-tag forms also catch `</script >` style closings that
-  // a naive `</script>` literal would miss.
-  let stripped = region;
-  let previous: string;
-  do {
-    previous = stripped;
-    stripped = stripped
-      .replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, '')
-      .replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, '')
-      .replace(/<svg\b[\s\S]*?<\/svg\b[^>]*>/gi, '')
-      .replace(/<!--[\s\S]*?-->/g, '');
-  } while (stripped !== previous);
-  stripped = stripped.replace(/\s+/g, ' ').trim();
+  // Use a real HTML parser instead of regex stripping — CodeQL flags
+  // regex-based sanitization as incomplete (nested/malformed tags can
+  // slip past), and cheerio's tree-based removal is robust by construction.
+  const $ = cheerio.load(html);
+
+  // Pick the narrowest region available: <main>, falling back to <body>,
+  // falling back to the whole document. Selector strings keep cheerio's
+  // type as Cheerio<Element>, which has find/contents/text typed correctly.
+  const regionSelector =
+    $('main').length > 0 ? 'main' : $('body').length > 0 ? 'body' : '*';
+
+  // Tree-based removal — no regex sanitization, no risk of malformed or
+  // nested-tag bypass (the parser already normalised the DOM).
+  $(regionSelector).find('script, style, svg').remove();
+  $(regionSelector)
+    .contents()
+    .filter((_, node) => node.type === 'comment')
+    .remove();
+
+  const stripped = $(regionSelector).text().replace(/\s+/g, ' ').trim();
   return createHash('sha256').update(stripped, 'utf8').digest('hex');
 }
