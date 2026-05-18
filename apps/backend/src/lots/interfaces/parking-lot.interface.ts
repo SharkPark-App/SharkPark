@@ -35,6 +35,9 @@ export interface LotBuildingResponse {
   /** Approximate centerpoint (WGS84). Used for haversine distance from the lot. */
   center_lat: number;
   center_lng: number;
+  /** Building codes / aliases (e.g. "CLA", "LA1"). Used by mobile search
+   *  so users typing the short abbreviation find the building. */
+  alternate_names: string[];
 }
 
 export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'current_occupancy'> {

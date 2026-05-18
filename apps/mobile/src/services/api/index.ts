@@ -28,6 +28,10 @@ export type {
 export { eventsApi } from './events';
 export type { CampusEvent } from '../../types/events';
 
+// Weather service
+export { weatherApi } from './weather';
+export type { CurrentWeather } from './weather';
+
 // Reports service
 export { reportsApi, ReportUnauthorizedError, ReportThrottledError } from './reports';
 export type { CreateReportPayload, CreateReportResponse, ReportType } from './reports';
@@ -45,6 +49,7 @@ import { apiService } from './base';
 import { lotsApi } from './lots';
 import { eventsApi } from './events';
 import { reportsApi } from './reports';
+import { weatherApi } from './weather';
 
 // Re-export everything as default object
 export default {
@@ -53,4 +58,5 @@ export default {
   lots: lotsApi,
   events: eventsApi,
   reports: reportsApi,
+  weather: weatherApi,
 };

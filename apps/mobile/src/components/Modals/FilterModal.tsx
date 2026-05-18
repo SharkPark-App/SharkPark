@@ -644,8 +644,10 @@ const getStyles = (
     gap: spacing.md,
   },
   sectionActionButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   sectionActionText: {
     color: colors.primary,
@@ -666,6 +668,8 @@ const getStyles = (
   chip: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.borderGray,
@@ -680,13 +684,17 @@ const getStyles = (
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.medium,
   },
+  // Dark text on amber (#F59E0B) yields ~12:1 contrast; white was ~2:1 (fails WCAG AA).
   chipTextActive: {
-    color: colors.white,
+    color: colors.textPrimary,
   },
   chipClearButton: {
     marginTop: spacing.md,
     alignSelf: 'flex-start',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   chipClearText: {
     color: colors.primary,
@@ -703,6 +711,7 @@ const getStyles = (
     alignItems: 'center',
     gap: spacing.md,
     width: '30%',
+    minHeight: 44,
   },
   lotButtonDimmed: {
     opacity: 0.35,

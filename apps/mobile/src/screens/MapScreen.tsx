@@ -5,6 +5,10 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
+  LayoutAnimation,
+  Platform,
+  ScrollView,
+  UIManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../components/CustomText';
@@ -15,6 +19,7 @@ import MapView, { Marker, Polygon, Polyline, PROVIDER_DEFAULT, Region } from 're
 import { getOccupancyColorGradient, getReadableTextColor } from '../utils/parkingUtils';
 import { haversineDistance } from '../utils/geoHelpers';
 import { Header } from '../components';
+import { TextInput } from '../components/CustomTextInput';
 import { LotFilterModal, matchesAttributes } from '../components/Modals/FilterModal';
 import { RecommendationModal } from '../components/Modals/RecommendationModal';
 import { useLotsList } from '../hooks/useLotData';
@@ -59,6 +64,23 @@ function hexWithAlpha(hex: string, alpha: number): string {
 }
 
 const PARKED_LOT_COLOR = '#2563EB';
+
+// Vertical space the top-of-map search overlay occupies when EXPANDED.
+// Used to shift the `findMyCarBanner` (full-width) so its content doesn't
+// collide with the expanded bar. The collapsed FAB lives in the top-left
+// corner only, so right-aligned banners (`returnToCampusButton`) don't
+// need this offset unless the bar is expanded.
+const SEARCH_BAR_OFFSET = 64;
+
+// Enable LayoutAnimation on Android. iOS has it on by default; Android
+// requires opting in once per app launch via UIManager. Guard so the
+// no-op call doesn't throw on platforms that lack the experimental flag.
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // Interactive lot component
 const InteractiveLot: React.FC<{
@@ -241,6 +263,15 @@ const MapScreen: React.FC = () => {
   const [selectedLots, setSelectedLots] = useState<string[]>([]);
   const [selectedAttributes, setSelectedAttributes] = useState<string[]>([]);
   const [hiddenRouteIds, setHiddenRouteIds] = useState<string[]>([]);
+  // Free-text search across lot names and the building list each lot serves.
+  // Empty string means the overlay collapses to just the input row, leaving
+  // the map fully visible.
+  const [lotSearchQuery, setLotSearchQuery] = useState('');
+  // Search starts as a single round icon-button so it doesn't obstruct the
+  // map. Tapping the icon expands the bar and focuses the input. Submitting
+  // a result (or tapping the close affordance) collapses back to the icon.
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const searchInputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   // Gate map content rendering on AsyncStorage hydration so the persisted
   // filter snaps in before the user sees an unfiltered flash.
   const [filtersHydrated, setFiltersHydrated] = useState(false);
@@ -480,6 +511,131 @@ const MapScreen: React.FC = () => {
     });
   };
 
+  /**
+   * Search index for the top-of-map search bar. We mix lot hits and building
+   * hits into a single results list because students think in landmarks
+   * ("MIC", "Walter Pyramid") more often than in lot IDs. Building hits
+   * carry their parent lot so tapping one pans the map and opens that lot.
+   */
+  type LotSearchResult =
+    | { kind: 'lot'; lot: ParkingLotResponse }
+    | {
+        kind: 'building';
+        lot: ParkingLotResponse;
+        building: {
+          name: string;
+          center_lat: number;
+          center_lng: number;
+          alternate_names?: string[];
+        };
+      };
+
+  const searchResults = useMemo<LotSearchResult[]>(() => {
+    const q = lotSearchQuery.trim().toLowerCase();
+    if (q.length < 1) return [];
+    const lotHits: LotSearchResult[] = [];
+    const buildingHits: LotSearchResult[] = [];
+    const seenLotIds = new Set<string>();
+    for (const lot of lots) {
+      const lotName = lot.lot_name.toLowerCase();
+      const lotId = lot.lot_id.toLowerCase();
+      const displayName = (lot as { display_name?: string }).display_name?.toLowerCase() ?? '';
+      if (lotName.includes(q) || lotId.includes(q) || displayName.includes(q)) {
+        lotHits.push({ kind: 'lot', lot });
+        seenLotIds.add(lot.lot_id);
+      }
+    }
+    // Building search: dedupe by building NAME across all lots so a building
+    // attached to several lots (e.g. CLA is "near" 4 surface lots) collapses
+    // to one row. We pick the FIRST lot that lists it so the result row can
+    // route the user to a representative parking lot for that building.
+    // Match against `name` AND any `alternate_names` (CSULB building codes
+    // like "CLA", "LA1") so users typing the abbreviation still find it.
+    const seenBuildingNames = new Set<string>();
+    for (const lot of lots) {
+      if (seenLotIds.has(lot.lot_id)) continue;
+      for (const b of lot.buildings) {
+        const nameLc = b.name.toLowerCase();
+        if (seenBuildingNames.has(nameLc)) continue;
+        const aliases = b.alternate_names ?? [];
+        const aliasHit = aliases.some(a => a.toLowerCase().includes(q));
+        if (nameLc.includes(q) || aliasHit) {
+          buildingHits.push({ kind: 'building', lot, building: b });
+          seenBuildingNames.add(nameLc);
+        }
+      }
+    }
+    // Cap to 8 to keep the dropdown one-thumb tall on small phones.
+    return [...lotHits, ...buildingHits].slice(0, 8);
+  }, [lots, lotSearchQuery]);
+
+  const animateMapTo = useCallback(
+    (latitude: number, longitude: number) => {
+      const latitudeDelta = 0.004;
+      const longitudeDelta = 0.004;
+      // The bottom tab bar + home-indicator cover the lower portion of
+      // the screen. A small negative latitude offset pushes the marker
+      // slightly above geometric center so it doesn't read as "too low".
+      // The map is also visually shifted left of center by the FAB +
+      // any leading absolute UI, so add a small east-bias to longitude
+      // so the marker reads as horizontally centered to the user.
+      const latitudeOffset = latitudeDelta * 0.18;
+      const longitudeOffset = longitudeDelta * 0.06;
+      mapRef.current?.animateToRegion(
+        {
+          latitude: latitude - latitudeOffset,
+          longitude: longitude + longitudeOffset,
+          latitudeDelta,
+          longitudeDelta,
+        },
+        500,
+      );
+    },
+    [],
+  );
+
+  const handleSelectSearchResult = useCallback(
+    (result: LotSearchResult) => {
+      // Spring-shrink the bar back into the FAB so the map handoff feels
+      // continuous. No fade props — the icon should appear to retract
+      // into a pill, not cross-fade.
+      LayoutAnimation.configureNext({
+        duration: 260,
+        update: { type: 'spring', springDamping: 0.7 },
+      });
+      setLotSearchQuery('');
+      setSearchExpanded(false);
+      if (result.kind === 'lot') {
+        animateMapTo(result.lot.center_lat, result.lot.center_lng);
+      } else {
+        animateMapTo(result.building.center_lat, result.building.center_lng);
+      }
+    },
+    [animateMapTo],
+  );
+
+  const handleExpandSearch = useCallback(() => {
+    // Spring-grow: the FAB's width/borderRadius interpolate outward
+    // until it fills the top of the map as the search bar.
+    LayoutAnimation.configureNext({
+      duration: 260,
+      update: { type: 'spring', springDamping: 0.7 },
+    });
+    setSearchExpanded(true);
+    // Defer focus until after the bar mounts and react-native lays it out.
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, []);
+
+  const handleCollapseSearch = useCallback(() => {
+    LayoutAnimation.configureNext({
+      duration: 260,
+      update: { type: 'spring', springDamping: 0.7 },
+    });
+    setLotSearchQuery('');
+    setSearchExpanded(false);
+    searchInputRef.current?.blur();
+  }, []);
+
   const handleRegionChangeComplete = useCallback(async (region: Region) => {
     if (!mapRef.current) return;
 
@@ -583,9 +739,171 @@ const MapScreen: React.FC = () => {
       <Header />
 
       <View style={styles.mapContainer}>
+        {/* ─── Search overlay ───
+         * Collapsed: a single round icon-button that doesn't obstruct the
+         * map. Expanded: a full-width search bar with a results dropdown
+         * that mixes lot names and nearby buildings. zIndex sits above
+         * every other absolute overlay so the dropdown can extend over
+         * them. */}
+        {/* Single morphing container: when collapsed it is a 48×48 round
+         * pill anchored top-left; when expanded it animates (via the
+         * outer overlay's `LayoutAnimation.spring`) outward to a
+         * full-width search bar with a results dropdown. Keeping ONE
+         * container (instead of swapping FAB ↔ overlay) lets RN's
+         * LayoutAnimation interpolate width/height/borderRadius so the
+         * icon reads as growing into the bar rather than cross-fading. */}
+        <View
+          style={[
+            searchExpanded ? styles.searchOverlay : styles.searchFab,
+            { backgroundColor: colors.white, shadowColor: colors.shadowDark },
+          ]}
+        >
+          <View style={styles.searchInputRow}>
+            <TouchableOpacity
+              onPress={searchExpanded ? undefined : handleExpandSearch}
+              disabled={searchExpanded}
+              accessibilityRole={searchExpanded ? undefined : 'button'}
+              accessibilityLabel={
+                searchExpanded ? undefined : 'Search parking lots and nearby buildings'
+              }
+              style={styles.searchIconHit}
+              activeOpacity={0.7}
+            >
+              <Icon
+                name="search-outline"
+                size={20}
+                color={colors.gray}
+                accessible={false}
+              />
+            </TouchableOpacity>
+            {searchExpanded && (
+              <>
+                <TextInput
+                  ref={searchInputRef}
+                  style={[styles.searchInput, { color: colors.textPrimary }]}
+                  placeholder="Search lots or buildings"
+                  placeholderTextColor={colors.gray}
+                  value={lotSearchQuery}
+                  onChangeText={setLotSearchQuery}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  accessibilityLabel="Search parking lots and nearby buildings"
+                />
+                {/* Single close affordance — collapses back to the icon FAB
+                 * (and clears the query as a side effect). We intentionally
+                 * do NOT pass `clearButtonMode` to TextInput because that
+                 * would surface a second native X on iOS. */}
+                <TouchableOpacity
+                  onPress={handleCollapseSearch}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    lotSearchQuery.length > 0 ? 'Clear search and close' : 'Close search'
+                  }
+                  style={styles.searchClearButton}
+                >
+                  <Icon
+                    name="close-circle"
+                    size={22}
+                    color={colors.gray}
+                    accessible={false}
+                  />
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+          {searchExpanded && lotSearchQuery.trim().length > 0 && (
+              <ScrollView
+                style={[styles.searchResults, { borderTopColor: colors.lightGray }]}
+                contentContainerStyle={styles.searchResultsContent}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+              >
+                {searchResults.length === 0 ? (
+                  <Text style={[styles.searchEmpty, { color: colors.gray }]}>
+                    No lots or buildings match &quot;{lotSearchQuery}&quot;
+                  </Text>
+                ) : (
+                  searchResults.map((result) => {
+                    // Match the LongTermForecast lot picker's display rule
+                    // (`display_name || lot_name`) so users see the same
+                    // label for the same lot across screens.
+                    const lotLabel =
+                      (result.lot as { display_name?: string }).display_name ||
+                      result.lot.lot_name;
+                    const key =
+                      result.kind === 'lot'
+                        ? `lot:${result.lot.lot_id}`
+                        : `bldg:${result.lot.lot_id}:${result.building.name}`;
+                    const title =
+                      result.kind === 'lot' ? lotLabel : result.building.name;
+                    // For building hits, prepend the first alias (e.g. "CLA")
+                    // so the user sees the abbreviation they likely typed.
+                    const buildingAlias =
+                      result.kind === 'building' &&
+                      result.building.alternate_names &&
+                      result.building.alternate_names.length > 0
+                        ? result.building.alternate_names[0]
+                        : null;
+                    const subtitle =
+                      result.kind === 'lot'
+                        ? 'Parking lot'
+                        : buildingAlias
+                          ? `${buildingAlias} · Building · ${lotLabel}`
+                          : `Building · ${lotLabel}`;
+                    const iconName =
+                      result.kind === 'lot' ? 'car-outline' : 'business-outline';
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={styles.searchResultRow}
+                        onPress={() => handleSelectSearchResult(result)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${title}, ${subtitle}`}
+                      >
+                        <Icon
+                          name={iconName}
+                          size={18}
+                          color={colors.gray}
+                          accessible={false}
+                          style={styles.searchResultIcon}
+                        />
+                        <View style={styles.searchResultText}>
+                          <Text
+                            style={[styles.searchResultTitle, { color: colors.textPrimary }]}
+                            numberOfLines={1}
+                          >
+                            {title}
+                          </Text>
+                          <Text
+                            style={[styles.searchResultSubtitle, { color: colors.gray }]}
+                            numberOfLines={1}
+                          >
+                            {subtitle}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            )}
+          </View>
+
         {parkedLot && (
           <TouchableOpacity
-            style={[styles.findMyCarBanner, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}
+            style={[
+              styles.findMyCarBanner,
+              {
+                // Full-width banner — always shift below the search row
+                // (collapsed FAB or expanded bar both live in this band)
+                // to avoid overlapping the leading edge.
+                top: SEARCH_BAR_OFFSET + SPACING.md,
+                backgroundColor: colors.white,
+                shadowColor: colors.shadowDark,
+              },
+            ]}
             onPress={handleFindMyCarPress}
             activeOpacity={0.85}
             accessibilityRole="button"
@@ -627,7 +945,13 @@ const MapScreen: React.FC = () => {
               {
                 backgroundColor: colors.white,
                 shadowColor: colors.shadowDark,
-                top: parkedLot ? 92 : SPACING.md,
+                // Right-aligned pill; only needs to shift down when the
+                // search bar is EXPANDED (full-width) or when the parked
+                // banner above it is visible. The collapsed FAB lives in
+                // the top-left and never overlaps this button.
+                top: searchExpanded
+                  ? SEARCH_BAR_OFFSET + (parkedLot ? 92 : SPACING.md)
+                  : (parkedLot ? SEARCH_BAR_OFFSET + 92 : SPACING.md),
               },
             ]}
             onPress={handleReturnToCampusPress}
@@ -888,6 +1212,9 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
+    // Match the 48px height of `searchFab` so the two top-row controls
+    // align on the vertical center, not just the top edge.
+    minHeight: 48,
     borderRadius: 999,
     ...SHADOWS.card,
   },
@@ -969,6 +1296,101 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: SPACING.md,
     right: SPACING.xxl,
+  },
+  searchOverlay: {
+    position: 'absolute',
+    top: SPACING.md,
+    left: SPACING.md,
+    right: SPACING.md,
+    // Above parked-car banner / return-to-campus pill so the dropdown can
+    // visually extend over them. Below modals (which use higher zIndex).
+    zIndex: 30,
+    borderRadius: SPACING.lg,
+    ...SHADOWS.card,
+  },
+  searchFab: {
+    position: 'absolute',
+    top: SPACING.md,
+    left: SPACING.md,
+    width: 48,
+    height: 48,
+    // Round when collapsed; LayoutAnimation interpolates this toward
+    // `searchOverlay.borderRadius` (SPACING.lg) during the morph.
+    borderRadius: 24,
+    overflow: 'hidden',
+    zIndex: 30,
+    ...SHADOWS.card,
+  },
+  searchIconHit: {
+    // Hit-slot that doubles as both the FAB's tappable area (when
+    // collapsed) and the leading icon (when expanded). 48×48 keeps the
+    // visual size of the collapsed FAB unchanged.
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // Padding only applies inside the expanded bar; when collapsed the
+    // 48×48 `searchIconHit` fills the container edge-to-edge.
+    paddingHorizontal: 0,
+    minHeight: 48,
+  },
+  searchIcon: {
+    marginRight: SPACING.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    paddingVertical: SPACING.md,
+    // Native 44pt minimum hit target — important since this is the primary
+    // discoverability surface for first-time users learning lot names.
+    minHeight: 44,
+  },
+  searchClearButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchResults: {
+    borderTopWidth: 1,
+    maxHeight: 320,
+  },
+  searchResultsContent: {
+    paddingVertical: SPACING.sm,
+  },
+  searchEmpty: {
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: 'center',
+  },
+  searchResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    minHeight: 44,
+  },
+  searchResultIcon: {
+    marginRight: SPACING.md,
+    width: 20,
+    textAlign: 'center',
+  },
+  searchResultText: {
+    flex: 1,
+  },
+  searchResultTitle: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  searchResultSubtitle: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    marginTop: 2,
   },
 });
 

@@ -115,6 +115,43 @@ jest.mock('react-native-safe-area-context', () => {
 // Mock react-native-vector-icons
 jest.mock('react-native-vector-icons/Ionicons', () => 'Icon');
 
+// Mock react-native-localize so usesFahrenheit / getDeviceLocale resolve
+// deterministically in tests (defaults to en-US / Fahrenheit). `useLocalize`
+// is a no-op subscription that just returns the same snapshot every render.
+jest.mock('react-native-localize', () => {
+  const snapshot = {
+    locales: [
+      { countryCode: 'US', languageTag: 'en-US', languageCode: 'en', isRTL: false },
+    ],
+    country: 'US',
+    currencies: ['USD'],
+    calendar: 'gregorian',
+    temperatureUnit: 'fahrenheit',
+    timeZone: 'America/Los_Angeles',
+    numberFormatSettings: { decimalSeparator: '.', groupingSeparator: ',' },
+    uses24HourClock: false,
+    usesMetricSystem: false,
+    usesAutoDateAndTime: true,
+    usesAutoTimeZone: true,
+  };
+  return {
+    getLocales: () => snapshot.locales,
+    getTemperatureUnit: () => snapshot.temperatureUnit,
+    getNumberFormatSettings: () => snapshot.numberFormatSettings,
+    getCalendar: () => snapshot.calendar,
+    getCountry: () => snapshot.country,
+    getCurrencies: () => snapshot.currencies,
+    getTimeZone: () => snapshot.timeZone,
+    uses24HourClock: () => snapshot.uses24HourClock,
+    usesMetricSystem: () => snapshot.usesMetricSystem,
+    usesAutoDateAndTime: () => snapshot.usesAutoDateAndTime,
+    usesAutoTimeZone: () => snapshot.usesAutoTimeZone,
+    findBestLanguageTag: () => ({ languageTag: 'en-US', isRTL: false }),
+    useLocalize: () => snapshot,
+    openAppLanguageSettings: jest.fn(),
+  };
+});
+
 // Mock @react-navigation/native
 jest.mock('@react-navigation/native', () => {
   const actualNav = jest.requireActual('@react-navigation/native');

@@ -258,7 +258,7 @@ export function ShortTermForecastScreen() {
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       {/* Top Banner & Favorite Button*/}
       <Header
-        title="Today's Forecast"
+        title={`Today at ${lot.lot_name}`}
         onBack={onBack}
         rightAction={
           <FavoriteButton isFavorite={isFavorite} onToggle={toggleFavorite} />

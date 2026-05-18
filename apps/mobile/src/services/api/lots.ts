@@ -97,6 +97,8 @@ export interface ParkingLot {
     /** Building centerpoint (WGS84). Used to render distance from the lot. */
     center_lat: number;
     center_lng: number;
+    /** Optional building codes (e.g. "CLA", "LA1"). Drives search aliases. */
+    alternate_names?: string[];
   }>;
   center_lat: number;
   center_lng: number;

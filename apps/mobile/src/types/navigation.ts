@@ -28,7 +28,7 @@ export type MapStackParamList = {
  * with full type safety from anywhere in the tree.
  */
 export type RootTabParamList = {
-  'Long Term': undefined;
+  'Week': undefined;
   Map: NavigatorScreenParams<MapStackParamList> | undefined;
   Profile: undefined;
 };

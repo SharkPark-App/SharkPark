@@ -109,7 +109,7 @@ const MainTabNavigator: React.FC = () => {
       }}
     >
       <Tab.Screen 
-        name="Long Term" 
+        name="Week" 
         component={LongTerm}
         options={{
           tabBarIcon: ({ focused, color, size }) => (

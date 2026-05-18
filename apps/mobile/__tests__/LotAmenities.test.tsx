@@ -14,6 +14,10 @@ import ReactTestRenderer from 'react-test-renderer';
 
 // ────────────────────── Mocks ──────────────────────
 
+jest.mock('../src/hooks/useCurrentWeather', () => ({
+  useCurrentWeather: () => ({ weather: null, loading: false, error: null }),
+}));
+
 jest.mock('../src/context/ThemeContext', () => ({
   useTheme: () => ({
     colors: {
@@ -105,22 +109,25 @@ function renderLot(overrides: Partial<ParkingLotResponse> = {}) {
 // ────────────────────── Tests ──────────────────────
 
 describe('LotAmenities', () => {
-  it('renders all five section titles', () => {
+  it('renders all section titles', () => {
     const tree = renderLot();
     const texts = collectTexts(tree.root);
 
-    expect(texts).toContain('Lot Information');
+    expect(texts).toContain('Live Availability');
     expect(texts).toContain('Permits');
     expect(texts).toContain('Hours');
+    expect(texts).toContain('Lot Details');
     expect(texts).toContain('Special Spaces');
     expect(texts).toContain('Safety & Features');
   });
 
-  it('renders capacity and location description', () => {
+  it('renders capacity (via Live Availability) and location description', () => {
+    // Capacity is no longer a standalone row in Lot Details — it is folded
+    // into the "~X of Y" string on the Live Availability card to avoid
+    // restating the same number in two places.
     const tree = renderLot({ capacity: 1234, location_description: 'North Campus' });
     const texts = collectTexts(tree.root);
 
-    expect(texts).toContain('Capacity');
     expect(texts.some(t => t.includes('1,234'))).toBe(true);
     expect(texts).toContain('North Campus');
   });

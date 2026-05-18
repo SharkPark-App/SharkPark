@@ -10,8 +10,12 @@ import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import type { ParkingLotResponse, BuildingCategory } from '../services/api/lots';
 import { formatTime } from '../utils/formatTime';
-import { haversineDistance, formatDistance } from '../utils/geoHelpers';
+import { haversineDistance, formatDistance, formatTemperature, usesFahrenheit } from '../utils/geoHelpers';
+import { getOccupancyColorGradient, getReadableTextColor } from '../utils/parkingUtils';
 import { MapSelectModal } from './Modals/MapSelectModal';
+import { useCurrentWeather } from '../hooks/useCurrentWeather';
+import { useLocalizationSettings } from '../hooks/useLocalizationSettings';
+import type { CurrentWeather } from '../services/api/weather';
 
 interface LotAmenitiesProps {
   lot: ParkingLotResponse;
@@ -82,11 +86,14 @@ function AmenityRow({
   label,
   value,
   color,
+  trailing,
 }: {
   icon: string;
   label: string;
   value: string | number;
   color?: string;
+  /** Optional inline element rendered after the value (e.g. a status chip). */
+  trailing?: React.ReactNode;
 }) {
   const { colors } = useTheme();
   return (
@@ -101,6 +108,7 @@ function AmenityRow({
         {label}
       </Text>
       <Text style={[rowStyles.value, { color: colors.gray }]}>{value}</Text>
+      {trailing ? <View style={rowStyles.trailing}>{trailing}</View> : null}
     </View>
   );
 }
@@ -294,9 +302,115 @@ function NearbyBuildings({
   );
 }
 
+/**
+ * Maps a free-form `conditions` string (returned by the backend weather
+ * service in whatever vocabulary the upstream provider uses) to an Ionicon
+ * name + accent color. We keep this list intentionally small: anything we
+ * don't recognise falls back to a neutral "partly cloudy" glyph so the card
+ * still renders cleanly when the provider returns an unfamiliar label.
+ */
+function getWeatherIcon(conditions: string): { name: string; color: string } {
+  const c = conditions.toLowerCase();
+  if (c.includes('thunder') || c.includes('storm')) {
+    return { name: 'thunderstorm-outline', color: '#7c3aed' };
+  }
+  if (c.includes('snow') || c.includes('sleet')) {
+    return { name: 'snow-outline', color: '#0ea5e9' };
+  }
+  if (c.includes('rain') || c.includes('shower') || c.includes('drizzle')) {
+    return { name: 'rainy-outline', color: '#2563eb' };
+  }
+  if (c.includes('fog') || c.includes('mist') || c.includes('haze')) {
+    return { name: 'cloud-outline', color: '#64748b' };
+  }
+  if (c.includes('clear') || c.includes('sunny')) {
+    return { name: 'sunny-outline', color: '#f59e0b' };
+  }
+  if (c.includes('cloud') || c.includes('overcast')) {
+    return { name: 'partly-sunny-outline', color: '#64748b' };
+  }
+  return { name: 'partly-sunny-outline', color: '#64748b' };
+}
+
+/**
+ * Compact current-weather strip at the top of the lot detail screen. We
+ * surface it here (rather than as a separate screen) because rain / heat
+ * directly affect parking demand and a quick glance saves a context switch
+ * out of the app. Renders a subtle placeholder while loading so the layout
+ * doesn't pop in once data arrives. Hides only when the request has
+ * resolved with no data AND no error — i.e. backend explicitly returned
+ * `null` — to avoid a permanent dead row.
+ */
+function CurrentWeatherCard({
+  weather,
+  loading,
+}: {
+  weather: CurrentWeather | null;
+  loading: boolean;
+}) {
+  const { colors } = useTheme();
+  if (!weather && !loading) return null;
+  if (!weather) {
+    return (
+      <View
+        style={[styles.card, weatherStyles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}
+        accessible
+        accessibilityRole="summary"
+        accessibilityLabel="Loading current weather"
+      >
+        <View style={[weatherStyles.iconChip, { backgroundColor: colors.lightGray }]}>
+          <Icon name="partly-sunny-outline" size={22} color={colors.gray} accessible={false} />
+        </View>
+        <View style={weatherStyles.body}>
+          <Text style={[weatherStyles.conditions, { color: colors.gray }]} numberOfLines={1}>
+            Loading current weather…
+          </Text>
+        </View>
+      </View>
+    );
+  }
+  const { name: iconName, color: iconColor } = getWeatherIcon(weather.conditions);
+  // Backend always stores temperature in Fahrenheit; `formatTemperature`
+  // converts to Celsius for non-Fahrenheit locales (same locale-detection
+  // path that drives `formatDistance` for miles vs. kilometres).
+  const tempLabel = formatTemperature(weather.temperature_f);
+  const tempUnitWord = usesFahrenheit() ? 'Fahrenheit' : 'Celsius';
+  const humidity = Math.round(weather.humidity_percent);
+  return (
+    <View
+      style={[styles.card, weatherStyles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}
+      accessible
+      accessibilityRole="summary"
+      accessibilityLabel={`Current weather: ${tempLabel.replace(/°[CF]/, '')} degrees ${tempUnitWord}, ${weather.conditions}, ${humidity}% humidity`}
+    >
+      <View style={[weatherStyles.iconChip, { backgroundColor: colors.lightGray }]}>
+        <Icon name={iconName} size={22} color={iconColor} accessible={false} />
+      </View>
+      <View style={weatherStyles.body}>
+        <Text style={[weatherStyles.temp, { color: colors.textPrimary }]}>
+          {tempLabel}
+        </Text>
+        <Text style={[weatherStyles.conditions, { color: colors.gray }]} numberOfLines={1}>
+          {weather.conditions} · {humidity}% humidity
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export function LotAmenities({ lot }: LotAmenitiesProps) {
   const { colors, isDark } = useTheme();
+  // Subscribe to system locale / unit / temperature changes once at the top
+  // of the lot-detail tree. Re-renders cascade to every child that calls
+  // `formatDistance` (building rows) or `formatTemperature`
+  // (`CurrentWeatherCard`), so a user toggling °F↔°C or region in Settings
+  // sees the new units the instant they return to the app — no app restart.
+  useLocalizationSettings();
   const advisoryPalette = useMemo(() => getAdvisoryPalette(isDark), [isDark]);
+  // The weather hook never throws into the render tree; on failure the
+  // widget simply renders nothing so a transient network blip can't crash
+  // a lot detail view.
+  const { weather, loading: weatherLoading } = useCurrentWeather();
 
   const weekdayHours = formatHours(lot.hours_weekday);
   const saturdayHours = formatHours(lot.hours_saturday);
@@ -304,6 +418,7 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
 
   return (
     <View style={styles.container}>
+      <CurrentWeatherCard weather={weather} loading={weatherLoading} />
       {/* ── Advisories (only when active) ── */}
       {lot.advisories.length > 0 && (
         <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
@@ -347,17 +462,106 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
         </View>
       )}
 
-      {/* ── Lot Info ── */}
+      {/* ── Live Availability ──
+       * Highest-priority decision card after advisories: tells the user
+       * whether the lot has open spaces RIGHT NOW. Renders only when we
+       * have an occupancy signal (smoothed estimate preferred, raw count
+       * as fallback). When no signal is available the card is omitted so
+       * a static "0 taken" can't mislead.
+       *
+       * Display strategy: a single headline row pairs the absolute count
+       * (`~250 of 500 open`) with a colored fullness chip (`50% full`).
+       * The chip carries the "how saturated" gradient at a glance while
+       * the count answers the literal "can I park here" question — we
+       * intentionally do NOT show two stacked rows since the percentage
+       * is just a different framing of the same underlying signal. */}
+      {(() => {
+        const occupied = lot.estimated_occupancy ?? lot.current_occupancy;
+        if (occupied == null) return null;
+        const available = Math.max(0, lot.capacity - occupied);
+        const pctFull = Math.min(
+          100,
+          Math.max(0, Math.round((occupied / lot.capacity) * 100)),
+        );
+        // Use the shared occupancy gradient so this chip matches the
+        // pin colors on the map, the badge on the recommendation cards,
+        // and the bars on the forecast chart — one visual language for
+        // "how full" across every surface in the app. `getReadableTextColor`
+        // flips between dark and light text so the percentage stays AA
+        // against the gradient's mid-tones.
+        const chipBg = getOccupancyColorGradient(pctFull);
+        const chipFg = getReadableTextColor(chipBg);
+        return (
+          <View
+            style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}
+          >
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+              Live Availability
+            </Text>
+            <AmenityRow
+              icon="people-outline"
+              label="Open spaces"
+              value={`~${available.toLocaleString()} of ${lot.capacity.toLocaleString()}`}
+              // Icon stays neutral; the gradient-colored chip carries the
+              // fullness signal. Tinting the icon with chipBg made low-contrast
+              // mid-fill colors (yellow/light green) hard to see on white cards.
+              trailing={
+                <View
+                  style={[liveStyles.fullnessChip, { backgroundColor: chipBg }]}
+                  accessibilityLabel={`${pctFull} percent full`}
+                >
+                  <Text style={[liveStyles.fullnessChipText, { color: chipFg }]}>
+                    {pctFull}% full
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+        );
+      })()}
+
+      {/* ── Permits ──
+       * Second gate after live availability: a lot with open spaces is
+       * useless if your permit isn't accepted. */}
       <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
         <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-          Lot Information
+          Permits
         </Text>
 
         <AmenityRow
-          icon="car-outline"
-          label="Capacity"
-          value={lot.capacity.toLocaleString()}
+          icon="pricetag-outline"
+          label="Permits"
+          value={lot.permit_types.join(', ')}
         />
+      </View>
+
+      {/* ── Hours ──
+       * Third gate: even with a permit and open spaces, the lot may be
+       * closed for the day. */}
+      <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+          Hours
+        </Text>
+
+        <AmenityRow icon="calendar-outline" label="Weekdays" value={weekdayHours} />
+        <AmenityRow icon="calendar-outline" label="Saturday" value={saturdayHours} />
+        <AmenityRow icon="calendar-outline" label="Sunday" value={sundayHours} />
+      </View>
+
+      {/* ── Lot Details ──
+       * Descriptive metadata. Demoted below the three decision gates
+       * (availability/permits/hours) since this content rarely changes
+       * a user's parking decision once those gates are satisfied.
+       *
+       * Note: `Capacity` is intentionally NOT shown here — the Live
+       * Availability card already surfaces it as part of "~X of Y", and
+       * a second standalone capacity row would just restate that figure
+       * with less context. */}
+      <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+          Lot Details
+        </Text>
+
         <AmenityRow
           icon="layers-outline"
           label="Type"
@@ -378,30 +582,6 @@ export function LotAmenities({ lot }: LotAmenitiesProps) {
             lotLng={lot.center_lng}
           />
         )}
-      </View>
-
-      {/* ── Permits ── */}
-      <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
-        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-          Permits
-        </Text>
-
-        <AmenityRow
-          icon="pricetag-outline"
-          label="Permits"
-          value={lot.permit_types.join(', ')}
-        />
-      </View>
-
-      {/* ── Hours ── */}
-      <View style={[styles.card, { backgroundColor: colors.white, shadowColor: colors.shadowDark }]}>
-        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-          Hours
-        </Text>
-
-        <AmenityRow icon="calendar-outline" label="Weekdays" value={weekdayHours} />
-        <AmenityRow icon="calendar-outline" label="Saturday" value={saturdayHours} />
-        <AmenityRow icon="calendar-outline" label="Sunday" value={sundayHours} />
       </View>
 
       {/* ── Spaces ── */}
@@ -547,7 +727,12 @@ const styles = StyleSheet.create({
 const rowStyles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    // Center every child on the row's cross-axis so an inline chip (the
+    // "% full" pill on Live Availability) lines up with the icon, label,
+    // and value text instead of floating above them. Multi-line values
+    // still center cleanly because the row's height tracks the tallest
+    // child either way.
+    alignItems: 'center',
     paddingVertical: SPACING.md,
   },
   icon: {
@@ -565,6 +750,27 @@ const rowStyles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'right',
     maxWidth: '55%' as unknown as number,
+  },
+  trailing: {
+    marginLeft: SPACING.sm,
+  },
+});
+
+const liveStyles = StyleSheet.create({
+  // Compact saturation chip rendered inline with the "Open spaces" row.
+  // Color is supplied at runtime from the same status band that tints the
+  // count, so the chip + count read as a single status, not two competing
+  // signals.
+  fullnessChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: 999,
+    minHeight: 22,
+    justifyContent: 'center',
+  },
+  fullnessChipText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
   },
 });
 
@@ -676,11 +882,13 @@ const buildingStyles = StyleSheet.create({
     gap: SPACING.sm,
   },
   pill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 4,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
     borderRadius: 12,
     borderWidth: 1,
     maxWidth: '100%',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   pillText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
@@ -689,5 +897,36 @@ const buildingStyles = StyleSheet.create({
   pillDistance: {
     fontSize: TYPOGRAPHY.fontSize.sm,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
+  },
+});
+
+const weatherStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    // Tighter than the standard amenity card — this is a glance-able strip,
+    // not a full section, so the reduced padding keeps it visually subordinate
+    // to the actual lot information block below.
+    padding: SPACING.lg,
+  },
+  iconChip: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  body: {
+    flex: 1,
+  },
+  temp: {
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  conditions: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    marginTop: 2,
   },
 });

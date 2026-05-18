@@ -16,7 +16,7 @@ const LOT_WITH_BUILDINGS_INCLUDE = {
   lot_buildings: {
     include: {
       building: {
-        select: { name: true, category: true, center_lat: true, center_lng: true },
+        select: { name: true, category: true, center_lat: true, center_lng: true, alternate_names: true },
       },
     },
   },
@@ -376,7 +376,7 @@ export class LotsService {
         );
 
         // Build a human-readable reason
-        const reason = this.buildRecommendationReason(response, distance);
+        const reason = this.buildRecommendationReason(response);
 
         return {
           ...response,
@@ -394,32 +394,23 @@ export class LotsService {
 
   /**
    * Produces a short, user-friendly reason string for why a lot is recommended.
+   *
+   * Scope: this string is the *qualitative* signal layered on top of the
+   * structured fields the client already renders (count taken, distance,
+   * percent badge). We intentionally do NOT repeat "X spots available"
+   * (already shown as `~taken / capacity`) or "very close by" (already
+   * shown as a precise distance), since those duplicates produced two
+   * adjacent rows that said the same thing in different units.
+   *
+   * What stays: the trend / status nuance the user can't read off the
+   * structured fields — e.g. "filling up" warns of imminent saturation
+   * even if the current count looks safe.
    */
-  private buildRecommendationReason(
-    lot: ParkingLotResponse,
-    distanceMeters: number,
-  ): string {
-    const parts: string[] = [];
-
-    if (lot.fill_status === 'AVAILABLE') {
-      parts.push(`${lot.available} spots available`);
-    } else if (lot.fill_status === 'FILLING') {
-      parts.push(`${lot.available} spots left, filling up`);
-    } else {
-      parts.push(`${lot.available} spots remaining`);
-    }
-
-    if (distanceMeters < 300) {
-      parts.push('very close by');
-    } else if (distanceMeters < 600) {
-      parts.push('nearby');
-    }
-    // For distances ≥ 600m we omit a qualitative phrase here — the client
-    // renders the exact distance using the device's locale-appropriate
-    // units (miles vs. metres), so embedding units server-side would be
-    // wrong for non-US users.
-
-    return parts.join(' · ');
+  private buildRecommendationReason(lot: ParkingLotResponse): string {
+    if (lot.fill_status === 'FILLING') return 'Filling up';
+    if (lot.fill_status === 'NEARLY_FULL') return 'Nearly full';
+    if (lot.fill_status === 'FULL') return 'No spaces';
+    return 'Plenty of room';
   }
 
   /**
@@ -568,6 +559,10 @@ export class LotsService {
       category: lb.building.category,
       center_lat: lb.building.center_lat,
       center_lng: lb.building.center_lng,
+      // Building codes/aliases (e.g. "CLA", "LA1"). Surfaced so the
+      // mobile search can match short abbreviations a user is likely
+      // to type instead of the full administrative name.
+      alternate_names: lb.building.alternate_names,
     }));
     // Coerce DateTime fields to ISO strings for transport. Advisories are
     // static metadata (not contributor-gated) — every caller, including App

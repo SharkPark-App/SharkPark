@@ -13,6 +13,7 @@ import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { useLotsList } from '../../hooks/useLotData';
 import { getOccupancyColorGradient, getReadableTextColor } from '../../utils/parkingUtils';
 import { formatDistance } from '../../utils/geoHelpers';
+import { useLocalizationSettings } from '../../hooks/useLocalizationSettings';
 import { LockedOccupancyBadge } from '..';
 import { lotsApi, LotRecommendation, BackgroundLocationRequiredError } from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
@@ -46,6 +47,9 @@ export function RecommendationModal({
   onSelectLot,
 }: RecommendationModalProps) {
   const { colors, spacing, typography, isDark } = useTheme();
+  // Re-render the recommendation list when the user changes their region in
+  // Settings, so the "X mi away" / "X km away" labels flip immediately.
+  useLocalizationSettings();
   const { lots, loading: lotsLoading } = useLotsList();
   const navigation = useNavigation<StackNavigationProp<MapStackParamList>>();
   const [step, setStep] = useState<Step>('favorites');
@@ -444,10 +448,18 @@ const getStyles = (
   backButton: {
     padding: 6,
     marginRight: spacing.md,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   closeButton: {
     padding: 8,
     borderRadius: 20,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   closeIcon: {
     fontSize: 20,

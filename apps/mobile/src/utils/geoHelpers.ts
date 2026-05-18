@@ -11,18 +11,38 @@
  */
 
 import { NativeModules, Platform } from 'react-native';
+import * as RNLocalize from 'react-native-localize';
 import { DYNAMIC_GEOFENCE, TEST_CONSTANTS } from '../constants/geofencing';
 
 // Regions that use imperial units for road/short distances.
 // US, Liberia, Myanmar are fully imperial; UK uses miles for road distances.
 const IMPERIAL_REGIONS = new Set(['US', 'LR', 'MM', 'GB']);
 
+// Regions that report temperature in Fahrenheit for everyday weather.
+// The UK is metric for temperature (uses Celsius) despite using miles for
+// road distance, so it's intentionally NOT in this set even though it's in
+// IMPERIAL_REGIONS. Caribbean/Pacific micro-states that follow US convention
+// are included so visitors see units that match their phone's weather app.
+const FAHRENHEIT_REGIONS = new Set([
+  'US', 'LR', 'MM', 'BS', 'BZ', 'KY', 'PW', 'FM', 'MH', 'PR',
+]);
+
 /**
- * Best-effort detection of the device's BCP-47 locale (e.g. "en-US", "fr-FR")
- * without pulling in an extra native dependency. Falls back to "en-US" if the
- * native module isn't available (e.g. in unit tests).
+ * Best-effort detection of the device's BCP-47 locale (e.g. "en-US", "fr-FR").
+ *
+ * Uses `react-native-localize`, whose native bridge re-reads the system value
+ * on every call. The older approach of reading `NativeModules.SettingsManager
+ * .settings.AppleLocale` was a constant snapshot captured at bridge init, so
+ * it never reflected a region change made while the app was suspended.
+ * Falls back to the legacy snapshot, then to "en-US" if neither is available.
  */
 export function getDeviceLocale(): string {
+  try {
+    const tags = RNLocalize.getLocales();
+    if (tags.length > 0) return tags[0].languageTag;
+  } catch {
+    // Fall through to legacy snapshot.
+  }
   try {
     if (Platform.OS === 'ios') {
       const settings = NativeModules.SettingsManager?.settings;
@@ -40,8 +60,61 @@ export function getDeviceLocale(): string {
 
 /** True when the device locale's region uses imperial distance units. */
 export function usesImperialUnits(locale: string = getDeviceLocale()): boolean {
+  // iOS exposes a "Measurement System" toggle (Settings → General → Language &
+  // Region → Measurement System) that is independent of the region code — a
+  // US user can flip to Metric without changing their region to e.g. France.
+  // `RNLocalize.usesMetricSystem()` reads this live on every call, so prefer
+  // it over region inference. We invert it for the imperial check.
+  // On Android (no system-wide toggle) the library derives the value from the
+  // locale, which matches our region-based fallback.
+  try {
+    return !RNLocalize.usesMetricSystem();
+  } catch {
+    // Fall through to locale-region inference.
+  }
   const region = locale.split(/[-_]/)[1]?.toUpperCase();
   return region ? IMPERIAL_REGIONS.has(region) : false;
+}
+
+/** True when the device locale's region reports temperature in Fahrenheit. */
+export function usesFahrenheit(locale: string = getDeviceLocale()): boolean {
+  // `react-native-localize` exposes a live read of the user's preferred
+  // temperature unit. On iOS it reflects Settings → General → Language & Region
+  // → Temperature (independent of region). On Android it derives from locale
+  // since the OS has no system-wide temperature toggle. This is preferred over
+  // `NativeModules.SettingsManager.settings.AppleTemperatureUnit`, which is a
+  // constant snapshot taken at bridge init and never updates without an app
+  // restart.
+  try {
+    const unit = RNLocalize.getTemperatureUnit();
+    if (unit === 'fahrenheit') return true;
+    if (unit === 'celsius') return false;
+  } catch {
+    // Fall through to locale-region inference.
+  }
+  const region = locale.split(/[-_]/)[1]?.toUpperCase();
+  return region ? FAHRENHEIT_REGIONS.has(region) : false;
+}
+
+/**
+ * Format a temperature value (always supplied in Fahrenheit from the backend)
+ * for display, using the device's locale to pick the unit. Examples:
+ *   formatTemperature(72)  → "72°F" (US) or "22°C" (everywhere else)
+ *   formatTemperature(32)  → "32°F" (US) or  "0°C"
+ *
+ * Pass `withUnit: false` to get just the number (e.g. for hourly strips where
+ * the unit is implied by a header or repeated cells).
+ */
+export function formatTemperature(
+  fahrenheit: number,
+  options: { withUnit?: boolean; locale?: string } = {},
+): string {
+  const { withUnit = true, locale } = options;
+  if (usesFahrenheit(locale)) {
+    return withUnit ? `${Math.round(fahrenheit)}°F` : `${Math.round(fahrenheit)}°`;
+  }
+  const celsius = ((fahrenheit - 32) * 5) / 9;
+  return withUnit ? `${Math.round(celsius)}°C` : `${Math.round(celsius)}°`;
 }
 
 /**

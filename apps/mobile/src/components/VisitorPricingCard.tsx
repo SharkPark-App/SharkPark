@@ -43,6 +43,11 @@ interface VisitorPricingCardProps {
  */
 const PARKMOBILE_DEEP_LINK = (zone: string) => `https://app.parkmobile.io/zone/932${zone}`;
 
+// Defensive: backend is the source of truth for zones, but validate the
+// shape client-side before constructing a Linking URL so a malformed
+// value can never inject path/query/fragment segments.
+const ZONE_PATTERN = /^\d{1,8}$/;
+
 /**
  * Human-readable description of what a given ParkMobile zone covers.
  * The two umbrella zones have CSULB-wide semantics; all other zones are
@@ -62,6 +67,14 @@ function formatMinutes(min: number): string {
 }
 
 async function openParkMobile(zone: string) {
+  if (!ZONE_PATTERN.test(zone)) {
+    console.warn('[VisitorPricingCard] Refusing to open invalid zone:', zone);
+    Alert.alert(
+      'Could not open ParkMobile',
+      'This lot has an invalid ParkMobile zone configured. Please report this.',
+    );
+    return;
+  }
   const url = PARKMOBILE_DEEP_LINK(zone);
   try {
     await Linking.openURL(url);
@@ -198,7 +211,10 @@ export function VisitorPricingCard({ lot }: VisitorPricingCardProps) {
               accessibilityLabel={`Pay with ParkMobile, zone ${zone}`}
               style={({ pressed }) => [
                 styles.button,
-                { backgroundColor: pressed ? '#0b8f4a' : '#10b981' },
+                // Emerald-700 / 800 — white text gives ~5.1:1 and ~6.4:1
+                // (WCAG AA passes 4.5:1). Emerald-500 (#10b981) only hits
+                // ~2:1 which fails AA.
+                { backgroundColor: pressed ? '#065f46' : '#047857' },
               ]}
             >
               <Icon name="card-outline" size={18} color="#ffffff" />
@@ -268,10 +284,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     gap: SPACING.sm,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.lg,
     paddingHorizontal: SPACING.lg,
     borderRadius: SPACING.md,
     marginTop: SPACING.sm,
+    minHeight: 44,
   },
   buttonTextWrap: {
     flex: 1,
