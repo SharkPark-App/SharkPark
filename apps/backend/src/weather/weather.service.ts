@@ -21,22 +21,26 @@ export class WeatherService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Retrieves current weather conditions for CSULB campus. */
+  /**
+   * Retrieves the most recent CSULB campus observation within the last
+   * 24 hours. We deliberately do NOT scope by calendar day: a cron miss
+   * just after midnight or a backfill that lands at 23:55 should still
+   * surface a usable reading to the mobile UI. Anything older than 24h
+   * is treated as missing so we don't show stale weather as "current".
+   */
   async getCurrent(): Promise<Weather | null> {
     try {
-      const today = new Date();
-      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
       const weather = await this.prisma.weather.findFirst({
-        where: {
-          timestamp: { gte: startOfDay, lt: endOfDay },
-        },
+        where: { timestamp: { gte: since } },
         orderBy: { timestamp: 'desc' },
       });
 
       if (!weather) {
-        this.logger.warn(`No weather data found for ${startOfDay.toISOString().split('T')[0]}`);
+        this.logger.warn(
+          `No weather observations in the last 24h (since ${since.toISOString()})`,
+        );
         return null;
       }
 

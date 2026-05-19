@@ -91,7 +91,15 @@ export interface ParkingLot {
   current_occupancy: number | null;
   location_description: string;
   /** Buildings this lot serves, with category for grouped display in lot info. */
-  buildings: Array<{ name: string; category: BuildingCategory }>;
+  buildings: Array<{
+    name: string;
+    category: BuildingCategory;
+    /** Building centerpoint (WGS84). Used to render distance from the lot. */
+    center_lat: number;
+    center_lng: number;
+    /** Optional building codes (e.g. "CLA", "LA1"). Drives search aliases. */
+    alternate_names?: string[];
+  }>;
   center_lat: number;
   center_lng: number;
   geofence_polygon: Array<{ lat: number; lng: number }>;
@@ -122,7 +130,85 @@ export interface ParkingLot {
   metadata_confidence: 'LOW' | 'MEDIUM' | 'HIGH';
   /** Active operational notices (closures, construction). Empty when none. */
   advisories: LotAdvisory[];
+  /**
+   * ParkMobile zone numbers valid for paying in this lot. Most lots carry two:
+   * a lot-specific zone plus an umbrella zone (3993 for student G lots,
+   * 3975 for employee E lots). Used by VisitorPricingCard to deep-link the
+   * user into the ParkMobile app via `https://app.parkmobile.io/?zone={N}`.
+   * Empty when the lot has no published ParkMobile coverage.
+   */
+  park_mobile_zones: string[];
   timestamp: string;
+}
+
+/**
+ * Visitor-facing fee block returned alongside each lot detail. Mirrors the
+ * backend `AppliedFees` interface (apps/backend/src/lots/permit-fees.ts).
+ * The static schedule lives in `CSULB_PERMIT_FEES` and is fetched separately
+ * via `lotsApi.getPermitFees()` for a full pricing reference.
+ *
+ * Fields are nullable when the lot is not eligible for that fee type:
+ *   - `short_term` is null unless the lot has signed short-term spaces
+ *   - `daily` is null unless the lot accepts daily permits
+ *   - `overnight` is null unless the lot is in
+ *     `CSULB_PERMIT_FEES.visitor.overnight.available_at_lots` (currently G2 only)
+ * `evening_weekend` is always present — every lot honours it after-hours.
+ */
+export interface AppliedFees {
+  short_term: Array<{ max_minutes: number; price: number }> | null;
+  daily: number | null;
+  evening_weekend: {
+    price: number;
+    conditions: string;
+  };
+  overnight: {
+    available_at_lots: string[];
+    increments_hours: number[];
+    price_note: string;
+  } | null;
+}
+
+/**
+ * Mirror of the backend `CSULB_PERMIT_FEES` constant (apps/backend/src/lots/permit-fees.ts).
+ * Fetched via `lotsApi.getPermitFees()` and cached for 24h.
+ */
+export interface CsulbPermitFees {
+  effective_through: string;
+  source_url: string;
+  visitor: {
+    short_term: Array<{ max_minutes: number; price: number }>;
+    daily: number;
+    evening_weekend: { price: number; conditions: string };
+    overnight: {
+      available_at_lots: string[];
+      increments_hours: number[];
+      price_note: string;
+    };
+  };
+  permits: Record<string, number>;
+  parkmobile: {
+    umbrella_zones: { general: string; employee: string };
+    deep_link_template: string;
+  };
+}
+
+/**
+ * Umbrella ParkMobile zones — valid across many lots rather than identifying
+ * a specific one. Kept in sync with `UMBRELLA_PARKMOBILE_ZONES` on the backend.
+ */
+export const UMBRELLA_PARKMOBILE_ZONES: ReadonlySet<string> = new Set(['3993', '3975']);
+
+/**
+ * Picks the best ParkMobile zone for a deep link from a lot's `park_mobile_zones`.
+ * Returns the first non-umbrella zone if present (most specific), otherwise the
+ * first zone in the list, otherwise `null` when the lot has no ParkMobile coverage.
+ *
+ * Mirrors `pickPreferredParkMobileZone` in apps/backend/src/lots/permit-fees.ts.
+ */
+export function pickPreferredParkMobileZone(zones: readonly string[]): string | null {
+  if (zones.length === 0) return null;
+  const specific = zones.find((z) => !UMBRELLA_PARKMOBILE_ZONES.has(z));
+  return specific ?? zones[0];
 }
 
 export interface ParkingLotResponse extends ParkingLot {
@@ -139,6 +225,11 @@ export interface ParkingLotResponse extends ParkingLot {
   raw_occupancy: number | null;
   /** Effective penetration rate used for estimation (0.01–1.0) */
   effective_penetration_rate: number | null;
+  /**
+   * Visitor-facing fees applied to this lot. Always present (not contributor-
+   * gated). See `AppliedFees` for nullability rules per field.
+   */
+  applied_fees: AppliedFees;
 }
 
 export interface OccupancySummary {
@@ -208,6 +299,7 @@ class LotsApiService {
     RECOMMENDATIONS: 2 * 60 * 1000, // 2 minutes
     FORECAST: 5 * 60 * 1000,       // 5 minutes
     LONG_TERM_FORECAST: 30 * 60 * 1000, // 30 minutes — refreshed daily on the backend
+    PERMIT_FEES: 24 * 60 * 60 * 1000,   // 24 hours — fees change once per fiscal year
   };
 
   /**
@@ -631,6 +723,26 @@ class LotsApiService {
 
     const queryString = query.toString();
     return queryString ? `?${queryString}` : '';
+  }
+
+  /**
+   * Fetch the full CSULB permit fee schedule (FY 2025–26 etc.). Returns the
+   * static reference card the user sees when they tap "See all rates" from
+   * the Visitor Pricing card. Heavily cached — fees change once per fiscal
+   * year (Sep 1 → Aug 31) and a backend drift cron flags any mid-year
+   * mutation, so a 24h client TTL combined with the matching
+   * `Cache-Control: max-age=86400` header is safe.
+   */
+  async getPermitFees(options: { forceRefresh?: boolean } = {}): Promise<CsulbPermitFees> {
+    const result = await cacheService.getOrFetch(
+      'lots:permitFees',
+      async () => {
+        const response = await apiService.get<CsulbPermitFees>(API_CONFIG.ENDPOINTS.PERMIT_FEES);
+        return response.data;
+      },
+      { ttl: LotsApiService.CACHE_TTL.PERMIT_FEES, forceRefresh: options.forceRefresh },
+    );
+    return result.data;
   }
 }
 

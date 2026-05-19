@@ -6,13 +6,20 @@ import { PenetrationEstimationService, PenetrationEstimate } from './penetration
 import { WeatherService } from '../weather/weather.service';
 import { OCCUPANCY_THRESHOLDS } from '../constants';
 import { studentEligibleLotTypes } from './csulb-eligibility';
+import { buildAppliedFees } from './permit-fees';
 import { polygonToPolygonMeters } from './derive-lot-buildings';
 
 /** Shape of `Lot.geofence_polygon` rows in the DB (stored as Prisma Json). */
 type LatLng = { lat: number; lng: number };
 
 const LOT_WITH_BUILDINGS_INCLUDE = {
-  lot_buildings: { include: { building: { select: { name: true, category: true } } } },
+  lot_buildings: {
+    include: {
+      building: {
+        select: { name: true, category: true, center_lat: true, center_lng: true, alternate_names: true },
+      },
+    },
+  },
   // Only active advisories make it onto the response — historical/closed ones
   // remain in the table for audit but aren't user-facing.
   lot_advisories: {
@@ -369,7 +376,7 @@ export class LotsService {
         );
 
         // Build a human-readable reason
-        const reason = this.buildRecommendationReason(response, distance);
+        const reason = this.buildRecommendationReason(response);
 
         return {
           ...response,
@@ -387,30 +394,23 @@ export class LotsService {
 
   /**
    * Produces a short, user-friendly reason string for why a lot is recommended.
+   *
+   * Scope: this string is the *qualitative* signal layered on top of the
+   * structured fields the client already renders (count taken, distance,
+   * percent badge). We intentionally do NOT repeat "X spots available"
+   * (already shown as `~taken / capacity`) or "very close by" (already
+   * shown as a precise distance), since those duplicates produced two
+   * adjacent rows that said the same thing in different units.
+   *
+   * What stays: the trend / status nuance the user can't read off the
+   * structured fields — e.g. "filling up" warns of imminent saturation
+   * even if the current count looks safe.
    */
-  private buildRecommendationReason(
-    lot: ParkingLotResponse,
-    distanceMeters: number,
-  ): string {
-    const parts: string[] = [];
-
-    if (lot.fill_status === 'AVAILABLE') {
-      parts.push(`${lot.available} spots available`);
-    } else if (lot.fill_status === 'FILLING') {
-      parts.push(`${lot.available} spots left, filling up`);
-    } else {
-      parts.push(`${lot.available} spots remaining`);
-    }
-
-    if (distanceMeters < 300) {
-      parts.push('very close by');
-    } else if (distanceMeters < 600) {
-      parts.push('nearby');
-    } else {
-      parts.push(`~${Math.round(distanceMeters / 100) * 100}m away`);
-    }
-
-    return parts.join(' · ');
+  private buildRecommendationReason(lot: ParkingLotResponse): string {
+    if (lot.fill_status === 'FILLING') return 'Filling up';
+    if (lot.fill_status === 'NEARLY_FULL') return 'Nearly full';
+    if (lot.fill_status === 'FULL') return 'No spaces';
+    return 'Plenty of room';
   }
 
   /**
@@ -557,6 +557,12 @@ export class LotsService {
     const buildings = lot_buildings.map(lb => ({
       name: lb.building.name,
       category: lb.building.category,
+      center_lat: lb.building.center_lat,
+      center_lng: lb.building.center_lng,
+      // Building codes/aliases (e.g. "CLA", "LA1"). Surfaced so the
+      // mobile search can match short abbreviations a user is likely
+      // to type instead of the full administrative name.
+      alternate_names: lb.building.alternate_names,
     }));
     // Coerce DateTime fields to ISO strings for transport. Advisories are
     // static metadata (not contributor-gated) — every caller, including App
@@ -574,6 +580,11 @@ export class LotsService {
       updated_at: a.updated_at.toISOString(),
     }));
 
+    // Fee block is static metadata (never contributor-gated) — attach to both
+    // the redacted and live branches so the mobile Visitor Pricing card always
+    // has data, including for App Store reviewers and location-denied users.
+    const applied_fees = buildAppliedFees(meta);
+
     if (redactLive) {
       return {
         ...meta,
@@ -588,6 +599,7 @@ export class LotsService {
         effective_penetration_rate: null,
         buildings,
         advisories,
+        applied_fees,
       };
     }
 
@@ -625,6 +637,7 @@ export class LotsService {
         : 1,
       buildings,
       advisories,
+      applied_fees,
     };
   }
 

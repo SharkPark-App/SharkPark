@@ -71,6 +71,14 @@ model Lot {
    * Number of pay stations physically located in this lot.
    */
   pay_stations              Int             @default(0)
+  /**
+   * ParkMobile zone numbers valid for this lot. Most CSULB lots have two zones:
+   * a lot-specific zone (for short-term/metered spaces, e.g. "3921" for G1) plus
+   * an umbrella zone ("3993" for any G lot/structure, "3975" for any E lot).
+   * Mobile clients should prefer the most specific (non-umbrella) zone for the
+   * ParkMobile deep link. Empty array means no ParkMobile coverage for this lot.
+   */
+  park_mobile_zones         String[]        @default([])
   has_lighting              Boolean         @default(true)
   has_cameras               Boolean         @default(false)
   has_emergency_phone       Boolean         @default(false)

@@ -33,6 +33,7 @@ const COMPARED_FIELDS = [
   'short_term_parking_spaces',
   'low_emission_spaces',
   'pay_stations',
+  'park_mobile_zones',
   'has_lighting',
   'has_cameras',
   'has_emergency_phone',

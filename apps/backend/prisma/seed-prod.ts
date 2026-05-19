@@ -167,6 +167,7 @@ async function seedProd() {
       short_term_parking_spaces: lot.short_term_parking_spaces,
       low_emission_spaces: lot.low_emission_spaces,
       pay_stations: lot.pay_stations,
+      park_mobile_zones: lot.park_mobile_zones,
       has_lighting: lot.has_lighting,
       has_cameras: lot.has_cameras,
       has_emergency_phone: lot.has_emergency_phone,

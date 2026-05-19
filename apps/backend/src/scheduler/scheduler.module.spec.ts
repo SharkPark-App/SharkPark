@@ -34,6 +34,7 @@ import { IngestRoomCapacitiesJob } from './jobs/ingest-room-capacities.job';
 import { BuildProximityMatrixJob } from './jobs/build-proximity-matrix.job';
 import { PruneConsensusObservationsJob } from './jobs/prune-consensus-observations.job';
 import { PredictionAccuracyJob } from './jobs/prediction-accuracy.job';
+import { CheckPermitFeeDriftJob } from './jobs/check-permit-fee-drift.job';
 
 /**
  * The job classes the SchedulerModule registers as providers. Tuple is
@@ -71,6 +72,7 @@ const ALL_JOBS = [
   BuildProximityMatrixJob,
   PruneConsensusObservationsJob,
   PredictionAccuracyJob,
+  CheckPermitFeeDriftJob,
 ] as const;
 
 interface CronMetadata {

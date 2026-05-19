@@ -7,7 +7,7 @@
  *   sharkpark://map                    → Map tab
  *   sharkpark://map/lot/G1             → Map tab (lot G1 highlighted via initial params)
  *   sharkpark://forecast/short/G1      → Short Term Forecast for lot G1
- *   sharkpark://forecast/long          → Long Term tab
+ *   sharkpark://forecast/long          → Week tab
  *   sharkpark://profile                → Profile tab
  *
  * Universal / App Links (requires Associated Domains / Digital Asset Links):
@@ -20,7 +20,7 @@
  * Navigation structure (mirrors MainTabNavigator + MapStack):
  *
  *   RootTabs
- *     Long Term          →  /forecast/long
+ *     Week               →  /forecast/long
  *     Map                →  /map  (MapStack)
  *       MapMain          →    /map  |  /map/lot/:lotId
  *       Short Term Forecast → /forecast/short/:lotId
@@ -56,8 +56,8 @@ export const linkingConfig: LinkingOptions<RootTabParamList> = {
 
   config: {
     screens: {
-      // Long Term Forecast tab
-      'Long Term': {
+      // Week (long-term forecast) tab
+      'Week': {
         path: 'forecast/long',
       },
 

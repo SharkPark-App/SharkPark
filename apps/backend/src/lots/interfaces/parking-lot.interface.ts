@@ -1,4 +1,5 @@
 import type { Lot as PrismaLot, AdvisorySeverity, AdvisorySource, BuildingCategory } from '@prisma/client';
+import type { AppliedFees } from '../permit-fees';
 
 /**
  * Re-export Prisma's Lot type for convenience.
@@ -25,10 +26,18 @@ export interface LotAdvisoryResponse {
 }
 
 /** Building reference attached to a lot. Includes category so the mobile UI
- *  can group nearby buildings (Academic, Housing, Athletic, etc.). */
+ *  can group nearby buildings (Academic, Housing, Athletic, etc.) and the
+ *  building's centerpoint so the client can render lot→building distance
+ *  in the user's preferred units (miles vs. metres). */
 export interface LotBuildingResponse {
   name: string;
   category: BuildingCategory;
+  /** Approximate centerpoint (WGS84). Used for haversine distance from the lot. */
+  center_lat: number;
+  center_lng: number;
+  /** Building codes / aliases (e.g. "CLA", "LA1"). Used by mobile search
+   *  so users typing the short abbreviation find the building. */
+  alternate_names: string[];
 }
 
 export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'current_occupancy'> {
@@ -67,6 +76,14 @@ export interface ParkingLotResponse extends Omit<PrismaLot, 'daily_rate' | 'curr
   buildings: LotBuildingResponse[];
   /** Active operational notices (closures, construction). Empty when none. */
   advisories: LotAdvisoryResponse[];
+  /**
+   * Visitor-facing fee block derived from the static CSULB schedule
+   * (`CSULB_PERMIT_FEES`) and lot-specific eligibility flags. Always present
+   * — never contributor-gated — so the mobile Visitor Pricing card can
+   * render without a second round-trip. Fields inside may be null when the
+   * lot is not eligible for that fee type (e.g. no short-term spaces).
+   */
+  applied_fees: AppliedFees;
 }
 
 export interface GetLotsQueryParams {

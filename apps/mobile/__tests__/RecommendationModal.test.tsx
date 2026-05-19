@@ -125,6 +125,13 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   raw_occupancy: 100,
   effective_penetration_rate: 1,
   advisories: [],
+  park_mobile_zones: [],
+  applied_fees: {
+    short_term: null,
+    daily: null,
+    evening_weekend: { price: 10, conditions: 'After 5:30 PM Mon–Fri; all day Sat–Sun' },
+    overnight: null,
+  },
   ...overrides,
 });
 

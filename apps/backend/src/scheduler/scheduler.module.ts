@@ -56,6 +56,7 @@ import { IngestRoomCapacitiesJob } from './jobs/ingest-room-capacities.job';
 import { BuildProximityMatrixJob } from './jobs/build-proximity-matrix.job';
 import { PruneConsensusObservationsJob } from './jobs/prune-consensus-observations.job';
 import { PredictionAccuracyJob } from './jobs/prediction-accuracy.job';
+import { CheckPermitFeeDriftJob } from './jobs/check-permit-fee-drift.job';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -158,6 +159,7 @@ const isProduction = process.env.NODE_ENV === 'production';
     BuildProximityMatrixJob,
     PruneConsensusObservationsJob,
     PredictionAccuracyJob,
+    CheckPermitFeeDriftJob,
   ],
 })
 export class SchedulerModule {}

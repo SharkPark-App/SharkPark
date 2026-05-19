@@ -302,7 +302,7 @@ describe('LotsService', () => {
       capacity: 200,
       current_occupancy: 190, // 95% — full
       location_description: 'East Campus',
-      lot_buildings: [{ building: { name: 'ECS' } }],
+      lot_buildings: [{ building: { name: 'ECS', category: 'ACADEMIC', center_lat: 33.7836, center_lng: -118.1140 } }],
       lot_advisories: [],
       center_lat: 33.7838,
       center_lng: -118.1089,

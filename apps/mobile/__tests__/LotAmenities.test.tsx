@@ -6,13 +6,17 @@
  *   - Conditional rendering (levels for structures, motorcycle when >0, building proximity)
  *   - EV charging display (none vs count)
  *   - Hours formatting (object vs "CLOSED" string)
- *   - Daily permit with/without rate
+ *   - Permit types display
  *   - Safety chips (available vs unavailable styling)
  */
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 
 // ────────────────────── Mocks ──────────────────────
+
+jest.mock('../src/hooks/useCurrentWeather', () => ({
+  useCurrentWeather: () => ({ weather: null, loading: false, error: null }),
+}));
 
 jest.mock('../src/context/ThemeContext', () => ({
   useTheme: () => ({
@@ -47,8 +51,8 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   current_occupancy: 250,
   location_description: 'East Campus near ECS Building',
   buildings: [
-    { name: 'ECS', category: 'ACADEMIC' },
-    { name: 'Library', category: 'ACADEMIC' },
+    { name: 'ECS', category: 'ACADEMIC', center_lat: 33.7838, center_lng: -118.1089 },
+    { name: 'Library', category: 'ACADEMIC', center_lat: 33.7840, center_lng: -118.1095 },
   ],
   center_lat: 33.78,
   center_lng: -118.11,
@@ -83,6 +87,13 @@ const makeLot = (overrides: Partial<ParkingLotResponse> = {}): ParkingLotRespons
   raw_occupancy: 250,
   effective_penetration_rate: 0.15,
   advisories: [],
+  park_mobile_zones: [],
+  applied_fees: {
+    short_term: null,
+    daily: null,
+    evening_weekend: { price: 10, conditions: 'After 5:30 PM Mon–Fri; all day Sat–Sun' },
+    overnight: null,
+  },
   ...overrides,
 });
 
@@ -98,22 +109,25 @@ function renderLot(overrides: Partial<ParkingLotResponse> = {}) {
 // ────────────────────── Tests ──────────────────────
 
 describe('LotAmenities', () => {
-  it('renders all five section titles', () => {
+  it('renders all section titles', () => {
     const tree = renderLot();
     const texts = collectTexts(tree.root);
 
-    expect(texts).toContain('Lot Information');
-    expect(texts).toContain('Permits & Rates');
+    expect(texts).toContain('Live Availability');
+    expect(texts).toContain('Permits');
     expect(texts).toContain('Hours');
+    expect(texts).toContain('Lot Details');
     expect(texts).toContain('Special Spaces');
     expect(texts).toContain('Safety & Features');
   });
 
-  it('renders capacity and location description', () => {
+  it('renders capacity (via Live Availability) and location description', () => {
+    // Capacity is no longer a standalone row in Lot Details — it is folded
+    // into the "~X of Y" string on the Live Availability card to avoid
+    // restating the same number in two places.
     const tree = renderLot({ capacity: 1234, location_description: 'North Campus' });
     const texts = collectTexts(tree.root);
 
-    expect(texts).toContain('Capacity');
     expect(texts.some(t => t.includes('1,234'))).toBe(true);
     expect(texts).toContain('North Campus');
   });
@@ -146,18 +160,20 @@ describe('LotAmenities', () => {
   it('renders nearby buildings grouped by category when non-empty', () => {
     const tree = renderLot({
       buildings: [
-        { name: 'Library', category: 'ACADEMIC' },
-        { name: 'ECS', category: 'ACADEMIC' },
-        { name: 'Hillside Halls', category: 'HOUSING' },
+        { name: 'Library', category: 'ACADEMIC', center_lat: 33.7840, center_lng: -118.1095 },
+        { name: 'ECS', category: 'ACADEMIC', center_lat: 33.7838, center_lng: -118.1089 },
+        { name: 'Hillside Halls', category: 'HOUSING', center_lat: 33.7850, center_lng: -118.1100 },
       ],
     });
     const texts = collectTexts(tree.root);
     expect(texts).toContain('Nearby buildings');
     expect(texts).toContain('Academic');
     expect(texts).toContain('Housing & Residence');
-    expect(texts).toContain('Library');
-    expect(texts).toContain('ECS');
-    expect(texts).toContain('Hillside Halls');
+    // Building name pills include a trailing distance suffix (e.g. "Library  · 120 m"),
+    // so match the name prefix rather than exact text.
+    expect(texts.some(t => t.startsWith('Library'))).toBe(true);
+    expect(texts.some(t => t.startsWith('ECS'))).toBe(true);
+    expect(texts.some(t => t.startsWith('Hillside Halls'))).toBe(true);
     // Empty categories must not render section headings.
     expect(texts).not.toContain('Retail Stores');
     expect(texts).not.toContain('Athletic & Performance Venues');
@@ -175,23 +191,10 @@ describe('LotAmenities', () => {
     expect(texts).toContain('Gold, Green, Purple');
   });
 
-  it('renders daily rate when daily_permit_allowed with rate', () => {
-    const tree = renderLot({ daily_permit_allowed: true, daily_rate: 12.5 });
-    const texts = collectTexts(tree.root);
-    expect(texts).toContain('$12.50');
-  });
-
-  it('renders Available when daily_permit_allowed without rate', () => {
-    const tree = renderLot({ daily_permit_allowed: true, daily_rate: undefined });
-    const texts = collectTexts(tree.root);
-    expect(texts).toContain('Available');
-  });
-
-  it('renders Not Available when daily_permit_allowed is false', () => {
-    const tree = renderLot({ daily_permit_allowed: false });
-    const texts = collectTexts(tree.root);
-    expect(texts).toContain('Not Available');
-  });
+  // Visitor daily-permit pricing is rendered by <VisitorPricingCard>, which
+  // pulls from applied_fees.daily so there's a single source of truth. The
+  // old per-lot daily_rate display was removed from LotAmenities to avoid
+  // showing two (sometimes conflicting) prices for the same thing.
 
   it('renders weekday hours from object format using the device locale', () => {
     const tree = renderLot({ hours_weekday: { open: '06:00', close: '22:00' } });

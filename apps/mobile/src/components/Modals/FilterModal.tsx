@@ -10,9 +10,57 @@ import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { SPACING, TYPOGRAPHY } from '../../constants/theme';
 import type { MapRoute } from '../../types/transit';
 
-interface LotSummary {
+/**
+ * Attribute filters surfaced as toggle chips in the Parking tab. Each chip is a
+ * pure client-side predicate over the optional fields on `LotSummary`. When one
+ * or more chips are active, lots that fail the predicate are visually dimmed
+ * and excluded from the result set on Apply (see `matchesAttributes`).
+ *
+ * Keep the keys stable — they are persisted to AsyncStorage under
+ * `filter:attributes` and round-tripped through MapScreen.
+ */
+export interface LotAttributePredicate {
+  key: string;
+  label: string;
+  test: (lot: LotSummary) => boolean;
+}
+
+export const ATTRIBUTE_FILTERS: readonly LotAttributePredicate[] = [
+  { key: 'ev', label: 'EV charging', test: (l) => (l.ev_charging_stations ?? 0) > 0 },
+  { key: 'low_emission', label: 'Low-emission', test: (l) => (l.low_emission_spaces ?? 0) > 0 },
+  { key: 'accessible', label: 'Accessible', test: (l) => (l.accessible_spaces ?? 0) > 0 },
+  { key: 'motorcycle', label: 'Motorcycle', test: (l) => (l.motorcycle_spaces ?? 0) > 0 },
+  { key: 'daily_permit', label: 'Accepts daily', test: (l) => l.daily_permit_allowed === true },
+  { key: 'pay_station', label: 'Pay station', test: (l) => (l.pay_stations ?? 0) > 0 },
+  { key: 'parkmobile', label: 'ParkMobile', test: (l) => (l.park_mobile_zones?.length ?? 0) > 0 },
+  { key: 'covered', label: 'Covered', test: (l) => l.is_covered === true },
+] as const;
+
+/**
+ * AND-combine every active attribute. An empty `activeKeys` matches all lots.
+ */
+export function matchesAttributes(lot: LotSummary, activeKeys: string[]): boolean {
+  if (activeKeys.length === 0) return true;
+  for (const key of activeKeys) {
+    const filter = ATTRIBUTE_FILTERS.find((f) => f.key === key);
+    if (filter && !filter.test(lot)) return false;
+  }
+  return true;
+}
+
+export interface LotSummary {
   lot_id: string;
   lot_type: 'STUDENT' | 'EMPLOYEE';
+  // Optional attribute fields used by ATTRIBUTE_FILTERS. Absent in lightweight
+  // test fixtures — predicates treat missing values as "does not have".
+  ev_charging_stations?: number;
+  low_emission_spaces?: number;
+  accessible_spaces?: number;
+  motorcycle_spaces?: number;
+  daily_permit_allowed?: boolean;
+  pay_stations?: number;
+  park_mobile_zones?: string[];
+  is_covered?: boolean;
 }
 
 interface LotFilterModalProps {
@@ -24,13 +72,28 @@ interface LotFilterModalProps {
   routes: MapRoute[];
   hiddenRouteIds: string[];
   onApplyTransitFilter: (hiddenRouteIds: string[]) => void;
+  /** Active attribute filter keys (subset of ATTRIBUTE_FILTERS[].key). */
+  selectedAttributes?: string[];
+  onApplyAttributeFilter?: (attributeKeys: string[]) => void;
 }
 
-export function LotFilterModal({ isOpen, onClose, lots, selectedLots, onApplyFilter, routes, hiddenRouteIds, onApplyTransitFilter }: LotFilterModalProps) {
+export function LotFilterModal({
+  isOpen,
+  onClose,
+  lots,
+  selectedLots,
+  onApplyFilter,
+  routes,
+  hiddenRouteIds,
+  onApplyTransitFilter,
+  selectedAttributes = [],
+  onApplyAttributeFilter,
+}: LotFilterModalProps) {
   const { colors, spacing, typography } = useTheme();
   const [activeTab, setActiveTab] = useState<'parking' | 'transit'>('parking');
   const [scrolledTab, setScrolledTab] = useState<'parking' | 'transit'>('parking');
   const [tempSelected, setTempSelected] = useState<string[]>(selectedLots);
+  const [tempAttributes, setTempAttributes] = useState<string[]>(selectedAttributes);
   const [tempHiddenRouteIds, setTempHiddenRouteIds] = useState<string[]>(hiddenRouteIds);
   const [pageWidth, setPageWidth] = useState(0);
   const [pageHeight, setPageHeight] = useState(0);
@@ -39,20 +102,35 @@ export function LotFilterModal({ isOpen, onClose, lots, selectedLots, onApplyFil
   useEffect(() => {
     if (isOpen) {
       setTempSelected(selectedLots);
+      setTempAttributes(selectedAttributes);
       setTempHiddenRouteIds(hiddenRouteIds);
     }
-  }, [isOpen, selectedLots, hiddenRouteIds]);
+  }, [isOpen, selectedLots, selectedAttributes, hiddenRouteIds]);
 
   const styles = useMemo(() => getStyles(colors, spacing, typography), [colors, spacing, typography]);
 
   const generalLots = useMemo(() => lots.filter(l => l.lot_type === 'STUDENT'), [lots]);
   const employeeLots = useMemo(() => lots.filter(l => l.lot_type === 'EMPLOYEE'), [lots]);
 
+  // Memoised per-lot match against the active attribute chips. Lots that fail
+  // are dimmed + disabled and excluded from section "Select all" / Apply.
+  const matchingIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of lots) if (matchesAttributes(l, tempAttributes)) set.add(l.lot_id);
+    return set;
+  }, [lots, tempAttributes]);
+
   const toggleLot = (lotId: string) => {
     setTempSelected(
       prev => prev.includes(lotId)
         ? prev.filter(id => id !== lotId)
         : [...prev, lotId]
+    );
+  };
+
+  const toggleAttribute = (key: string) => {
+    setTempAttributes(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
   };
 
@@ -64,21 +142,51 @@ export function LotFilterModal({ isOpen, onClose, lots, selectedLots, onApplyFil
     );
   };
 
+  // Section-level helpers. Operate only on attribute-matching lots so the
+  // header toggle never reaches into dimmed rows.
+  const sectionMatchingIds = (sectionLots: LotSummary[]) =>
+    sectionLots.filter(l => matchingIds.has(l.lot_id)).map(l => l.lot_id);
+
+  const sectionSelectionState = (sectionLots: LotSummary[]): 'all' | 'some' | 'none' => {
+    const eligible = sectionMatchingIds(sectionLots);
+    if (eligible.length === 0) return 'none';
+    const selectedCount = eligible.filter(id => tempSelected.includes(id)).length;
+    if (selectedCount === 0) return 'none';
+    if (selectedCount === eligible.length) return 'all';
+    return 'some';
+  };
+
+  const selectSection = (sectionLots: LotSummary[]) => {
+    const eligible = sectionMatchingIds(sectionLots);
+    setTempSelected(prev => Array.from(new Set([...prev, ...eligible])));
+  };
+
+  const clearSection = (sectionLots: LotSummary[]) => {
+    const sectionIds = new Set(sectionLots.map(l => l.lot_id));
+    setTempSelected(prev => prev.filter(id => !sectionIds.has(id)));
+  };
+
   const handleClose = () => {
     setTempSelected(selectedLots);
+    setTempAttributes(selectedAttributes);
     setTempHiddenRouteIds(hiddenRouteIds);
     onClose();
   };
 
   const handleApply = () => {
     onApplyFilter(tempSelected);
+    onApplyAttributeFilter?.(tempAttributes);
     onApplyTransitFilter(tempHiddenRouteIds);
     onClose();
   };
 
   const handleToggleAll = () => {
     if (activeTab === 'parking') {
-      setTempSelected(tempSelected.length === 0 ? lots.map(l => l.lot_id) : []);
+      // Footer "Select All" honours the active attribute filter so it can't
+      // re-select dimmed lots behind the user's back.
+      const eligible = lots.filter(l => matchingIds.has(l.lot_id)).map(l => l.lot_id);
+      const alreadyAll = eligible.length > 0 && eligible.every(id => tempSelected.includes(id));
+      setTempSelected(alreadyAll ? [] : eligible);
     } else {
       setTempHiddenRouteIds(tempHiddenRouteIds.length === 0 ? routes.map(r => r.id) : []);
     }
@@ -100,8 +208,103 @@ export function LotFilterModal({ isOpen, onClose, lots, selectedLots, onApplyFil
   };
 
   const toggleAllLabel = activeTab === 'parking'
-    ? (tempSelected.length === 0 ? 'Select All' : 'Clear All')
+    ? (() => {
+        const eligible = lots.filter(l => matchingIds.has(l.lot_id)).map(l => l.lot_id);
+        const allSelected = eligible.length > 0 && eligible.every(id => tempSelected.includes(id));
+        return allSelected ? 'Clear All' : 'Select All';
+      })()
     : (tempHiddenRouteIds.length === 0 ? 'Hide All' : 'Show All');
+
+  const renderLotSection = ({
+    title,
+    sectionLots,
+    accessibilityNoun,
+  }: {
+    title: string;
+    sectionLots: LotSummary[];
+    accessibilityNoun: string;
+  }) => {
+    const state = sectionSelectionState(sectionLots);
+    const matchingCount = sectionMatchingIds(sectionLots).length;
+    const hasAttributeFilter = tempAttributes.length > 0;
+    const selectAllDisabled = matchingCount === 0 || state === 'all';
+    const clearDisabled = state === 'none';
+
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <View style={styles.sectionTitleColumn}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            {hasAttributeFilter && (
+              <Text style={styles.sectionMatchCount}>
+                {matchingCount} of {sectionLots.length} match
+              </Text>
+            )}
+          </View>
+          <View style={styles.sectionHeaderActions}>
+            <TouchableOpacity
+              onPress={() => selectSection(sectionLots)}
+              style={styles.sectionActionButton}
+              accessibilityRole="button"
+              accessibilityLabel={`Select all ${title.toLowerCase()} lots`}
+              accessibilityState={{ disabled: selectAllDisabled }}
+              disabled={selectAllDisabled}
+            >
+              <Text
+                style={[
+                  styles.sectionActionText,
+                  !selectAllDisabled && styles.sectionActionTextActive,
+                  selectAllDisabled && styles.sectionActionTextDisabled,
+                ]}
+              >
+                Select all
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => clearSection(sectionLots)}
+              style={styles.sectionActionButton}
+              accessibilityRole="button"
+              accessibilityLabel={`Clear ${title.toLowerCase()} lot selection`}
+              accessibilityState={{ disabled: clearDisabled }}
+              disabled={clearDisabled}
+            >
+              <Text
+                style={[
+                  styles.sectionActionText,
+                  !clearDisabled && styles.sectionActionTextActive,
+                  clearDisabled && styles.sectionActionTextDisabled,
+                ]}
+              >
+                Clear
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.grid}>
+          {sectionLots.map((lot) => {
+            const isSelected = tempSelected.includes(lot.lot_id);
+            const isDimmed = !matchingIds.has(lot.lot_id);
+            return (
+              <TouchableOpacity
+                key={lot.lot_id}
+                onPress={() => toggleLot(lot.lot_id)}
+                disabled={isDimmed}
+                style={[styles.lotButton, isDimmed && styles.lotButtonDimmed]}
+                accessibilityLabel={`${isSelected ? 'Deselect' : 'Select'} ${accessibilityNoun} ${lot.lot_id}${isDimmed ? ' (does not match active filters)' : ''}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isSelected, disabled: isDimmed }}
+              >
+                <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                  {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.lotLabel}>{lot.lot_id}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
 
   return (
     <Modal
@@ -175,49 +378,55 @@ export function LotFilterModal({ isOpen, onClose, lots, selectedLots, onApplyFil
                   contentContainerStyle={styles.pageContent}
                   showsVerticalScrollIndicator={false}
                 >
+                  {/* Attribute chip row */}
                   <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>General Lot</Text>
-                    <View style={styles.grid}>
-                      {generalLots.map((lot) => (
-                        <TouchableOpacity
-                          key={lot.lot_id}
-                          onPress={() => toggleLot(lot.lot_id)}
-                          style={styles.lotButton}
-                          accessibilityLabel={`${tempSelected.includes(lot.lot_id) ? 'Deselect' : 'Select'} general parking lot ${lot.lot_id}`}
-                          accessibilityRole="checkbox"
-                          accessibilityState={{ checked: tempSelected.includes(lot.lot_id) }}
-                        >
-                          <View style={[styles.checkbox, tempSelected.includes(lot.lot_id) && styles.checkboxSelected]}>
-                            {tempSelected.includes(lot.lot_id) && <Text style={styles.checkmark}>✓</Text>}
-                          </View>
-                          <Text style={styles.lotLabel}>{lot.lot_id}</Text>
-                        </TouchableOpacity>
-                      ))}
+                    <Text style={styles.sectionTitle}>Show only lots with</Text>
+                    <View style={styles.chipRow}>
+                      {ATTRIBUTE_FILTERS.map((attr) => {
+                        const isActive = tempAttributes.includes(attr.key);
+                        return (
+                          <TouchableOpacity
+                            key={attr.key}
+                            onPress={() => toggleAttribute(attr.key)}
+                            style={[styles.chip, isActive && styles.chipActive]}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: isActive }}
+                            accessibilityLabel={`${isActive ? 'Disable' : 'Enable'} ${attr.label} filter`}
+                          >
+                            <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                              {attr.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
+                    {tempAttributes.length > 0 && (
+                      <TouchableOpacity
+                        onPress={() => setTempAttributes([])}
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear attribute filters"
+                        style={styles.chipClearButton}
+                      >
+                        <Text style={styles.chipClearText}>Clear attributes</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   <View style={styles.divider} />
 
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Employee Lot</Text>
-                    <View style={styles.grid}>
-                      {employeeLots.map((lot) => (
-                        <TouchableOpacity
-                          key={lot.lot_id}
-                          onPress={() => toggleLot(lot.lot_id)}
-                          style={styles.lotButton}
-                          accessibilityLabel={`${tempSelected.includes(lot.lot_id) ? 'Deselect' : 'Select'} employee parking lot ${lot.lot_id}`}
-                          accessibilityRole="checkbox"
-                          accessibilityState={{ checked: tempSelected.includes(lot.lot_id) }}
-                        >
-                          <View style={[styles.checkbox, tempSelected.includes(lot.lot_id) && styles.checkboxSelected]}>
-                            {tempSelected.includes(lot.lot_id) && <Text style={styles.checkmark}>✓</Text>}
-                          </View>
-                          <Text style={styles.lotLabel}>{lot.lot_id}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
+                  {renderLotSection({
+                    title: 'General Lot',
+                    sectionLots: generalLots,
+                    accessibilityNoun: 'general parking lot',
+                  })}
+
+                  <View style={styles.divider} />
+
+                  {renderLotSection({
+                    title: 'Employee Lot',
+                    sectionLots: employeeLots,
+                    accessibilityNoun: 'employee parking lot',
+                  })}
                 </ScrollView>
 
                 {/* Transit page */}
@@ -227,7 +436,55 @@ export function LotFilterModal({ isOpen, onClose, lots, selectedLots, onApplyFil
                   showsVerticalScrollIndicator={false}
                 >
                   <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Shuttle Routes</Text>
+                    <View style={styles.sectionHeaderRow}>
+                      <View style={styles.sectionTitleColumn}>
+                        <Text style={styles.sectionTitle}>Shuttle Routes</Text>
+                      </View>
+                      {routes.length > 0 && (() => {
+                        const allVisible = tempHiddenRouteIds.length === 0;
+                        const allHidden = tempHiddenRouteIds.length === routes.length;
+                        return (
+                          <View style={styles.sectionHeaderActions}>
+                            <TouchableOpacity
+                              onPress={() => setTempHiddenRouteIds([])}
+                              disabled={allVisible}
+                              style={styles.sectionActionButton}
+                              accessibilityRole="button"
+                              accessibilityLabel="Show all routes"
+                              accessibilityState={{ disabled: allVisible }}
+                            >
+                              <Text
+                                style={[
+                                  styles.sectionActionText,
+                                  !allVisible && styles.sectionActionTextActive,
+                                  allVisible && styles.sectionActionTextDisabled,
+                                ]}
+                              >
+                                Show all
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => setTempHiddenRouteIds(routes.map(r => r.id))}
+                              disabled={allHidden}
+                              style={styles.sectionActionButton}
+                              accessibilityRole="button"
+                              accessibilityLabel="Hide all routes"
+                              accessibilityState={{ disabled: allHidden }}
+                            >
+                              <Text
+                                style={[
+                                  styles.sectionActionText,
+                                  !allHidden && styles.sectionActionTextActive,
+                                  allHidden && styles.sectionActionTextDisabled,
+                                ]}
+                              >
+                                Hide all
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })()}
+                    </View>
                     {routes.length === 0 ? (
                       <Text style={styles.emptyRoutes}>No routes available.</Text>
                     ) : (
@@ -367,6 +624,83 @@ const getStyles = (
     fontFamily: typography.fontFamily.medium,
     marginBottom: spacing.xl,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  sectionTitleColumn: {
+    flex: 1,
+  },
+  sectionMatchCount: {
+    color: colors.mediumGray,
+    fontSize: typography.fontSize.sm,
+    marginTop: -spacing.md,
+    marginBottom: spacing.md,
+  },
+  sectionHeaderActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  sectionActionButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  sectionActionText: {
+    color: colors.primary,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+  },
+  sectionActionTextActive: {
+    fontFamily: typography.fontFamily.bold,
+  },
+  sectionActionTextDisabled: {
+    color: colors.mediumGray,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  chip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    minHeight: 44,
+    justifyContent: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.borderGray,
+    backgroundColor: colors.white,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+  },
+  // Dark text on amber (#F59E0B) yields ~12:1 contrast; white was ~2:1 (fails WCAG AA).
+  chipTextActive: {
+    color: colors.textPrimary,
+  },
+  chipClearButton: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  chipClearText: {
+    color: colors.primary,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -377,6 +711,10 @@ const getStyles = (
     alignItems: 'center',
     gap: spacing.md,
     width: '30%',
+    minHeight: 44,
+  },
+  lotButtonDimmed: {
+    opacity: 0.35,
   },
   routeRow: {
     flexDirection: 'row',

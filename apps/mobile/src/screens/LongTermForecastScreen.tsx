@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { TextInput } from '../components/CustomTextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { Header } from '../components';
 import { Text } from '../components/CustomText';
 import { useTheme } from '../context/ThemeContext';
@@ -17,6 +19,8 @@ import { useLotsList } from '../hooks/useLotData';
 import { TYPOGRAPHY, SPACING, SHADOWS } from '../constants/theme';
 import { EventBanner } from '../components/EventBanner';
 import { useEvents } from '../hooks/useEvents';
+import { useLocalizationSettings } from '../hooks/useLocalizationSettings';
+import { formatTemperature } from '../utils/geoHelpers';
 
 const DEFAULT_LOT = 'G6';
 const LOT_ORDER = ['G', 'E'];
@@ -31,6 +35,114 @@ function getNext7Days(): Date[] {
     days.push(d);
   }
   return days;
+}
+
+/**
+ * Pick a representative Ionicon for an OpenWeather-style `conditions`
+ * string. Lowercased substring match keeps this robust against the
+ * provider's title-cased variants ("Light rain", "Partly cloudy", etc.).
+ */
+function getWeatherIcon(conditions: string): { name: string; color: string } {
+  const c = (conditions || '').toLowerCase();
+  if (c.includes('thunder')) return { name: 'thunderstorm-outline', color: '#7c3aed' };
+  if (c.includes('rain') || c.includes('drizzle')) return { name: 'rainy-outline', color: '#2563eb' };
+  if (c.includes('snow')) return { name: 'snow-outline', color: '#0ea5e9' };
+  if (c.includes('fog') || c.includes('mist') || c.includes('haze')) return { name: 'cloudy-outline', color: '#64748b' };
+  if (c.includes('cloud')) return { name: 'partly-sunny-outline', color: '#64748b' };
+  if (c.includes('clear') || c.includes('sun')) return { name: 'sunny-outline', color: '#f59e0b' };
+  return { name: 'partly-sunny-outline', color: '#64748b' };
+}
+
+/**
+ * Horizontal strip of forecasted hourly weather for the selected day.
+ * Mirrors the demand chart's time axis so students can visually correlate
+ * "it'll be raining at 2 PM" with "the lot fills up earlier on rainy
+ * mornings". Renders nothing when the backend hasn't produced a forecast
+ * for this day yet (heuristic fallback path), so we don't show a misleading
+ * empty band.
+ */
+function DayWeatherStrip({
+  weather,
+}: {
+  weather: Array<{
+    target_time: string;
+    temperature_f: number;
+    precipitation_probability: number;
+    is_raining: boolean;
+    wind_speed_mph: number;
+    conditions: string;
+  }>;
+}) {
+  const { colors } = useTheme();
+  // Re-render the strip when the user changes their system temperature unit
+  // so cell values flip between °F and °C without an app restart.
+  useLocalizationSettings();
+  if (!weather || weather.length === 0) return null;
+
+  // Down-sample to every 3rd hour so the strip stays scannable on a phone
+  // (24 entries would over-pack the row). Always include the first/last so
+  // the day's bounds are preserved.
+  const sampled = weather.filter((_, i) => i % 3 === 0);
+  if (sampled.length > 0 && sampled[sampled.length - 1] !== weather[weather.length - 1]) {
+    sampled.push(weather[weather.length - 1]);
+  }
+
+  return (
+    <View
+      style={[
+        weatherStripStyles.card,
+        { backgroundColor: colors.white, shadowColor: colors.shadowDark },
+      ]}
+      accessible
+      accessibilityRole="summary"
+      accessibilityLabel="Hourly weather forecast for the selected day"
+    >
+      <Text
+        style={[weatherStripStyles.title, { color: colors.textPrimary }]}
+        accessibilityRole="header"
+      >
+        Weather forecast
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={weatherStripStyles.row}
+      >
+        {sampled.map((w) => {
+          const dt = new Date(w.target_time);
+          const hourLabel = dt.toLocaleTimeString([], {
+            hour: 'numeric',
+          });
+          const { name: iconName, color: iconColor } = getWeatherIcon(w.conditions);
+          const popPct = Math.round((w.precipitation_probability ?? 0) * 100);
+          return (
+            <View
+              key={w.target_time}
+              style={weatherStripStyles.cell}
+              accessibilityLabel={`${hourLabel}, ${formatTemperature(w.temperature_f)}, ${w.conditions}, ${popPct} percent chance of precipitation`}
+            >
+              <Text style={[weatherStripStyles.hour, { color: colors.gray }]}>
+                {hourLabel}
+              </Text>
+              <Icon name={iconName} size={22} color={iconColor} accessible={false} />
+              <Text style={[weatherStripStyles.temp, { color: colors.textPrimary }]}>
+                {formatTemperature(w.temperature_f, { withUnit: false })}
+              </Text>
+              {popPct >= 20 ? (
+                <Text style={[weatherStripStyles.pop, { color: '#2563eb' }]}>
+                  {popPct}%
+                </Text>
+              ) : (
+                <Text style={[weatherStripStyles.pop, { color: 'transparent' }]}>
+                  —
+                </Text>
+              )}
+            </View>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 }
 
 const LongTermForecastScreen: React.FC = () => {
@@ -61,6 +173,22 @@ const LongTermForecastScreen: React.FC = () => {
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [selectedLot, setSelectedLot] = useState(DEFAULT_LOT);
   const [lotPickerOpen, setLotPickerOpen] = useState(false);
+  const [lotSearchQuery, setLotSearchQuery] = useState('');
+
+  // Filter the sorted lot list by the search query. We match against
+  // lot_id, display_name, and lot_name so users can type either the
+  // permit code ("G6") or the human label ("Pyramid").
+  const filteredLots = useMemo(() => {
+    const q = lotSearchQuery.trim().toLowerCase();
+    if (!q) return sortedLots;
+    return sortedLots.filter(l => {
+      return (
+        l.lot_id.toLowerCase().includes(q) ||
+        (l.display_name?.toLowerCase().includes(q) ?? false) ||
+        (l.lot_name?.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [sortedLots, lotSearchQuery]);
 
   const { events: lotEvents } = useEvents(selectedLot);
 
@@ -134,6 +262,15 @@ const LongTermForecastScreen: React.FC = () => {
     );
   }, [days, selectedDayIndex, lotEvents]);
 
+  // Slice of the forecasted hourly weather covering the selected day, so
+  // students can pair the demand curve with the expected high / low and
+  // rain risk — the two strongest behavioral drivers we already feed into
+  // the ML model. Empty array = backend hasn't populated forecasts yet OR
+  // the fallback heuristic path is active; in that case the strip hides.
+  const selectedDayWeather = useMemo(() => {
+    return longTerm[selectedDayIndex]?.weather ?? [];
+  }, [longTerm, selectedDayIndex]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       <Header />
@@ -175,40 +312,72 @@ const LongTermForecastScreen: React.FC = () => {
               { backgroundColor: colors.white, borderColor: colors.borderGray },
             ]}
           >
-            <ScrollView style={styles.lotDropdownScroll} nestedScrollEnabled>
-              {sortedLots.map(lot => (
-                <TouchableOpacity
-                  key={lot.lot_id}
-                  onPress={() => {
-                    setSelectedLot(lot.lot_id);
-                    AsyncStorage.setItem('selectedLot', lot.lot_id);
-                    setLotPickerOpen(false);
-                  }}
-                  style={[
-                    styles.lotDropdownItem,
-                    lot.lot_id === selectedLot && {
-                      backgroundColor: colors.lightGray,
-                    },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={lot.display_name || lot.lot_name}
-                  accessibilityState={{ selected: lot.lot_id === selectedLot }}
-                >
-                  <Text
+            <View
+              style={[
+                styles.lotSearchContainer,
+                { borderBottomColor: colors.borderGray },
+              ]}
+            >
+              <TextInput
+                value={lotSearchQuery}
+                onChangeText={setLotSearchQuery}
+                placeholder="Search lots"
+                placeholderTextColor={colors.gray}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+                style={[styles.lotSearchInput, { color: colors.black }]}
+                accessibilityLabel="Search parking lots"
+              />
+            </View>
+            <ScrollView
+              style={styles.lotDropdownScroll}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+              {filteredLots.length === 0 ? (
+                <View style={styles.lotDropdownEmpty}>
+                  <Text style={[styles.lotDropdownText, { color: colors.gray }]}>
+                    No lots match “{lotSearchQuery}”
+                  </Text>
+                </View>
+              ) : (
+                filteredLots.map(lot => (
+                  <TouchableOpacity
+                    key={lot.lot_id}
+                    onPress={() => {
+                      setSelectedLot(lot.lot_id);
+                      AsyncStorage.setItem('selectedLot', lot.lot_id);
+                      setLotPickerOpen(false);
+                      setLotSearchQuery('');
+                    }}
                     style={[
-                      styles.lotDropdownText,
-                      {
-                        color:
-                          lot.lot_id === selectedLot
-                            ? colors.primary
-                            : colors.black,
+                      styles.lotDropdownItem,
+                      lot.lot_id === selectedLot && {
+                        backgroundColor: colors.lightGray,
                       },
                     ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={lot.display_name || lot.lot_name}
+                    accessibilityState={{ selected: lot.lot_id === selectedLot }}
                   >
-                    {lot.display_name || lot.lot_name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.lotDropdownText,
+                        {
+                          color:
+                            lot.lot_id === selectedLot
+                              ? colors.primary
+                              : colors.black,
+                        },
+                      ]}
+                    >
+                      {lot.display_name || lot.lot_name}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
             </ScrollView>
           </View>
         )}
@@ -282,6 +451,7 @@ const LongTermForecastScreen: React.FC = () => {
 
         <View style={[styles.divider, { backgroundColor: colors.mediumLightGray }]} />
         <EventBanner events={selectedDayEvents} />
+        <DayWeatherStrip weather={selectedDayWeather} />
         <HourlyChart data={forecast} />
       </ScrollView>
     </View>
@@ -370,12 +540,70 @@ const styles = StyleSheet.create({
   lotDropdownScroll: {
     maxHeight: 200,
   },
+  lotSearchContainer: {
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+  },
+  lotSearchInput: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    paddingVertical: SPACING.sm,
+    minHeight: 44,
+  },
+  lotDropdownEmpty: {
+    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.xl,
+    alignItems: 'center',
+  },
   lotDropdownItem: {
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.xl,
   },
   lotDropdownText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+});
+
+// Local stylesheet for `DayWeatherStrip` so the main `styles` block stays
+// scoped to the screen-level layout primitives.
+const weatherStripStyles = StyleSheet.create({
+  card: {
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.lg,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    borderRadius: 12,
+    ...SHADOWS.card,
+  },
+  title: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    marginBottom: SPACING.sm,
+    paddingHorizontal: SPACING.xs,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.lg,
+    paddingHorizontal: SPACING.xs,
+  },
+  cell: {
+    alignItems: 'center',
+    minWidth: 48,
+    gap: SPACING.xs,
+  },
+  hour: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+  temp: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  pop: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
 });

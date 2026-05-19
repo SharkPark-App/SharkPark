@@ -24,6 +24,7 @@ import { useAuth } from '../context/AuthContext';
 import {getOccupancyColorGradient, getReadableTextColor} from '../utils/parkingUtils';
 import {HourlyChart} from '../components/HourlyChart';
 import { LotAmenities } from '../components/LotAmenities';
+import { VisitorPricingCard } from '../components/VisitorPricingCard';
 import { EventBanner } from '../components/EventBanner';
 import { useEvents } from '../hooks/useEvents';
 import { ReportModal } from '../components/Modals/ReportModal';
@@ -257,7 +258,7 @@ export function ShortTermForecastScreen() {
     <View style={[styles.container, { backgroundColor: colors.lightGray }]}>
       {/* Top Banner & Favorite Button*/}
       <Header
-        title="Today's Forecast"
+        title={`Today at ${lot.lot_name}`}
         onBack={onBack}
         rightAction={
           <FavoriteButton isFavorite={isFavorite} onToggle={toggleFavorite} />
@@ -395,13 +396,16 @@ export function ShortTermForecastScreen() {
         {/* Nearby shuttle stop ETAs */}
         <NearbyTransitCard nearbyStops={nearbyStops} colors={colors} />
 
+        {/* Visitor pricing + ParkMobile deep link */}
+        <VisitorPricingCard lot={lot} />
+
         {/* Lot Amenities & Details */}
         <LotAmenities lot={lot} />
       </ScrollView>
 
       {/* Report Button */}
       <TouchableOpacity
-        style={[styles.fab, { bottom: SPACING.xxl + insets.bottom }]}
+        style={[styles.fab, { bottom: insets.bottom }]}
         onPress={() => {
           if (isGuest || !isAuthenticated) {
             Alert.alert('Sign in required', 'Please sign in to submit a report.');
@@ -424,7 +428,7 @@ export function ShortTermForecastScreen() {
 
       {/* Navigate Button (bottom right, symmetric to report button) */}
       <TouchableOpacity
-        style={[styles.fabNavigate, { backgroundColor: navigateFabBg, bottom: SPACING.xxl + insets.bottom }]}
+        style={[styles.fabNavigate, { backgroundColor: navigateFabBg, bottom: insets.bottom }]}
         onPress={() => setIsMapModalOpen(true)}
         activeOpacity={0.8}
         accessibilityRole="button"
