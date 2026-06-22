@@ -49,7 +49,7 @@ jobs:
         shell: bash
         working-directory: services/ml
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Pin Python to match `services/ml/pyproject.toml` requires-python and
       # the runtime in ml-retrain.yml. uv would resolve this on its own, but
